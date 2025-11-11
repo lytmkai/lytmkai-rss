@@ -1,4 +1,627 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[ArkTS 并发日志系统实现：TaskP]]></title>    <link>https://segmentfault.com/a/1190000047388605</link>    <guid>https://segmentfault.com/a/1190000047388605</guid>    <pubDate>2025-11-11 12:11:02</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/95c21119582c7926.css" data-n-g=""> <h2>🧩 ArkTS 并发日志系统实现：TaskPool + AsyncLock 实战解析</h2><blockquote><p>本文基于官方文档</p><ul><li><a href="https://link.segmentfault.com/?enc=Fpb%2BhnKdO16TU3GoqsS5Pg%3D%3D.CjTHEcPecEZULXr3DTSINLsyBT2bzIiaGF6kTaCRFTbcHFrLUhXtMdJayd4uYMZoJkW7ExSgpT8zIzQzf2QuXRLySzkJWdABcYMkFwb8AxBV5qvtAGSjAwCC3IUKiePK" rel="nofollow" target="_blank">TaskPool 并发机制介绍</a></li><li><a href="https://link.segmentfault.com/?enc=RelfaKvxwa3vStW8Yqe0kQ%3D%3D.4fEI6SQwIIpipC49XNd1r4x4Q%2FIxGp5SYS%2Bhl68XFnib3QRjtg0Y8nTf3qhnQj77JvHqyI4w4O2avb1cJyIkzbBGG6Mm09vaDFpF5njqSSTME3j21aa%2BX%2BDWgOdAjRIx" rel="nofollow" target="_blank">ArkTS 异步锁 API 参考</a><br/>结合实际工程实践，展示了在 HarmonyOS ArkTS 中构建高性能、线程安全的日志系统的方法。</li></ul></blockquote><hr/><h3>一、背景：为什么采用并发写日志</h3><p>日志系统通常是高频调用且 IO 密集的模块。传统实现中，日志写入、压缩和旧文件清理等操作在主线程执行可能会导致：</p><ul><li>主线程阻塞，影响 UI 响应；</li><li>文件写入冲突，多线程同时操作同一文件导致数据不一致；</li><li>日志目录膨胀，清理逻辑阻塞，降低性能。</li></ul><p>在 API version 9 之后，ArkTS 提供了 TaskPool 并发机制和 AsyncLock 工具类，可以将耗时的日志操作移到子线程执行，同时保证线程安全。</p><hr/><h3>二、架构设计概览</h3><p>日志系统采用四层架构：</p><table><thead><tr><th>层级</th><th>模块</th><th>主要职责</th></tr></thead><tbody><tr><td>调用入口</td><td><code>SaveLogHelper</code></td><td>对外提供统一日志 API（save、get、clear）</td></tr><tr><td>抽象层</td><td><code>AbsSaveLog</code></td><td>统一日志接口定义</td></tr><tr><td>实现层</td><td><code>SpSaveLog</code></td><td>使用 TaskPool + AsyncLock 实现线程安全的异步日志</td></tr><tr><td>并发任务</td><td><code>SpSaveLogTask</code></td><td>@Concurrent 修饰的实际任务函数（子线程执行）</td></tr></tbody></table><p>整体调用链如下：</p><pre><code>Logger.preLogContent()
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[数字人直播屡遭封禁？揭秘背后核心原因给出]]></title>    <link>https://segmentfault.com/a/1190000047388881</link>    <guid>https://segmentfault.com/a/1190000047388881</guid>    <pubDate>2025-11-11 13:06:31</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/95c21119582c7926.css" data-n-g=""> <p>在AI浪潮下，数字人直播成为电商直播新风口。不少用户的数字人直播间却遭遇平台封禁，甚至被永久封号。这让人疑惑：数字人直播合规吗？平台允许吗？</p><p>实际上，数字人直播本身不违规。抖音、快手、淘宝等主流及新兴平台均未禁止或限制。多数数字人直播间违规，主要是触犯以下几类平台规定：（青否数字人源头v：zhibo175）</p><p>1、直播内容违法违规，这是最严重的违规类型：</p><p>涉及色情、暴力、恐怖等违背公序良俗的内容</p><p>诈骗、赌博、传销等扰乱社会秩序、损害公众利益的信息</p><p>涉及政治敏感、社会负面话题，易引发不稳定因素</p><p>讨论民族、宗教等敏感议题，可能引发矛盾冲突</p><p>散布谣言或虚假信息，误导公众、造成不良影响</p><p>此类违规一经发现，平台会给予永久封禁直播间甚至账号的严厉处罚。</p><p>2、直播内容侵犯他人权益，数字人直播需大量素材，不少商家疏忽侵权。</p><p>未经授权的音乐、视频、图片作背景，侵犯原作者知识产权</p><p>盗用他人话术、脚本，属不正当竞争</p><p>模仿或抄袭他人形象、声音等特色元素，可能构成侵权</p><p>未经许可使用知名IP或品牌元素，易引发法律纠纷</p><p>在知识产权保护趋严的当下，此类侵权易被投诉导致封号。</p><p>3、直播内容违反平台商业政策，商业违规是常见封号原因。</p><p>虚假宣传、夸大产品功效，误导消费者</p><p>用虚假折扣、原价虚高等误导性价格促销手段，损害消费者利益</p><p>恶意诋毁竞争对手，破坏市场秩序</p><p>销售平台禁售或限售商品，违反规定</p><p>引导线下交易，逃避监管、增加风险</p><p>4、直播方式不符平台要求，数字人直播也需遵守平台基本规则。</p><p>完全用录播内容冒充实时直播，缺乏真实性与互动性</p><p>循环播放同一段内容，让观众乏味</p><p>使用非法推流软件或设备，影响平台</p><p>多个直播间同时播相同内容，造成资源浪费与不良竞争</p><p>数字人直播安全指南：如何安全合规使用数字人直播、避免封号风险？</p><ol><li>选合规开发平台</li></ol><p>选技术成熟、合规的数字人系统是基础。如正合AI支持独立部署，避免版权纠纷，保护商业机密与用户数据。</p><ol start="2"><li>精心规划内容话术</li></ol><p>开播前严格审核直播内容与话术。避免侵权,定期更新内容，保持观众新鲜感与关注度。</p><ol start="3"><li>增强互动性与实时性</li></ol><p>平台反感完全录播、无互动的直播间。提升互动性，及时解答疑问。</p><ol start="4"><li>了解并遵守平台规则</li></ol><p>不同平台规则有差异，关注规则更新，及时调整策略。</p><p>青否数字人对于平台防封搭建有完整的方案！</p><p>半无人是当下最稳的搭建方案，我们整理了一整套搭建教程，超详细！</p><p>方案一：助播实时驱动（青否数字人源头v：zhibo175）</p><p>直播间画面同步呈现 “真人助播 + 数字人主播”，数字人讲解过程中，真人助播可随时开口接管，系统实时识别真人声音，数字人自动 “闭嘴让话”，全程无延迟、无违和感。</p><p>建议每隔3-5分钟插入1次真人露脸互动（如答疑、福利播报）。</p><p>支持 “一拖一”“一拖多” 两种搭建，满足不同体量需求：</p><p>一拖一模式：1 个真人主播对应 1 个数字人直播间，两者可实时配合互动。比如律师直播间，数字人讲解法律条文、案例分析，遇到客户的复杂咨询，真人直接接管解答。</p><p>一拖多模式：1 个真人主播可同时出现在多个数字人直播间，每个直播间的数字人形象、音色、产品、话术完全独立，可同步运营本地生活、电商带货、线索留资等多类目。</p><p>真人只需不时开口说通用话术（如 “点击下方小黄车”“关注领福利”），系统会同步触发所有直播间的数字人 “让位闭嘴”，1 个人干 N 个人的活，成本直降。</p><p> </p><p> </p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047388883" alt="" title=""/></p><p>开播后点击 1 次 “助播驱动” 按钮，直播全程自动监测声音状态，无需其他任何操作！</p><p>方案二：主播实时驱动（青否数字人源头v：zhibo175）</p><p>直播间仅呈现数字人主播，真人无需露脸，只需在后台随时插话接管，真人语音会与数字人口型实时精准匹配！</p><p>同样支持“一键接管”，全程点击一次 “主播驱动”，系统自动完成 “真人声音识别→口型同步切换”。</p><p>方案三：实景AI直播</p><p>不止数字人直播，青否数字人还支持实景直播，视频直播，智能助播！</p><p>实景AI直播无数字人出镜，直播间展示实景画面，AI语音讲解产品，同时支持6大AI互动。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047388884" alt="" title="" loading="lazy"/></p><p>以上 3 套方案直播搭建的完整执行细节，我们已整理成AI 直播搭建 SOP，包含步骤拆解、参数设置、避坑指南。</p><p>直播间设置上直接优化功能，将功能与防封嵌入系统当中，操作都有完整的教程交付，能够真正的做到搭建稳定的数字人直播间，青否数字人优化迭代速度根据平台规则进行及时优化系统，给出相关解决方案（青否数字人源头v：zhibo175）！</p>]]></description></item><item>    <title><![CDATA[从销售报表分析到供应链数据优化，Spre]]></title>    <link>https://segmentfault.com/a/1190000047388894</link>    <guid>https://segmentfault.com/a/1190000047388894</guid>    <pubDate>2025-11-11 13:05:37</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/95c21119582c7926.css" data-n-g=""> <h2>从销售报表分析到供应链数据优化，SpreadJS 透视表插件全场景应用指南</h2><p>在 B 端产品开发中，数据分析师和销售团队总会向你提出同一个需求："能不能像 Excel 透视表那样，让我们自己拖拽字段就能看数据？"这个看似简单的问题，背后却隐藏着 Web 端数据分析的深层挑战：性能瓶颈、Excel 兼容性、用户习惯迁移成本。本文将基于 SpreadJS 数据透视表插件的技术实践，拆解如何在 Web 应用中构建真正可用的多维分析能力。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047388896" alt="在这里插入图片描述" title="在这里插入图片描述"/></p><h3>一、透视表背后的真实痛点</h3><h4>销售场景：滞后的决策支持</h4><p>某快消品公司的销售总监每周一要花费 3 小时手动处理数据：从 CRM 导出订单明细，从 ERP 调取库存数据，再拼凑成 Excel 透视表分析区域销售占比。当市场突发变化时，这套流程无法支撑实时决策。</p><p><strong>技术视角的困境：</strong></p><ul><li>传统 Web 报表是"预制菜"，字段固定无法灵活探索</li><li>纯前端大数据量渲染性能崩溃</li><li>离线 Excel 与在线系统形成数据孤岛</li></ul><h4>供应链场景：陷入 ETL 泥潭</h4><p>制造企业的供应链系统需要将几十家供应商的交期、质量、成本数据做多维对比。开发团队原本的方案是：后端建数据仓库→预计算汇总表→前端展示。结果新维度需求一出现，就要重新写 ETL，迭代周期长达 2 周。</p><p>这两个场景揭示了一个本质问题：<strong>业务人员需要"探索式分析"，但传统开发模式提供的是"固定式报表"</strong>。</p><h3>二、透视表插件的技术内核解析</h3><p>SpreadJS 选择了一条不同寻常的路径：在 Canvas 上自研表格渲染引擎，而非依赖 DOM 操作。这个技术决策为透视表带来了三个关键能力：</p><h4>1. Excel 兼容不是口号：底层格式无损对接</h4><p>透视表插件延续了 SpreadJS 对 Excel.xlsx 格式的深度解析能力。当用户导入包含透视表的 Excel 文件时，插件会完整保留：</p><ul><li>透视表结构定义（PivotCache、PivotTableDefinition）</li><li>计算字段与计算项公式</li><li>值字段的汇总方式（求和/平均值/计数/最大值/最小值）</li><li>样式与格式设置</li></ul><p>这种兼容不是表面 UI 模仿，而是<strong>文件格式级别的双向互通</strong>。桔柚科技在实践中的关键收益点就在于此——客户原有的 200 多个 Excel 分析模板无需重构，直接线上化。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047388897" alt="在这里插入图片描述" title="在这里插入图片描述" loading="lazy"/></p><h4>2. 性能基准：50 万行数据的 600 毫秒法则</h4><p>在营销数据分析场景中，单表 50 万行是常态。测试数据显示：SpreadJS 透视表从数据加载到渲染完成，全链路耗时稳定在 600ms 以内。</p><p><strong>性能实现路径：</strong></p><ul><li>数据层：惰性加载+聚合预计算，仅在视角变化时重算必要部分</li><li>渲染层：Canvas 脏区重绘，非可视区域不渲染</li><li>计算层：Web Worker 异步执行聚合计算，避免阻塞主线程</li></ul><p>这对开发者的价值在于：<strong>你不需要为性能写额外优化代码</strong>，插件默认扛住生产级数据量。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047388898" alt="在这里插入图片描述" title="在这里插入图片描述" loading="lazy"/></p><h4>3. API 设计哲学：声明式配置而非命令式操作</h4><pre><code class="JavaScript">// 典型初始化代码
+let pivotTable = sheet.pivotTables.add("myPivotTable", "A1", 1, 1, dataRange);
+pivotTable.summarizeValuesBy(PivotTableSummaryType.sum);
+
+// 字段配置即数据模型
+pivotTable.rowFields.add(pivotTable.pivotFields.get("region"));
+pivotTable.columnFields.add(pivotTable.pivotFields.get("month"));
+pivotTable.dataFields.add(pivotTable.pivotFields.get("sales"));</code></pre><p>API 设计遵循"配置即视图"的原则。开发者操作的是<strong>数据模型</strong>，而非直接操作 DOM。任何字段变更会自动触发视图更新，这显著降低了状态管理的复杂度。</p><h3>三、全场景实战：从销售到供应链</h3><h4>场景 1：销售业绩多维探索系统</h4><p>某 SaaS 厂商的客户成功团队需要分析客户健康度。他们要的不仅是结果，更是<strong>探索过程</strong>：先看行业维度，再钻取到客户规模，最后落到具体销售代表。</p><p><strong>实现架构：</strong></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047388899" alt="在这里插入图片描述" title="在这里插入图片描述" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047388900" alt="在这里插入图片描述" title="在这里插入图片描述" loading="lazy"/></p><p><strong>关键代码模式：</strong></p><pre><code class="JavaScript">// 动态字段切换
+function switchDimension(fieldName, areaType) {
+    // 清除现有字段
+    pivotTable.rowFields.clear();
+    // 添加新维度
+    let field = pivotTable.pivotFields.get(fieldName);
+    if(areaType === 'row') {
+        pivotTable.rowFields.add(field);
+    }
+    // 视图自动刷新
+}</code></pre><p><strong>开发者收益：</strong></p><ul><li>无需为每个分析维度写 SQL</li><li>用户自助探索，需求迭代减少 80%</li><li>字段配置序列化后可保存为"分析视图"，实现千人千面</li></ul><p><strong>最终用户价值：</strong></p><ul><li>分析响应时间从小时级降至秒级</li><li>鼠标拖拽即可完成复杂分组统计</li><li>支持"如果...会怎样"的假设分析</li></ul><h4>场景 2：供应链弹性分析平台</h4><p>制造企业需要评估供应商风险。传统方式是财务每月出一份静态报告。现在他们需要的是<strong>带计算字段的实时评分卡</strong>。</p><p><strong>技术难点：</strong></p><ul><li>交期稳定性需要标准差计算</li><li>质量评分需要加权平均</li><li>综合风险指数是自定义公式</li></ul><p>SpreadJS 的解决方案是<strong>计算字段 API</strong>：</p><pre><code class="JavaScript">// 定义交期稳定性指标
+let stdDevField = pivotTable.calculatedFields.add("delivery_stability", 
+    "=STDEV.P(delivery_days)");
+stdDevField summarizeType = PivotTableSummaryType.average;
+
+// 复合计算：风险评分 = 成本权重30% + 质量权重40% + 交期权重30%
+let riskField = pivotTable.calculatedFields.add("risk_score",
+    "=0.3*cost_score + 0.4*quality_score + 0.3*stability_score");</code></pre><p><strong>架构优势：</strong> 计算发生在前端，意味着：</p><ol><li>后端只需提供明细数据 ODS 层，无需预建汇总 Cube</li><li>新指标上线无需后端发布，前端热更新配置</li><li>用户可自定义公式，系统扩展性交给用户</li></ol><p><strong>业务价值：</strong> 采购员能即时看到"如果提升质量权重，哪家供应商排名变化"，这种模拟能力让决策从经验驱动转向数据驱动。</p><h3>四、集成模式：嵌入现有系统的最佳实践</h3><h4>模式 1：轻量级嵌入（iframe 方案）</h4><p>适合已有系统改造，2 小时集成：</p><pre><code class="HTML">&lt;iframe src="spreadjs-pivot.html?dataSource={api}" /&gt;</code></pre><p>通过 postMessage 实现跨域数据通信，保持现有系统架构不变。</p><h4>模式 2：深度集成（npm 包方案）</h4><p>适合新系统或重构项目：</p><pre><code class="JavaScript">import { PivotTable } from '@grapecity/spreadjs-pivot';
+
+// 与React状态管理结合
+const [pivotConfig, setPivotConfig] = useState(initialConfig);
+useEffect(() =&gt; {
+    pivotTable.fromJSON(pivotConfig);
+}, [pivotConfig]);</code></pre><h4>模式 3：前后端协同（GcExcel 补充）</h4><p>当需要 <strong>Server 端批量生成透视表报告</strong>时，GcExcel 作为 SpreadJS 的服务端版本，提供完全一致的 API。同一份配置 JSON 可在前端交互探索，也可在后端批量导出 PDF 报告。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047388901" alt="在这里插入图片描述" title="在这里插入图片描述" loading="lazy"/></p><h3>五、客户实践的量化价值</h3><p>桔柚科技的 LEMON BI 平台是典型例证。他们服务电商客户，每天处理来自拼多多、抖音等 <strong>15+平台</strong>的广告数据。</p><p><strong>技术挑战：</strong></p><ul><li>数据量：单日最大 800 万条投放记录</li><li>时效性：客户要求分析结果延迟&lt;5 分钟</li><li>灵活性：每个客户分析维度不同</li></ul><p><strong>SpreadJS 的切入点是"模板化"：</strong></p><ol><li>客户用 Excel 设计好透视表模板上传</li><li>系统解析模板中的透视表结构</li><li>数据通过 API 注入，前端实时刷新</li></ol><p><strong>量化收益：</strong></p><ul><li>报表交付时间：<strong>从天级降至分钟级</strong></li><li>人力成本：数据分析师团队从 5 人缩减至 2 人</li><li>客户满意度：自助分析功能使续约率提升 15%</li></ul><p><strong>技术负责人反馈：</strong>"关键在于我们不需要重写客户的 Excel 思维，而是把 Excel 的能力线上化。"</p><h3>六、性能优化与用户体验细节</h3><h4>开发者需要关注的性能陷阱</h4><p>尽管插件本身高性能，但错误的数据准备仍会拖慢体验：</p><p><strong>误区 1：直接注入全量明细数据</strong></p><pre><code class="JavaScript">// 错误示范：把50万行明细塞进sheet
+sheet.setDataSource(rawData); 
+
+// 正确做法：在WebWorker中预聚合
+const aggregatedData = await worker.postMessage(rawData);
+pivotTable.cache.setData(aggregatedData);</code></pre><p><strong>误区 2：频繁刷新透视表</strong></p><pre><code class="JavaScript">// 错误示范：每个字段变更都refresh()
+pivotTable.rowFields.add(field1);
+pivotTable.refresh();
+pivotTable.columnFields.add(field2);
+pivotTable.refresh();
+
+// 正确做法：批量操作后单次刷新
+pivotTable.suspendPaint();
+// ...批量操作
+pivotTable.resumePaint();</code></pre><h4>用户体验的"微交互"</h4><p>优秀的分析工具靠细节取胜：</p><ol><li><strong>字段智能提示</strong>：输入计算字段公式时，支持 Excel 风格的函数提示</li><li><strong>拖拽视觉反馈</strong>：拖拽字段到区域时，高亮可放置区，降低学习成本</li><li><strong>异步状态管理</strong>：大数据计算时显示轻量加载动画，避免用户重复点击</li><li><strong>透视表与普通表无缝转换</strong>：用户可随时"冻结"当前透视结果为静态表，便于注释和分享</li></ol><h3>七、给产品经理与开发者的建议</h3><h4>何时选择 SpreadJS 透视表？</h4><p><strong>适合场景：</strong></p><ul><li>业务人员已深度使用 Excel 分析</li><li>分析维度无法预先穷举</li><li>需要"数据探索"而非"数据展示"</li><li>系统性能要求在前端完成聚合计算</li></ul><p><strong>谨慎场景：</strong></p><ul><li>数据量超过 100 万行且无法做预聚合</li><li>需要复杂 SQL 窗口函数分析</li><li>团队完全没有 Excel 用户基础</li></ul><h4>最小可行产品（MVP）路径</h4><p><strong>第一周：</strong></p><ul><li>搭建 SpreadJS 基础环境</li><li>接入一个主数据源（如销售明细）</li><li>实现行/列/值字段拖拽</li></ul><p><strong>第二周：</strong></p><ul><li>添加计算字段功能</li><li>实现"保存/加载透视视图"API</li><li>接入 GcExcel 实现 PDF 导出</li></ul><p><strong>第三周：</strong></p><ul><li>字段值筛选器</li><li>数据钻取（双击展开明细）</li><li>性能压测与优化</li></ul><p>这套路径已在多个客户案例中验证，<strong>3 周即可上线生产可用版本</strong>。</p><h3>八、结语：让分析回归业务本质</h3><p>SpreadJS 透视表插件的价值不在于技术参数的华丽，而在于它<strong>尊重了业务人员分析数据的自然方式</strong>。作为开发者，我们不再需要站在需求和实现之间做"翻译官"，而是提供一个让业务语言直接落地的技术载体。</p><p>当供应链经理用鼠标拖拽出库存周转率的地域分布，当销售总监在浏览器里完成原本需要 SQL 才能实现的客户分层，数据透视表就完成了它的使命——<strong>让分析工具隐形，让业务洞察显现</strong>。</p><h3>扩展链接</h3><p><a href="https://link.segmentfault.com/?enc=qnCJtZfhVAWW65lBDPD1hA%3D%3D.5mQ9eoJp6A5yRdh14%2F9Cwlq85qbPvuKLKEJ9t7iRWWL9R9WLv9zWzqkT93a6gktR" rel="nofollow" target="_blank">可嵌入您系统的在线Excel</a></p>]]></description></item><item>    <title><![CDATA[AI 辅助编码：让产品验证效率提升 55]]></title>    <link>https://segmentfault.com/a/1190000047388909</link>    <guid>https://segmentfault.com/a/1190000047388909</guid>    <pubDate>2025-11-11 13:04:44</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/95c21119582c7926.css" data-n-g=""> <h2>AI 辅助编码：让产品验证效率提升 55% 的实战技巧</h2><p>软件开发行业在过去两年发生了巨大变化。该作者从 AI 编码助手问世之初就开始使用这类工具，而最有意思的发现是：AI 的价值远不止“写代码更快”，更彻底改变了产品验证的全流程。</p><p>在某团队的最新项目中，开发者们交付功能的速度突飞猛进，但随之而来的是更多边界案例问题和安全漏洞。这也是如今多数使用 AI 工具的团队面临的共同现状——开发速度加快了，但系统复杂度也同步提升了。</p><h3>核心价值在于验证，而非单纯提速</h3><p>数据最有说服力：使用 AI 编码助手的开发者，完成编码任务的速度平均提升 55%。但这只是冰山一角，真正的优势在编码完成后才显现。</p><p>采用 AI 工具的团队，产品上线周期同样缩短 55%。这份效率提升主要来自两方面：初始代码编写，以及首次代码审查。</p><p>代码审查提速的原因很简单：AI 生成的代码比人工代码更遵循标准模式，风格更简洁、一致性更强。即便是经验丰富的开发者，在高压下编写的代码也难以达到这种一致性。这让审查者不用在格式问题和基础错误上耗费过多精力，能集中关注架构设计和业务逻辑这类核心问题。</p><p>埃森哲（Accenture）的统计数据更直观：引入 AI 工具后，团队的合并请求量增加 8.69%，合并成功率提升 15%，而成功构建率更是暴涨 84%。这足以说明，AI 带来的不只是编码速度的提升，更是“更优质的代码被更快验证”的双赢。</p><h3>开发者如何正确使用 AI 编码工具？</h3><p>使用 AI 工具后，开发者的角色发生了本质转变。不再是传统意义上的“写代码”，而是变成了“统筹协调者”——管理 AI 的输出成果，并引导其朝着目标解决方案推进。</p><p>如今，开发者会花更多时间撰写清晰的需求指令和审查代码，而非亲手敲写实现逻辑。这就像身为技术负责人，管理着一位速度极快但偶尔会偏离方向的初级开发者。</p><p>这一转变也重塑了“核心技能”的定义，开发者需要重点提升这些能力：</p><ul><li>把复杂问题拆解为清晰、小型的任务模块</li><li>撰写详细的技术规格说明文档</li><li>快速识别 AI 代码中缺失的上下文信息</li><li>提出有深度的追问，比如“为什么采用这种实现方式？”</li></ul><p>很多开发者在使用 AI 工具时会陷入误区：把它们当成“魔法工具”盲目依赖。而真正能从中获益的开发者，都将其视为“需要明确指令的强大助手”。</p><h3>测试自动化：AI 驱动的内部验证革命</h3><p>在 AI 的众多应用场景中，测试生成堪称“王牌功能”。单元测试编写枯燥又繁琐，即便开发者知道它对质量至关重要，也很难主动投入足够精力。</p><p>AI 彻底改变了这一现状：原本需要数小时才能完成的测试套件，现在几分钟就能搞定。但这里有个关键技巧——必须做好对 AI 的引导。</p><p>建议使用“思维链（Chain-of-Thought）”这类高级提示词技巧，让 AI 分步解释自己的思考过程，这样能大幅提升测试覆盖率。</p><p>不要简单地说“为这个函数写测试”，而是换成：“分析这个函数，找出所有边界案例，解释你的推理逻辑，然后为每个案例编写完整测试”。</p><p>两者的差距天差地别：简单提示词只能得到基础测试，而带推理过程的结构化提示词，能生成真正能捕捉漏洞的高质量测试。</p><p>这种自动化不仅让内部验证提速，更实现了“既快又稳”——不仅功能开发更快，验证环节也更高效。</p><h3>快速原型：让产品更快触达用户</h3><p>验证的另一核心维度，是让真实用户接触产品。AI 工具能让开发者从“想法”到“可运行原型”的周期从数周压缩到数天。</p><p>该作者曾开发一个用于跟踪用户指标的内部仪表盘：放在五年前，这项工作至少需要一周时间；而在 AI 辅助下，仅用 6 小时就完成了可运行原型。虽然还未达到生产环境标准，但足以向相关方展示并收集反馈。</p><p>这种速度优势对产品测试至关重要：团队可以尝试更多想法，快速试错，并基于真实用户反馈迭代，而非依赖主观猜测。</p><p>但这里有个隐藏陷阱：如果原型开发速度提升 10 倍，反馈收集速度也必须同步跟上，否则瓶颈只会转移，无法真正提升效率。</p><p>成功的团队会从 MVP（最小可行产品）阶段就植入反馈闭环：添加数据分析工具、开展用户访谈、跟踪使用指标。他们把用户反馈视为产品核心部分，而非后续补充的附加功能。</p><h3>被忽视的安全隐患</h3><p>有个令人不安的事实：AI 生成的代码往往存在安全漏洞。这并非因为 AI 有恶意，而是它缺乏对具体项目安全需求的上下文认知。</p><p>研究数据显示，AI 助手在常见安全任务中表现糟糕：</p><ul><li>跨站脚本（XSS）防护：失败率 86%</li><li>日志注入防护：失败率 88%</li><li>输入验证清理：表现持续不佳</li></ul><p>更危险的是心理层面的影响：当 AI 快速且自信地生成代码时，开发者会不自觉地增加信任、降低审查力度。这是人的天性，却会带来严重风险。</p><p>不少开发者都有过类似经历：AI 生成的数据库查询语句看起来毫无问题，便不假思索地合并，完全忽略了 SQL 注入风险。</p><p>解决这个问题的关键在于“流程”而非“追求完美”，团队需要搭建这些防护机制：</p><ul><li>IDE 中集成静态应用安全测试（SAST）工具</li><li>通过动态应用安全测试（DAST）进行运行时检查</li><li>对依赖项开展软件成分分析（SCA）</li><li>在持续集成/持续部署（CI/CD）流水线中加入自动化安全扫描</li></ul><p>现在已有专门针对漏洞检测训练的 AI 安全工具，相比人工审查，这类工具能将漏洞检测时间缩短 92%——用 AI 解决方案应对 AI 带来的问题，是最高效的方式。</p><h3>信任系数：采纳率才是关键</h3><p>并非所有团队的 AI 应用都能见效：有些开发者能收获巨大生产力提升，有些却收效甚微。核心差异在于“信任”。</p><p>数据显示：接受约 30% AI 建议的开发者，能获得显著收益；而仅接受 23%建议的开发者，几乎看不到效果。这 7%的差距，正是效率分水岭。</p><p>背后的逻辑很简单：审查和拒绝 AI 建议需要耗费时间。如果频繁丢弃 AI 生成的内容，那么编码阶段节省的时间就会被完全抵消。</p><p>因此，跟踪 AI 工具的使用情况至关重要，建议重点关注这些指标：</p><ul><li>AI 工具的日活跃使用率</li><li>代码建议的采纳率</li><li>最终进入生产环境的 AI 生成代码行数</li></ul><p>这些数据能直观反映团队是在“受益于 AI”还是“与 AI 对抗”。</p><h3>2025 AI 编码工具选型指南</h3><p>AI 编码工具市场已呈爆发式增长：截至 2025 年末，全球已有超过 1500 万开发者使用 GitHub Copilot，较去年增长 400%。但 Copilot 并非唯一选择，不同工具各有侧重。</p><h4>全功能 AI 编码助手</h4><ul><li>GitHub Copilot：IDE 集成度最高，自动补全和函数生成能力突出，是国内开发者常用的插件之一</li><li>Cursor：专为 AI 优先开发设计，聊天交互界面体验极佳</li><li>Amazon CodeWhisperer：在 AWS 相关开发场景中表现亮眼</li></ul><h4>AI 驱动的开发平台</h4><ul><li>Replit：基于浏览器的编码环境，内置 AI 辅助功能，无需本地配置</li><li>Mimo：集学习平台与 AI 构建工具于一体，快速原型开发神器</li><li>Bolt：支持全栈应用快速生成，自带预览环境</li><li>v0.dev：专注于 React 组件生成，前端开发者福音</li></ul><h4>自主智能体（实验阶段）</h4><ul><li>Devin：能独立完成完整功能开发</li><li>Jules：擅长处理多步骤实现任务</li></ul><p>多数企业初期会统一选用一款主力工具，以控制成本并简化安全审查。但建议预留一定预算进行工具测试——不同工具在不同场景下各有优势。</p><p>比如快速原型验证场景，Mimo 或 Replit 比传统 IDE 更能快速出成果；而生产环境开发，GitHub Copilot 或 Cursor 与现有工作流的兼容性更好。</p><h3>对开发者职业发展的影响</h3><p>很多开发者都会担心：“AI 会取代我吗？”</p><p>诚实的答案是：不会，但你的工作内容会发生本质变化。开发者正在向“技术栈上游”迁移——减少在具体实现上的时间投入，更多关注架构设计；减少重复性繁琐工作，聚焦战略决策。</p><h4>初级开发者的机遇</h4><p>AI 接手了原本占初级开发者 60%工作时间的重复性任务，这让初级开发者能更早专注于系统设计和业务逻辑这类核心能力。而这些技能在过去往往需要数年时间才能积累成型。</p><h4>资深开发者的挑战</h4><p>审查 AI 输出内容会带来额外工作量：频繁在撰写规格说明、审查代码、修复 AI 错误之间切换上下文。</p><p>那些适应良好的资深开发者，都会主动拥抱“统筹协调者”的角色：提升提示词工程能力，学会撰写清晰的技术需求，培养识别 AI 代码潜在问题的直觉。</p><h3>未来趋势展望</h3><p>AI 辅助开发仍处于早期阶段：未来工具的上下文理解能力会更强，安全问题将基本得到解决，工作流程也会更加成熟。</p><p>但这场核心变革是不可逆的：软件开发不再是“敲代码”的单一行为，而是管理“人机协同”的复杂过程。</p><p>未来的竞争优势，不会属于“编码最快的团队”，而是属于“将 AI 深度融入整个验证体系”的团队——包括测试、安全、反馈闭环等各个环节，同时能驾驭“速度带来的复杂度”。</p><p>对于产品验证而言，这意味着：</p><ul><li>从 MVP 阶段就植入反馈收集机制</li><li>自动化整个测试金字塔（单元测试、集成测试、系统测试）</li><li>将安全验证嵌入开发工作流</li><li>关注信任度和采纳率，而非单纯追求速度</li></ul><p>那些做得好的团队，能以难以想象的速度交付经过充分验证的产品；而做得不好的团队，只会陷入“更快交付但更多问题”的困境。工具已经就绪，关键在于你是否准备好重新思考软件验证的方式。</p>]]></description></item><item>    <title><![CDATA[智能公式+自动处理，SpreadJS A]]></title>    <link>https://segmentfault.com/a/1190000047388912</link>    <guid>https://segmentfault.com/a/1190000047388912</guid>    <pubDate>2025-11-11 13:04:00</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/95c21119582c7926.css" data-n-g=""> <h2>智能公式+自动处理，SpreadJS AI 插件开启表格数据计算及处理新时代</h2><p><strong>当表格遇到 AI，开发者应该关注什么？</strong></p><p>作为前端开发者，我们每天都在处理表格数据。从财务报表到运营分析，从实验数据到用户反馈，SpreadJS 已经让我们能在浏览器中实现 Excel 级别的功能。但现在，用户不再满足于"能用"，他们想要"智能"------能听懂自然语言、能自动分析数据、能解释复杂公式的智能表格。</p><p>SpreadJS AI 插件不是简单的聊天机器人，而是一个深度融合表格场景的垂直 AI 解决方案。让我们从技术实现和应用价值两个维度，看看它到底解决了什么问题。</p><h3>从三个核心函数看 AI 表格的能力边界</h3><h4>1. 内置 AI 函数：零成本集成 NLP 能力</h4><p>传统方案中，实现文本分析需要调用 API、处理异步回调、管理 API 密钥，还要考虑前端性能。现在，三行公式就能搞定：</p><pre><code class="JavaScript">// 批量翻译用户评论
+=SJS.AI.TRANSLATE(B2:B9, "zh-cn")
+
+// 分析客户反馈情感倾向
+=SJS.AI.TEXTSENTIMENT(B2:B9, "好评", "差评", "中评")
+
+// 自然语言查询
+=SJS.AI.QUERY("列出A2:A5国家的首都", A2:A5)
+</code></pre><p><strong>对开发者</strong>：无需搭建 NLP 服务，不用处理异步调用，API 密钥在服务端统一管理，前端直接调用公式即可。真正的"零运维"集成。</p><p><strong>对最终用户</strong>：在单元格里直接写自然语言，就能得到翻译结果、情感分析、甚至是 2025 年 24 节气的完整日期表。使用门槛降到零。</p><p><strong>典型场景</strong>：跨境电商的评论分析、多语言报表自动生成、非结构化数据快速查询。一个公式替代过去几十行代码。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047388914" alt="img" title="img"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047388915" alt="img" title="img" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047388916" alt="img" title="img" loading="lazy"/></p><h4>2. AI 公式助手：让复杂公式不再是黑盒</h4><pre><code>=INDEX(销售数据!B:B, MATCH(A2, 销售数据!A:A, 0)) * VLOOKUP(B2, 价格表!A:C, 3, FALSE)
+</code></pre><p>看到这样的公式，普通用户直接放弃，甚至开发者也需要几秒钟理解。AI 公式助手做了两件事：</p><p><strong>自动生成</strong> ：用户说"根据 B 列成绩自动判定等级"，AI 返回<code>=IF(B2&gt;=90,"A",IF(B2&gt;=80,"B",IF(B2&gt;=60,"C","D")))</code>。支持行业函数如 XIRR、金融模型公式。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047388917" alt="img" title="img" loading="lazy"/></p><p><strong>智能解释</strong>：选中任意复杂公式，AI 逐层拆解："第一步用 MATCH 查找位置，第二步用 INDEX 提取对应值，第三步..."</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047388918" alt="img" title="img" loading="lazy"/></p><p><strong>对开发者</strong>：减少 80%的公式调试时间。用户能自己生成基础公式，你只处理真正复杂的业务逻辑。</p><p><strong>对最终用户</strong>：Excel 高级功能不再是"专家专属"。自然语言描述需求，公式自动生成，还能学习公式逻辑。</p><h4>3. AI 透视表：从拖拽到对话的范式转变</h4><p>传统透视表：用户需要理解"行/列/值/筛选"概念，手动拖拽字段。</p><p>AI 透视表：用户输入"按产品类别统计各地区销售额，找出增长最快的产品"，AI 自动生成透视表结构，填充数据，甚至标注异常值。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047388919" alt="img" title="img" loading="lazy"/></p><p><strong>技术实现</strong>：插件将自然语言转化为 SpreadJS 的 PivotTable API 调用，自动识别维度、度量、聚合方式。支持结果保存为模板，下次直接复用。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047388920" alt="img" title="img" loading="lazy"/></p><p><strong>对开发者</strong>：不用写透视表配置代码，不用培训用户如何使用透视表。AI 中间层自动处理意图识别和配置生成。</p><p><strong>对最终用户</strong>：数据分析能力民主化。市场运营、财务人员直接对话获取洞察，不再依赖数据分析师。</p><h3>架构设计：为什么它不只是个"AI 壳子"</h3><p>很多产品把 AI 做成聊天窗口，用户需要在表格和聊天窗之间来回切换。SpreadJS AI 插件的架构设计有三个关键点：</p><p><strong>1. 原生公式集成</strong> AI 能力封装为 SpreadJS 原生公式，与 450+现有公式无缝混用。计算引擎统一处理依赖关系、异步刷新，开发者无需关心 AI 调用的时序问题。</p><p><strong>2. 服务端密钥管理</strong> AI 插件采用服务端代理模式，前端只传递参数，API 密钥、计费、限流都在后端控制。避免密钥泄露，也便于企业统一管控 AI 成本。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047388921" alt="img" title="img" loading="lazy"/></p><p><strong>3. 垂直 Agent 优化</strong> 插件不是通用聊天机器人，而是针对表格场景的垂直 Agent。它理解 A1 引用样式、知道 SUMIF 和 COUNTIF 的区别、能识别数据透视表的维度关系，错误率比通用 LLM 低一个数量级。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047388922" alt="img" title="img" loading="lazy"/></p><h3>价值闭环：开发者和用户各自得到什么</h3><h4>开发者的收益清单</h4><ul><li><strong>开发加速</strong>：集成 AI 功能从"调研 API+封装 SDK+处理异步+UI 设计"压缩到"引入 JS 文件+注册服务"</li><li><strong>维护减负</strong>：AI 模型更新、Prompt 优化、错误处理由插件统一处理，你的代码无感升级</li><li><strong>成本可控</strong>：按实际 API 调用收费，无需预付资源。服务端代理模式便于企业级用量管控</li><li><strong>渐进增强</strong>：不影响现有功能，用户可按需启用 AI 特性，回退到传统用法无缝兼容</li></ul><h4>最终用户的收益清单</h4><ul><li><strong>效率跃升</strong>：复杂操作从 5 分钟缩短到 10 秒。批量数据处理、多语言翻译、情感分析一键完成</li><li><strong>门槛降低</strong>：不需要记公式语法、不需要学透视表拖拽、不需要懂数据分析理论</li><li><strong>能力升级</strong>：普通业务用户也能完成过去需要数据分析师的专业操作</li><li><strong>决策加速</strong>：从数据到洞察的周期从小时级缩短到分钟级</li></ul><h3>一个完整的场景示例：用户反馈分析</h3><p>以前：手动导出评论→写 Python 脚本调用翻译 API→再调用情感分析 API→结果导回 Excel→做透视表分析</p><p>现在，SpreadJS AI 插件实现：</p><pre><code class="JavaScript">// 步骤1：翻译所有评论
+=SJS.AI.TRANSLATE(A2:A1000, "zh-cn")
+
+// 步骤2：分析情感倾向
+=SJS.AI.TEXTSENTIMENT(A2:A1000, "积极", "消极", "中性")
+
+// 步骤3：AI自动生成透视表
+// 用户输入："按产品类别和情感倾向统计评论数量"
+// 插件生成透视表，自动配置行字段=产品类别，列字段=情感倾向，值=计数
+
+// 步骤4：智能分析
+// 用户问："哪个类别负面评价最多？"
+// AI返回："手机配件类别消极评价占比35%，主要痛点是物流慢和包装破损"
+</code></pre><p>整个过程无需离开表格，无需编写代码，5 分钟内完成过去需要数小时的分析工作。</p><h3>总结：重新思考表格的边界</h3><p>SpreadJS AI 插件的价值不在于"AI+表格"的概念，而在于它真正解决了两个痛点：</p><ol><li><strong>对开发者</strong>：把 AI 能力从"项目级开发"降级为"函数级调用"，让任何 SpreadJS 应用都能在 1 小时内获得 AI 能力。</li><li><strong>对使用者</strong>：把表格从"静态数据载体"升级为"智能分析助手"，让业务决策不再受工具能力限制。</li></ol><p>它不是要替代数据分析师或 Excel 专家，而是让 80%的常规分析工作自动化，让专业人员聚焦于 20%的高价值决策。</p><p>对于正在评估表格控件的团队，AI 插件意味着你的产品从交付那天起就具备智能能力，而不是在未来版本中"计划支持"。对于已有 SpreadJS 应用的客户，这是一行代码就能获得的竞争力升级。</p><p>表格控件已经发展了 20 年，SpreadJS AI 插件可能是下一个 20 年的起点。不是因为它有 AI，而是因为它让 AI 真正在表格场景中落地了。</p><h3>扩展链接</h3><p><a href="https://link.segmentfault.com/?enc=jJuY4Q6LO4bJ3HsJHCVDsQ%3D%3D.59LtYhKieCwg4WPR8NEfaoeRrPC%2BmAu%2FyEtJxjY874i2183tKWyXC6oNjEqZiVr6" rel="nofollow" target="_blank">可嵌入您系统的在线Excel</a></p>]]></description></item><item>    <title><![CDATA[深度解析｜“数据基础设施”系列国家标准技]]></title>    <link>https://segmentfault.com/a/1190000047388929</link>    <guid>https://segmentfault.com/a/1190000047388929</guid>    <pubDate>2025-11-11 13:03:10</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/95c21119582c7926.css" data-n-g=""> <p>国家发展改革委、国家数据局、工业和信息化部三部门联合印发《国家数据基础设施建设指引》，指导推进数据基础设施建设，推动形成横向联通、纵向贯通、协调有力的国家数据基础设施基本格局。</p><p><strong>“<strong><em><em>指引</em></em></strong>”<strong><em><em>明确了</em></em></strong><strong><em>“</em></strong>数据基础设施<strong><em><em>”</em></em></strong>的定义</strong>**，是指“_从数据要素价值释放的角度出发，面向社会提供数据采集、汇聚、传输、加工、流通、利用、运营、安全服务的一类新型基础设施，是集成硬件、软件、模型算法、标准规范机制设计等在内的有机整体_”。</p><p>全国数据标准化技术委员会（SAC/TC609）快速响应，组织发布了一系列“数据基础设施”国家标准技术文件。</p><p><strong><em><em>本文将从“数据基础设施”总体架构设计切入</em></em></strong>，围绕<strong><em><em>“什么是区域</em></em></strong>/<strong><em><em>行业功能节点？”</em></em></strong><strong><em>、</em></strong><strong><em>“谁接入？谁管理？”以及“安全能力如何规范？”</em></strong>等问题，对《数据基础设施 区域/行业功能节点技术要求》、《数据基础设施 接入管理》和《数据基础设施 安全能力通用要求》<strong>三份技术</strong>文件进行详细解读。</p><p><strong><em><em>第1份：TC609-6-2025-11</em></em></strong><strong><em/><em>《数据基础设施 区域</em></strong>/<strong><em><em>行业功能节点技术要求》</em></em></strong>技术文件主要明确了：</p><ul><li>国家数据基础设施中区域功能节点与行业功能节点的关系；</li><li>区域/行业功能节点的<strong>功能架构</strong>、<strong>功能要求</strong>、<strong>互操作要求</strong>、<strong>流程要求以及安全要求</strong>。</li></ul><p><strong>【详细解读👇】</strong></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047388931" alt="" title=""/></p><p><strong><em><em><em/>第2份：</em></em></strong><strong><em>TC609-6-2025-12</em></strong><strong><em><strong>《数据基础设施 接入管理》</strong></em></strong>技术文件**主要关注业务节点和接入连接器与区域/行业功能节点之间的“连接”，主要针对以下内容进行展开说明：</p><ul><li><strong>“</strong><strong>接入”：</strong>业务节点和接入连接器接入区域/行业功能节点需要满足哪些要求</li><li><strong>“</strong><strong>管理“：</strong>区域/行业功能节点如何管理接入的业务节点和接入连接器</li></ul><p><strong>【详细解读👇】</strong></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047388932" alt="" title="" loading="lazy"/></p><p><strong><em><em><em/>第3份：</em></em></strong><strong><em>TC609-6-2025-13</em></strong><strong><em><strong>《数据基础设施 安全能力通用要求》</strong></em></strong>技术文件<strong>主要明确了：数据基础设施的建设和运营过程中，相关组织在</strong>组织建设、制度流程、技术工具、人员能力<strong>等方面的</strong>安全能力通用要求**。</p><p><strong>【详细解读👇】</strong></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047388933" alt="" title="" loading="lazy"/></p>]]></description></item><item>    <title><![CDATA[Oracle 19c ADG 搭建 墨天]]></title>    <link>https://segmentfault.com/a/1190000047388940</link>    <guid>https://segmentfault.com/a/1190000047388940</guid>    <pubDate>2025-11-11 13:02:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/95c21119582c7926.css" data-n-g=""> <p>本文为<a href="https://link.segmentfault.com/?enc=wBVxdEoCyEGaCQVszVhJ5g%3D%3D.PAioSY6tBqSCAhsCPq6alsTUtZvclGK620vwuDODrzhLrbSYc0mOiGZei%2BCa8Ym7" rel="nofollow" target="_blank">墨天轮数据库管理服务团队</a>第138期技术分享，内容原创，作者为技术顾问<strong>杨玉壮</strong>，如需转载请联系小墨（VX：modb666）并注明来源。如需查看更多文章可关注【墨天轮】公众号。</p><p><em>注意：本文测试搭建，正式环境搭建按需修改</em></p><p>所需环境：两台服务器</p><ul><li>主库：192.168.100.19（自己设置） 主机名：oracle19c 预装了oracle19c-db软件 监听和库都是正常的</li><li>备库：192.168.100.20（自己设置）主机名：oracle19c-dg 预装了oracle19c-db软件 （无监听，无数据库）</li></ul><p><strong>0、最重要的一步，关闭主备库所在操作系统的防火墙和SELINUX</strong></p><p><strong>1、修改/etc/hosts文件，将主从的ip和主机名添加进去（主备两边都要做）</strong></p><p>192.168.100.19 oracle19c</p><p>192.168.100.20 oracle19c-dg</p><p>1.1 ping对方主机名看看是否连通</p><ul><li>主：ping oracle19c-dg</li><li>备：ping oracle19c</li></ul><p><strong>2、主库启动到FORCE LOGGING（强制日志）</strong></p><p>简单点来说：强制日志就是对数据库中所有的操作都产生日志信息，并将该信息写入到联机重做日志文件中（ONLINE REDO LOG）。FORCE LOGGING默认是不开启的。如果你要是配置ADG的话，那么强制日志必须处于开启状态。</p><pre><code class="sql">alter database force logging;
+select force_logging from v$database;
+FORCE_LOGGING
+---------------------------------------
+YES</code></pre><p>看到YES就成功了</p><p>如何关闭强制日志：</p><pre><code class="sql">alter database no force logging;
+select force_logging from v$database;
+FORCE_LOGGING
+---------------------------------------
+NO</code></pre><p><strong>3、检查主库是否在归档模式下</strong></p><pre><code class="sql">archive log list;</code></pre><p>如果不是的话就设置到归档模式：</p><p>使用oracle用户执行下面的创建目录命令</p><pre><code class="sql">mkdir -p /u01/app/oracle/oradata/ORCL/arch</code></pre><p>进入到ORACLE数据库</p><pre><code class="sql">sqlplus / as sysdba</code></pre><p>设置归档目录</p><pre><code class="sql">alter system set log_archive_dest_1='location=/u01/app/oracle/oradata/ORCL/arch' scope=both;</code></pre><p>关闭数据库</p><pre><code class="sql">shutdown immediate</code></pre><p>将数据库启动到mount状态</p><pre><code class="sql">startup mount</code></pre><p>开启归档模式 </p><pre><code>alter database archivelog;</code></pre><p>启动数据库</p><pre><code class="sql">alter database open;</code></pre><p>再次检查归档状态</p><pre><code class="sql">archive log list;
+Database log mode              Archive Mode
+Automatic archival             Enabled
+Archive destination            /u01/app/oracle/oradata/ORCL/arch
+Oldest online log sequence     3
+Next log sequence to archive   5
+Current log sequence           5</code></pre><p>看到上面信息证明已经开启了。</p><p>3.1 给主库添加stand by备用日志组 ，要比现有的日志组多一组。</p><pre><code class="sql">select  group#, members,  bytes  from v$log;
+    GROUP#    MEMBERS      BYTES
+---------- ---------- ----------
+         1          1  209715200
+         2          1  209715200
+         3          1  209715200</code></pre><p>现在我有三组，按照上面的说法那么我的standby日志组就要有四组。standby日志组是给切换以后的备库用的。</p><pre><code class="sql">select member from v$logfile;（找到你的redo的位置）
+MEMBER
+--------------------------------------------------------------------------------
+/u01/app/oracle/oradata/ORCL/redo03.log
+/u01/app/oracle/oradata/ORCL/redo02.log
+/u01/app/oracle/oradata/ORCL/redo01.log</code></pre><p>添加standby日志</p><pre><code class="sql">alter database add standby logfile '/u01/app/oracle/oradata/ORCL/stdredo01.log' size 200M;
+alter database add standby logfile '/u01/app/oracle/oradata/ORCL/stdredo02.log' size 200M;
+alter database add standby logfile '/u01/app/oracle/oradata/ORCL/stdredo03.log' size 200M;
+alter database add standby logfile '/u01/app/oracle/oradata/ORCL/stdredo04.log' size 200M;
+select member from v$logfile;
+MEMBER
+--------------------------------------------------------------------------------
+/u01/app/oracle/oradata/ORCL/redo03.log
+/u01/app/oracle/oradata/ORCL/redo02.log
+/u01/app/oracle/oradata/ORCL/redo01.log
+/u01/app/oracle/oradata/ORCL/stdredo01.log
+/u01/app/oracle/oradata/ORCL/stdredo02.log
+/u01/app/oracle/oradata/ORCL/stdredo03.log
+/u01/app/oracle/oradata/ORCL/stdredo04.log</code></pre><p>添加完成</p><p><strong>4、为了让ADG库起到更好的作用，我们需要修改LINUX内核参数。</strong></p><p>将这两个参数加入到sysctl.conf文件中并sysctl -p生效（用ROOT用户）</p><pre><code class="sql">vi /etc/sysctl.conf
+net.ipv4.tcp_rmem = 4096    87380   6291456
+net.ipv4.tcp_wmem = 4096    16384   4194304</code></pre><p>添加后生效</p><pre><code class="sql">sysctl -p</code></pre><p>注：net.ipv4.tcp\_r(w)mem含义为：自动优化所使用的接收缓冲区</p><p><strong>5、将监听修改为静态监听（强烈推荐。因为我们要加入网络优化参数，如果你不加参数也可以）</strong></p><p>切换到监听所在目录（主备库都要做）</p><pre><code class="sql">cd $ORACLE_HOME/network/admin
+vi listener.ora（创建静态监听）这是主库的
+SID_LIST_LISTENER =
+  (SID_LIST =
+    (SID_DESC =
+      (SID_NAME = PLSExtProc)
+      (ORACLE_HOME = /u01/app/oracle/product/19c/db_1/)
+      (PROGRAM = extproc)
+    )
+    (SID_DESC =
+      (SDU=32767)      
+      (SID_NAME = orcl)
+      (GLOBAL_DBNAME = orcl)
+      (ORACLE_HOME = /u01/app/oracle/product/19c/db_1)
+    )
+  )
+LISTENER =
+  (DESCRIPTION_LIST =
+    (DESCRIPTION =
+      (SEND_BUF_SIZE=1406250)
+      (RECV_BUF_SIZE=1406250)
+      (ADDRESS = (PROTOCOL = TCP)(HOST = oracle19c)(PORT = 1521))
+      (ADDRESS = (PROTOCOL = IPC)(KEY = EXTPROC1521))
+    )
+  )
+ADR_BASE_LISTENER = /u01/app/oracle</code></pre><p>修改完了以后重新加载监听 lsnrctl reload</p><p>然后检查监听状态 lsnrctl status</p><pre><code class="sql">vi listener.ora（创建静态监听）这是备库的
+SID_LIST_LISTENER =
+  (SID_LIST =
+    (SID_DESC =
+      (SID_NAME = PLSExtProc)
+      (ORACLE_HOME = /u01/app/oracle/product/19c/db_1/)
+      (PROGRAM = extproc)
+    )
+    (SID_DESC =
+      (SDU=32767)      
+      (SID_NAME = orcl)
+      (GLOBAL_DBNAME = orcl)
+      (ORACLE_HOME = /u01/app/oracle/product/19c/db_1)
+    )
+  )
+LISTENER =
+  (DESCRIPTION_LIST =
+    (DESCRIPTION =
+      (SEND_BUF_SIZE=1406250)
+      (RECV_BUF_SIZE=1406250)
+      (ADDRESS = (PROTOCOL = TCP)(HOST = oracle19c-dg)(PORT = 1521))
+      (ADDRESS = (PROTOCOL = IPC)(KEY = EXTPROC1521))
+    )
+  )
+ADR_BASE_LISTENER = /u01/app/oracle</code></pre><p><strong>6、修改tnsname.ora文件 主备库都添加下面的内容</strong></p><p>注释：这是添加主备库的别名，其中MD代表MASETDATABASE 主库别名；SD代表SLAVEDATABASE 备库别名。</p><pre><code class="sql">vi tnsnames.ora（先修改主库的，里面有东西的话不用管直接添加下列内容）
+MD =
+  (DESCRIPTION =
+    (SDU=32767)
+    (SEND_BUF_SIZE=1406250)
+    (RECV_BUF_SIZE=1406250)
+    (ADDRESS_LIST =
+      (ADDRESS = (PROTOCOL = TCP)(HOST = oracle19c)(PORT = 1521))
+    )
+    (CONNECT_DATA =
+      (SERVER = DEDICATED)
+      (SERVICE_NAME = orcl)
+    )
+  )
+SD =
+  (DESCRIPTION =
+    (SDU=32767)
+    (SEND_BUF_SIZE=1406250)
+    (RECV_BUF_SIZE=1406250)
+    (ADDRESS_LIST =
+      (ADDRESS = (PROTOCOL = TCP)(HOST = oracle19c-dg)(PORT = 1521))
+    )
+    (CONNECT_DATA =
+      (SERVER = DEDICATED)
+      (SERVICE_NAME = orcl)
+    )
+  )</code></pre><pre><code class="sql">vi tnsnames.ora（修改备库的，里面有东西的话不用管直接添加下列内容）
+MD =
+  (DESCRIPTION =
+    (SDU=32767)
+    (SEND_BUF_SIZE=1406250)
+    (RECV_BUF_SIZE=1406250)
+    (ADDRESS_LIST =
+      (ADDRESS = (PROTOCOL = TCP)(HOST = oracle19c)(PORT = 1521))
+    )
+    (CONNECT_DATA =
+      (SERVER = DEDICATED)
+      (SERVICE_NAME = orcl)
+    )
+  )
+SD =
+  (DESCRIPTION =
+    (SDU=32767)
+    (SEND_BUF_SIZE=1406250)
+    (RECV_BUF_SIZE=1406250)
+    (ADDRESS_LIST =
+      (ADDRESS = (PROTOCOL = TCP)(HOST = oracle19c-dg)(PORT = 1521))
+    )
+    (CONNECT_DATA =
+      (SERVER = DEDICATED)
+      (SERVICE_NAME = orcl)
+    )
+  )</code></pre><p>下列连通性实验必须保证主备库监听都是开启的：</p><p>主库在oracle用户下使用：tnsping SD </p><pre><code class="sql">[oracle@oracle19c admin]$ tnsping SD
+TNS Ping Utility for Linux: Version 19.0.0.0.0 - Production on 11-FEB-2022 14:47:33
+Copyright (c) 1997, 2019, Oracle.  All rights reserved.
+Used parameter files:
+Used TNSNAMES adapter to resolve the alias
+Attempting to contact (DESCRIPTION = (SDU=32767) (SEND_BUF_SIZE=1406250) (RECV_BUF_SIZE=1406250) (ADDRESS_LIST = (ADDRESS = (PROTOCOL = TCP)(HOST = oracle19c-dg)(PORT = 1521))) (CONNECT_DATA = (SERVER = DEDICATED) (SERVICE_NAME = orcl)))
+OK (10 msec)</code></pre><p>看到0k就代表成功</p><p>备库在oracle用户下使用：tnsping MD</p><pre><code class="sql">[oracle@oracle19c-dg admin]$ tnsping md
+TNS Ping Utility for Linux: Version 19.0.0.0.0 - Production on 11-FEB-2022 14:47:43
+Copyright (c) 1997, 2019, Oracle.  All rights reserved.
+Used parameter files:
+Used TNSNAMES adapter to resolve the alias
+Attempting to contact (DESCRIPTION = (SDU=32767) (SEND_BUF_SIZE=1406250) (RECV_BUF_SIZE=1406250) (ADDRESS_LIST = (ADDRESS = (PROTOCOL = TCP)(HOST = oracle19c)(PORT = 1521))) (CONNECT_DATA = (SERVER = DEDICATED) (SERVICE_NAME = orcl)))
+OK (0 msec)</code></pre><p>看到OK就代表成功</p><p><strong>7、复制密码文件（从主库到备库）：</strong></p><pre><code class="sql">cd $ORACLE_HOME/dbs
+scp orapworcl oracle@oracle19c-dg:$ORACLE_HOME/dbs</code></pre><p>（传输过程出现这玩意：Are you sure you want to continue connecting (yes/no)?  必须 输入yes）</p><p>拷贝完成后测试一下：</p><pre><code class="sql">sqlplus sys/oracle@MD as sysdba
+SQL*Plus: Release 19.0.0.0.0 - Production on Fri Feb 11 15:57:31 2022
+Version 19.3.0.0.0
+Copyright (c) 1982, 2019, Oracle.  All rights reserved.
+Connected to:
+Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production
+Version 19.3.0.0.0
+SQL&gt; exit</code></pre><p><strong>8、主库添加下列参数：</strong></p><pre><code class="sql">alter system set job_queue_processes=10 scope=spfile; --作业进程限制 可加可不加看你具体需求
+alter system set db_unique_name='orclmd' scope=spfile; （由于我们使用的是一个高可用集群，所以集群下每个节点都需要有一个唯一名） </code></pre><p>orclmd=orcl（实例名）md（masterdatabase）</p><p>本地监听只会注册你规定好的别名：</p><pre><code class="sql">alter system set local_listener='MD' scope=spfile;
+alter system set global_names=true scope=both; --开启全局名称
+ ALTER DATABASE RENAME GLOBAL_NAME TO orcl; --设置你的全局名称 要和非DG集群时你的实例名保持一致
+--db_file_name_convert ：在使用数据复制时，指定你的主备库的数据复制路径
+alter system set db_file_name_convert='/u01/app/oracle/oradata/ORCL','/u01/app/oracle/oradata/ORCL' scope=spfile;
+alter system set db_file_name_convert='/u01/app/oracle/oradata/ORCL','/u01/app/oracle/oradata/ORCL' scope=spfile;</code></pre><pre><code class="sql"> (主库)                           (备库)
+如果你的数据文件有多个路径（两个路径：/u01/app/oracle/oradata/ORCL和/u01/app/oracle/oradata/ORCL1）
+ 主库第一个路径                对应的备库的第一路径
+alter system set db_file_name_convert='/u01/app/oracle/oradata/ORCL','/u01/app/oracle/oradata/ORCL' ,'/u01/app/oracle/oradata/ORCL1','/u01/app/oracle/oradata/ORCL1'scope=spfile;       
+主库第二路径                    对应备库第二路径
+--log_file_name_convert：在使用数据复制时，指定你的主备库的日志复制路径（online REDO和standby redo）
+alter system set log_file_name_convert='/u01/app/oracle/oradata/ORCL','/u01/app/oracle/oradata/ORCL/redo' scope=spfile;
+--FAL_CLIENT 设定FAL的客户端名称，一般为本地在tnsnames.ora中的别名，改参数只在备库角色时有效，但是ORACLE建议你还是在两边都是要设置，为了方便角色切换。
+alter system set fal_client='MD' scope=spfile;
+--这个参数设定备库从哪里获取到归档日志，一般设定为对方（如果是主库的就相对于是备库，如果备库的话就相对于是主库）在tnsnames.ora文件里的别名。
+alter system set fal_server='SD' scope=spfile;
+ --启动db接收或发送redo data，包括所有库的db_unique_name
+alter system set log_archive_config = 'DG_CONFIG=(orclmd,orclsd)' scope=spfile;</code></pre><p>重新指定归档目录</p><pre><code class="sql">alter system set log_archive_dest_1='location=/u01/app/oracle/oradata/ORCL/arch valid_for=(all_logfiles,all_roles) db_unique_name=orclmd' scope=spfile;
+alter system set log_archive_dest_2='service=SD LGWR SYNC AFFIRM valid_for=(all_logfiles,primary_role) db_unique_name=orclsd' scope=spfile;
+-归档目录的状态
+alter system set LOG_ARCHIVE_DEST_STATE_1='ENABLE';
+alter system set LOG_ARCHIVE_DEST_STATE_2='ENABLE';
+--该参数控制是否自动在备库中建立主库新建的数据文件</code></pre><p>注意以下两点：</p><p>（1）他不会自动创建日志文件</p><p>（2）如果数据文件重名会覆盖原有的数据文件</p><pre><code class="sql">alter system set standby_file_management='AUTO' scope=spfile;
+--设置一个叫做orcl的服务
+alter system set service_names='orcl' scope=spfile;
+--设置归档的进程数据量
+alter system set log_archive_max_processes=4 scope=spfile; </code></pre><p>9、修改备库参数</p><p>9.1 在主库中把spfile备份出一个pfile出来，方便我们修改</p><pre><code class="sql">cd $ORACLE_HOME/dbs
+strings spfileorcl.ora &gt; orcl_init.ora
+scp orcl_init.ora oracle@oracle19c-dg:$ORACLE_HOME/dbs</code></pre><p>9.2 进入到备库的$ORACLE\_HOME/dbs下</p><pre><code class="sql">cd $ORACLE_HOME/dbs
+vi orcl_init.ora（把这种orcl.__的统统删除）
+（修改下列参数）
+*.db_unique_name='orclsd'
+*.global_names=TRUE
+*.local_listener='SD'
+*.fal_client='SD'
+*.fal_server='MD'
+*.log_archive_config='DG_CONFIG=(orclmd,orclsd)' --这个位置不需要修改了
+*.log_archive_dest_1='location=/u01/app/oracle/oradata/ORCL/arch valid_for=(all_logfiles,all_roles) db_unique_name=orclsd'
+*.log_archive_dest_2='service=MD LGWR SYNC AFFIRM valid_for=(all_logfiles,primary_role) db_unique_name=orclmd'
+*.log_archive_format='ARC_%t_%S_%r.arc'  (我主库在开归档时没有改，你们按需修改归档命名格式)</code></pre><p>创建归档目录()</p><pre><code class="sql">mkdir -p /u01/app/oracle/oradata/ORCL/arch</code></pre><p>创建adump目录</p><pre><code class="sql">mkdir -p /u01/app/oracle/admin/orcl/adump</code></pre><p>创建redo目录</p><pre><code class="sql">mkdir -p /u01/app/oracle/oradata/ORCL/redo</code></pre><p>备库的参数文件整体信息：</p><pre><code class="sql">*.audit_file_dest='/u01/app/oracle/admin/orcl/adump'
+*.audit_trail='db'
+*.compatible='19.0.0'
+*.control_files='/u01/app/oracle/oradata/ORCL/control01.ctl','/u01/app/oracle/oradata/ORCL/control02.ctl'#Restore Controlfile
+*.db_block_size=8192
+*.db_file_name_convert='/u01/app/oracle/oradata/ORCL','/u01/app/oracle/oradata/ORCL'
+*.db_name='orcl'
+*.db_unique_name='orclsd'
+*.diagnostic_dest='/u01/app/oracle'
+*.dispatchers='(PROTOCOL=TCP) (SERVICE=orclXDB)'
+*.fal_client='SD'
+*.fal_server='MD'
+*.global_names=TRUE
+*.local_listener='SD'
+*.log_archive_config='DG_CONFIG=(orclmd,orclsd)'
+*.log_archive_dest_1='location=/u01/app/oracle/oradata/ORCL/arch valid_for=(all_logfiles,all_roles) db_unique_name=orclsd'
+*.log_archive_dest_2='service=MD LGWR SYNC AFFIRM valid_for=(all_logfiles,primary_role) db_unique_name=orclmd'
+*.log_archive_max_processes=4
+*.log_file_name_convert='/u01/app/oracle/oradata/ORCL','/u01/app/oracle/oradata/ORCL/redo'
+*.LOG_ARCHIVE_DEST_STATE_1='ENABLE'
+*.LOG_ARCHIVE_DEST_STATE_2='ENABLE'
+*.nls_language='AMERICAN'
+*.nls_territory='AMERICA'
+*.open_cursors=300
+*.pga_aggregate_target=200m
+*.processes=300
+*.remote_login_passwordfile='EXCLUSIVE'
+*.service_names='orcl'
+*.sga_target=700m
+*.standby_file_management='AUTO'
+*.undo_tablespace='UNDOTBS1'</code></pre><p><strong>10、重启主备库监听</strong></p><p><strong>11、主备库测试连接（如果你之前已经做过了，那么这一步你也没必要做了）</strong></p><pre><code class="sql">--主
+sqlplus sys/oracle@SD as sysdba
+--备
+sqlplus sys/oracle@MD as sysdba</code></pre><p>12、启动备库到nomount状态（用我们刚才做的那个pfile,如果你之前做完了 这一步就不用再做了）</p><pre><code class="sql">########################################################
+startup nomount pfile='/u01/app/oracle/product/19c/db_1/dbs/orcl_init.ora'</code></pre><p>数据库正常启动以后创建spfile</p><pre><code class="sql">create spfile from  pfile='/u01/app/oracle/product/19c/db_1/dbs/orcl_init.ora';</code></pre><p>关闭数据库</p><pre><code class="sql">shutdown abort
+########################################################</code></pre><p>这次再将备库启动到nomount状态 spfile文件创建完成</p><pre><code class="sql">startup nomount</code></pre><p>执行这个命名alter system set standby\_file\_management='MANUAL';防止redo复制时出错</p><p>用该命令检查一下参数</p><pre><code class="sql">SHOW PARAMETER STANDBY_FILE_MANAGEMENT
+NAME                                 TYPE
+------------------------------------ ---------------------------------
+VALUE
+------------------------------
+standby_file_management              string
+MANUAL(看到这玩意就是成功了)</code></pre><p><strong>13、在主库通过Rman Duplicate创建备库</strong></p><p>主库上执行</p><pre><code class="sql">rman target sys/oracle@MD auxiliary sys/oracle@SD nocatalog  </code></pre><p>ORACLE用户下执行的</p><p>然后开始复制数据库： </p><pre><code class="sql">duplicate target database for standby from active database nofilenamecheck;</code></pre><p><strong>14、在备库执行此语句代表文件全部传输到此</strong></p><pre><code class="sql">select member from v$logfile;
+MEMBER
+--------------------------------------------------------------------------------
+/u01/app/oracle/oradata/ORCL/redo/redo03.log
+/u01/app/oracle/oradata/ORCL/redo/redo02.log
+/u01/app/oracle/oradata/ORCL/redo/redo01.log
+/u01/app/oracle/oradata/ORCL/redo/stdredo01.log
+/u01/app/oracle/oradata/ORCL/redo/stdredo02.log
+/u01/app/oracle/oradata/ORCL/redo/stdredo03.log
+/u01/app/oracle/oradata/ORCL/redo/stdredo04.log
+SQL&gt; select name from v$datafile;
+NAME
+--------------------------------------------------------------------------------
+/u01/app/oracle/oradata/ORCL/system01.dbf
+/u01/app/oracle/oradata/ORCL/sysaux01.dbf
+/u01/app/oracle/oradata/ORCL/undotbs01.dbf
+/u01/app/oracle/oradata/ORCL/users01.dbf</code></pre><p>备库复制完之后已经就是mount状态了</p><p><strong>15、到备库开启实时日志应用</strong></p><pre><code class="sql">alter database open;
+alter database recover managed standby database using current logfile disconnect from session;
+set pagesize 100</code></pre><p>归档日志的应用状态</p><pre><code class="sql">select sequence# ,applied from v$archived_log;
+SEQUENCE# APPLIED
+---------- ---------------------------
+11 YES
+12 YES
+13 YES
+14 IN-MEMORY（不用去关心）</code></pre><p>上述语句执行完毕后，把我们这个给改回来</p><pre><code class="sql">alter system set standby_file_management='AUTO';
+standby_file_management  ---&gt;备库文件管理“AUTO-自动模式，MANUAL-手动模式”</code></pre><p><strong>16、主库建表验证是否备库中存在（后面再做。。。。）</strong></p><p><strong>17、关闭备库后重新启动</strong></p><p>关闭备库：</p><pre><code class="sql">shutdown immediate</code></pre><p>开启备库：</p><pre><code class="sql">startup</code></pre><p>查看备库状态：</p><pre><code class="sql">select database_role,protection_mode,open_mode from v$database;
+SQL&gt; select database_role,protection_mode,open_mode from v$database;
+DATABASE_ROLE    PROTECTION_MODE      OPEN_MODE
+---------------- -------------------- --------------------
+PHYSICAL STANDBY MAXIMUM PERFORMANCE  READ ONLY（看到这个状态就说明你成功了）
+recover managed standby database using current logfile disconnect from session; （备库应用日志进行介质恢复）
+SQL&gt; recover managed standby database using current logfile disconnect from session;
+Media recovery complete.
+SQL&gt;  select database_role,protection_mode,open_mode from v$database;
+DATABASE_ROLE    PROTECTION_MODE      OPEN_MODE
+---------------- -------------------- --------------------
+PHYSICAL STANDBY MAXIMUM PERFORMANCE  READ ONLY WITH APPLY （实时应用日志开启成功）</code></pre><p>至此 ADG配置完成。</p><hr/><p><img referrerpolicy="no-referrer" src="/img/remote/1460000046208374" alt="" title=""/>  </p><p>墨天轮从乐知乐享的数据库技术社区蓄势出发，全面升级，提供多类型数据库管理服务。墨天轮数据库管理服务旨在为用户构建信赖可托付的数据库环境，并为数据库厂商提供中立的生态支持。<br/>墨天轮数据库服务官网：<a href="https://link.segmentfault.com/?enc=YRTgXEx8WvOfQr5PPkOMXw%3D%3D.O8MDe7zwOQElzYWminv2iy8pJix9kRiTNYEOgeoNGIHfSFsv17J7xOzWftUu2Gef" rel="nofollow" target="_blank">https://www.modb.pro/service</a></p>]]></description></item><item>    <title><![CDATA[使用 Java、Spring Boot ]]></title>    <link>https://segmentfault.com/a/1190000047388969</link>    <guid>https://segmentfault.com/a/1190000047388969</guid>    <pubDate>2025-11-11 13:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/95c21119582c7926.css" data-n-g=""> <blockquote>AI 智能体指的是一种软件实体，它能够利用自然语言处理、机器学习或推理系统等人工智能技术，自主感知、推理和行动，以实现特定目标。</blockquote><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047388971" alt="" title=""/></p><p>我为 <a href="https://link.segmentfault.com/?enc=HusTUJQ69KxkpqKcCBKq6w%3D%3D.YMPRQdr2VzIbMX1ZuSz8BBez29mq5AMUINEWjZ5awEo%3D" rel="nofollow" target="_blank">Telex</a> 开发了一个 AI 智能体，该智能体接收一个正则表达式模式，并就该模式所匹配的字符串类型提供易于理解的解释。开发此智能体的灵感源于我在此之前开发的一个 API（您可以在<a href="https://link.segmentfault.com/?enc=hWjW%2BY68fu7lVbg0u0r0rw%3D%3D.Qk%2BJ2NyDT9qKK7w%2BAi%2BxaDN2KnJUK3ZHrnqiGtpMxPMow4pY0fvpGAM6lsUqUwoj" rel="nofollow" target="_blank">此处</a>查看该项目），在该 API 中我必须使用正则表达式进行一些自然语言处理。尽管我之前学习过正则表达式，但感觉像是第一次见到它。正则表达式就是这样。因此，当 Telex 为其平台寻求更多 AI 智能体时，我决定开发这个智能体。</p><p>以下是我使用 Java、Spring AI 和 Spring Boot 实现它的过程。</p><h2>初始设置</h2><h3>1.  Spring Boot 项目初始化</h3><p>我使用 Spring 提供的<a href="https://link.segmentfault.com/?enc=4CpemuV4SkAdnBUVUTMWXg%3D%3D.zoMzWvam3wHz2M%2B%2BDEUIm5WASBZRcr7y49OSs4YaH7c%3D" rel="nofollow" target="_blank">初始化工具</a>来初始化项目。请注意，我在依赖项中包含了 Spring Web 和 Open AI。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047388972" alt="初始化 Spring 项目" title="初始化 Spring 项目" loading="lazy"/></p><h3>2.  设置 API 凭证</h3><p>在我的 <code>application.properties</code> 文件中，我设置了 Spring AI 以使用我的 API 凭证（我的 API 密钥）。我通过 Google AI Studio 获得了一个免费的 Google Gemini API 密钥。我的 <code>application.properties</code> 文件设置如下：</p><pre><code class="properties">spring.config.import=classpath:AI.properties
+
+spring.application.name=regexplain
+    
+spring.ai.openai.api-key = ${GEMINI_API_KEY}
+spring.ai.openai.base-url https://generativelanguage.googleapis.com/v1beta/openai
+spring.ai.openai.chat.completions-path = /chat/completions
+spring.ai.openai.chat.options.model = gemini-2.5-pro</code></pre><p>第一行导入了包含我 API 密钥的文件。重要的是不要将您的 API 密钥暴露给公众。该文件与 <code>application.properties</code> 位于同一文件夹中。</p><h3>3. 首次项目运行</h3><p>使用我的包管理器（Maven），我安装了所需的依赖项。然后我运行了我的主类，以确保一切正常。如果您到目前为止一切都做对了，您的项目应该可以无错误运行。如果遇到任何错误，请在 Google 上查找解决方法。</p><h2>A2A 请求和响应模型</h2><p>在深入实现之前，让我们先谈谈符合 A2A 标准的请求和响应的结构。A2A 协议遵循标准的 JSON-RPC 2.0 结构来处理请求和响应。</p><p>所有方法调用都封装在一个请求对象中，其结构如下：</p><pre><code class="json">{
+  "jsonrpc": "2.0",
+  "method": "String",
+  "id": "String | Integer",
+  "params": "Message"
+}</code></pre><p>响应对象有些类似：</p><pre><code class="json">{
+  "jsonrpc": "2.0",
+  "id": "String | Integer | null",
+  "result?": "Task | Message | null",
+  "error?": "JSONRPCError"
+}</code></pre><p>响应中的 ID <strong>必须</strong>与请求中的 ID 相同。</p><p>有关 A2A 协议的更多信息，请查阅 <a href="https://link.segmentfault.com/?enc=ta%2BsSs0rOLnBn9IiJ7Gg4w%3D%3D.bLa%2FmqUpbj%2FwR7VBkeS4gfUCZG1B7Q1L%2BS1BrJo5uZy%2BMv3mTqn33SeXH6eL9yA9" rel="nofollow" target="_blank">A2A 协议文档</a>。</p><p>以上就是请求和响应的通用结构。我开发这个智能体是为了在 Telex 平台上使用，因此我的部分实现可能特定于 Telex。</p><p>现在进入实现部分。我创建了一个名为 <code>model</code> 的文件夹，用于存储我的模型。请求模型类 <code>A2ARequest</code> 如下所示：</p><pre><code class="java">public class A2ARequest {
+    private String id;
+    private RequestParamsProperty params;
+
+    public A2ARequest(String id, RequestParamsProperty params) {
+        this.id = id;
+        this.params = params;
+    }
+
+    // getters and setters
+}</code></pre><p><code>RequestParamsProperty</code> 类代表了 <code>params</code> 中包含信息的结构。它如下所示：</p><pre><code class="java">public class RequestParamsProperty {
+    private HistoryMessage message;
+    private String messageId;
+
+    public RequestParamsProperty(HistoryMessage message, String messageId) {
+        this.message = message;
+        this.messageId = messageId;
+    }
+
+    // getters and setter
+}</code></pre><p><code>HistoryMessage</code> 类如下所示：</p><pre><code class="java">@JsonIgnoreProperties(ignoreUnknown = true)
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class HistoryMessage {
+    private String kind;
+    private String role;
+    private List&lt;MessagePart&gt; parts;
+    private String messageId;
+    private String taskId;
+
+    public HistoryMessage() {}
+
+    public HistoryMessage(String role, List&lt;MessagePart&gt; parts, String messageId, String taskId) {
+        this.kind = "message";
+        this.role = role;
+        this.parts = parts;
+        this.messageId = messageId;
+        this.taskId = taskId;
+    }
+
+    // getters and setters
+}</code></pre><p>注解的作用是让 Spring 知道在请求和响应的 JSON 表示中包含什么。如果请求中不存在某个属性，它应该忽略它并在类中将其设置为 null。如果某个属性设置为 null，则不应将其包含在响应中。</p><p><code>MessagePart</code> 类如下所示：</p><pre><code class="java">@JsonIgnoreProperties(ignoreUnknown = true)
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class MessagePart {
+    private String kind;
+    private String text;
+    private List&lt;MessagePart&gt; data;
+
+    public MessagePart(String kind, String text, List&lt;MessagePart&gt; data) {
+        this.kind = kind;
+        this.text = text;
+        this.data = data;
+    }
+
+    // getters and setters
+}</code></pre><p>以上就是表示从 Telex 接收的请求结构所需的所有类。现在需要为我的响应创建一个模型，以及表示响应所需的所有支持类。</p><p><code>A2AResponse</code> 类：</p><pre><code class="java">@JsonInclude(JsonInclude.Include.NON_NULL)
+public class A2AResponse {
+    private final String jsonrpc;
+    @JsonInclude(JsonInclude.Include.ALWAYS)
+    private String id;
+    private Result result;
+    private CustomError error;
+
+    public A2AResponse() {
+        this.jsonrpc = "2.0";
+    }
+
+    public A2AResponse(String id, Result result, CustomError error) {
+        this.jsonrpc = "2.0";
+        this.id = id;
+        this.result = result;
+        this.error = error;
+    }
+
+    //getters and setters
+}</code></pre><p><code>Result</code> 类：</p><pre><code class="java">public class Result {
+    private String id;
+    private String contextId;
+    private TaskStatus status;
+    private List&lt;Artifact&gt; artifacts;
+    private List&lt;HistoryMessage&gt; history;
+    private String kind;
+
+    public Result() {}
+
+    public Result(String id, String contextId, TaskStatus status, List&lt;Artifact&gt; artifacts, List&lt;HistoryMessage&gt; history, String task) {
+        this.id = id;
+        this.contextId = contextId;
+        this.status = status;
+        this.artifacts = artifacts;
+        this.history = history;
+        this.kind = task;
+    }
+
+    // getters and setters
+}</code></pre><p><code>CustomError</code> 类：</p><pre><code class="java">public class CustomError {
+    private int code;
+    private String message;
+    private Map&lt;String, String&gt; data;
+
+    public CustomError(int code, String message, Map&lt;String, String&gt; data) {
+        this.code = code;
+        this.message = message;
+        this.data = data;
+    }
+
+    // getters and setters
+}</code></pre><p><code>TaskStatus</code> 类：</p><pre><code class="java">@JsonInclude(JsonInclude.Include.NON_NULL)
+public class TaskStatus {
+    private String state;
+    private Instant timestamp;
+    private HistoryMessage message;
+
+    public TaskStatus() {}
+
+    public TaskStatus(String state, Instant timestamp, HistoryMessage message) {
+        this.state = state;
+        this.timestamp = timestamp;
+        this.message = message;
+    }
+
+    // getters and setters
+}</code></pre><p><code>Artifact</code> 类：</p><pre><code class="java">public class Artifact {
+    private String artifactId;
+    private String name;
+    private List&lt;MessagePart&gt; parts; // 稍后复查此类型
+
+    public Artifact() {}
+
+    public Artifact(String artifactId, String name, List&lt;MessagePart&gt; parts) {
+        this.artifactId = artifactId;
+        this.name = name;
+        this.parts = parts;
+    }
+
+    // getters and setters
+}</code></pre><p>A2A 协议还包含一个称为"智能体卡片"的东西。我也为它创建了一个模型。</p><pre><code class="java">public class AgentCard {
+    private String name;
+    private String description;
+    private String url;
+    private Map&lt;String, String&gt; provider;
+    private String version;
+    private Map&lt;String, Boolean&gt; capabilities;
+    private List&lt;String&gt; defaultInputModes;
+    private List&lt;String&gt; defaultOutputModes;
+    private List&lt;Map&lt;String, Object&gt;&gt; skills;
+
+    public AgentCard() {
+        this.provider = new HashMap&lt;&gt;();
+        this.capabilities = new HashMap&lt;&gt;();
+        this.skills = new ArrayList&lt;&gt;();
+    }
+
+    // getters and setters
+}</code></pre><p>模型部分就这些了。继续...</p><h2>服务类</h2><p>我的智能体的作用是获取一个正则表达式字符串，然后使用预定义的提示词将其发送到 OpenAI 的 API。服务类负责与 OpenAI 通信，发送提示词并接收响应。我创建了另一个名为 <code>service</code> 的文件夹，我的服务类就放在这里。我是这样编写我的服务类的：</p><pre><code class="java">@Service
+public class RegExPlainService {
+    private ChatClient chatClient;
+
+    RegExPlainService(ChatClient.Builder chatClientBuilder) {
+        this.chatClient = chatClientBuilder.build();
+    }
+
+    @Tool(name = "regexplain", description = "An agent that explains what type of string a regex pattern matches")
+    public String generateResponse(String regex) {
+        return chatClient
+                .prompt("Give me a simple explanation of the type of string matched by this regex pattern: %s. No validating statements from you. Just straight to the point".formatted(regex))
+                .call()
+                .content();
+    }
+}</code></pre><p><code>@Service</code> 注解允许 Spring Boot 将服务注入到您的控制器中。<code>@Tool</code> 注解将该方法标记为一个智能体工具，如果将来要扩展该智能体以包含该功能，它可以被自主调用。不过目前并不需要它。</p><h2>控制器</h2><p>控制器通过 REST API 暴露该智能体。在这个案例中，我有两个端点，一个 GET 端点和一个 POST 端点。我在一个名为 <code>controller</code> 的文件夹中创建了我的控制器。实现如下：</p><pre><code class="java">@RestController
+public class RegExPlainController {
+    private final RegExPlainService regexplainService;
+
+    @Autowired
+    RegExPlainController (RegExPlainService regexplainService) {
+        this.regexplainService = regexplainService;
+    }
+
+    @GetMapping("/a2a/agent/regexplain/.well-known/agent.json")
+    public ResponseEntity&lt;AgentCard&gt; getAgentCard () {
+        AgentCard agentCard = new AgentCard();
+        agentCard.setName("regexplain");
+        agentCard.setDescription("An agent that provides a simple explanation of the type of string a regex pattern matches");
+        agentCard.setUrl("regexplain-production.up.railway.app/api");
+        agentCard.setProvider("Bituan", null); // 假设 setProvider 处理 Map 的填充
+        agentCard.setVersion("1.0");
+        agentCard.setCapabilities(false, false, false); // 假设 setCapabilities 处理 Map 的填充
+        agentCard.setDefaultInputModes(List.of("text/plain"));
+        agentCard.setDefaultOutputModes(List.of("application/json", "text/plain"));
+        agentCard.setSkill("skill-001", "Explain Regex", "Provides a simple explanation of the type of string a regex pattern matches",
+                List.of("text/plain"), List.of("text/plain"), List.of());
+
+        return ResponseEntity.ok(agentCard);
+    }
+
+    @PostMapping("/a2a/agent/regexplain")
+    public ResponseEntity&lt;A2AResponse&gt; explainRegex (@RequestBody A2ARequest request) {
+        String regexRequest;
+        String responseText;
+
+        // 如果参数无效，返回 403
+        try {
+            regexRequest = request.getParams().getMessage().getParts().get(0).getText();
+        } catch (Exception e) {
+            CustomError error = new CustomError(-32603, "Invalid Parameter", Map.of("details", e.getMessage()));
+            A2AResponse errorResponse = new A2AResponse(null, null,  error);
+            return ResponseEntity.status(HttpStatusCode.valueOf(403)).body(errorResponse);
+        }
+
+        // 如果调用服务失败，返回错误 500
+        try {
+            responseText = regexplainService.generateResponse(regexRequest);
+        } catch (Exception e) {
+            CustomError error = new CustomError(-32603, "Internal Error", Map.of("details", e.getMessage()));
+            A2AResponse errorResponse = new A2AResponse(null, null,  error);
+            return ResponseEntity.internalServerError().body(errorResponse);
+        }
+
+        // 构建响应
+        A2AResponse response = new A2AResponse();
+        response.setId(request.getId());
+
+        // 构建响应 -&gt; 构建结果
+        Result result = new Result();
+        result.setId(UUID.randomUUID().toString());
+        result.setContextId(UUID.randomUUID().toString());
+        result.setKind("task");
+
+        // 构建响应 -&gt; 构建结果 -&gt; 构建状态
+        TaskStatus status = new TaskStatus();
+        status.setState("completed");
+        status.setTimestamp(Instant.now());
+
+        // 构建响应 -&gt; 构建结果 -&gt; 构建状态 -&gt; 构建消息
+        HistoryMessage message = new HistoryMessage();
+        message.setRole("agent");
+        message.setParts(List.of(new MessagePart("text", responseText, null)));
+        message.setKind("message");
+        message.setMessageId(UUID.randomUUID().toString());
+
+        // 构建响应 -&gt; 构建结果 -&gt; 构建状态 (续)
+        status.setMessage(message);
+
+        // 构建响应 -&gt; 构建结果 -&gt; 构建工件
+        List&lt;Artifact&gt; artifacts = new ArrayList&lt;&gt;();
+        Artifact artifact = new Artifact();
+        artifact.setArtifactId(UUID.randomUUID().toString());
+        artifact.setName("regexplainerResponse");
+        artifact.setParts(List.of(new MessagePart("text", responseText, null)));
+        artifacts.add(artifact);
+
+        // 构建响应 -&gt; 构建结果 -&gt; 构建历史记录
+        List&lt;HistoryMessage&gt; history = new ArrayList&lt;&gt;();
+
+        // 构建响应 -&gt; 构建结果 (续)
+        result.setStatus(status);
+        result.setArtifacts(artifacts);
+        result.setHistory(history);
+
+        // 构建响应 (续)
+        response.setResult(result);
+
+        return ResponseEntity.ok(response);
+    }
+}</code></pre><ul><li>GET 端点使用的路由路径是 A2A 协议标准中用于获取智能体卡片的部分。智能体卡片是对智能体及其功能的描述。</li><li>POST 端点接收一个符合 A2A 标准的请求，执行智能体，然后返回适当的响应。</li></ul><h2>结论</h2><p>就是这样。这就是我编写 Regexplain 的过程。</p><blockquote>通过这个示例，您可以从头开始构建您的 AI 智能体并使其符合 A2A 标准。或者，至少我希望这能让您对如何使用 Java 开发符合 A2A 标准的 AI 智能体有所了解。</blockquote><hr/><p>【注】本文译自：<a href="https://link.segmentfault.com/?enc=8U7kQfNdUT%2FyiBG42d6S8g%3D%3D.aOw6SNavv0Kz9JHhhPXDIzX3YmkMpWI%2By1jOjDio9QzkgiNpxR2mJq13pb%2FQKMUTesvP1rOFQ6jX7LVDCbwXrKMdvcx6zVCIFbwzPOQHngFn4%2FSaoTdHunNxKgWlYHzEvw%2Fk1pcIYC7%2BpqHf6pogaQ%3D%3D" rel="nofollow" target="_blank">Developing an A2A-compliant AI Agent with Java, Spring Boot and Spring AI - DEV Community</a></p>]]></description></item><item>    <title><![CDATA[ArkTS 并发日志系统实现：TaskP]]></title>    <link>https://segmentfault.com/a/1190000047388605</link>    <guid>https://segmentfault.com/a/1190000047388605</guid>    <pubDate>2025-11-11 12:11:02</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/95c21119582c7926.css" data-n-g=""> <h2>🧩 ArkTS 并发日志系统实现：TaskPool + AsyncLock 实战解析</h2><blockquote><p>本文基于官方文档</p><ul><li><a href="https://link.segmentfault.com/?enc=Fpb%2BhnKdO16TU3GoqsS5Pg%3D%3D.CjTHEcPecEZULXr3DTSINLsyBT2bzIiaGF6kTaCRFTbcHFrLUhXtMdJayd4uYMZoJkW7ExSgpT8zIzQzf2QuXRLySzkJWdABcYMkFwb8AxBV5qvtAGSjAwCC3IUKiePK" rel="nofollow" target="_blank">TaskPool 并发机制介绍</a></li><li><a href="https://link.segmentfault.com/?enc=RelfaKvxwa3vStW8Yqe0kQ%3D%3D.4fEI6SQwIIpipC49XNd1r4x4Q%2FIxGp5SYS%2Bhl68XFnib3QRjtg0Y8nTf3qhnQj77JvHqyI4w4O2avb1cJyIkzbBGG6Mm09vaDFpF5njqSSTME3j21aa%2BX%2BDWgOdAjRIx" rel="nofollow" target="_blank">ArkTS 异步锁 API 参考</a><br/>结合实际工程实践，展示了在 HarmonyOS ArkTS 中构建高性能、线程安全的日志系统的方法。</li></ul></blockquote><hr/><h3>一、背景：为什么采用并发写日志</h3><p>日志系统通常是高频调用且 IO 密集的模块。传统实现中，日志写入、压缩和旧文件清理等操作在主线程执行可能会导致：</p><ul><li>主线程阻塞，影响 UI 响应；</li><li>文件写入冲突，多线程同时操作同一文件导致数据不一致；</li><li>日志目录膨胀，清理逻辑阻塞，降低性能。</li></ul><p>在 API version 9 之后，ArkTS 提供了 TaskPool 并发机制和 AsyncLock 工具类，可以将耗时的日志操作移到子线程执行，同时保证线程安全。</p><hr/><h3>二、架构设计概览</h3><p>日志系统采用四层架构：</p><table><thead><tr><th>层级</th><th>模块</th><th>主要职责</th></tr></thead><tbody><tr><td>调用入口</td><td><code>SaveLogHelper</code></td><td>对外提供统一日志 API（save、get、clear）</td></tr><tr><td>抽象层</td><td><code>AbsSaveLog</code></td><td>统一日志接口定义</td></tr><tr><td>实现层</td><td><code>SpSaveLog</code></td><td>使用 TaskPool + AsyncLock 实现线程安全的异步日志</td></tr><tr><td>并发任务</td><td><code>SpSaveLogTask</code></td><td>@Concurrent 修饰的实际任务函数（子线程执行）</td></tr></tbody></table><p>整体调用链如下：</p><pre><code>Logger.preLogContent()
  └── SaveLogHelper.saveLog()
       └── SpSaveLog.saveLog()
            ├── AsyncLock.lockAsync()  // 异步加锁，保证线程安全
@@ -1180,511 +1803,4 @@ public class Solution {
          }
          return head1;
      }
-}</code></pre><ul><li><strong>时间复杂度</strong>​：O(m+n)，每个指针遍历两个链表各一次</li><li>​<strong>空间复杂度</strong>​：O(1)，只使用两个指针</li></ul>]]></description></item><item>    <title><![CDATA[还在担心报表不好做？不用怕，试试这个方法]]></title>    <link>https://segmentfault.com/a/1190000047388117</link>    <guid>https://segmentfault.com/a/1190000047388117</guid>    <pubDate>2025-11-11 09:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/95c21119582c7926.css" data-n-g=""> <p>一、引言</p><p>在当今这个信息爆炸的时代，编程语言层出不穷，但有一种语言凭借其简洁、高效和并发的特性，在众多语言中脱颖而出，它就是Go语言。Go语言，也被称为Golang，由Google公司开发并开源，自诞生以来就受到了广大开发者的喜爱。本文将带你领略Go语言的魅力，从入门到进阶，逐步掌握这门强大的编程语言。</p><p>二、Go语言入门</p><p>了解Go语言的基本特性<br/>Go语言具有简洁、高效、静态类型、编译型等特性。它的语法简单易懂，上手快速。同时，Go语言支持并发编程，通过goroutine和channel可以轻松实现高并发。</p><p>安装Go语言环境<br/>要开始学习Go语言，首先需要安装Go语言环境。可以从Go官方网站下载并安装对应操作系统的安装包，然后按照官方文档进行配置。</p><p>编写第一个Go程序<br/>安装好Go语言环境后，就可以开始编写第一个Go程序了。一个简单的“Hello, World!”程序可以帮助你熟悉Go语言的语法和编译过程。</p><p>掌握Go语言的基本语法<br/>在编写程序的过程中，你需要熟悉Go语言的基本语法，包括变量、常量、数据类型、运算符、控制结构等。这些基础知识是后续学习的基础。</p><p>三、Go语言进阶</p><p>理解包和模块<br/>Go语言使用包（package）来组织代码，每个包都可以包含多个文件。了解包的概念和使用方法对于编写模块化、可复用的代码非常重要。此外，从Go 1.11版本开始，Go引入了模块（module）的概念，用于解决依赖管理和版本控制的问题。</p><p>掌握并发编程<br/>Go语言支持并发编程，通过goroutine和channel可以轻松实现高并发。你需要熟悉goroutine的创建、运行和管理方法，以及如何使用channel进行协程之间的通信和同步。</p><p>学习标准库和第三方库<br/>Go语言拥有丰富的标准库和第三方库，这些库提供了大量的功能和工具，可以帮助你快速构建各种应用。你需要了解标准库的基本组成和使用方法，同时学会如何使用第三方库来扩展你的应用。<br/><a href="https://link.segmentfault.com/?enc=Wjf8F7dNvts40n2QNY5c6w%3D%3D.4dI%2FtdqVyzLMiA4szZTb4IDsk8oDHFjM%2BLbYuqGFWD523uD405Qzvoms%2BDIvSsFM" rel="nofollow" target="_blank">https://www.mscbsc.com/askpro/question219145</a><br/><a href="https://link.segmentfault.com/?enc=87DfDzdbamuMlMaTMuTvyg%3D%3D.DpZXvGTXnBpKrxjV0AY3G%2FaqGMPzJHO5CIsu2dG1div6RpqKApQfm3XWAZ2GD7NZ" rel="nofollow" target="_blank">https://www.mscbsc.com/askpro/question219142</a><br/><a href="https://link.segmentfault.com/?enc=Tya58T5%2FHbEtq3OHVl65mg%3D%3D.%2B2A9CrGcap0AIqkk5ksvszjIATpHlOjCOIRIRGa420AXMS4FwSsYw%2Fbeltiv%2Fld0" rel="nofollow" target="_blank">https://www.mscbsc.com/askpro/question219139</a><br/><a href="https://link.segmentfault.com/?enc=24%2Fb2RQxcuWE0HmSTmHG7w%3D%3D.x5cJETRzGVzXZGYH3x1%2FS5tuUYbBPb6AKr0zeJKRsuR1%2Bm7DiYoC9gSYq8SMG9vw" rel="nofollow" target="_blank">https://www.mscbsc.com/askpro/question219136</a><br/><a href="https://link.segmentfault.com/?enc=VPghHnGTbHqOO7HB2ZoPSg%3D%3D.GwJ3D0IkErYqkgzTXkl5naA7bBUzFbCle%2F9JykWaZVkHDpNAkdWCi1goAtMeK1Eo" rel="nofollow" target="_blank">https://www.mscbsc.com/askpro/question219133</a><br/><a href="https://link.segmentfault.com/?enc=IvaslOmU3i%2FmApPcbJDACw%3D%3D.%2F1pp8xOxtkvEVlRepdx2i3Xqc0i%2F0yLiuJZBID0EceRtydWPBak9SEM%2FTNV39xvC" rel="nofollow" target="_blank">https://www.mscbsc.com/askpro/question219130</a><br/><a href="https://link.segmentfault.com/?enc=V7ld1xuwBdCECt1t866LCA%3D%3D.r4TOf4JX5UKlg%2FlsZfjZZl%2FxI1cSegMU%2FYlzX13dUPxVBf6ojymKaRk%2Bdqmk2%2F%2FX" rel="nofollow" target="_blank">https://www.mscbsc.com/askpro/question219127</a><br/><a href="https://link.segmentfault.com/?enc=7JRIjNl1FXafk7bUPzCcyw%3D%3D.qZeerX3Lka%2FapXsW%2B0dAnyBOrXrhX0%2F0AVY4TQbFpn1uP1kj1HNaTnDleBUvUSy7" rel="nofollow" target="_blank">https://www.mscbsc.com/askpro/question219124</a><br/><a href="https://link.segmentfault.com/?enc=UbUQI8F2eZb%2FrKfDFL8lVg%3D%3D.ldzrLqbXBXvfOFJANXoHh%2B3zOfn86NNE5yfE9DJaq89FXhgj7qyzWpnaYzUWO3LPsQV2NwsdwbUsBybOV19rpQ%3D%3D" rel="nofollow" target="_blank">https://www.mscbsc.com/askpro/question.php?qid=219119</a></p><p>实践Web开发<br/>Web开发是Go语言的一个重要应用领域。你可以学习如何使用Go语言编写Web服务器和客户端程序，了解HTTP协议和Web开发的基本概念。同时，你还可以学习一些流行的Web框架（如Gin、Echo等）来提高开发效率。</p><p>深入了解底层原理<br/>随着对Go语言深入的了解，你可以进一步学习其底层原理和实现细节。这包括内存管理、垃圾回收、协程调度等方面的知识。了解这些底层原理可以帮助你更好地理解Go语言的性能和优化方法。</p><p>四、总结</p><p>Go语言作为一门简洁、高效、并发的编程语言，具有广泛的应用前景。从入门到进阶的旅程中，你需要不断学习和实践，掌握Go语言的基本语法、并发编程、标准库和第三方库等方面的知识。同时，你还需要关注Go语言的最新动态和社区发展，以便更好地应用这门强大的编程语言。</p>]]></description></item><item>    <title><![CDATA[效能工具（九）之编写nodejs脚本使用]]></title>    <link>https://segmentfault.com/a/1190000047387869</link>    <guid>https://segmentfault.com/a/1190000047387869</guid>    <pubDate>2025-11-11 00:02:21</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/95c21119582c7926.css" data-n-g=""> <h2>前言</h2><p>看文，看的是一种思路，希望笔者的文章能给诸位带来一些灵感思路☺️☺️☺️</p><h3>场景概述</h3><p>实际场景描述有些冗余，特抽象出来描述如下：</p><p>公司平台上有一个视频文件列表，列表有近千条数据，对应接口返回的就是一个数组，length将近1000，如：</p><pre><code class="js">let tableData = [
-    { id: 1, name: '视频1', duration: 364, url: 'https://abc.com.cn/files/1.mp4' },
-    { id: 2, name: '视频2', duration: 210, url: 'https://abc.com.cn/files/2.mp4' },
-    ...
-    { id: 999, name: '视频999', duration: 540, url: 'https://abc.com.cn/files/999.mp4' },
-]</code></pre><blockquote>其中，name是视频名字，duration是视频时长（秒），url是视频静态资源可访问地址</blockquote><ul><li>现在的问题是，因为一些无语的原因，这999条数据中，存在部分数据存储的duration字段的值不对，和实际视频的时长对不上，或多或少</li><li>比如第一条数据，视频1的实际时长是464秒，但duration字段值存的是364秒</li><li>现在需要将其修复成正确的时长，但是因为数据量太多，近千条数据，人工一条一条核对，效率十分低下，而且人工核对容易出错</li></ul><p>因此笔者写了一个nodejs脚本，批量执行效率高，质量有保障</p><h3>解决方案思路</h3><ul><li>首先，循环tableData得到数组的每一项</li><li>然后，使用<a href="https://link.segmentfault.com/?enc=1vMk9bPn2f0t25mTNS9h8w%3D%3D.1%2FJ0OhL%2BP%2BmnMYmuHNVa3dJwIFtgovCsUihjuJ%2Brv8YFiKceoDQuaSu2m8NZcZz8mAJkpZVrkDouU21VhF%2FrmQ%3D%3D" rel="nofollow" target="_blank">get-video-duration</a>这个包，读取每一项的url对应的视频资源</li><li>得到对应视频真正的时长，比如叫做trueDurationNum，和当前的duration对比一下</li><li>若相同，则代表时长没问题；若不同，则单独拎出来丢到notEqualArr数组里</li><li>最后，再把notEqualArr统一循环处理</li><li>或调用修改接口，批量请求修改成正确的视频时长</li><li>或者写个函数将其转成sql语句，直接一条命令执行解决问题</li></ul><h3>get-video-duration包介绍</h3><p>get-video-duration 是github上的拥有140个Star的小众包，传给它一个视频的url，它就可以返回此视频对应的时长信息，如下</p><pre><code class="js">const { getVideoDurationInSeconds } = require('get-video-duration')
-const duration = await getVideoDurationInSeconds(url)
-console.log('视频时长/秒', duration)</code></pre><p>支持mp4、mov、多种视频格式，其底层依赖FFmpeg的ffprobe套件，能够分析音视频（比如分辨率、编码格式、时长）其依赖简约如下：</p><pre><code class="json">{
-  "name": "get-video-duration",
-  "description": "Get the duration of a video file",
-  "version": "4.1.0",
-  "author": "Lluís Ulzurrun de Asanza Sàez &lt;me@llu.is&gt; (http://llu.is)",
-  "license": "MIT",
-  "repository": "caffco/get-video-duration",
-  "main": "dist/commonjs/index.js",
-  "module": "dist/es6/index.js",
-  "dependencies": {
-    "@ffprobe-installer/ffprobe": "^2.1.2",
-    "execa": "^5.0.0",
-    "is-stream": "^2.0.0"
-  },
-  ......
-}</code></pre><blockquote>实际上，包的作者除了有这个获取视频时长的工具包之外，还有一个获取音频时长的包：<a href="https://link.segmentfault.com/?enc=jjzLf4FtARju3lvnKQj%2BBw%3D%3D.EdDxAq4LnqrbXXc93gQX%2BQNXpkJAzVhIH4FU%2BL7cilmEIfrbOggEz2HFfqlQuGriRwENLS8iQsXZITuHrBz6xw%3D%3D" rel="nofollow" target="_blank">get-audio-duration</a></blockquote><h2>代码实现</h2><p>因为要安装包，所以要<code>npm inti -y</code>简单创建一个node工程</p><p>而后安装对应依赖<code>npm i get-video-duration</code></p><pre><code class="json">{
-  "name": "video-duration-check",
-  "version": "1.0.0",
-  "main": "app.js",
-  "scripts": {
-    "test": "echo "Error: no test specified" &amp;&amp; exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
-  "dependencies": {
-    "get-video-duration": "^4.1.0"
-  }
-}</code></pre><h3>检查是否有不相等的视频时长项</h3><pre><code class="js">// app.js
-const { getVideoDurationInSeconds } = require('get-video-duration')
-const fs = require('fs')
-// 给到一个url，返回视频时长
-async function getVideoDuration(url) {
-    try {
-        const duration = await getVideoDurationInSeconds(url)
-        return Math.floor(duration) // 向下取整时长，精度到秒
-        // return duration // 精准时长，精度到毫秒
-    } catch (error) {
-        throw error
-    }
-}
-// 接口返回数据的示例
-const tableData = [
-    { id: 1, name: '视频1', duration: 364, url: 'https://abc.com.cn/files/1.mp4' },
-    { id: 2, name: '视频2', duration: 210, url: 'https://abc.com.cn/files/2.mp4' },
-    { id: 999, name: '视频999', duration: 540, url: 'https://abc.com.cn/files/999.mp4' },
-]
-async function main() {
-    // 存储不匹配的数据
-    const notEqualArr = []
-    // 遍历tableData，读取每个视频的时长
-    for (const item of tableData) {
-        try {
-            const trueDurationNum = await getVideoDuration(item.url) // 读取时长
-            if (item.duration !== trueDurationNum) { // 如果时长不匹配，则存入notEqualArr
-                // 把真实的时长也存到item中，方便后续处理，请求修改接口，或者生成sql语句
-                item.trueDurationNum = trueDurationNum
-                notEqualArr.push(item)
-            }
-        } catch (error) {
-            // 也可以在这里处理错误，比如新建一个errorArr，把错误信息存进去
-            console.error(error)
-        }
-    }
-    console.log(`共有${tableData.length}个视频，其中不匹配${notEqualArr.length}个`)
-    fs.writeFileSync('notEqualArr.json', JSON.stringify(notEqualArr, null, 2))
-    console.log('notEqualArr.json 文件已保存')
-}
-main()</code></pre><p>经过这样一波操作，就能得到duration不对的notEqualArr数据项了，假设如下：</p><pre><code class="js">const notEqualArr = [
-    { id: 3, name: '视频3', duration: 364, trueDurationNum: 3333, url: 'https://abc.com.cn/files/3.mp4' },
-    { id: 4, name: '视频4', duration: 210, trueDurationNum: 4444, url: 'https://abc.com.cn/files/4.mp4' },
-]</code></pre><p>现在，有了不相等的数据了，可以选择两种方案</p><ul><li>一种是循环notEqualArr数组，然后通过编辑接口修改duration的值为trueDurationNum的值</li><li>第二种是拼接成对应的sql，直接通过DBeaver或者Navicat 直接一条sql搞定</li></ul><h3>方式一：通过编辑接口修改</h3><p>如下示例思路代码</p><pre><code class="js">// 编辑接口
-const baseUrl = 'https://abc.com.cn/api/editVideo'
-// 登录系统后，复制一份请求头的 Authorization
-const Authorization = 'Bearer eyJhbGci...'
-// 存储不匹配的数据
-const notEqualArr = [
-    { id: 3, name: '视频3', duration: 364, trueDurationNum: 3333, url: 'https://abc.com.cn/files/3.mp4' },
-    { id: 4, name: '视频4', duration: 210, trueDurationNum: 4444, url: 'https://abc.com.cn/files/4.mp4' },
-]
-// 循环发请求修改对应duration字段的值为trueDurationNum
-async function main() {
-    console.time('main')
-    for (const item of notEqualArr) {
-        try {
-            const res = await fetch(baseUrl, {
-                headers: {
-                    'Authorization': Authorization,
-                    'Content-Type': 'application/json'
-                },
-                method: 'POST',
-                body: JSON.stringify({
-                    id: item.id,
-                    duration: item.trueDurationNum
-                })
-            })
-            const { data } = await res.json()
-            console.log(`更新成功 - ID: ${item.id}, 新的时长: ${item.trueDurationNum}`)
-            console.log(data)
-        } catch (error) {
-            console.error(`更新失败 - ID: ${item.id}, 错误: ${error.message}`)
-        }
-    }
-    console.timeEnd('main')
-}
-main()</code></pre><h3>方式二：通过sql修改</h3><p>回顾一下</p><ul><li>假设，我要批量修改student表里面的</li><li>id为2的那条数据，将其年龄改为22</li><li>id为3的那条数据，将其年龄改为33，写法如下</li></ul><pre><code class="sql">UPDATE student
-SET age = CASE id
-    WHEN 2 THEN 22
-    WHEN 3 THEN 33
-END
-WHERE id IN (2, 3);</code></pre><p>合并成为一行语法</p><pre><code class="sql">UPDATE student SET age = CASE id WHEN 2 THEN 22 WHEN 3 THEN 33 END WHERE id IN (2, 3);</code></pre><p>对应上述修改duration的写法就是（假设表是video_table）</p><pre><code class="js">const notEqualArr = [
-    { id: 3, name: '视频3', duration: 364, trueDurationNum: 3333, url: 'https://abc.com.cn/files/3.mp4' },
-    { id: 4, name: '视频4', duration: 210, trueDurationNum: 4444, url: 'https://abc.com.cn/files/4.mp4' },
-]
-// 换行
-UPDATE video_table
-SET duration = CASE id
-    WHEN 3 THEN 3333
-    WHEN 4 THEN 4444
-END
-WHERE id IN (3, 4);
-
-// 不换行，一行语句就是
-UPDATE video_table SET duration = CASE id WHEN 3 THEN 3333 WHEN 4 THEN 4444 END WHERE id IN (3, 4);</code></pre><p>所以，只需要写一个函数，将数组notEqualArr转成对应的单条sql语句即可</p><p>转换函数写法如下</p><pre><code class="js">const notEqualArr = [
-    { id: 3, name: '视频3', duration: 364, trueDurationNum: 3333, url: 'https://abc.com.cn/files/3.mp4' },
-    { id: 4, name: '视频4', duration: 210, trueDurationNum: 4444, url: 'https://abc.com.cn/files/4.mp4' },
-]
-/**
- * 将数组转换为批量更新 SQL 语句
- * @param {Array} arr - 包含 id 和 trueDurationNum 的数组
- * @param {string} tableName - 表名，默认为 'video_table'
- * @returns {string} 生成的 SQL 语句
- */
-function generateSql(arr, tableName = 'video_table') {
-    // 构建 CASE WHEN 语句
-    const caseStatements = arr.map(item =&gt;
-        `WHEN ${item.id} THEN ${item.trueDurationNum}`
-    ).join(' ');
-    console.log('caseStatements----&gt;', caseStatements); // WHEN 3 THEN 3333 WHEN 4 THEN 4444
-    // 构建 IN 条件
-    const ids = arr.map(item =&gt; item.id).join(',');
-    console.log('ids----&gt;', ids); // 3,4
-    // 生成完整的 SQL 语句
-    const sql = `UPDATE ${tableName} SET duration = CASE id ${caseStatements} END WHERE id IN (${ids});`;
-    return sql;
-}
-function main() {
-    const sql = generateSql(notEqualArr);
-    return sql;
-}
-console.log(main());
-// UPDATE video_table SET duration = CASE id WHEN 3 THEN 3333 WHEN 4 THEN 4444 END WHERE id IN (3,4);</code></pre><p><strong>最后，笔者采取方式二，直接sql执行的方案（先在测试环境试一下）最终快速解决了这个视频时长不对的问题</strong></p><p>注意，这里的notEqualArr笔者是直接写到代码里面，不是将其丢到一个.json文件里面，再const notEqualArr = require('./notEqualArr.json')引入进来，这样就能避免require缓存机制，可参见这篇文章：<a href="https://link.segmentfault.com/?enc=eTBklwPQ%2FzG1SvqLrk0McQ%3D%3D.x2YUBAkpFSAiHJYl9cQKOpl4%2BgnXdAbYrt6MHRFGT3H6Z%2Fp5yZ3cmBH6Cr8rovQi%2Ft5GhPQ9YM2RN1niJAl0Og%3D%3D" rel="nofollow" target="_blank">请不要使用require引入单个文件</a></p><blockquote>A good memory is better than a bad pen. Record it down...☺️☺️☺️</blockquote>]]></description></item><item>    <title><![CDATA[每周8小时耗在会议上，但73%的会议纪要]]></title>    <link>https://segmentfault.com/a/1190000047387881</link>    <guid>https://segmentfault.com/a/1190000047387881</guid>    <pubDate>2025-11-11 00:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/95c21119582c7926.css" data-n-g=""> <p>数据显示，职场人平均每周花费8小时在各类会议上，但调研发现：<strong>73%的会议纪要在发出后根本没人仔细读，92%的行动项没有被有效追踪</strong>。</p><p>更尴尬的是，38%的职场人承认自己"从不写会议纪要"，原因不是懒，而是<strong>不知道该怎么记录才有用</strong>。</p><p>这就是会议纪要的真实现状：会开了，时间花了，但价值没沉淀下来。</p><h2>会议纪要为什么沦为"形式主义"？</h2><p>真正的问题不是写不写，而是<strong>写了没人用</strong>。我见过太多这样的纪要：</p><pre><code>会议纪要 - 产品评审会
-时间：2025-11-08
-参会人：张总、李经理、小王
-内容：
-1. 讨论了新功能的设计方案
-2. 大家提出了一些意见
-3. 最后达成了一致
-4. 下周继续跟进</code></pre><p>这种纪要有什么用？<strong>谁负责？做什么？什么时候交付？决策的理由是什么？</strong>——全都没有。</p><p>这不是会议纪要，这是"会议流水账"。</p><h3>真正的会议纪要应该回答5个问题</h3><ol><li><strong>决策了什么</strong>：会议的核心结论是什么？</li><li><strong>谁来执行</strong>：每个行动项的责任人是谁？</li><li><strong>什么时候完成</strong>：明确的时间节点在哪？</li><li><strong>为什么这么决定</strong>：决策的关键依据是什么？</li><li><strong>有什么遗留问题</strong>：哪些问题需要下次跟进？</li></ol><p>如果你的会议纪要回答不了这5个问题，那它基本等于废纸。</p><h2>我找到了一个解决方案</h2><p>最近在研究如何提升职场效率时，发现了一个思路：<strong>用AI+结构化指令来生成专业会议纪要</strong>。</p><p>不是让AI凭空编造，而是给它一套<strong>资深秘书或项目管理专家的思考框架</strong>，让它帮你：</p><ul><li><strong>提炼核心决策</strong>：从大量讨论中筛选出真正重要的结论</li><li><strong>明确行动清单</strong>：把模糊的"跟进"转化为可执行的任务</li><li><strong>标准化呈现</strong>：统一的格式让信息容易查找和追踪</li><li><strong>避免遗漏</strong>：关键环节（决策、责任人、时间）一个不落</li></ul><p>这个方法的核心优势是：<strong>把专业方法论固化成AI指令，每次调用都能输出标准化的高质量纪要</strong>。</p><h3>这个指令能做什么？</h3><p>把混乱的会议录音转文字、手写笔记或要点记录，转化成一份结构完整、可追踪的专业文档：</p><p><strong>包含模块</strong>：</p><ul><li>会议基本信息（时间、人员、主持人）</li><li>会议目标（本次会议要解决的核心问题）</li><li>讨论要点（按议题分类的关键观点）</li><li>决策事项（明确的结论和决定）</li><li>行动计划（具体任务、责任人、截止时间）</li><li>待解决问题（需要后续跟进的事项）</li><li>下次会议安排</li></ul><p><strong>质量保证</strong>：</p><ul><li>每个行动项都有责任人和时间</li><li>决策有清晰的结论和执行要求</li><li>信息分类准确，层次分明</li><li>突出标记紧急和重要事项</li></ul><h2>完整AI指令</h2><p>这是我整理的完整指令模板，可以直接复制到<strong>DeepSeek</strong>、<strong>通义千问</strong>、<strong>Kimi</strong>或<strong>智谱清言</strong>使用：</p><pre><code class="markdown"># 角色定义
-
-你是一位资深的会议管理专家和信息提炼专家,拥有超过10年的企业会议记录与管理经验。你擅长:
-- 从大量会议信息中快速提取核心要点和关键决策
-- 将非结构化的会议内容转化为清晰、可追踪的专业纪要
-- 识别并标记重要的行动项、责任人和时间节点
-- 使用标准化格式呈现会议成果,便于后续跟进和归档
-
-你深知不同类型会议的记录重点,能够根据会议性质调整纪要结构,确保每份纪要都能成为团队协作的有效工具。
-
-# 任务描述
-
-请将我提供的会议内容(可能是会议录音转文字、会议笔记或会议要点)整理成一份结构化、专业的会议纪要。
-
-核心目标:
-1. 提取会议的关键信息和重要决策
-2. 梳理清晰的行动项和责任分工
-3. 生成便于阅读、跟进和归档的标准化文档
-
-**输入信息**:
-- **会议主题**: [会议的主要议题]
-- **会议时间**: [会议举行的日期和时间]
-- **参会人员**: [参会人员名单及角色]
-- **会议类型**: [如:项目启动会/周例会/决策会/头脑风暴会等]
-- **会议内容**: [会议录音文字/笔记/要点等原始材料]
-
-# 输出要求
-
-## 1. 内容结构
-
-会议纪要应包含以下核心模块:
-
-- **会议基本信息**: 标题、时间、地点、主持人、参会人员、记录人
-- **会议目标**: 本次会议要解决的核心问题或达成的目标
-- **讨论要点**: 按议题分类整理的讨论内容和关键观点
-- **决策事项**: 会议中达成的明确决定和结论
-- **行动计划**: 具体的待办事项、责任人、截止时间
-- **待解决问题**: 会议中提出但未解决的问题,需要后续跟进
-- **下次会议**: 下次会议的时间、地点和主要议题(如适用)
-
-## 2. 质量标准
-
-- **准确性**: 忠实于原始会议内容,不添加、不臆测
-- **完整性**: 覆盖所有重要议题和决策,不遗漏关键信息
-- **结构性**: 信息分类清晰,层次分明,易于快速查找
-- **可追踪性**: 每个行动项都有明确的责任人和时间节点
-- **简洁性**: 语言精炼,去除冗余,突出重点
-
-## 3. 格式要求
-
-- 使用Markdown格式,便于在各类平台查看
-- 采用标准化的标题层级(H1-H4)
-- 重要内容使用**加粗**或`高亮`标记
-- 行动项使用清单格式,便于勾选跟进
-- 总字数控制在800-2000字(根据会议复杂度调整)
-
-## 4. 风格约束
-
-- **语言风格**: 专业正式,客观准确
-- **表达方式**: 第三人称客观叙述,使用明确的动词和名词
-- **专业程度**: 使用业务常用术语,避免口语化表达
-- **时态要求**: 讨论部分用过去时,行动计划用将来时或祈使句
-
-# 质量检查清单
-
-在完成输出后,请自我检查:
-
-- [ ] 所有参会人员和关键发言都已记录
-- [ ] 每个决策事项都有清晰的结论
-- [ ] 每个行动项都标注了责任人和截止时间
-- [ ] 信息分类准确,无错位或遗漏
-- [ ] 纪要结构完整,符合标准格式
-- [ ] 语言表达专业、准确、无歧义
-- [ ] 已突出标记紧急或重要的事项
-
-# 注意事项
-
-- 如果会议内容中有多个并行议题,请分别整理,避免混淆
-- 对于有争议但未达成一致的问题,请如实记录不同观点
-- 涉及敏感信息(如人事、财务)时,请标注"机密"字样
-- 如果原始材料信息不全(如缺少时间、人员),请在对应位置标注"[待补充]"
-- 行动项务必可执行、可衡量,避免模糊的表述
-
-# 输出格式
-
-请按以下标准格式输出会议纪要:
-
-```markdown
-# 会议纪要
-
-## 📋 会议基本信息
-- **会议主题**: 
-- **会议时间**: 
-- **会议地点**: 
-- **主持人**: 
-- **参会人员**: 
-- **记录人**: 
-
-## 🎯 会议目标
-[本次会议的核心目标]
-
-## 💬 讨论要点
-
-### 议题一: [议题名称]
-- **讨论内容**: 
-- **关键观点**: 
-  - [发言人]: [核心观点]
-  - [发言人]: [核心观点]
-
-### 议题二: [议题名称]
-[按同样结构展开]
-
-## ✅ 决策事项
-1. **[决策1]**: [具体内容和执行要求]
-2. **[决策2]**: [具体内容和执行要求]
-
-## 📌 行动计划
-- [ ] **[行动项1]** | 责任人: [姓名] | 截止时间: [日期]
-- [ ] **[行动项2]** | 责任人: [姓名] | 截止时间: [日期]
-- [ ] **[行动项3]** | 责任人: [姓名] | 截止时间: [日期]
-
-## ❓ 待解决问题
-1. [问题描述] - [计划解决方式]
-2. [问题描述] - [计划解决方式]
-
-## 🔄 下次会议
-- **时间**: [待定/具体时间]
-- **地点**: [待定/具体地点]
-- **议题**: [下次会议的主要讨论内容]
-
----
-**纪要生成时间**: [当前日期]
-**审核状态**: 待审核
-```</code></pre><h2>实战案例：从混乱记录到清晰纪要</h2><h3>原始输入（会议笔记）</h3><pre><code>会议：产品评审会
-时间：11月8日下午3点
-人员：产品经理小李、技术负责人老王、运营小张、设计师小陈
-
-小李介绍了新的邀请有礼功能，希望通过老用户邀请新用户提升注册转化
-老王说技术可行，需要2周开发，建议分两期做，第一期先上基础功能
-小张担心10元优惠券吸引力不够，建议提到20元
-小李提议A/B测试，一半用户10元，一半20元，看数据效果
-小陈的设计稿大家都觉得不错，通过了
-决定下周一开始开发，11月25日上线第一期
-老王需要小李补充PRD文档的分享逻辑
-小张下周三准备运营推广方案</code></pre><h3>AI生成的专业纪要（节选）</h3><pre><code class="markdown"># 会议纪要
-
-## 📋 会议基本信息
-- **会议主题**: 用户增长功能评审会
-- **会议时间**: 2025-11-08 15:00-16:30
-- **会议地点**: 线上会议
-- **主持人**: 小李(产品经理)
-- **参会人员**: 小李(产品经理)、老王(技术负责人)、小张(运营经理)、小陈(UI设计师)
-- **记录人**: AI整理
-
-## 🎯 会议目标
-评审"邀请有礼"功能方案,确定产品设计、技术实现路径和上线计划,推动用户增长目标达成。
-
-## 💬 讨论要点
-
-### 议题一: 功能方案介绍
-- **讨论内容**: 小李介绍邀请有礼功能的核心逻辑和预期效果
-- **核心设计**: 
-  - 老用户通过分享邀请链接/海报邀请新用户注册
-  - 新用户注册成功后,双方均可获得优惠券奖励
-  - 目标提升新用户注册转化率
-
-### 议题二: 技术实现讨论
-- **技术可行性**: 老王确认技术方案可行
-- **开发周期**: 预计需要2周开发时间
-- **分期策略**: 建议分两期实现,第一期聚焦核心邀请流程,第二期增加高级功能
-- **待补充内容**: 老王提出PRD文档中分享逻辑部分需要补充完善
-
-### 议题三: 运营策略优化
-- **奖励力度讨论**: 
-  - 小张: 建议将邀请奖励从10元优惠券提升到20元,提高吸引力
-  - 小李: 提出A/B测试方案,对比不同奖励力度的实际效果
-- **测试方案**: 50%用户看到10元奖励,50%用户看到20元奖励,运行1周后根据数据决定最终方案
-
-## ✅ 决策事项
-1. **功能分期实现**: 确定采用两期开发策略,第一期实现核心邀请功能,确保11月25日上线
-2. **A/B测试方案**: 采用小李提出的A/B测试方案,对比10元和20元奖励的效果差异
-3. **设计方案通过**: UI设计方案正式通过,可进入开发阶段
-4. **项目时间节点**: 下周一(11月11日)启动开发,11月25日完成第一期上线
-
-## 📌 行动计划
-- [ ] **补充PRD文档分享逻辑部分** | 责任人: 小李 | 截止时间: 2025-11-10
-- [ ] **启动第一期功能开发** | 责任人: 老王 | 截止时间: 2025-11-11(启动日)
-- [ ] **完成第一期开发和测试** | 责任人: 老王及技术团队 | 截止时间: 2025-11-24
-- [ ] **准备运营推广方案(含A/B测试配置)** | 责任人: 小张 | 截止时间: 2025-11-13
-- [ ] **第一期功能正式上线** | 责任人: 全体 | 截止时间: 2025-11-25
-
-## ❓ 待解决问题
-1. **第二期功能范围** - 待第一期上线后,根据用户反馈和数据表现,在下次会议中讨论确定
-2. **邀请奖励最终方案** - 需等待A/B测试数据(运行1周),预计12月2日前确定
-
-## 🔄 下次会议
-- **时间**: 2025-11-25 16:00(第一期上线当天)
-- **地点**: 线上会议
-- **议题**: 
-  1. 第一期上线情况回顾
-  2. A/B测试数据初步分析
-  3. 第二期功能需求讨论
-
----
-**纪要生成时间**: 2025-11-10
-**审核状态**: 待审核</code></pre><p>对比原始笔记，AI做了这些优化：</p><ul><li>✅ <strong>补全上下文</strong>：增加了会议背景和目标说明</li><li>✅ <strong>明确决策</strong>：把"决定做"细化为4条明确的决策事项</li><li>✅ <strong>清晰行动项</strong>：每个任务都有责任人和截止时间</li><li>✅ <strong>标注遗留问题</strong>：把未解决的事项单独列出</li><li>✅ <strong>规划下次会议</strong>：明确了下次讨论的议题</li></ul><h2>使用技巧：如何获得更高质量的纪要？</h2><h3>技巧1：会议中就开始记录关键信息</h3><p>不要指望会后凭记忆整理，建议在会议中快速记录：</p><pre><code>【决策】采用A/B测试方案，10元vs20元优惠券
-【行动】小李-补充PRD文档-11月10日
-【问题】第二期功能范围待定</code></pre><p>用标签标注信息类型，方便AI识别重点。</p><h3>技巧2：提供会议背景信息</h3><p>在输入中补充一些背景：</p><pre><code>会议背景：这是"邀请有礼"功能的第2次评审会，
-上次会议已确定基本框架，本次重点讨论技术实现和运营策略</code></pre><p>这能帮助AI更准确理解讨论内容的上下文。</p><h3>技巧3：针对不同会议类型调整重点</h3><p><strong>项目启动会</strong>：重点记录目标、范围、分工、里程碑  <br/><strong>周例会</strong>：重点记录进展、问题、下周计划  <br/><strong>决策会</strong>：重点记录决策理由、执行要求  <br/><strong>复盘会</strong>：重点记录问题原因、改进措施、经验教训</p><p>可以在指令的"特殊需求"部分说明重点。</p><h3>技巧4：人工审核不可省</h3><p>AI生成后，务必检查：</p><ul><li><strong>数据准确性</strong>：时间、人名、金额等关键信息是否正确</li><li><strong>责任人确认</strong>：行动项的责任人是否明确且认可</li><li><strong>决策完整性</strong>：重要决策是否都记录了</li><li><strong>敏感信息处理</strong>：是否需要脱敏或标注密级</li></ul><h2>适配不同场景的变体指令</h2><h3>场景1：技术评审会</h3><p>在"特殊需求"中补充：</p><pre><code>会议类型：技术方案评审会
-特别关注：
-- 技术方案的优劣对比
-- 架构决策及理由
-- 技术风险和应对措施
-- 待验证的技术假设</code></pre><h3>场景2：客户会议</h3><p>调整指令重点：</p><pre><code>会议类型：客户需求沟通会
-特别关注：
-- 客户需求清单
-- 我方承诺事项
-- 交付计划和时间
-- 需要注意的商务条款
-注意：涉及商业敏感信息需脱敏处理</code></pre><h3>场景3：周例会（简化版）</h3><p>使用表格式呈现：</p><pre><code>会议类型：团队周例会
-输出格式：
-- 使用表格展示"成员-本周完成-遇到问题-下周计划"
-- 突出标注紧急问题和需要支持的事项
-- 简化讨论过程，聚焦行动项</code></pre><h2>常见问题</h2><p><strong>Q1：录音转文字不准确怎么办？</strong></p><p>建议：</p><ul><li>使用专业的会议转录工具（腾讯会议、飞书会议等）</li><li>会前提供参会人名单和专业术语表</li><li>转录后先快速校对关键信息（人名、数字、专业词汇）</li></ul><p><strong>Q2：AI生成的纪要遗漏了重要信息？</strong></p><p>解决方案：</p><ul><li>检查输入是否完整</li><li>在指令中用【决策】【行动】等标签标注重点</li><li>生成后手动补充遗漏内容，可以让AI重新整合</li></ul><p><strong>Q3：如何确保行动项被有效跟进？</strong></p><p>建议：</p><ul><li>把行动项同步到项目管理工具（Jira、飞书任务等）</li><li>会后立即发送纪要给相关人员</li><li>设置自动提醒，临近截止时间前通知责任人</li><li>下次会议首先回顾上次行动项完成情况</li></ul><p><strong>Q4：纪要太长，领导没时间看？</strong></p><p>解决方案：</p><ul><li>在开头增加"核心决策摘要"（3-5条）</li><li>生成两个版本：完整版（存档用）+精简版（快速浏览）</li><li>使用颜色或emoji标注优先级</li></ul><h2>写在最后</h2><p>会议纪要的本质不是"记录会议内容"，而是<strong>让会议产生价值</strong>。</p><p>一份好的会议纪要应该：</p><ul><li>让参会者明确知道自己要做什么</li><li>让未参会者快速了解会议结论</li><li>让管理者能够追踪项目进展</li><li>让组织沉淀经验和知识</li></ul><p>这个AI指令提供的是专业框架，但真正的价值还需要你：</p><ul><li>会议中认真记录关键信息</li><li>生成后仔细审核和补充</li><li>及时发送并跟进行动项</li><li>持续优化纪要的质量</li></ul><p>试试看，下次开完会不要再对着笔记发愁了。10分钟就能整理出一份专业的会议纪要，把时间花在真正重要的工作上。</p>]]></description></item><item>    <title><![CDATA[进入职场第三课——立足 老李说技术 ]]></title>    <link>https://segmentfault.com/a/1190000047387824</link>    <guid>https://segmentfault.com/a/1190000047387824</guid>    <pubDate>2025-11-10 23:03:59</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/95c21119582c7926.css" data-n-g=""> <h2>进入职场第三课—立足</h2><p>在观察和融入之后，要做的第三件事就是立足。你已经度过了新手期，接下来，需要你承担更多有挑战的工作，来证明你的能力。</p><p>如果你是应届新人，这个时候可能跟着带你的导师，开始正式参加业务开发；如果你是职场老鸟，这个时候就需要你独立完成任务了。这个阶段是你给直属领导，也就是你的老板，建立印象最关键的时刻，如果符合预期甚至超预期，以后，在公司大概率会发展的顺顺利利；如果不及预期的话，则可能会被老板贴上不太行的标签，被归为低绩效的候选人。</p><p>渡过了新手期，接下来就该立足了，只有站得稳，才能走得好，才有机会跳得高，易经乾卦中的见龙在田，说的就是这个意思，想要立足，想要站得稳，你需要做好以下这四个动作。</p><h3>1、做好第一个独立任务</h3><p>从新手期的学习适应，到立足期的承担负责，这是团队内其他成员，对你预期的改变，老板给了你很长时间，是时候体现你的价值了，当你接到第一个独立完成的任务，尤其重要，你需要花120%的心思来把它做好。</p><p>原因很简单，这个任务完成的好坏，直接决定，你在老板心中建立什么样的印象，想被老板认可，后续被他归到放心、靠谱这一类里，第一个独立任务是你必须做好的。当然，你来的时间还不长，一些历史债务可能还不清楚，仍然存在犯错的可能性，没关系，尽力去把它做好，即使犯错也别担心，积极改正的努力态度一定要打满。</p><h3>2、主动优化一个小事</h3><p>每个公司、每个团队，都有大大小小、各种各样的问题，就算再优秀的团队，也一定有小的瑕疵可以优化，在你负责的工作范围内，找到一件小事情，在领导没有安排，其他同事默认接受的情况下，你主动去把它优化一下，做的更好一点，让团队的协作效率变得更高一点，可别小看这种小事情，这是有观察力、主动思考的典型表现，会给老板和团队其他成员，留下很好的印象。</p><h3>3、为自己贴上靠谱的标签</h3><p>凡事有交代，件件有着落，事事有回响，无论是独立任务、合作任务，又或者是共同讨论，主动参与、积极反馈、懂得必还，这些都是建立信任的行为，也是为自己贴上靠谱标签的动作，千万记得，一定不要让流转到你手上的事情，没完成、没下文，掉在地上，同时，有风险也要第一时间同步出来，不要捂在自己的盖子底下。</p><h3>4、结交正磁场的同事</h3><p>团队里，老板喜欢的人，往往是主力输出，同时也是中高绩效，如果你有野心，想在团队里立足，立的高一点，尽量要结交那些，能给你提供正磁场的同事，人都是有磁场的，每个人的磁场也不同，磁场之间相互吸引、相互影响，相互传递。</p><p>低绩效，边缘化的同事，他可能自己已经摆烂了或者想溜了，你跟他在一起，除了天天听他吐槽公司、吐槽老板，抱怨东抱怨西，啥也收获不了，而且时间长了，在老板眼里，你也会被归到和他同一类态度里去。</p><h2>结语</h2><p>见龙在田，利见大人，也有该结交可以帮助你贵人的意思，做好上面这4件事，你就算在团队中真正的立足站稳了。</p><p>你的能力有了施展的机会，你也开始真正独立的被人审视，被人看见，这是一个从被动接受，到主动承担的过程。</p><p>见龙在田，龙刚刚出现在大地上被人发现，重点在于显现，而不是冲刺，立足站稳，而不是急功近利，别着急，后面的路还长着呢。</p>]]></description></item><item>    <title><![CDATA[警用眼镜1秒识别车辆，背后隐藏的AI浪潮]]></title>    <link>https://segmentfault.com/a/1190000047387829</link>    <guid>https://segmentfault.com/a/1190000047387829</guid>    <pubDate>2025-11-10 23:03:00</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/95c21119582c7926.css" data-n-g=""> <p>看到交警戴上智能眼镜的那一刻，你的职业生涯正在面临一场革命。</p><p>近日，广州交警一线警力开始配备新型智能眼镜，用于路面车辆查验工作。该眼镜具备车牌识别与比对功能，可快速判断车辆是否持有“十五运会”及“残特奥会”专用车证，实现高效放行。</p><p>据交警部门介绍，以往通过警务通手动输入车牌查询的方式，如今被眼镜扫描替代，查验时间从人工输入缩短至1到2秒，大幅提升了通行效率，减少因查验造成的交通干扰。</p><h3>智慧交管：从“人工查验”到“智能识别”的跨越</h3><p>这款智能眼镜的投入使用，是广州推进“智慧新交管”建设的具体举措。它不仅解放了警力，也使执法人员能更专注于路面动态监管与应急处理。</p><p>未来该设备还将持续升级，拓展应用于识别套牌车、逾期未年检、多次违法未处理等高风险车辆，并有望引入人脸识别技术，协助排查路面可疑人员，逐步构建数字化路面防控体系。</p><p>这一变化背后，是人工智能技术在各行各业的深度融合与广泛应用。从车牌识别到即将引入的人脸识别，AI正以前所未有的速度改变传统工作方式。</p><h3>AI浪潮：不止于交管的全面革新</h3><p>当交警通过一副眼镜实现秒级识别，其他行业也在经历类似变革。金融领域的风险控制、医疗行业的影像诊断、教育领域的个性化学习、内容行业的自动生成……AI大模型正在重塑各行各业的工作方式。</p><p>这种变革带来两个明显趋势：一方面，重复性、流程性的工作任务逐渐被自动化工具替代；另一方面，掌握AI技术并能将其应用于实际场景的人才价值凸显。</p><p>行业边界正在重构，AI能力正在成为职场核心竞争力。</p>]]></description></item><item>    <title><![CDATA[微服务已死？别再盲目跟风微服务！这3种情]]></title>    <link>https://segmentfault.com/a/1190000047387846</link>    <guid>https://segmentfault.com/a/1190000047387846</guid>    <pubDate>2025-11-10 23:02:04</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/95c21119582c7926.css" data-n-g=""> <blockquote>文 / 勇哥<br/>原创文章，转载请联系授权</blockquote><p>最近有技术团队负责人问我："勇哥，我们团队在讨论架构升级，是继续使用单体架构，还是转向微服务？大家各执一词，到底该怎么选？"。</p><p>这个问题问得很好。作为一名有10多年技术管理经验的架构师，我参与过多个从单体架构向微服务迁移的项目，也见过盲目跟风微服务导致项目失败的案例。而且现在有些公司已经开始拆中台、合服务，走反向微服务化的趋势也开始出现，今天我们就来深入探讨这两种架构风格。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047387848" alt="最近关于单体架构的文章" title="最近关于单体架构的文章"/></p><pre><code>                    图：某度上面关于重返单体架构的内容
-</code></pre><p><strong>核心观点：架构没有绝对的好坏，适合自己的才是最好的。</strong></p><h2>一、架构选择：技术团队的"战略决策"</h2><p>想象一下，你要盖一座房子，是选择传统的砖混结构，还是现代的装配式建筑？</p><ul><li>砖混结构：整体性好，但修改困难，施工周期长</li><li>装配式建筑：模块化设计，易于扩展，但前期投入大，对施工精度要求高，一旦精度出现问题，会严重影响整个项目的进度和成本。</li></ul><p>架构选择就像建筑风格的决策，它会影响：</p><p><strong>1. 开发效率</strong>：团队协作和迭代的速度<br/><strong>2. 运维成本</strong>：部署、监控和故障处理的复杂度<br/><strong>3. 扩展性</strong>：应对业务增长的能力<br/><strong>4. 系统稳定性</strong>：故障隔离和恢复能力</p><h2>二、两大架构风格：各有千秋的"技术方案"</h2><h3>2.1 单体架构：简单直接的"整体解决方案"</h3><p><strong>一句话概括</strong>：单体架构是<strong>把所有功能打包在一个应用中的整体设计</strong>。</p><p><strong>核心特征</strong>：</p><ul><li><strong>代码集中管理</strong>：所有业务逻辑在一个代码库中</li><li><strong>单一部署单元</strong>：整个应用作为一个包部署</li><li><strong>共享数据存储</strong>：通常使用单一数据库</li><li><strong>简单的开发模式</strong>：开发环境配置简单，启动快速</li></ul><p><strong>优势</strong>：</p><ol><li><strong>开发简单</strong>：不涉及分布式系统的复杂性</li><li><strong>部署方便</strong>：一次部署即可更新所有功能</li><li><strong>调试容易</strong>：问题定位和修复相对简单</li><li><strong>前期成本低</strong>：适合团队规模小、业务初期的场景</li></ol><p><strong>局限性</strong>：</p><ol><li><strong>扩展性受限</strong>：无法针对特定功能独立扩展</li><li><strong>团队协作困难</strong>：多人开发同一代码库容易冲突</li><li><strong>技术栈单一</strong>：难以采用多种编程语言和框架</li><li><strong>部署风险高</strong>：一处出错可能影响整个系统</li></ol><h3>2.2 微服务架构：灵活多变的"模块化组合"</h3><p><strong>一句话概括</strong>：微服务架构是<strong>将应用拆分为多个独立运行的服务的分布式设计</strong>。</p><p><strong>核心特征</strong>：</p><ul><li><strong>服务独立部署</strong>：每个服务可以独立开发、测试和部署</li><li><strong>松耦合设计</strong>：服务间通过API通信，内部实现解耦</li><li><strong>数据独立管理</strong>：每个服务可以有自己的数据库</li><li><strong>技术多样性</strong>：不同服务可以使用不同的技术栈</li></ul><p><strong>优势</strong>：</p><ol><li><strong>高度可扩展性</strong>：可以根据需求独立扩展服务</li><li><strong>团队自治</strong>：小团队可以独立负责特定服务</li><li><strong>技术选型灵活</strong>：可以为不同服务选择最适合的技术</li><li><strong>故障隔离</strong>：单个服务故障不会影响整个系统</li></ol><p><strong>局限性</strong>：</p><ol><li><strong>分布式复杂性</strong>：涉及服务发现、负载均衡、事务管理等</li><li><strong>运维成本高</strong>：需要更复杂的监控和运维体系</li><li><strong>开发门槛高</strong>：需要团队具备分布式系统设计能力</li><li><strong>初期投入大</strong>：需要建立完整的基础设施和工具链</li></ol><h2>三、如何做出明智的选择</h2><h3>3.1 不同发展阶段的选择策略</h3><p><strong>创业初期/小型项目</strong>：</p><ul><li><strong>推荐架构</strong>：单体架构</li><li><strong>理由</strong>：快速验证业务模式，减少技术复杂性</li><li><strong>实践建议</strong>：采用模块化设计，为未来可能的微服务迁移预留接口</li></ul><p><strong>快速成长期</strong>：</p><ul><li><strong>推荐架构</strong>：单体+微服务混合（Strangler Pattern 渐进替换模式）</li><li><strong>理由</strong>：核心业务稳定，新业务或高并发模块需要独立扩展</li><li><strong>实践建议</strong>：边界识别很清晰、业务变化频繁的模块先行拆分</li></ul><p><strong>成熟稳定期/大型项目</strong>：</p><ul><li><strong>推荐架构</strong>：微服务架构</li><li><strong>理由</strong>：业务规模大，团队分工明确，需要更高的扩展性</li><li><strong>实践建议</strong>：建立完善的DevOps体系，注重服务治理和监控</li></ul><h3>3.2 不同团队规模的选择考量</h3><p><strong>小团队（5-10人）</strong>：</p><ul><li><strong>适合</strong>：单体架构为主</li><li><strong>重点</strong>：关注业务价值交付，避免过度设计</li><li><strong>挑战</strong>：微服务带来的分布式复杂性可能超出团队能力</li></ul><p><strong>中团队（10-50人）</strong>：</p><ul><li><strong>适合</strong>：混合架构（单体+微服务）</li><li><strong>重点</strong>：根据团队结构和业务模块合理划分服务</li><li><strong>挑战</strong>：需要建立有效的服务治理机制</li></ul><p><strong>大团队（50人以上）</strong>：</p><ul><li><strong>适合</strong>：微服务架构</li><li><strong>重点</strong>：服务标准化、自动化和持续集成/部署</li><li><strong>挑战</strong>：跨团队协作和服务依赖管理</li></ul><h3>3.3 从单体到微服务的平滑迁移路径</h3><p><strong>1. 战略规划先行</strong></p><ul><li><strong>明确业务目标和技术愿景</strong>：确保迁移方向与业务发展方向一致</li><li><strong>评估当前系统和团队能力</strong>：了解系统的当前状态和团队的技术水平</li><li><strong>制定分阶段的迁移计划</strong>：将迁移过程分解为多个阶段，每个阶段都有明确的目标和时间节点</li></ul><p><strong>2. 技术准备充分</strong></p><ul><li><strong>建立服务通信基础设施</strong>（API网关、消息队列等）：确保服务之间可以安全、高效地通信</li><li><strong>搭建监控和日志聚合平台</strong>：及时发现和定位问题</li><li><strong>实现自动化测试和部署流程</strong>：确保每个服务的质量和稳定性</li></ul><p><strong>3. 渐进式迁移策略</strong></p><ul><li><strong>第一步</strong>：业务领域建模，确定服务边界</li><li><strong>第二步</strong>：实施"绞杀者模式"，逐步替换功能</li><li><strong>第三步</strong>：优先拆分变化频繁或资源需求高的模块</li><li><strong>第四步</strong>：保持新旧系统并行运行，逐步切换流量</li></ul><p><strong>4. 持续优化和治理</strong></p><ul><li><strong>建立服务版本管理机制</strong>：确保每个服务都有自己的版本号，方便回滚和升级</li><li><strong>实施服务网格和API管理</strong>：统一管理服务间通信，提供监控、安全等功能</li><li><strong>定期进行架构评审和优化</strong>：根据业务变化和技术趋势，不断优化架构设计</li></ul><h2>四、勇哥的实战经验分享</h2><p>在我10多年的职业生涯中，参与过多个架构转型项目，总结出几点经验：</p><ul><li><strong>经验1：不要为了微服务而微服务</strong><br/>技术选型应该服务于业务需求，而不是追赶技术潮流。我见过很多团队盲目拆分微服务，结果陷入分布式事务、服务依赖等复杂且难解决的问题之中，反而降低了开发效率。</li><li><strong>经验2：内部服务也需要良好的API设计</strong><br/>即使是内部服务之间的调用，也应该遵循RESTful等标准，设计清晰的接口契约。良好的API设计可以大大减少服务间的耦合和沟通成本。接口变动的时候也要考虑到向后兼容性，避免影响到调用方。</li><li><strong>经验3：数据一致性是微服务的最大挑战</strong><br/>在单体架构中，我们可以依赖数据库事务保证一致性，但在微服务中，需要采用Saga模式、最终一致性等策略。这需要架构师在设计阶段就充分考虑。</li><li><strong>经验4：监控和可观测性至关重要</strong><br/>分布式系统的问题排查比单体架构复杂得多。建立完善的监控、日志和追踪系统，可以帮助团队快速定位和解决问题。也能为后续的架构规划提供数据和决策支持。我过往做的架构优化大部份都是基于监控数据和日志分析来进行的。</li></ul><h2>五、总结与行动建议</h2><p>架构选择是一个权衡的过程，没有放之四海而皆准的答案。</p><p><strong>给技术团队的3个行动建议</strong>：</p><ol><li><strong>评估当前状况</strong>：分析业务规模、团队能力、技术债务等因素</li><li><strong>制定渐进计划</strong>：如果决定向微服务迁移，采用渐进式策略，避免"大爆炸"式重构</li><li><strong>持续学习和调整</strong>：定期评估架构效果，根据业务变化及时调整</li></ol><p><strong>记住这两种架构的核心适用场景</strong>：</p><ul><li><strong>单体架构</strong>：适合业务初期、团队规模小、需求变化不频繁的场景</li><li><strong>微服务架构</strong>：适合业务规模大、团队分工明确、需要独立扩展的场景</li></ul><p>最后，我想强调的是：<strong>架构是演进的，不是一成不变的</strong>。一个优秀的架构师应该能够根据业务发展阶段，灵活调整架构策略，而不是固守某种设计风格。</p><hr/><p><strong>互动话题</strong>：你在架构选择或迁移过程中遇到过哪些挑战？欢迎在评论区分享你的经验。</p><p><strong>关于作者</strong>：勇哥，10多年的开发和技术管理经验，从程序员做到企业技术高管。目前专注架构设计和人工智能应用实践，全网帐号统一名称"六边形架构"，有些不太合适发到公号的内容我会单独发到我的朋友圈，欢迎关注我，一起交流学习。</p><p><em>原创不易，如果觉得有帮助，请点赞、收藏、转发三连支持！</em></p>]]></description></item><item>    <title><![CDATA[谷歌广告生态指南：AdSense/GAM]]></title>    <link>https://segmentfault.com/a/1190000047387864</link>    <guid>https://segmentfault.com/a/1190000047387864</guid>    <pubDate>2025-11-10 23:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/95c21119582c7926.css" data-n-g=""> <blockquote>作为长期负责海外业务的开发者，公司业务中经常会和谷歌的人员有沟通。在接入谷歌广告生态时，踩了很多坑，很多坑都是和谷歌的技术人员沟通后才发现问题的（有些最新情况和文档不一致，很坑）。</blockquote><h2>📊 1. AdSense 与 Ad Manager 关系与定位对比</h2><table><thead><tr><th>对比维度</th><th>AdSense（谷歌广告联盟｜广告源）</th><th>Ad Manager（GAM，谷歌广告管理平台）</th></tr></thead><tbody><tr><td><strong>🎯 核心定位</strong></td><td>中小站点 / 个人博主的 "傻瓜式" 变现工具</td><td>中大型媒体 / 出版商的企业级广告管理系统</td></tr><tr><td><strong>👥 目标用户</strong></td><td>个人博客、小型网站、独立开发者</td><td>流量较大的媒体平台、电商网站、内容出版商</td></tr><tr><td><strong>⚙️ 操作复杂度</strong></td><td>极低（复制粘贴代码 + 配置 ID，脚本动态引入）</td><td>较高（需配置广告单元、优先级、定价，手动加载 GPT 脚本）</td></tr><tr><td><strong>💰 收益模式</strong></td><td>广告分成（CPC/CPM），谷歌抽成后结算</td><td>自主定价 + 平台服务费，支持直客广告 + 联盟广告整合</td></tr><tr><td><strong>🚀 核心优势</strong></td><td>零维护成本、快速变现、门槛低</td><td>精细化控制、多渠道整合、收益最大化</td></tr><tr><td><strong>🔄 协同关系</strong></td><td>可作为 GAM 的 "保底广告源" 接入</td><td>可管理 AdSense 广告，分配优先级</td></tr><tr><td><strong>🔐 域名审核规则</strong></td><td>1. 需审核顶级域名（如 <a href="https://link.segmentfault.com/?enc=QixvWiOM215R%2F58ZkFmpGQ%3D%3D.2dflRycdpcSXjfLyNcczzaQJR8hOt3Ha0jmQ%2BWFd%2B5Q%3D" rel="nofollow" target="_blank">example.com</a>），2023 年后政策：顶级域名通过后，所有子域名自动生效 2. 支持独立顶级域名，免费域名通过率极低 3. 域名需合规（无盗版、无密码保护）</td><td>1. 需审核绑定的顶级域名，2023 年后同 AdSense 规则：子域名无需单独审核 2. 审核门槛更高，需提供域名所有权证明、流量合规证明 3. 支持多顶级域名管理，每个顶级域名需单独审核，子域名自动关联</td></tr><tr><td><strong>📜 核心依赖脚本</strong></td><td>需动态引入 adsbygoogle.js（URL：<a href="https://link.segmentfault.com/?enc=8mUxdzceh%2BavyyOcJ8whlg%3D%3D.5w5EyyZyxgfCLEfmWmKuQY6rRxrdb9YELAHgcPhcUXTeMV%2B34JEww5im7Rx8PIDX041Lrkcxb85k86G9flxgsg%3D%3D" rel="nofollow" target="_blank">https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js</a>），广告代码会自动触发引入，无需手动加载</td><td>必须手动加载 GPT（Google Publisher Tag）脚本（URL：<a href="https://link.segmentfault.com/?enc=WyLb8eOmw1clBAmYyPSlFQ%3D%3D.EwUgE51rno9X7vgQ%2BUZLJsivhNLlSTU3u9oVRXWPrH%2FhyGRkTn0fV1u7G1TTwsnBfkRZbgbI8b1XDAGHb1ETRQ%3D%3D" rel="nofollow" target="_blank">https://securepubads.g.doubleclick.net/tag/js/gpt.js</a>）</td></tr><tr><td><strong>🚪 接入门槛</strong></td><td>网站内容合规、有一定访问量（无硬性指标）、域名注册建议满 3 个月（通过率更高）</td><td>需申请开通，要求较高的流量规模（日均 UV10 万 +）和合规资质，域名需完成官方验证</td></tr><tr><td><strong>📏 广告位个数上限</strong></td><td>1. 有明确默认限制：单页面通常不超过 3-5 个（超量会触发审核警告或限制） 2. 特殊页面限制：文章详情页建议≤3 个，列表页建议≤4 个 3. 违规后果：超量会被判定为 "影响用户体验"，轻则减少填充，重则封禁账号</td><td>1. 无强制数量上限：谷歌未规定上限，由开发者自主配置 2. 核心约束：广告位不得覆盖核心内容或造成页面拥挤，否则触发合规抽查 3. 实操建议：单页面建议控制在 5-8 个内，避免用户流失 4. 特殊规则：若接入 AdSense 作为广告源，需遵循 AdSense 的个数限制</td></tr><tr><td><strong>📄 域名验证文件要求</strong></td><td>1. 顶级域名根目录需放置 ads.txt，内容包含谷歌提供的 publisher ID 验证信息 2. 子域名建议单独放置 ads.txt：谷歌爬虫优先读取子域名自身的 ads.txt 3. 缺失会导致广告填充率骤降（谷歌无法验证域名所有权）</td><td>1. 顶级域名根目录需放置 ads.txt，内容包含 GAM 账号对应的验证信息 2. 多顶级域名需分别放置对应 ads.txt，子域名建议单独放置 3. 若接入 AdSense 作为广告源，需同时包含 AdSense 的验证信息</td></tr><tr><td><strong>🔗 官方文档地址</strong></td><td><a href="https://link.segmentfault.com/?enc=0cU2DnkzrtY0KZTkOXpmLQ%3D%3D.5Ojm67N9H9%2FPmdwQ5vEnEQujcjf2A5AXalJwktn%2FHzXrGbIsrfew80zKSvL8ilaT" rel="nofollow" target="_blank">https://support.google.com/adsense</a></td><td><a href="https://link.segmentfault.com/?enc=xda%2B37y7Qo65Qe5odk2ggg%3D%3D.l5I7v2D6rEqrxBXdDvxryil6DzUIrS2%2FrQjnVYzfkGsWa3ELrxMlEXcjx5BpXV%2Fu" rel="nofollow" target="_blank">https://support.google.com/admanager</a></td></tr></tbody></table><h3>⚠️ 重要协同使用提醒</h3><p><strong>切记</strong>：要不就接入Adsense，要不就升级到GAM（没有广告数据源了就用GAM账号系统关联Adsense账号，然后在GAM管理系统里新建订单项拉取Adsense的广告源），绝不能这2个同时存在，否则域名被封了找谷歌的技术人员都不好解封。</p><h2>🎯 2. AdSense 接入与广告填充监听</h2><h3>📝 接入案例 + AdSense如何判断广告位渲染填充成功（data-ad-status属性）</h3><p><a href="https://link.segmentfault.com/?enc=%2BtFAG8alxrWNOzYk9rpBBQ%3D%3D.ZMyfy9MgqSdrHVBmeOLOT8SCUZ0MejaiB0mIA9iuLODSGzRTNsQzP3qgusmt7w%2FdvLttOrjxjOaDrNlsVkyK5g%3D%3D" rel="nofollow" target="_blank">官方参考文档</a></p><p><img width="723" height="321" referrerpolicy="no-referrer" src="/img/bVdmZUw" alt="" title=""/></p><table><thead><tr><th>属性值</th><th>含义与说明</th></tr></thead><tbody><tr><td><strong><code>filled</code></strong></td><td>表示广告请求成功，系统已经返回广告并在广告单元中正常展示</td></tr><tr><td><strong><code>unfilled</code></strong></td><td>表示广告请求未成功，系统没有返回任何广告，导致广告单元为空</td></tr></tbody></table><h3>💻 完整接入代码示例</h3><p>html</p><pre><code class="html">&lt;!DOCTYPE html&gt;
-&lt;html&gt;
-&lt;head&gt;
-    &lt;title&gt;AdSense状态监听&lt;/title&gt;
-    &lt;style&gt;
-        /* 当广告状态为未填充时，自动隐藏广告容器 */
-        ins.adsbygoogle[data-ad-status="unfilled"] {
-            display: none !important;
-        }
-    &lt;/style&gt;
-&lt;/head&gt;
-&lt;body&gt;
-    &lt;h1&gt;AdSense状态监听示例&lt;/h1&gt;
-    
-    &lt;!-- 广告容器 --&gt;
-    &lt;div&gt;
-        &lt;script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"&gt;&lt;/script&gt;
-        &lt;ins class="adsbygoogle"
-             style="display:block"
-             data-ad-client="ca-pub-XXXXXXXXXXXXXXXX（你的账号ID）"
-             data-ad-slot="xxxxxx(广告位id)"
-             data-ad-format="auto"&gt;&lt;/ins&gt;
-        &lt;script&gt;
-            // 启动
-            (adsbygoogle = window.adsbygoogle || []).push({});
-        &lt;/script&gt;
-    &lt;/div&gt;
-
-    &lt;script&gt;
-        // 获取广告元素
-        const adElement = document.querySelector('.adsbygoogle');
-        
-        // 设置最大等待时间（秒）
-        const MAX_WAIT_TIME = 10;
-        
-        // 记录开始时间
-        const startTime = Date.now();
-        
-        // 创建观察器监听广告状态变化
-        const observer = new MutationObserver((mutations) =&gt; {
-            mutations.forEach((mutation) =&gt; {
-                // 检查是否是data-ad-status属性发生变化
-                if (mutation.type === 'attributes' &amp;&amp; mutation.attributeName === 'data-ad-status') {
-                    const status = adElement.getAttribute('data-ad-status');
-                    const elapsedTime = (Date.now() - startTime) / 1000;
-                    
-                    console.log(`[${elapsedTime.toFixed(2)}秒] 广告状态: ${status}`);
-                    
-                    // 如果广告成功填充，停止监听
-                    if (status === 'filled') {
-                        console.log('✅ 广告填充成功！');
-                        observer.disconnect(); // 停止监听
-                    }
-                }
-            });
-        });
-        
-        // 开始监听广告元素的data-ad-status属性变化
-        observer.observe(adElement, {
-            attributes: true,
-            attributeFilter: ['data-ad-status']
-        });
-        
-        // 设置超时检查 - 10秒后检查广告状态
-        setTimeout(() =&gt; {
-            const finalStatus = adElement.getAttribute('data-ad-status');
-            const elapsedTime = (Date.now() - startTime) / 1000;
-            
-            console.log(`⏰ ${MAX_WAIT_TIME}秒超时检查`);
-            
-            // 如果10秒后广告仍未填充成功，记录日志
-            if (finalStatus !== 'filled') {
-                console.log('❌ 广告未在指定时间内填充成功');
-            }
-            
-            observer.disconnect(); // 停止监听
-        }, MAX_WAIT_TIME * 1000);
-        
-        console.log('开始监听广告状态...');
-    &lt;/script&gt;
-&lt;/body&gt;
-&lt;/html&gt;</code></pre><h2>🛠️ 3. Ad Manager（GAM）接入和监听广告填充情况</h2><h3>💻 简单接入案例</h3><p>html</p><pre><code class="html">&lt;!DOCTYPE html&gt;
-&lt;html&gt;
-&lt;head&gt;
-    &lt;title&gt;GAM广告状态监听&lt;/title&gt;
-    &lt;!-- 引入GPT库 --&gt;
-    &lt;script async src="https://securepubads.g.doubleclick.net/tag/js/gpt.js"&gt;&lt;/script&gt;
-&lt;/head&gt;
-&lt;body&gt;
-    &lt;h1&gt;GAM广告状态监听示例&lt;/h1&gt;
-
-    &lt;!-- 广告位容器 --&gt;
-    &lt;div id='div-gpt-ad-123456789-0' style='width:300px; height:250px;'&gt;
-        &lt;script&gt;
-            // 等待GPT库加载完毕
-            window.googletag = window.googletag || {cmd: []};
-            
-            googletag.cmd.push(function() {
-                // 定义广告位
-                var adSlot = googletag.defineSlot('/你的广告单元ID路径', [300, 250], 'div-gpt-ad-123456789-0');
-                
-                // 基于GPT库 添加事件监听器
-                googletag.pubads().addEventListener('slotRenderEnded', function(event) {
-                    // 打印广告位信息
-                    console.log('广告位名称:', event.slot.getSlotElementId());
-                    console.log('广告状态:', event.isEmpty ? '未填充' : '已填充');
-                });
-                
-                // 启用广告服务并刷新广告
-                googletag.enableServices();
-                googletag.display('div-gpt-ad-123456789-0');
-                // 可有可无
-                googletag.pubads().refresh([adSlot]);
-            });
-        &lt;/script&gt;
-    &lt;/div&gt;
-&lt;/body&gt;
-&lt;/html&gt;</code></pre><h2>🚫 4. 常见违规行为</h2><ol><li><strong>🚨 在iframe页面中二次嵌套广告页面</strong></li><li><strong>🚨 2个账号的Adsense和GAM同时在一个网页中加载</strong>（亲测过，测试域名被封了，问了合作的谷歌人员他们也没办法）</li><li><strong>🚨 一个网页只能接入一个账号</strong>，Adsense和GAM二选一</li><li><strong>🚨 频繁点击或者用脚本就刷</strong>，很容易被检测到</li><li><strong>🚨 擅自修改AdSense广告代码</strong>；在非内容网页（如404页、纯广告页）放置广告；广告被网页元素遮挡等。也很容易被检测到导致后续很难填充广告</li><li><strong>🚨 AdSense广告位不要超过上限</strong>；单页面通常不超过 3-5 个（超量会触发审核警告或限制）</li></ol><h2>🔧 5. 广告一直渲染不出来的排查思路</h2><h3>🔍 广告代码与容器布局排查</h3><p>首先，我们需要仔细检查广告代码和容器布局，这是最常见的问题来源。</p><ul><li><strong>核对广告代码</strong>：确保网页中嵌入的广告代码完全正确，并且 <code>data-ad-client</code> (AdSense) 或广告单元ID (GAM) 与你后台创建的信息完全一致</li><li><strong>关注<code>data-ad-format</code>属性</strong>：这个属性控制广告的响应式行为。如果它在移动端显示异常，可以尝试在 <code>&lt;ins&gt;</code> 标签内添加 <code>data-full-width-responsive="false"</code> 来禁止广告自动展开至全宽</li><li><p><strong>稳定广告容器</strong>：AdSense响应式广告会检测其<strong>父级容器的可用宽度</strong>来调整尺寸</p><ul><li><strong>赋予明确宽度</strong>：避免父容器宽度设置为 <code>auto</code>，或通过JavaScript动态调整导致初始宽度不确定。为容器设置明确的宽度（固定值或稳定的百分比）</li><li><strong>简化定位</strong>：检查CSS中是否有 <code>position: absolute</code> 等使元素脱离文档流的定位属性，这可能会影响广告脚本对容器尺寸的计算</li><li><strong>留意加载时序</strong>：如果页面布局由JavaScript动态调整，可能会与AdSense脚本的渲染时机冲突。确保广告容器在AdSense脚本加载前的尺寸就是稳定和正确的</li></ul></li><li><strong>排除插件干扰</strong>：一些广告拦截插件可能会阻止广告加载。排查时，可以尝试在<strong>浏览器无痕（隐私）模式</strong>下访问网页，或暂时禁用这类插件</li></ul><h3>📋 域名状态与文件验证</h3><p>如果代码和布局检查无误，接下来我们需要确认你的网站和域名状态是否一切正常。</p><ul><li><p><strong>确认审核状态</strong>：</p><ul><li>对于 <strong>AdSense</strong>，务必在后台 (<strong>AdSense &gt; 网站</strong>) 确认你的<strong>网站是否已通过审核</strong>。新添加的网站需要经过Google的审核才能开始展示广告</li><li>如果状态是  <strong>"待审核"</strong>  或  <strong>"未就绪"</strong>  ，耐心等待即可，这可能需要几天到数周时间</li></ul></li><li><p><strong>验证<code>ads.txt</code>文件</strong>：</p><ul><li>确保你的网站根目录（例如 <code>https://你的域名/ads.txt</code>）存在正确配置的 <code>ads.txt</code> 文件，并且文件中包含了你AdSense或GAM账户对应的信息</li><li>特别注意：如果你的AdSense后台添加的是顶级域名（如 <code>only1u.org</code>），那么 <code>ads.txt</code> 文件必须放置在顶级域名的根目录下。如果网站实际运行在二级域名（如 <code>blog.only1u.org</code>），可能需要通过服务器配置确保能通过顶级域名访问到该文件</li></ul></li><li><strong>检查网站可访问性</strong>：确保你的网站在不同国家和地区都能稳定访问，且加载速度正常。Google的审核和广告投放服务器可能位于国外，网站不稳定或无法访问会导致审核失败或广告无法渲染</li></ul><h3>🛠️ 官方工具 + 客服支持</h3><ul><li><strong>查看浏览器控制台</strong>：是否有广告脚本加载错误（如403、500状态码），针对性解决。（403是最常见的一种 就是域名审核异常了）</li><li><strong>官方论坛提问</strong>：<a href="https://link.segmentfault.com/?enc=rZFX%2Fyjfw7dgfhmx8nHatg%3D%3D.HMFCJ3XWZzhB5aNtNJKt%2BO7ihfOj%2FdyPkgZOldmGfNb%2BKPNi0lUkOcId%2B1QGGoWt" rel="nofollow" target="_blank">https://support.google.com/adsense/community</a>（谷歌技术人员会回复）</li><li><strong>联系谷歌客服</strong>：通过AdSense后台的"帮助"菜单提交问题，准备详细的账户信息和问题描述</li></ul>]]></description></item>  </channel></rss>
+}</code></pre><ul><li><strong>时间复杂度</strong>​：O(m+n)，每个指针遍历两个链表各一次</li><li>​<strong>空间复杂度</strong>​：O(1)，只使用两个指针</li></ul>]]></description></item>  </channel></rss>
