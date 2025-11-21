@@ -1,4 +1,340 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子产品世界</title>      <link>https://m.eepw.com.cn/</link>      <description>电子产品世界</description>      <generator>python eepw.py @Pi20</generator>      <item>    <title><![CDATA[在FireBeetle2ESP32-C5上实现光照强度检测及显示-电子产品世界论坛]]></title>    <link>https://forum.eepw.com.cn/thread/397728/1</link>    <guid>https://forum.eepw.com.cn/thread/397728/1</guid>    <pubDate>2025-11-21 00:03:42.988611</pubDate>    <description><![CDATA[<!-- 帖子分类 && 页码 -->&#13;
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子产品世界</title>      <link>https://m.eepw.com.cn/</link>      <description>电子产品世界</description>      <generator>python eepw.py @Pi20</generator>      <item>    <title><![CDATA[基于 Xiao ESP32C3 的 3D 打印 mmWave 人体检测系统设计-电子产品世界手机版]]></title>    <link>http://m.eepw.com.cn/article/202511/475678.html</link>    <guid>http://m.eepw.com.cn/article/202511/475678.html</guid>    <pubDate>2025-11-21 11:03:37.986660</pubDate>    <description><![CDATA[<h2>基于 Xiao ESP32C3 的 3D 打印 mmWave 人体检测系统设计</h2>		
+		<div class="time_source news-info">
+		
+				<a href="/m/list/special/embedded" class="news-lb">嵌入式系统</a> 
+		 
+				<span> 时间：2025-11-21</span><span>来源：</span>		</div>
+				<div class="content" id="con1" style="overflow:hidden;">
+		<p>本文介绍了一套由 <strong>DFRobot C1001/SEN0623 毫米波人体检测传感器</strong> 与 <strong>Seeed Studio Xiao ESP32C3</strong> 组成的轻量级人体状态感知系统。系统通过 <strong>定制 3D 打印外壳</strong> 实现可部署性与结构集成，并通过 ESP32C3 内置的 WiFi 模组构建实时可视化的 Web Dashboard，可用于智能空间、健康监测与行为交互等场景。</p><hr/><h2>1. 系统硬件组成</h2><p>构建该 3D 打印毫米波人体检测系统，需要以下核心硬件：</p><h3><strong>1. DFRobot SEN0623 C1001 mmWave 人体检测传感器</strong></h3><ul><li><p>工作频段：60 GHz 毫米波雷达</p></li><li><p>可检测能力：</p></li><ul><li><p>人体存在（Presence）</p></li><li><p>轻微/强烈运动（Motion）</p></li><li><p>呼吸变化</p></li><li><p>心率波动</p></li></ul><li><p>通信接口：UART（3.3V）</p></li><li><p>最大感知距离：约 12 m</p></li><li><p>支持睡眠监测、跌倒检测等工作模式</p></li></ul><h3><strong>2. Seeed Studio Xiao ESP32C3</strong></h3><ul><li><p>RISC-V 单核 MCU</p></li><li><p>内建 Wi-Fi + BLE</p></li><li><p>USB-C 供电与固件下载</p></li><li><p>尺寸仅 <strong>21 × 17.5 mm</strong>，适合嵌入式封装</p></li><li><p>兼容 Arduino、PlatformIO</p></li></ul><p>其超小型封装使得整个系统能够轻松集成入定制外壳中，同时具备 IoT 通信能力。</p><hr/><h2>2. 传感器功能概述</h2><p>C1001 毫米波模块以 60GHz FMCW 雷达为核心，可在完全无光、非接触环境下完成：</p><ul><li><p>人体存在检测</p></li><li><p>静止/活动状态识别</p></li><li><p>微运动（如呼吸）感知</p></li><li><p>生命体征推断</p></li></ul><p>这些特性使其可用于：</p><ul><li><p>睡眠质量监测</p></li><li><p>室内智能照明控制</p></li><li><p>老人看护与健康监测</p></li><li><p>安防与占用检测</p></li><li><p>机器人交互系统</p></li></ul><hr/><h2>3. 为什么选择 Xiao ESP32C3？</h2><p>Xiao ESP32C3 具备以下优势，非常适合毫米波传感系统：</p><ul><li><p>RISC-V 架构，低功耗</p></li><li><p>WiFi + BLE 连接十分适合实时数据发布</p></li><li><p>USB-C 易于开发与部署</p></li><li><p>体积小，非常适合集成于 3D 打印外壳</p></li><li><p>软件生态成熟（Arduino / ESP-IDF / PlatformIO）</p></li></ul><hr/><h2>4. 系统核心代码：获取人体运动参数</h2><p>下面为系统主要的数据采集与可视化代码。网页端能够实时显示人体存在状态、运动状态以及毫米波雷达返回的运动参数（Human Moving Range）。</p><blockquote><p>代码已保持与原文一致，仅将注释与结构说明在中文文章中呈现。</p></blockquote><pre>#include "DFRobot_HumanDetection.h"&#13;
+#include &lt;SoftwareSerial.h&gt;&#13;
+#include &lt;WiFi.h&gt;&#13;
+#include &lt;WebServer.h&gt;&#13;
+&#13;
+const char* ssid = "";&#13;
+const char* password = "";&#13;
+&#13;
+WebServer server(80);&#13;
+DFRobot_HumanDetection hu(&amp;Serial1);&#13;
+&#13;
+// Web status variables&#13;
+String presenceStatus = "Unknown";&#13;
+String motionStatus = "Unknown";&#13;
+int movementParam = 0;&#13;
+&#13;
+String generateHTML() {&#13;
+  String html = "&lt;!DOCTYPE html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset='UTF-8'&gt;";&#13;
+  html += "&lt;meta name='viewport' content='width=device-width, initial-scale=1'&gt;";&#13;
+  html += "&lt;title&gt;mmWave Human Detection Dashboard&lt;/title&gt;";&#13;
+  html += "&lt;style&gt;";&#13;
+  html += "body{margin:0;font-family:'Segoe UI',sans-serif;background:#121212;color:#f0f0f0;}";&#13;
+  html += "header{text-align:center;padding:20px;background:#1f1f1f;}";&#13;
+  html += "h2{margin:0;font-size:24px;color:#00bcd4;}";&#13;
+  html += ".container{max-width:400px;margin:20px auto;padding:20px;background:#1e1e1e;border-radius:10px;box-shadow:0 0 10px rgba(0,0,0,0.5);}";&#13;
+  html += ".status{margin:15px 0;font-size:18px;display:flex;justify-content:space-between;align-items:center;}";&#13;
+  html += ".label{font-weight:bold;}";&#13;
+  html += ".badge{padding:5px 10px;border-radius:5px;font-weight:bold;}";&#13;
+  html += ".green{background:#2ecc71;color:#fff;}";&#13;
+  html += ".red{background:#e74c3c;color:#fff;}";&#13;
+  html += ".orange{background:#f39c12;color:#fff;}";&#13;
+  html += ".gray{background:#7f8c8d;color:#fff;}";&#13;
+  html += ".footer{text-align:center;font-size:12px;color:#aaa;margin-top:20px;}";&#13;
+  html += "&lt;/style&gt;&lt;/head&gt;&lt;body&gt;";&#13;
+  html += "&lt;header&gt;&lt;h2&gt;		<center>
+					</center>
+	<p class="keyp">关键词：
+			<a href="https://m.eepw.com.cn/m/listbylabel/label/"/>
+		</p>
+
+<!--阅读全文-->
+	<div class="login-read" style="display: block;" id="con2">
+		<div class="linear-block"/>
+	    <div class="read-all-btn-box">
+	    	<a href="https://passport.eepw.com.cn/auth/login?url=https://m.eepw.com.cn/article/202511/475678.html" target="_blank" class="read-all-btn">阅读全文</a>
+	    </div>
+	</div>
+<script type="text/javascript" src="//webstorage.eepw.com.cn/js/2014/m/check_login.js"/>  
+<!--阅读全文end-->
+</pre></div>
+
+<div class="content" style="margin-top:20px;">
+	<!--ad start-->
+	<div style="width: 100%;margin-bottom:1em;">
+	<!-- 广告位：M02 -->
+		<script type="text/javascript">&lt;!--//&lt;![CDATA[
+   var m3_u = (location.protocol=='https:'?'https://ad.eepw.com.cn/www/delivery/ajs.php':'http://ad.eepw.com.cn/www/delivery/ajs.php');
+   var m3_r = Math.floor(Math.random()*99999999999);
+   if (!document.MAX_used) document.MAX_used = ',';
+   document.write ("&lt;scr"+"ipt type='text/javascript' src='"+m3_u);
+   document.write ("?zoneid=123");
+   document.write ('&amp;amp;cb=' + m3_r);
+   if (document.MAX_used != ',') document.write ("&amp;amp;exclude=" + document.MAX_used);
+   document.write (document.charset ? '&amp;amp;charset='+document.charset : (document.characterSet ? '&amp;amp;charset='+document.characterSet : ''));
+   document.write ("&amp;amp;loc=" + escape(window.location));
+   if (document.referrer) document.write ("&amp;amp;referer=" + escape(document.referrer));
+   if (document.context) document.write ("&amp;context=" + escape(document.context));
+   if (document.mmm_fo) document.write ("&amp;amp;mmm_fo=1");
+   document.write ("'&gt;&lt;\/scr"+"ipt&gt;");
+//]]&gt;--&gt;</script><noscript><a href="http://ad.eepw.com.cn/www/delivery/ck.php?n=a3ee0761&amp;cb=INSERT_RANDOM_NUMBER_HERE" target="_blank"><img src="http://ad.eepw.com.cn/www/delivery/avw.php?zoneid=123&amp;cb=INSERT_RANDOM_NUMBER_HERE&amp;n=a3ee0761" border="0" alt=""/></a></noscript>
+	</div>
+	<!--ad end-->
+	
+<script>
+var $oBanana=$('#banana');
+$($oBanana).animate({'font-size':'24'},300);
+</script>	
+</div>]]></description></item><item>    <title><![CDATA[基于 Seeed XIAO 的锥形 RGB 氛围灯设计与实现-电子产品世界手机版]]></title>    <link>http://m.eepw.com.cn/article/202511/475683.html</link>    <guid>http://m.eepw.com.cn/article/202511/475683.html</guid>    <pubDate>2025-11-21 11:03:27.836548</pubDate>    <description><![CDATA[<h2>基于 Seeed XIAO 的锥形 RGB 氛围灯设计与实现</h2>		
+		<div class="time_source news-info">
+		
+				<a href="/m/list/special/embedded" class="news-lb">嵌入式系统</a> 
+		 
+				<span> 时间：2025-11-21</span><span>来源：</span>		</div>
+				<div class="content" id="con1" style="overflow:hidden;">
+		<p><br/></p><h2>摘要</h2><p>本文介绍了一款基于 <strong>Seeed Studio XIAO SAMD21（XIAO M0）</strong> 与 <strong>WS2812 可编程 RGB LED</strong> 的便携式锥形 RGB 氛围灯。系统通过 <strong>定制 PCB + IP5306 电源管理 IC + 3D 打印外壳</strong> 实现电池供电、5V 升压与 LED 控制，并利用电位器实现灯光色彩（HUE）的连续调节。文章从结构设计、PCB 设计、焊接与组装流程、主控程序到最终光效表现进行完整说明，为基于 XIAO 与 NeoPixel 的 RGB 照明项目提供一个可复用的工程实现方案。</p><p><img src="https://editerupload.eepw.com.cn/fetch/202511/067836971a05d89fd1c53cac3862bd97.jpeg"/></p><hr/><h2>1 引言</h2><p>可编程 RGB LED（如 WS2812 NeoPixel）在创客灯光、桌面氛围灯和交互式装置中应用广泛。其优势在于：</p><ul><li><p>单总线级联，硬件连线简单；</p></li><li><p>支持逐点寻址，可实现丰富灯效；</p></li><li><p>与 Arduino / XIAO / ESP 系列控制板高度兼容。</p></li></ul><p>本文设计了一款 <strong>锥形结构 RGB 氛围灯（CONE LAMP）</strong>：</p><ul><li><p>使用 <strong>XIAO SAMD21</strong> 作为主控；</p></li><li><p>使用自制 <strong>LED 板 + 电源板 PCB</strong>；</p></li><li><p>采用 <strong>3.7V 锂电池 + IP5306 升压充电管理</strong>；</p></li><li><p>外壳、灯体与 PCB 支架由 <strong>3D 打印</strong> 完成；</p></li><li><p>通过 <strong>电位器旋钮调节灯光色调</strong>。</p></li></ul><p>整个项目适合入门级创客实践，也可作为电源管理 + 可编程灯效 + 结构设计的综合教学案例。</p><hr/><h2>2 系统总体结构</h2><p>系统主要由以下几个部分构成：</p><ol class=" list-paddingleft-2"><li><p><strong>电源与主控板（Power Board）</strong></p></li></ol><ul><li><p>IP5306 电源管理 IC（升压 + 充电管理）</p></li><li><p>XIAO SAMD21 开发板</p></li><li><p>电位器接口、LED 板接口</p></li><li><p>DC Barrel Jack 与拨动开关</p></li></ul><li><p><strong>LED 板（RGB LED Board）</strong></p></li><ul><li><p>多个 WS2812（NeoPixel）RGB LED</p></li><li><p>每颗 LED 对应去耦电容</p></li><li><p>若干 LED 板串联构成一个灯带，统一由单一数字引脚控制</p></li></ul><li><p><strong>电源部分</strong></p></li><ul><li><p>3.7V 锂电池（约 2200–2900 mAh）</p></li><li><p>由 IP5306 升压至 5V，为 XIAO 与 LED 供电</p></li></ul><li><p><strong>3D 打印结构件</strong></p></li><ul><li><p>底座（Base）：容纳电池和电源板，集成电位器旋钮与开关、DC 接口</p></li><li><p>锥形扩散罩（Cone Diffuser）：用于散射 LED 光线</p></li><li><p>RGB PCB 支架（上、下两件）：支撑 LED PCB 位于锥体内部</p></li></ul><hr/><h2>3 硬件与器件清单</h2><h3>3.1 核心元件</h3><ul><li><p>Seeed Studio XIAO SAMD21（XIAO M0）</p></li><li><p>WS2812 / NeoPixel RGB LED（采用环形或自制 LED 板）</p></li><li><p>IP5306 电源管理 IC</p></li><li><p>3.7V 锂电池（约 2200–2900 mAh）</p></li><li><p>电位器（用于调节颜色）</p></li><li><p>DC Barrel Jack（充电接口）</p></li><li><p>摇臂开关 / Rocker Switch</p></li><li><p>1 µF 电容</p></li><li><p>10 kΩ 电阻</p></li><li><p>1 µH 电感</p></li><li><p>母座排针（用于 XIAO 与外部模块连接）</p></li><li><p>3D 打印部件（底座、锥形罩、LED 支架、旋钮）</p></li></ul><hr/><h2>4 结构设计与 3D 打印</h2><h3>4.1 结构划分</h3><p>锥形灯的结构主要分为两大部分：</p><ol class=" list-paddingleft-2"><li><p><strong>底座（Base）</strong></p></li></ol><ul><li><p>内部容纳电池、Power Board</p></li><li><p>预留开关、DC 接口、电位器安装孔</p></li><li><p>上部设有用于固定 LED 支架的安装位</p></li></ul><li><p><strong>锥形扩散罩（Cone Diffuser）</strong></p></li><ul><li><p>作为光学扩散件，包裹 LED 区域</p></li><li><p>通过材质和厚度实现均匀散射效果</p></li></ul><p>此外，设计了：</p><ul><li><p><strong>RGB PCB 支架</strong>：由上下两部分组成</p></li><ul><li><p>上部分用于四面固定 LED PCB</p></li><li><p>下部分用于与底座连接</p></li></ul><li><p><strong>电位器旋钮</strong>：外部用户交互件</p></li></ul><h3>4.2 建模与打印参数</h3><ul><li><p>建模软件：Autodesk Fusion 360</p></li><li><p>打印材料：</p></li><ul><li><p>白色 PLA：锥形扩散罩、支架等</p></li><li><p>黄色 PLA：底座部分（视觉区分 + 风格设计）</p></li></ul><li><p>部分打印参数（示例）：</p></li><ul><li><p>喷嘴直径：0.6 mm</p></li><li><p>填充率：20%</p></li><li><p>层高：0.2 mm</p></li></ul></ul><hr/><h2>5 PCB 设计与制作</h2><p>整个系统的 PCB 设计分为两块：</p><h3>5.1 电源板（Power Board）</h3><p><img src="https://editerupload.eepw.com.cn/fetch/202511/188798310337fe0a4b5ea90c89ff756d.jpeg"/></p><p><br/></p><p>主要功能：</p><ul><li><p>使用 <strong>IP5306</strong> 将锂电池的 3.7V 升压至稳定的 5V</p></li><li><p>提供电池充电管理</p></li><li><p>为 XIAO 与 LED 提供 5V 供电</p></li><li><p>集成 XIAO M0 板的插座与接口引出</p></li></ul><p>关键设计要点：</p><ul><li><p>IP5306 常用于移动电源类应用，适合此类单电池升压场景；</p></li><li><p>将 XIAO 的 5V、D0、D1、GND 等引脚通过排针引出，用于连接：</p></li><ul><li><p>LED PCB（数据、供电、地）</p></li><li><p>电位器（模拟输入）</p></li></ul><li><p>板上布置 DC Barrel Jack 与电池连接器（CON2），并通过摇臂开关实现整机电源控制。</p></li></ul><h3>5.2 LED 板（RGB LED Board）</h3><p><img src="https://editerupload.eepw.com.cn/fetch/202511/ae71035cfe7289460fbc1b09ee77bf5d.jpeg"/></p><p>LED 板为多块相同的 RGB 单元板，每块板上：</p><ul><li><p>8 颗 WS2812 LED 串联；</p></li><li><p>每颗 LED 的 VCC–GND 间各自并联一个去耦电容，提高供电稳定性；</p></li></ul><p>整个灯体：</p><ul><li><p>由 4 块 LED 板构成，理论总计 32 颗 LED；</p></li><li><p>四块板的 DIN → DOUT 串接，构成单总线数据链；</p></li><li><p>整个链路通过 XIAO 的单一数字引脚驱动。</p></li></ul><p>PCB Layout 同样在 Fusion 360 中构建，再导入 PCB CAD 软件进行轮廓与细节处理，之后提交至工厂打样。</p><h3>5.3 PCB 生产与装配服务</h3><p>LED 板与电源板通过 Seeed Studio Fusion PCB 服务打样：</p><ul><li><p>白色阻焊层 + 黑色丝印，用于增强视觉效果与可读性；</p></li><li><p>打样周期较短，成本低，适合作为小批量原型制作与验证；</p></li><li><p>后续若量产，可进一步使用其 PCBA 服务与商业化支持。</p></li></ul><hr/><h2>6 PCB 装配流程</h2><p>整个硬件装配分为 <strong>LED 板装配</strong> 与 <strong>电源板装配</strong>。</p><h3>6.1 LED 板装配</h3><ol class=" list-paddingleft-2"><li><p>使用锡膏点胶针头在各焊盘上逐点涂布锡膏；</p></li><li><p>使用 ESD 镊子依次贴装 WS2812 LED 与电容；</p></li><li><p>将 PCB 放置在小型回流热板上，从底部加热至锡膏熔化温度；</p></li><li><p>冷却后检查焊点质量。</p></li></ol><h4>LED 板功能测试</h4><ul><li><p>按既定原理图将 LED 板串联连接；</p></li><li><p>使用跳线将其与 XIAO 开发板连接；</p></li><li><p>使用 <strong>Adafruit_NeoPixel 示例代码</strong> 对 LED 进行简单跑灯测试：</p></li><ul><li><p>引脚：D0</p></li><li><p>LED 数量：32</p></li><li><p>将延时由 500 ms 降低到 100 ms 或更小，以减小闪烁感并延长 LED 寿命。</p></li></ul></ul><p>测试示例代码（节选）：</p><pre>#include &lt;Adafruit_NeoPixel.h&gt;&#13;
+#define PIN       0&#13;
+#define NUMPIXELS 32&#13;
+&#13;
+Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);&#13;
+int delayval = 100;&#13;
+&#13;
+void setup() {&#13;
+  pixels.begin();&#13;
+}&#13;
+&#13;
+void loop() {&#13;
+  for(int i=0; i&lt;NUMPIXELS; i++){&#13;
+    pixels.setPixelColor(i, pixels.Color(0,150,0)); // 绿色&#13;
+    pixels.show();&#13;
+    delay(delayval);&#13;
+  }&#13;
+}</pre><h3>6.2 电源板装配</h3><ol class=" list-paddingleft-2"><li><p>使用锡膏点胶对 IP5306、电容、电阻、电感等焊盘涂覆锡膏；</p></li><li><p>贴装 IP5306 及其他 SMD 元件；</p></li><li><p>在小型热板上进行回流焊；</p></li><li><p>焊接 THT 器件，包括：</p></li></ol><ul><li><p>XIAO 底座排针</p></li><li><p>电池连接器</p></li><li><p>DC Barrel Jack</p></li><li><p>摇臂开关等</p></li></ul><h4>电源板测试</h4><ol class=" list-paddingleft-2"><li><p>连接锂电池到电源板 CON2 接口；</p></li><li><p>打开摇臂开关，确认电源板电源指示灯点亮；</p></li><li><p>测量 IP5306 输出端电压，应稳定在 <strong>5V 左右</strong>；</p></li><li><p>将 DC 端口通过改装的 USB–Barrel 线与手机充电器连接，验证电池充电功能。</p></li></ol><hr/><h2>7 系统接线与主控程序</h2><p><img src="https://editerupload.eepw.com.cn/fetch/202511/e4a409324332b6d2716133d4f60588f1.jpeg"/></p><h3>7.1 接线说明</h3><ul><li><p>LED 板串联逻辑：</p></li><ul><li><p>XIAO → D0 → 第一块 LED 板 DIN</p></li><li><p>第一块 DOUT → 第二块 DIN</p></li><li><p>第三块、第四块依次类推</p></li></ul><li><p>所有 LED 板的 VCC → 电源板 5V，GND → 公共地；</p></li><li><p>电位器三端：</p></li><ul><li><p>一端接 5V，一端接 GND，中间滑动端接 XIAO 的模拟输入（A0）；</p></li></ul><li><p>锂电池、摇臂开关、DC 接口按原理图连至电源板。</p></li></ul><h3>7.2 主控代码（带电位器色彩控制）</h3><p>最终版本代码实现功能：</p><ul><li><p>使用电位器读数控制 RGB 色调（HUE 映射）；</p></li><li><p>通过 Adafruit_NeoPixel 库驱动全部 32 颗 LED；</p></li><li><p>旋钮旋转 → 灯光颜色平滑过渡；</p></li></ul><p>代码如下：</p><pre>#include &lt;Adafruit_NeoPixel.h&gt;&#13;
+&#13;
+#define PIN            1   // NeoPixel 数据引脚&#13;
+#define NUMPIXELS      32  // LED 数量&#13;
+&#13;
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);&#13;
+&#13;
+int potPin = 0;    // 电位器连接的模拟引脚&#13;
+int potValue = 0;  // 存储电位器读数&#13;
+&#13;
+void setup() {&#13;
+  strip.begin();&#13;
+  strip.show();                 // 初始化为全灭&#13;
+  randomSeed(analogRead(0));    // 初始化随机数种子（可选）&#13;
+}&#13;
+&#13;
+void loop() {&#13;
+  potValue = analogRead(potPin);           // 读取电位器&#13;
+&#13;
+  // 将电位器 0–1023 映射到 0–255 的色彩范围&#13;
+  int hue = map(potValue, 0, 1023, 0, 255);&#13;
+&#13;
+  // 简化实现：将 hue 作为 R 通道，B 固定为 255，可呈现蓝–紫系变化&#13;
+  for (int i = 0; i &lt; strip.numPixels(); i++) {&#13;
+    strip.setPixelColor(i, strip.Color(hue, 0, 255));&#13;
+  }&#13;
+&#13;
+  strip.show();    // 更新灯带显示&#13;
+  delay(100);      // 略加延时，提高观感&#13;
+}</pre><blockquote><p>在实际工程中，你可以将 <code>hue</code> 作为 HSV 模型中的色调值，通过自定义函数将其转换为 RGB，实现更自然的全色相过渡。</p></blockquote><hr/><h2>8 3D 装配流程</h2><h3>8.1 RGB PCB 支架装配</h3><ol class=" list-paddingleft-2"><li><p>将已焊接好的 LED PCB 从测试线束中拆下；</p></li><li><p>使用强力胶（如瞬干胶）将 LED 板固定在支架四侧；</p></li><li><p>使用 M2 螺丝将支架上部与下部连接，形成整体 LED 支撑结构。</p></li></ol><h3>8.2 底座装配</h3><ol class=" list-paddingleft-2"><li><p>将电源板固定在底座内部的预留支撑柱上；</p></li><li><p>安装：</p></li></ol><ul><li><p>摇臂开关</p></li><li><p>DC Barrel Jack</p></li><li><p>电位器（并安装 3D 打印旋钮）</p></li></ul><li><p>使用 M2 螺丝固定电源板与结构件。</p></li><h3>8.3 整体组合</h3><ol class=" list-paddingleft-2"><li><p>使用 M2 螺丝将 LED 支架组件与底座连接；</p></li><li><p>根据前述接线方案完成 LED 板、电位器、电池与电源板的连线；</p></li><li><p>将锂电池通过线束连接到电源板 JST 接口，并将电池放入底座电池仓；</p></li><li><p>合上锥形扩散罩，完成最终装配。</p></li></ol><hr/><h2>9 光效表现与优化建议</h2><p>完工后，锥形扩散罩可有效：</p><ul><li><p>吸收与散射 LED 点光源；</p></li><li><p>在暗光环境下呈现柔和的面光源效果；</p></li><li><p>结合蓝–紫系色彩，形成舒适的氛围灯光。</p></li></ul><p>为了进一步提升光学表现，可考虑：</p><ul><li><p>使用 <strong>半透明 PLA</strong> 或 <strong>透明树脂（SLA 打印）</strong> 制作扩散罩，提高透光率；</p></li><li><p>在扩散罩内壁增加磨砂或纹理，以改善散射均匀性；</p></li><li><p>替换为 HSV → RGB 色彩映射，实现完整色相旋转控制；</p></li><li><p>修改主控代码，使：</p></li><ul><li><p>旋钮控制某一通道（例如亮度或饱和度）；</p></li><li><p>或者在旋钮调节基础上叠加随机渐变效果，实现动感灯效。</p></li></ul></ul><hr/><h2>10 结语</h2><p>本文从电源设计、PCB 设计、3D 结构设计、装配流程到固件实现，完整展示了一个基于 <strong>Seeed XIAO SAMD21 与 WS2812 RGB LED</strong> 的锥形氛围灯实现方案。项目兼具：</p><ul><li><p><strong>结构紧凑</strong>：XIAO 体积小，便于嵌入型设计；</p></li><li><p><strong>供电灵活</strong>：单节锂电 + IP5306，集成升压与充电；</p></li><li><p><strong>灯效可编程</strong>：基于 NeoPixel 库，易于扩展灯效；</p></li><li><p><strong>交互自然</strong>：通过电位器实现连续色彩调节；</p></li><li><p><strong>制造可复用</strong>：3D 打印 + 标准化 PCB，适合重复制作与教学。</p></li></ul><p><br/></p>		<center>
+					</center>
+	<p class="keyp">关键词：
+			<a href="https://m.eepw.com.cn/m/listbylabel/label/"/>
+		</p>
+
+<!--阅读全文-->
+	<div class="login-read" style="display: block;" id="con2">
+		<div class="linear-block"/>
+	    <div class="read-all-btn-box">
+	    	<a href="https://passport.eepw.com.cn/auth/login?url=https://m.eepw.com.cn/article/202511/475683.html" target="_blank" class="read-all-btn">阅读全文</a>
+	    </div>
+	</div>
+<script type="text/javascript" src="//webstorage.eepw.com.cn/js/2014/m/check_login.js"/>  
+<!--阅读全文end-->
+</div>
+
+<div class="content" style="margin-top:20px;">
+	<!--ad start-->
+	<div style="width: 100%;margin-bottom:1em;">
+	<!-- 广告位：M02 -->
+		<script type="text/javascript">&lt;!--//&lt;![CDATA[
+   var m3_u = (location.protocol=='https:'?'https://ad.eepw.com.cn/www/delivery/ajs.php':'http://ad.eepw.com.cn/www/delivery/ajs.php');
+   var m3_r = Math.floor(Math.random()*99999999999);
+   if (!document.MAX_used) document.MAX_used = ',';
+   document.write ("&lt;scr"+"ipt type='text/javascript' src='"+m3_u);
+   document.write ("?zoneid=123");
+   document.write ('&amp;amp;cb=' + m3_r);
+   if (document.MAX_used != ',') document.write ("&amp;amp;exclude=" + document.MAX_used);
+   document.write (document.charset ? '&amp;amp;charset='+document.charset : (document.characterSet ? '&amp;amp;charset='+document.characterSet : ''));
+   document.write ("&amp;amp;loc=" + escape(window.location));
+   if (document.referrer) document.write ("&amp;amp;referer=" + escape(document.referrer));
+   if (document.context) document.write ("&amp;context=" + escape(document.context));
+   if (document.mmm_fo) document.write ("&amp;amp;mmm_fo=1");
+   document.write ("'&gt;&lt;\/scr"+"ipt&gt;");
+//]]&gt;--&gt;</script><noscript><a href="http://ad.eepw.com.cn/www/delivery/ck.php?n=a3ee0761&amp;cb=INSERT_RANDOM_NUMBER_HERE" target="_blank"><img src="http://ad.eepw.com.cn/www/delivery/avw.php?zoneid=123&amp;cb=INSERT_RANDOM_NUMBER_HERE&amp;n=a3ee0761" border="0" alt=""/></a></noscript>
+	</div>
+	<!--ad end-->
+	
+<script>
+var $oBanana=$('#banana');
+$($oBanana).animate({'font-size':'24'},300);
+</script>	
+</div>]]></description></item><item>    <title><![CDATA[基于 Seeed XIAO SAMD21 与 OLED 扩展板的智能手电筒设计-电子产品世界手机版]]></title>    <link>http://m.eepw.com.cn/article/202511/475686.html</link>    <guid>http://m.eepw.com.cn/article/202511/475686.html</guid>    <pubDate>2025-11-21 11:03:14.620679</pubDate>    <description><![CDATA[<h2>基于 Seeed XIAO SAMD21 与 OLED 扩展板的智能手电筒设计</h2>		
+		<div class="time_source news-info">
+		
+				<a href="/m/list/special/embedded" class="news-lb">嵌入式系统</a> 
+		 
+				<span> 时间：2025-11-21</span><span>来源：</span>		</div>
+				<div class="content" id="con1" style="overflow:hidden;">
+		<h1><span style="font-size: 16px;">摘要</span></h1><p>本文介绍了一款基于 <strong>Seeed Studio XIAO SAMD21（XIAO M0）</strong> 微控制器及其 <strong>XIAO 扩展板</strong> 实现的智能手电筒。系统以 3.7V 锂离子电池供电，使用扩展板集成的充电管理与电源系统，并通过 <strong>AO3400 N 沟道 MOSFET</strong> 驱动高功率 LED 阵列。借助 XIAO 扩展板上的 <strong>SSD1306 OLED 显示屏</strong>，手电筒可实时显示亮度百分比，并通过摇杆式按键实现四档光照模式（20%、40%、100%、关闭）的循环切换。本文从设计动机、硬件架构、电路设计、软件控制策略、机械结构和装配流程等方面，对该“过度工程”的智能手电进行系统性阐述。</p><p><img src="https://editerupload.eepw.com.cn/fetch/202511/3b433cbeee1e938ccd8a3cb69541c058.jpeg" alt="Smart Flashlight with XIAO MCU"/></p><hr/><h2>1 引言</h2><p>在野外露营、户外探险和应急照明等场景中，便携式手电筒是必备工具。市售手电虽然种类丰富，但在以下方面仍存在局限：</p><ul><li><p>亮度档位可定制性差；</p></li><li><p>不具备状态反馈（如电量或亮度信息）；</p></li><li><p>扩展性与可编程能力有限。</p></li></ul><p>为满足个人露营需求，作者设计了这款 <strong>智能手电筒</strong>，目标包括：</p><ol class=" list-paddingleft-2"><li><p><strong>具备多档亮度控制</strong>：支持不同环境下的照明需求；</p></li><li><p><strong>可视化亮度信息</strong>：通过 OLED 显示亮度百分比与当前模式；</p></li><li><p><strong>基于 XIAO 的可编程平台</strong>：便于日后扩展功能；</p></li><li><p><strong>结构一体化</strong>：通过 3D 打印实现定制外壳。</p></li></ol><p>项目使用了 <strong>XIAO SAMD21 开发板 + XIAO 扩展板</strong> 作为控制与电源核心，通过 MOSFET 驱动自制 2835 LED 阵列，实现高电流、大面积泛光的照明效果。</p><hr/><h2>2 系统构成与总体架构</h2><p>系统可分为以下几个部分：</p><ol class=" list-paddingleft-2"><li><p><strong>控制与电源模块</strong></p></li></ol><ul><li><p>XIAO SAMD21 M0 微控制器</p></li><li><p>XIAO 扩展板（含锂电充电电路、电源管理及 SSD1306 OLED）</p></li><li><p>3.7V、2000 mAh 锂离子电池</p></li></ul><li><p><strong>功率驱动模块</strong></p></li><ul><li><p>AO3400 N 沟道 MOSFET（SOT-23 封装）</p></li><li><p>MOSFET 栅极电阻：10 kΩ（0603 封装）</p></li><li><p>LED 阵列负载（8 颗 2835 白光 LED）</p></li></ul><li><p><strong>LED 光源模块</strong></p></li><ul><li><p>自制铜包板（LED Board）</p></li><li><p>8 颗 2835 封装白光 LED 并联</p></li><li><p>每对 LED 串联 5.6 Ω 电阻（2512 封装），用于限流</p></li></ul><li><p><strong>人机交互与结构件</strong></p></li><ul><li><p>XIAO 扩展板上的 SSD1306 OLED 显示屏</p></li><li><p>触发按键 – 摇杆式开关</p></li><li><p>3D 打印外壳（主壳体 + PCB 支架）</p></li></ul><hr/><h2>3 硬件设计与关键器件</h2><p><img src="https://editerupload.eepw.com.cn/fetch/202511/881a6f5ffe1630afe5025cf780e76309.jpeg"/></p><h3>3.1 主要器件清单</h3><ul><li><p>XIAO SAMD21 M0 开发板</p></li><li><p>XIAO Expansion Board（带 OLED 与充电电路）</p></li><li><p>3.7V 锂电池，容量约 2000 mAh</p></li><li><p>LED 白光 2835 封装 × 若干</p></li><li><p>5.6 Ω 电阻（2512）</p></li><li><p>AO3400 N 沟道 MOSFET（SOT-23）</p></li><li><p>10 kΩ 电阻（0603）</p></li><li><p>摇杆式按键（Push Button – Rocker Switch 风格）</p></li><li><p>若干导线、M2 螺丝</p></li><li><p>3D 打印外壳与 LED PCB 支架</p></li></ul><h3>3.2 控制与供电电路</h3><p>本设计中，XIAO 扩展板同时承担：</p><ul><li><p>锂电池充电与保护；</p></li><li><p>为 XIAO 与 OLED 提供稳定电源（约 3V/3.3V）；</p></li><li><p>对外提供 3V 电源端口，用于驱动 LED 负载（通过 MOSFET 控制）。</p></li></ul><h4>MOSFET 驱动配置</h4><ul><li><p>MOSFET 型号：AO3400 N 沟道 MOSFET</p></li><li><p>接线关系：</p></li><ul><li><p>栅极（G）：通过 10 kΩ 电阻连接至 XIAO 的 D2 引脚；</p></li><li><p>漏极（D）：连接至 LED 负载的负极；</p></li><li><p>源极（S）：连接至扩展板 GND；</p></li></ul><li><p>LED 负载正极：接 XIAO 扩展板的 3V 输出端。</p></li></ul><p>这种典型的**低端开关（Low-side Switch）**结构，使得高电流从电源 → LED → MOSFET → 地构成闭合回路，微控制器仅通过控制栅极电压来开关或调制电流。</p><h4>为什么必须使用 MOSFET？</h4><p>普通 MCU I/O 引脚典型输出能力约为 20–30 mA，只适合驱动单颗小功率 LED。而本项目中的 LED：</p><ul><li><p>采用 2835 封装白光 LED，高亮度，单颗电流可达 200–500 mA；</p></li><li><p>多颗并联后，整体电流可能达到 2 A 量级。</p></li></ul><p>若直接用 XIAO 的 I/O 引脚驱动：</p><ul><li><p>将远超引脚电流能力；</p></li><li><p>可能烧毁芯片或造成不稳定工作。</p></li></ul><p>采用 MOSFET 作为开关器件，可以：</p><ul><li><p>通过 I/O 提供极小的栅极驱动电流；</p></li><li><p>让 MOSFET 承担大电流的开关任务；</p></li><li><p>通过 PWM 信号控制栅极，实现亮度调节。</p></li></ul><hr/><h2>4 机械结构与 3D 建模</h2><h3>4.1 结构划分</h3><p>手电主体采用两部分结构：</p><ol class=" list-paddingleft-2"><li><p><strong>主机身（Main Body）</strong></p></li></ol><ul><li><p>内部放置 XIAO 扩展板与锂电池；</p></li><li><p>右侧区域安装扩展板，使 OLED 可侧向可视；</p></li><li><p>上表面为摇杆开关安装位置，便于单手握持与拇指操作。</p></li></ul><li><p><strong>PCB 支架与灯头</strong></p></li><ul><li><p>前部为 PCB Holder，用于固定自制 LED 板；</p></li><li><p>整体与主机身螺丝连接，便于拆装维护。</p></li></ul><p>建模使用 <strong>Autodesk Fusion 360</strong> 完成。</p><h3>4.2 3D 打印参数</h3><ul><li><p>主体材料：紫色 PLA（主壳体），透明 PLA（LED Holder），以兼顾强度与透光效果；</p></li><li><p>打印参数参考：</p></li><ul><li><p>喷嘴：0.4 mm</p></li><li><p>层高：0.2 mm</p></li></ul></ul><hr/><h2>5 软件设计与控制逻辑</h2><p>系统软件采用 Arduino 框架开发，主要包括两阶段：<br/>1）简单开关测试； 2）最终多档亮度与 OLED 显示控制。</p><h3>5.1 测试程序 1：单纯 MOSFET 开关验证</h3><p>用于验证 MOSFET 驱动路径是否正常：</p><pre class="overflow-visible!">void setup() {  // 使用 D2 控制 MOSFET&#13;
+  pinMode(2, OUTPUT);&#13;
+}void loop() {  digitalWrite(2, HIGH);  // 打开 LED 负载&#13;
+  delay(1000);  digitalWrite(2, LOW);   // 关闭 LED 负载&#13;
+  delay(1000);&#13;
+}</pre><p>若 LED 能以 1 秒周期闪烁，则说明：</p><ul><li><p>MOSFET 接线正确；</p></li><li><p>电源与 LED 负载路径正常；</p></li><li><p>MCU 控制输出无误。</p></li></ul><h3>5.2 主程序：多档亮度 + OLED 显示</h3><p>主控逻辑：</p><ul><li><p>使用一个按键（摇杆开关）切换模式；</p></li><li><p>模式按顺序循环：</p></li><ul><li><p>模式 1：关闭（OFF）</p></li><li><p>模式 2：20% 亮度</p></li><li><p>模式 3：40% 亮度</p></li><li><p>模式 4：100% 亮度</p></li><li><p>模式 5：再次关闭（OFF）</p></li></ul><li><p>OLED 以竖屏方式显示当前亮度百分比或“OFF”。</p></li></ul><p>完整示例代码如下：</p><pre class="overflow-visible!">#include &lt;Wire.h&gt;#include &lt;Adafruit_SSD1306.h&gt;#include &lt;Adafruit_GFX.h&gt;#define OLED_WIDTH  128#define OLED_HEIGHT 64#define OLED_ADDR   0x3Cconst int switchPin = 1;  // 按键输入const int lightPin  = 2;  // MOSFET 栅极（PWM 输出）int lightMode = 1;        // 当前模式Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT);void setup() {  pinMode(lightPin, OUTPUT);  pinMode(switchPin, INPUT_PULLUP); // 按键上拉输入&#13;
+  digitalWrite(lightPin, LOW);&#13;
+&#13;
+  display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR);&#13;
+  display.clearDisplay();&#13;
+}void loop() {  // 按键检测（简单版，未加去抖）&#13;
+  if (digitalRead(switchPin) == LOW) {&#13;
+    lightMode = lightMode + 1;    if (lightMode == 6) {&#13;
+      lightMode = 1;&#13;
+    }&#13;
+  }  if (lightMode == 1) {    digitalWrite(lightPin, LOW);&#13;
+    display.clearDisplay();&#13;
+    display.setRotation(3);&#13;
+    display.setTextSize(3);&#13;
+    display.setTextColor(WHITE);&#13;
+    display.setCursor(5, 55);&#13;
+    display.println("OFF");&#13;
+    display.display();    delay(500);&#13;
+  }  else if (lightMode == 2) {    analogWrite(lightPin, 50);  // 约 20% 占空比&#13;
+    display.clearDisplay();&#13;
+    display.setRotation(3);&#13;
+    display.setTextSize(3);&#13;
+    display.setTextColor(WHITE);&#13;
+    display.setCursor(5, 55);&#13;
+    display.println("20%");&#13;
+    display.display();    delay(500);&#13;
+  }  else if (lightMode == 3) {    analogWrite(lightPin, 100); // 约 40% 占空比&#13;
+    display.clearDisplay();&#13;
+    display.setRotation(3);&#13;
+    display.setTextSize(3);&#13;
+    display.setTextColor(WHITE);&#13;
+    display.setCursor(5, 55);&#13;
+    display.println("40%");&#13;
+    display.display();    delay(500);&#13;
+  }  else if (lightMode == 4) {    analogWrite(lightPin, 255); // 全亮&#13;
+    display.clearDisplay();&#13;
+    display.setRotation(3);&#13;
+    display.setTextSize(2);&#13;
+    display.setTextColor(WHITE);&#13;
+    display.setCursor(5, 55);&#13;
+    display.println("100%");&#13;
+    display.display();    delay(500);&#13;
+  }  else if (lightMode == 5) {    analogWrite(lightPin, LOW);&#13;
+    display.clearDisplay();&#13;
+    display.setRotation(3);&#13;
+    display.setTextSize(3);&#13;
+    display.setTextColor(WHITE);&#13;
+    display.setCursor(5, 55);&#13;
+    display.println("OFF");&#13;
+    display.display();    delay(500);&#13;
+  }  // 可视需要添加短暂延时，避免多次触发&#13;
+  // delay(200);}</pre><blockquote><p>工程上可进一步加入按键去抖（硬件 RC / 软件定时）、长按/短按区分等，丰富交互方式。</p></blockquote><hr/><h2>6 装配工艺</h2><h3>6.1 电子部分预处理</h3><ol class=" list-paddingleft-2"><li><p>使用电烙铁从 XIAO 扩展板上拆除原有 LED、按键、电池等器件；</p></li><li><p>将扩展板固定在 3D 打印主机身内预留位置，通过底部开窗方便走线；</p></li><li><p>使用 4 颗 M2 螺丝将扩展板牢固固定；</p></li><li><p>将 3.7V 锂电池放入机身内部电池仓，并连接至扩展板电池接口；</p></li><li><p>打开扩展板上的电源开关，若 XIAO 状态 LED 点亮，说明供电正常。</p></li></ol><h3>6.2 最终装配</h3><ol class=" list-paddingleft-2"><li><p>将 LED 负载焊接并固定在 PCB Holder 上，使用 2 颗 M2 螺丝锁紧；</p></li><li><p>连接：</p></li></ol><ul><li><p>LED 负极 → MOSFET 漏极；</p></li><li><p>LED 正极 → XIAO 扩展板 3V 端子；</p></li></ul><li><p>将 LED PCB 支架组件推入主机身前端，并用 2 颗 M2 螺丝固定；</p></li><li><p>使用电烙铁将摇杆开关引脚接至 D1 和 GND（作为模式切换输入）；</p></li><li><p>将摇杆开关压入预留开孔中，完成结构闭合。</p></li><p>至此，智能手电筒的硬件与结构装配全部完成。</p><hr/><h2>7 测试与使用体验</h2><p>将系统带到野外环境进行实测：</p><ul><li><p>光束为<strong>泛光型（Flood Light）</strong>，照射范围宽广，适合照明营地或近距离活动区域；</p></li><li><p>相比传统聚光手电，本设计更强调面积覆盖而非远距离照射；</p></li><li><p>不同亮度档位可在省电与亮度之间灵活切换：</p></li><ul><li><p>20%：适合近距离看地图、找物品；</p></li><li><p>40%：适合普通夜间行走；</p></li><li><p>100%：适合大范围照明或复杂地形检查。</p></li></ul></ul><p>OLED 屏以百分比形式直观显示当前亮度，有利于快速确认工作模式。</p><hr/><h2>8 改进方向与版本规划</h2><p>作者计划在后续的 <strong>V2 版本</strong> 中进行以下优化：</p><ol class=" list-paddingleft-2"><li><p><strong>减少线材与飞线</strong>：</p></li></ol><ul><li><p>将 MOSFET 开关电路与 LED 阵列集成到同一块 PCB 上；</p></li><li><p>缩短信号与电源路径，增强可靠性。</p></li></ul><li><p><strong>结构一体化</strong>：</p></li><ul><li><p>针对手持手感进一步优化外形；</p></li><li><p>提高防尘、防溅水能力。</p></li></ul><li><p><strong>功能扩展</strong>：</p></li><ul><li><p>增加电池电量指示；</p></li><li><p>增加闪烁模式 / SOS 模式；</p></li><li><p>优化按键逻辑，支持长按关灯、双击爆闪等高级控制方式。</p></li></ul><hr/><h2>9 结论</h2><p>本文展示了一款基于 <strong>XIAO SAMD21 + XIAO 扩展板 + AO3400 MOSFET + 自制 LED 阵列</strong> 的智能手电筒，从设计动机到实现细节完整覆盖了：</p><ul><li><p>高功率 LED 负载的 MOSFET 开关驱动方法；</p></li><li><p>利用现成扩展板实现锂电充电与系统供电；</p></li><li><p>使用 OLED 屏实现亮度信息可视化；</p></li><li><p>通过 3D 打印实现定制结构与人机工程设计。</p></li></ul><p>从工程实现角度看，该项目虽被作者称为“过度工程”，但正是这种“过度”，让一个日常工具兼具了可玩性、可扩展性与技术深度，非常适合作为 <strong>电源管理 + 大电流驱动 + 嵌入式 UI + 3D 结构设计</strong> 的综合实践案例。</p>		<center>
+					</center>
+	<p class="keyp">关键词：
+			<a href="https://m.eepw.com.cn/m/listbylabel/label/"/>
+		</p>
+
+<!--阅读全文-->
+	<div class="login-read" style="display: block;" id="con2">
+		<div class="linear-block"/>
+	    <div class="read-all-btn-box">
+	    	<a href="https://passport.eepw.com.cn/auth/login?url=https://m.eepw.com.cn/article/202511/475686.html" target="_blank" class="read-all-btn">阅读全文</a>
+	    </div>
+	</div>
+<script type="text/javascript" src="//webstorage.eepw.com.cn/js/2014/m/check_login.js"/>  
+<!--阅读全文end-->
+</div>
+
+<div class="content" style="margin-top:20px;">
+	<!--ad start-->
+	<div style="width: 100%;margin-bottom:1em;">
+	<!-- 广告位：M02 -->
+		<script type="text/javascript">&lt;!--//&lt;![CDATA[
+   var m3_u = (location.protocol=='https:'?'https://ad.eepw.com.cn/www/delivery/ajs.php':'http://ad.eepw.com.cn/www/delivery/ajs.php');
+   var m3_r = Math.floor(Math.random()*99999999999);
+   if (!document.MAX_used) document.MAX_used = ',';
+   document.write ("&lt;scr"+"ipt type='text/javascript' src='"+m3_u);
+   document.write ("?zoneid=123");
+   document.write ('&amp;amp;cb=' + m3_r);
+   if (document.MAX_used != ',') document.write ("&amp;amp;exclude=" + document.MAX_used);
+   document.write (document.charset ? '&amp;amp;charset='+document.charset : (document.characterSet ? '&amp;amp;charset='+document.characterSet : ''));
+   document.write ("&amp;amp;loc=" + escape(window.location));
+   if (document.referrer) document.write ("&amp;amp;referer=" + escape(document.referrer));
+   if (document.context) document.write ("&amp;context=" + escape(document.context));
+   if (document.mmm_fo) document.write ("&amp;amp;mmm_fo=1");
+   document.write ("'&gt;&lt;\/scr"+"ipt&gt;");
+//]]&gt;--&gt;</script><noscript><a href="http://ad.eepw.com.cn/www/delivery/ck.php?n=a3ee0761&amp;cb=INSERT_RANDOM_NUMBER_HERE" target="_blank"><img src="http://ad.eepw.com.cn/www/delivery/avw.php?zoneid=123&amp;cb=INSERT_RANDOM_NUMBER_HERE&amp;n=a3ee0761" border="0" alt=""/></a></noscript>
+	</div>
+	<!--ad end-->
+	
+<script>
+var $oBanana=$('#banana');
+$($oBanana).animate({'font-size':'24'},300);
+</script>	
+</div>]]></description></item><item>    <title><![CDATA[基于 Arduino Mega 2560 的全尺寸电动弹珠机设计与实现-电子产品世界手机版]]></title>    <link>http://m.eepw.com.cn/article/202511/475687.html</link>    <guid>http://m.eepw.com.cn/article/202511/475687.html</guid>    <pubDate>2025-11-21 11:03:05.386681</pubDate>    <description><![CDATA[<h2>基于 Arduino Mega 2560 的全尺寸电动弹珠机设计与实现</h2>		
+		<div class="time_source news-info">
+		
+				<a href="/m/list/special/embedded" class="news-lb">嵌入式系统</a> 
+		 
+				<span> 时间：2025-11-21</span><span>来源：</span>		</div>
+				<div class="content" id="con1" style="overflow:hidden;">
+		<p><img src="https://editerupload.eepw.com.cn/fetch/202511/b975c889803c9c5a59ff8637fee6231d.jpeg" alt="Arduino Controlled Pinball Machine"/></p><h2>摘要</h2><p>本文介绍了一台以 <strong>Arduino Mega 2560</strong> 为核心控制器的全尺寸电动弹珠机（Pinball Machine）。整机采用木制机柜结构，配合市售弹珠机标准配件（弹板、弹簧、挡片、Pop Bumper 等），通过 Arduino 实现 <strong>得分逻辑、灯光控制、目标判定以及游戏流程管理</strong>。项目从机械结构、电子系统到软件逻辑均由作者自行设计与实现，历时约六个月间断完成，是一个集木工、机械设计、电力电子与嵌入式编程于一体的复杂系统工程。</p><p>文中详细说明机柜结构尺寸、可调节机脚设计、弹珠台倾角控制、24V 电源与 5V 逻辑电路隔离、Pop Bumper 高压检测的电压分压方案，以及基于 Arduino Mega 的得分与游戏逻辑实现方法，可为有意自制弹珠机的工程爱好者提供系统参考。</p><hr/><h2>1 项目概述</h2><p>作者在项目开始时，几乎找不到完整的“如何从零自制弹珠机”的资料，因此采用了如下策略：</p><ul><li><p>使用 <strong>备用胶合板</strong> 作为原型试验平台：<br/>每个机构（Flipper、Slingshot、Pop Bumper、目标靶等）都先在测试板上安装与调试，待可靠后才移植到正式机台。</p></li><li><p>采用 <strong>标准弹珠机配件 + 自制木柜</strong> 的混合方式：<br/>机柜、上盖、内部支撑结构自己木工制作；弹板、Pop Bumper、目标靶等则尽量使用成熟的替换件。</p></li><li><p>逻辑控制全部交给 <strong>Arduino Mega 2560</strong>：<br/>使用其丰富的数字与模拟 I/O，既负责采集各类开关信号，又负责控制灯光与得分显示。</p></li></ul><p>结果是一台结构接近商用尺寸的弹珠机，但游戏规则与灯光逻辑完全可编程。</p><hr/><h2>2 机械结构设计</h2><h3>2.1 机柜结构</h3><p>机柜采用 <strong>橡木贴面胶合板</strong> 制作，基本尺寸（单位：英寸）如下：</p><ul><li><p>前后面板：20 高 × 23 宽</p></li><li><p>侧板：20 高 × 47 长</p></li><li><p>台面（Playfield）：22 宽 × 42 长</p></li></ul><p>设计要点：</p><ol class=" list-paddingleft-2"><li><p><strong>结构连接方式</strong></p></li></ol><ul><li><p>板材采用斜接（miter）切割，使用饼干榫（biscuit joiner）与木胶拼接；</p></li><li><p>也可用暗扣螺丝 + 木胶组合，保证强度——弹珠机在游戏中会承受频繁冲击。</p></li></ul><li><p><strong>底部搁板与电源布置</strong></p></li><ul><li><p>不与侧板胶合，以适应木材膨胀收缩；</p></li><li><p>用于放置主电源、LED 灯电源等模块。</p></li></ul><ul><li><p>在底部上方 1 英寸位置开 ¾ 英寸宽的榫槽（dado），做一个“浮动”搁板：</p></li></ul><li><p><strong>台面与前部空腔</strong></p></li><ul><li><p>前方预留约 3 英寸空间，用于布线、安装弹簧拉杆（Plunger）和前部灯光等；</p></li></ul><ul><li><p>Playfield 长度 42 英寸，明显短于机柜 47 英寸：</p></li><li><p>台面通过侧板上的小木块支撑，距离上沿约 4 英寸；</p></li><li><p>维护时，只需打开上盖，将台面整体抬出并翻转即可检修底面机构与线束。</p></li></ul><h3>2.2 倾角与机脚设计</h3><p>弹珠机的“节奏”很大程度取决于<strong>台面的倾角</strong>，通常在 1°–7° 之间。角度越大，球速越快，游戏越刺激。</p><p>为方便调节倾角，作者自制了<strong>可调机构的木质机脚</strong>：</p><ul><li><p>使用市售木质桌腿，底部钻入约 12 英寸深孔；</p></li><li><p>在孔底用双组份环氧胶固定 3/8 英寸 Tee Nut（内螺母），注意避免胶体污染螺纹；</p></li><li><p>将 12 英寸长的 3/8 英寸螺纹杆旋入腿内，末端安装可调水平脚（Leveling Foot），中间加锁紧螺母；</p></li><li><p>橱柜底部通过金属腿板（Table Leg Mounting Plate）与木腿连接。</p></li></ul><p>调节方法：</p><ul><li><p>松开锁紧螺母 → 旋入 / 旋出螺杆以升降台面 → 锁紧螺母固定。</p></li></ul><h3>2.3 上盖与透明面板</h3><p>上盖（Lid）与机柜同外形尺寸，材质为橡木框架：</p><ul><li><p>上侧与两边框宽约 1.5 英寸；</p></li><li><p>底边加宽至 5 英寸，用于遮挡台面与机柜间的间隙；</p></li><li><p>内侧开槽嵌入 <strong>亚克力板（Plexiglas）</strong>：</p></li><ul><li><p>相比玻璃更轻、更安全，也更易切割；</p></li></ul><li><p>采用暗扣螺丝（Pocket Screw）装配，便于今后更换亚克力板；</p></li><li><p>内侧安装一圈彩色 LED 灯带，用于装饰；</p></li><li><p>上盖与机柜通过 <strong>钢琴合页（Piano Hinge）</strong> 铰接，并在两侧开槽嵌入，提升外观与强度。</p></li></ul><p>机柜背面还固定一条 <strong>电源插排</strong>，所有电源统一插入，便于通过一个总开关控制整机上电；同时预留一条 USB 延长线，方便在不拆台面的前提下更新 Arduino 程序。</p><hr/><h2>3 控制与电子系统</h2><h3>3.1 Arduino 控制逻辑概述</h3><p>整机由一块 <strong>Arduino Mega 2560</strong> 控制，主要承担四大任务：</p><ol class=" list-paddingleft-2"><li><p><strong>采集开关与传感器状态</strong></p></li></ol><ul><li><p>目标靶（Target Switch）</p></li><li><p>滚轮开关（Rollover Switch）</p></li><li><p>Pop Bumper 开关（通过电压分压）</p></li><li><p>弹球发射道开关</p></li><li><p>压力传感器（用于监测丢球）</p></li></ul><li><p><strong>控制灯光与效果</strong></p></li><ul><li><p>目标靶对应灯</p></li><li><p>滚轮灯</p></li><li><p>Pop Bumper 灯</p></li><li><p>Game Over 时全场闪烁效果</p></li></ul><li><p><strong>得分与规则管理</strong></p></li><ul><li><p>各类元件命中得分；</p></li><li><p>所有同类元件被依次命中后，触发灯光全闪与分值提升（倍乘）；</p></li><li><p>记录当前球数、是否 Game Over 等。</p></li></ul><li><p><strong>LCD 显示</strong></p></li><ul><li><p>当前得分（Score）</p></li><li><p>当前球号（Ball）</p></li></ul><ul><li><p>使用一个简单串口 LCD 显示：</p></li></ul><h3>3.2 开关输入与上拉配置</h3><p>大部分目标开关采用“输入 + 内部上拉”的方式接入 Arduino：</p><pre>pinMode(pinNumber, INPUT_PULLUP);</pre><p>接线方式：</p><ul><li><p>一端接 Arduino 数字引脚；</p></li><li><p>另一端接 GND；</p></li><li><p>开关未触发时引脚为 HIGH（被上拉）；</p></li><li><p>开关闭合（被弹珠撞击）时，引脚被拉低为 LOW。</p></li></ul><p>在代码中，检测到输入由 HIGH → LOW，即认为该目标被击中。</p><h3>3.3 Pop Bumper 与高压检测：电压分压</h3><p>与普通目标与滚轮使用 Arduino 5V 供电不同，<strong>Pop Bumper</strong> 需要强劲的冲击力，因此采用独立的 <strong>25V–24V 电源</strong> 驱动线圈。Pop Bumper 的“触发开关”处于高压侧，不能直接接入 Arduino。</p><p>解决方案：</p><ul><li><p>将 Pop Bumper 开关输出接入 <strong>电压分压电路</strong>；</p></li><li><p>通过适当的电阻比，将高压侧信号衰减到不超过 5V；</p></li><li><p>分压后的信号接入 Arduino 的 <strong>模拟输入端口（Analog Input）</strong>。</p></li></ul><p>原因：</p><ul><li><p>即使在未触发情况下，分压器也会漏少量电流，导致信号有一定电压噪声；</p></li><li><p>使用模拟口可以设置阈值，如 <code>analogRead(i) &gt; 500</code>，更容易区分“真触发”与“背景泄漏”。</p></li></ul><h3>3.4 球的丢失检测：力传感器</h3><p>系统还使用一个小型 <strong>力/压力传感器（Force Sensor）</strong>，通常布置在“落球区”或回收通道。当球掉回底部时，会压到传感器：</p><ul><li><p>用力传感器读数作为“丢球”判定依据；</p></li><li><p>同时配合发射道开关（上、下发射口），区分“球刚被射出”与“球已丢失”；</p></li><li><p>每次检测到丢球，球数（Ball）+1；</p></li><li><p>当 Ball 达到最大值（如 5 球），触发 Game Over 流程。</p></li></ul><h3>3.5 分数与效果逻辑（来自示例代码）</h3><p>原文给出了完整的 Arduino 控制代码，核心思想如下：</p><ol class=" list-paddingleft-2"><li><p><strong>变量设计</strong></p></li></ol><ul><li><p><code>Score</code>：当前得分</p></li><li><p><code>Target</code>, <code>Pop</code>, <code>Roll</code>：三类目标的基础得分值</p></li><li><p><code>Targets[8]</code>, <code>Rolls[3]</code>, <code>Pops[4]</code>：记录每个目标是否被命中</p></li><li><p><code>Ball</code>：当前球号（1–5）</p></li><li><p><code>Flash</code>：灯光闪烁延时</p></li><li><p><code>Pressure</code>：力传感器触发阈值</p></li></ul><li><p><strong>目标靶（Targets）处理流程</strong></p></li><ul><li><p>所有目标灯闪烁若干次；</p></li><li><p>灯全部熄灭；</p></li><li><p>增加 Target 的分值（<code>Target = Target * 5</code>），提高之后的得分奖励。</p></li></ul><ul><li><p>循环扫描 8 个目标输入（数字引脚 2–9）；</p></li><li><p>某个为 LOW → 标记该 Target 已命中、增加 <code>Score += Target</code>、点亮对应灯；</p></li><li><p>若 8 个目标全部命中（<code>Sum == 8</code>）：</p></li></ul><li><p><strong>Rollovers 处理</strong></p></li><ul><li><p>对应灯全闪；</p></li><li><p>分值倍乘并清零标记（代码中示例为 <code>Score = Score * 2</code>, <code>Roll = Roll * 10</code>）。</p></li></ul><ul><li><p>类似逻辑，扫描 3 个 Rollover 开关；</p></li><li><p>全部命中后：</p></li></ul><li><p><strong>Pop Bumper 处理</strong></p></li><ul><li><p>所有 Pop 灯闪烁；</p></li><li><p>分值提升（<code>Pop = Pop * 2</code>），形成累进奖励。</p></li></ul><ul><li><p>标记该 Pop；</p></li><li><p>增加 <code>Score += Pop</code>；</p></li><li><p>点亮对应灯；</p></li></ul><ul><li><p>使用 <code>analogRead(i)</code> 读取 4 个模拟输入；</p></li><li><p>若某一路超过阈值（&gt;500），认为 Pop Bumper 被触发：</p></li><li><p>当 4 个 Pop 全部被触发后：</p></li></ul><li><p><strong>球数与 Game Over 判定</strong></p></li><ul><li><p>若在某次检测中读数持续高于 <code>Pressure</code> 且 <code>Ball == 5</code>，则：</p></li></ul><ul><li><p>依次闪烁 Rollovers、Pop Bumpers 与 Targets 所有灯；</p></li><li><p>在 LCD 显示“Game Over!!!”。</p></li></ul><ul><li><p>若这是本球首次检测到，<code>Ball++</code>，并设置 <code>Shot</code> 标记；</p></li><li><p>超出设定最大球数（如 <code>Ball == 6</code>）时，清零分数与倍率参数重新开始。</p></li></ul><ul><li><p>通过发射通道下方两个开关（下、上射出），当球通过时：</p></li><li><p>通过力传感器读数判断球是否落入最终回收区：</p></li></ul><li><p><strong>LCD 显示输出</strong></p></li><ul><li><p>清屏 → 打印当前得分 → 换行显示 <code>Ball = x</code>；</p></li></ul><ul><li><p>通过 SoftwareSerial 驱动串口 LCD；</p></li><li><p>当 <code>Score</code> 发生变化时：</p></li><li><p><code>TxPin</code> 引脚用于向 LCD 发送串口数据。</p></li></ul><hr/><h2>4 电源与配线</h2><h3>4.1 24V 电源系统</h3><p>弹珠机中的电磁组件（弹板、Slingshot、Pop Bumper 等）需较大的瞬时电流，故使用 <strong>24V 开关电源</strong>：</p><ul><li><p>24V 电源主要供给：</p></li><ul><li><p>弹板线圈（Flipper Assembly）</p></li><li><p>Slingshot 组件</p></li><li><p>Pop Bumper 线圈</p></li></ul><li><p>24V 输出先接至安装在台面底部的 <strong>配电铜排（Bus Bar）</strong>，再由铜排为各组件分配电源，这样布线更整齐、维护方便。</p></li></ul><p>对于 Pop Bumper 等高压部分，需要特别注意：</p><ul><li><p>若改用更高电压电源（&gt;25V），则现成的电压分压模块可能不适用，需自行设计分压电路，确保 Arduino 端电压不超过 5V。</p></li></ul><h3>4.2 线径选择</h3><p>根据原文经验：</p><ul><li><p>接 24V 高压线圈类负载：约 <strong>16 AWG</strong> 线材（粗线，承载大电流）；</p></li><li><p>接 Arduino I/O 与传感器信号：约 <strong>22 AWG</strong> 细线即可。</p></li></ul><hr/><h2>5 关键弹珠机构与配件</h2><h3>5.1 弹簧拉杆（Plunger）</h3><p>Plunger 组件为标准件，从专业弹珠配件商处购入。安装流程：</p><ul><li><p>在机柜前板上钻孔，使 Plunger 穿出前面板；</p></li><li><p>内部用螺丝固定；</p></li><li><p>高度对齐：</p></li><ul><li><p>将直尺沿台面延伸至前内侧板；</p></li><li><p>在该点处标记 Plunger 的中心位置；</p></li><li><p>垂直方向上使 Plunger 中心略高于弹珠直径的一半（标准弹珠为 1 1/16 英寸）。</p></li></ul></ul><h3>5.2 台面与装饰</h3><p>台面使用 1/4 英寸的桦木贴面胶合板。为提升视觉效果，作者选取了一张 NASA 的太空照片作为背景：</p><ol class=" list-paddingleft-2"><li><p>在板面喷涂喷胶（Contact Adhesive）；</p></li><li><p>将海报覆于板面，刮平气泡；</p></li><li><p>背面修剪多余边缘，使整体尺寸精确符合 22W × 42L。</p></li></ol><h3>5.3 Flippers（弹板）</h3><p>弹板组件包括：</p><ul><li><p>Flipper 机械总成</p></li><li><p>Flipper Bat（塑料挡板）</p></li><li><p>Flipper Switch（高压开关）</p></li><li><p>侧面按钮</p></li></ul><p>购买后通常没有任何接线说明，需要参考弹珠维修资料中的典型接线方式（原文链接中给出示意图）。核心要点：</p><ul><li><p>线圈通常包含高阻/低阻两组绕组，用于启动与保持；</p></li><li><p>开关结构在按钮与线圈之间，配合机械角度限制，实现可靠回弹。</p></li></ul><h3>5.4 Slingshots（侧击机构）</h3><p>Slingshot 组件为弹珠经过时会被“侧推”的机构：</p><ul><li><p>需要完整的 Slingshot Assembly、支撑销与专用橡胶圈；</p></li><li><p>安装在 Flipper 上方两侧，形成典型的下方区域拱形布局；</p></li><li><p>底部布线同样接至 24V 总线与 Arduino 触发信号。</p></li></ul><p>作者还自己制作了 <strong>金属防护栏（Rails）</strong>：</p><ul><li><p>使用家居店购买的镀铬钢丝（原用途为草坪标记线）；</p></li><li><p>按需切割、弯折成形；</p></li><li><p>在台面钻孔后，用环氧胶固定。</p></li></ul><h3>5.5 Pop Bumpers</h3><p>Pop Bumper 由底座、线圈、顶盖、支撑杆与触发轴组成：</p><ul><li><p>从上方看为一个白色圆盘；</p></li><li><p>当球撞入圆盘时，盘面被压下，带动中心轴下移；</p></li><li><p>轴底部触发叶片开关，进而驱动线圈通电；</p></li><li><p>线圈带动金属环向下拉，向上反弹时将球弹回。</p></li></ul><p>安装时需在台面钻三孔：</p><ul><li><p>两个用于支撑杆固定；</p></li><li><p>一个用于中心轴通过与触发叶片开关。</p></li></ul><h3>5.6 目标靶（Targets）、Rollovers 与灯具</h3><ul><li><p>目标靶：立式靶板，球撞击后触发后方微动开关；</p></li><li><p>Rollover Switch：嵌在台面上的小金属片或塑料结构，球滚过即触发；</p></li><li><p>LED Lamp：用于标记目标状态与装饰。</p></li></ul><p>接线方式统一：</p><ul><li><p>一端接 Arduino 输入（或输出控制灯）；</p></li><li><p>一端接地或电源；</p></li><li><p>通过 Mega 2560 的数字口进行采集与控制。</p></li></ul><hr/><h2>6 总结与展望</h2><p>本文系统介绍了一台 <strong>Arduino 控制的自制全尺寸弹珠机</strong> 的设计实现过程。项目的特点在于：</p><ul><li><p><strong>结构工程</strong>：</p></li><ul><li><p>采用标准尺寸木柜结构，使用可调机脚控制倾角；</p></li><li><p>台面可整体抬出翻转，便于维护与调试。</p></li></ul><li><p><strong>电子与电源架构</strong>：</p></li><ul><li><p>使用 24V 高压系统驱动线圈部件；</p></li><li><p>使用电压分压将 Pop Bumper 的高压信号安全地引入 Arduino；</p></li><li><p>将高压总线分发至配电铜排，提高布线整洁性。</p></li></ul><li><p><strong>逻辑控制与玩法扩展</strong>：</p></li><ul><li><p>基于 Mega 2560 的多路数字与模拟输入输出，实现完整得分、倍分、全亮闪烁、Game Over 等玩法；</p></li><li><p>利用力传感器判断丢球，使游戏流程自动化；</p></li><li><p>LCD 显示当前得分与球号，增强交互性。</p></li></ul></ul><p>作者也指出，一旦开始搭建，你很可能会不断添加新元素（声效、更多灯效、奖励关卡等），但有了本文所述的结构与控制架构，后续扩展将更加容易。</p><p>代码：</p><p><span style="text-wrap-mode: nowrap;">  const int TxPin = 17;</span></p><p><span style="text-wrap-mode: nowrap;">  long Score = 0;</span></p><p><span style="text-wrap-mode: nowrap;">  long OldScore = 0;</span></p><p><span style="text-wrap-mode: nowrap;">  long Target = 1;</span></p><p><span style="text-wrap-mode: nowrap;">  long Pop = 1;</span></p><p><span style="text-wrap-mode: nowrap;">  long Roll = 10;</span></p><p><span style="text-wrap-mode: nowrap;">  int Targets[8];</span></p><p><span style="text-wrap-mode: nowrap;">  int Rolls[3];</span></p><p><span style="text-wrap-mode: nowrap;">  int Pops[4];</span></p><p><span style="text-wrap-mode: nowrap;">  int Milli = 10;</span></p><p><span style="text-wrap-mode: nowrap;">  int Sum = 0;</span></p><p><span style="text-wrap-mode: nowrap;">  int Flash = 100;</span></p><p><span style="text-wrap-mode: nowrap;">  int Ball = 0;</span></p><p><span style="text-wrap-mode: nowrap;">  int i=0;</span></p><p><span style="text-wrap-mode: nowrap;">  int Shot = 0;</span></p><p><span style="text-wrap-mode: nowrap;">  int Lost = 0;</span></p><p><span style="text-wrap-mode: nowrap;">  int Pressure = 1024;</span></p><p><span style="text-wrap-mode: nowrap;">  </span></p><p><span style="text-wrap-mode: nowrap;">#include &lt;SoftwareSerial.h&gt;;</span></p><p><span style="text-wrap-mode: nowrap;">SoftwareSerial mySerial = SoftwareSerial(255, TxPin);</span></p><p><span style="text-wrap-mode: nowrap;"><br/></span></p><p><span style="text-wrap-mode: nowrap;"><br/></span></p><p><span style="text-wrap-mode: nowrap;">void setup() {</span></p><p><span style="text-wrap-mode: nowrap;">  /* Words without an s are the value achieved by interacting with a device. </span></p><p><span style="text-wrap-mode: nowrap;">   * Works with an s keep track of which individual ones were interacted with. </span></p><p><span style="text-wrap-mode: nowrap;">   * The latter is needed to determine when all have been hit and the value needs upgrading</span></p><p><span style="text-wrap-mode: nowrap;">   * and the lights need turning off.</span></p><p><span style="text-wrap-mode: nowrap;">   */</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(TxPin, OUTPUT);</span></p><p><span style="text-wrap-mode: nowrap;">  digitalWrite(TxPin, HIGH);</span></p><p><span style="text-wrap-mode: nowrap;">  mySerial.begin(9600);</span></p><p><span style="text-wrap-mode: nowrap;">  mySerial.write(12);                 // Clear             </span></p><p><span style="text-wrap-mode: nowrap;">  mySerial.write(17);                 // Turn backlight on</span></p><p><span style="text-wrap-mode: nowrap;">  </span></p><p><span style="text-wrap-mode: nowrap;">  //target inputs</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(2,INPUT_PULLUP);</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(3,INPUT_PULLUP);</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(4,INPUT_PULLUP);</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(5,INPUT_PULLUP);</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(6,INPUT_PULLUP);</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(7,INPUT_PULLUP);</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(8,INPUT_PULLUP);</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(9,INPUT_PULLUP);</span></p><p><span style="text-wrap-mode: nowrap;">  //rollover inputs</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(10,INPUT_PULLUP);</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(11,INPUT_PULLUP);</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(12,INPUT_PULLUP);</span></p><p><span style="text-wrap-mode: nowrap;">  //lower ball shot switch</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(15,INPUT_PULLUP);</span></p><p><span style="text-wrap-mode: nowrap;">  //upper ball shot switch</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(16,INPUT_PULLUP);</span></p><p><span style="text-wrap-mode: nowrap;">  //lcd output</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(17,OUTPUT);</span></p><p><span style="text-wrap-mode: nowrap;">  //target lights, respective</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(32,OUTPUT);</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(33,OUTPUT);</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(34,OUTPUT);</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(35,OUTPUT);</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(36,OUTPUT);</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(37,OUTPUT);</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(38,OUTPUT);</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(39,OUTPUT);</span></p><p><span style="text-wrap-mode: nowrap;">  //rollover lights, respective</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(40,OUTPUT);</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(41,OUTPUT);</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(42,OUTPUT);</span></p><p><span style="text-wrap-mode: nowrap;">  //pop bumper lights</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(50,OUTPUT);</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(51,OUTPUT);</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(52,OUTPUT);</span></p><p><span style="text-wrap-mode: nowrap;">  pinMode(53,OUTPUT);</span></p><p><span style="text-wrap-mode: nowrap;">}</span></p><p><span style="text-wrap-mode: nowrap;"><br/></span></p><p><span style="text-wrap-mode: nowrap;">void loop() {</span></p><p><span style="text-wrap-mode: nowrap;">  // put your main code here, to run repeatedly:</span></p><p><span style="text-wrap-mode: nowrap;">  //If a pull-down resistor is used, the input pin will be LOW when the switch is open and HIGH when the switch is closed. </span></p><p><span style="text-wrap-mode: nowrap;">  //check if a target was hit</span></p><p><span style="text-wrap-mode: nowrap;"><br/></span></p><p><span style="text-wrap-mode: nowrap;">//****** Targets *****</span></p><p><span style="text-wrap-mode: nowrap;"><br/></span></p><p><span style="text-wrap-mode: nowrap;">  for (int i=0; i&lt;8; i++){</span></p><p><span style="text-wrap-mode: nowrap;">    if (digitalRead(i+2) == LOW){</span></p><p><span style="text-wrap-mode: nowrap;">      //Target activated</span></p><p><span style="text-wrap-mode: nowrap;">      Targets[i]=1;</span></p><p><span style="text-wrap-mode: nowrap;">      Score = Score + Target;</span></p><p><span style="text-wrap-mode: nowrap;">      //turn on Target light</span></p><p><span style="text-wrap-mode: nowrap;">      digitalWrite(i+32,HIGH);</span></p><p><span style="text-wrap-mode: nowrap;">      //delay so as not get multiple points for one hit</span></p><p><span style="text-wrap-mode: nowrap;">      delay(Milli);</span></p><p><span style="text-wrap-mode: nowrap;">      break;</span></p><p><span style="text-wrap-mode: nowrap;">    }</span></p><p><span style="text-wrap-mode: nowrap;">  }</span></p><p><span style="text-wrap-mode: nowrap;">  Sum = 0;  </span></p><p><span style="text-wrap-mode: nowrap;">  for (int i=0; i&lt;8; i++){</span></p><p><span style="text-wrap-mode: nowrap;">    Sum = Sum + Targets[i];</span></p><p><span style="text-wrap-mode: nowrap;">  }</span></p><p><span style="text-wrap-mode: nowrap;">  if (Sum == 8){</span></p><p><span style="text-wrap-mode: nowrap;">    //all Targets lit, so flash and then turn off.</span></p><p><span style="text-wrap-mode: nowrap;">    for (int j=0; j&lt;3; j++){</span></p><p><span style="text-wrap-mode: nowrap;">      for (int i=0; i&lt;8; i++){</span></p><p><span style="text-wrap-mode: nowrap;">        digitalWrite(i+32, LOW);</span></p><p><span style="text-wrap-mode: nowrap;">      }</span></p><p><span style="text-wrap-mode: nowrap;">      delay(Flash);</span></p><p><span style="text-wrap-mode: nowrap;">      for (int i=0; i&lt;8; i++){</span></p><p><span style="text-wrap-mode: nowrap;">        digitalWrite(i+32, HIGH);</span></p><p><span style="text-wrap-mode: nowrap;">      }</span></p><p><span style="text-wrap-mode: nowrap;">      delay(Flash);</span></p><p><span style="text-wrap-mode: nowrap;">    }</span></p><p><span style="text-wrap-mode: nowrap;">    for (int i=0; i&lt;8; i++){</span></p><p><span style="text-wrap-mode: nowrap;">      digitalWrite(i+32, LOW);</span></p><p><span style="text-wrap-mode: nowrap;">      Targets[i]=0;</span></p><p><span style="text-wrap-mode: nowrap;">    } </span></p><p><span style="text-wrap-mode: nowrap;">    delay(Flash);   </span></p><p><span style="text-wrap-mode: nowrap;">    //Multiply target value by 10</span></p><p><span style="text-wrap-mode: nowrap;">    Target = Target * 5;</span></p><p><span style="text-wrap-mode: nowrap;">    //goto Skip;  </span></p><p><span style="text-wrap-mode: nowrap;">  }</span></p><p><span style="text-wrap-mode: nowrap;">  </span></p><p><span style="text-wrap-mode: nowrap;"><br/></span></p><p><span style="text-wrap-mode: nowrap;">// ***********  Rollovers *********</span></p><p><span style="text-wrap-mode: nowrap;"><br/></span></p><p><span style="text-wrap-mode: nowrap;">  </span></p><p><span style="text-wrap-mode: nowrap;">   for (int i=0; i&lt;3; i++){</span></p><p><span style="text-wrap-mode: nowrap;">    if (digitalRead(i+10) == LOW){</span></p><p><span style="text-wrap-mode: nowrap;">      //rollover activated</span></p><p><span style="text-wrap-mode: nowrap;">      Rolls[i]=1;</span></p><p><span style="text-wrap-mode: nowrap;">      Score = Score + Roll;</span></p><p><span style="text-wrap-mode: nowrap;">      //turn on rollover light</span></p><p><span style="text-wrap-mode: nowrap;">      digitalWrite(i+40,HIGH);</span></p><p><span style="text-wrap-mode: nowrap;">      //delay so as not get multiple points for one hit</span></p><p><span style="text-wrap-mode: nowrap;">      delay(Milli);</span></p><p><span style="text-wrap-mode: nowrap;">      break;</span></p><p><span style="text-wrap-mode: nowrap;">    }</span></p><p><span style="text-wrap-mode: nowrap;">  }</span></p><p><span style="text-wrap-mode: nowrap;">  Sum = 0;  </span></p><p><span style="text-wrap-mode: nowrap;">  for (int i=0; i&lt;3; i++){</span></p><p><span style="text-wrap-mode: nowrap;">    Sum = Sum + Rolls[i];</span></p><p><span style="text-wrap-mode: nowrap;">  }</span></p><p><span style="text-wrap-mode: nowrap;">  if (Sum == 3){</span></p><p><span style="text-wrap-mode: nowrap;">    //all rollovers lit, so flash and then turn off.</span></p><p><span style="text-wrap-mode: nowrap;">    for (int j=0; j&lt;3; j++){</span></p><p><span style="text-wrap-mode: nowrap;">      for (int i=0; i&lt;3; i++){</span></p><p><span style="text-wrap-mode: nowrap;">        digitalWrite(i+40, LOW);</span></p><p><span style="text-wrap-mode: nowrap;">      }</span></p><p><span style="text-wrap-mode: nowrap;">      delay(Flash);</span></p><p><span style="text-wrap-mode: nowrap;">      for (int i=0; i&lt;3; i++){</span></p><p><span style="text-wrap-mode: nowrap;">        digitalWrite(i+40, HIGH);</span></p><p><span style="text-wrap-mode: nowrap;">      }</span></p><p><span style="text-wrap-mode: nowrap;">      delay(Flash);</span></p><p><span style="text-wrap-mode: nowrap;">    }</span></p><p><span style="text-wrap-mode: nowrap;">    for (int i=0; i&lt;3; i++){</span></p><p><span style="text-wrap-mode: nowrap;">      digitalWrite(i+40, LOW);</span></p><p><span style="text-wrap-mode: nowrap;">      Rolls[i]=0;</span></p><p><span style="text-wrap-mode: nowrap;">    } </span></p><p><span style="text-wrap-mode: nowrap;">    delay(Flash);   </span></p><p><span style="text-wrap-mode: nowrap;">    //Multiply score by 2</span></p><p><span style="text-wrap-mode: nowrap;">    Score = Score * 2;</span></p><p><span style="text-wrap-mode: nowrap;">    Roll = Roll * 10;</span></p><p><span style="text-wrap-mode: nowrap;">    //goto Skip;  </span></p><p><span style="text-wrap-mode: nowrap;">  }</span></p><p><span style="text-wrap-mode: nowrap;">  </span></p><p><span style="text-wrap-mode: nowrap;">  //**********  Pop Bumpers **********</span></p><p><span style="text-wrap-mode: nowrap;">  </span></p><p><span style="text-wrap-mode: nowrap;">   for (int i=0; i&lt;4; i++){</span></p><p><span style="text-wrap-mode: nowrap;">    if (analogRead(i) &gt; 500){</span></p><p><span style="text-wrap-mode: nowrap;">      //pop activated</span></p><p><span style="text-wrap-mode: nowrap;">      Pops[i]=1;</span></p><p><span style="text-wrap-mode: nowrap;">      Score = Score + Pop;</span></p><p><span style="text-wrap-mode: nowrap;">      //turn on pop bumper light</span></p><p><span style="text-wrap-mode: nowrap;">      digitalWrite(i+50,HIGH);</span></p><p><span style="text-wrap-mode: nowrap;">      //delay so as not get multiple points for one hit</span></p><p><span style="text-wrap-mode: nowrap;">      //mySerial.print(analogRead(i));</span></p><p><span style="text-wrap-mode: nowrap;">      //mySerial.print(" ");</span></p><p><span style="text-wrap-mode: nowrap;">      delay(Milli);</span></p><p><span style="text-wrap-mode: nowrap;">      break;</span></p><p><span style="text-wrap-mode: nowrap;">    }</span></p><p><span style="text-wrap-mode: nowrap;">  }</span></p><p><span style="text-wrap-mode: nowrap;">  Sum = 0;  </span></p><p><span style="text-wrap-mode: nowrap;">  for (int i=0; i&lt;4; i++){</span></p><p><span style="text-wrap-mode: nowrap;">    Sum = Sum + Pops[i];</span></p><p><span style="text-wrap-mode: nowrap;">  }</span></p><p><span style="text-wrap-mode: nowrap;">  if (Sum == 4){</span></p><p><span style="text-wrap-mode: nowrap;">    //all pop bumpers lit, so flash and then turn off.</span></p><p><span style="text-wrap-mode: nowrap;">    for (int j=0; j&lt;3; j++){</span></p><p><span style="text-wrap-mode: nowrap;">      for (int i=0; i&lt;4; i++){</span></p><p><span style="text-wrap-mode: nowrap;">        digitalWrite(i+50, LOW);</span></p><p><span style="text-wrap-mode: nowrap;">      }</span></p><p><span style="text-wrap-mode: nowrap;">      delay(Flash);</span></p><p><span style="text-wrap-mode: nowrap;">      for (int i=0; i&lt;4; i++){</span></p><p><span style="text-wrap-mode: nowrap;">        digitalWrite(i+50, HIGH);</span></p><p><span style="text-wrap-mode: nowrap;">      }</span></p><p><span style="text-wrap-mode: nowrap;">      delay(Flash);</span></p><p><span style="text-wrap-mode: nowrap;">    }</span></p><p><span style="text-wrap-mode: nowrap;">    for (int i=0; i&lt;4; i++){</span></p><p><span style="text-wrap-mode: nowrap;">      digitalWrite(i+50, LOW);</span></p><p><span style="text-wrap-mode: nowrap;">      Pops[i]=0;</span></p><p><span style="text-wrap-mode: nowrap;">    } </span></p><p><span style="text-wrap-mode: nowrap;">    delay(Flash);   </span></p><p><span style="text-wrap-mode: nowrap;">    //Multiply target value by 10</span></p><p><span style="text-wrap-mode: nowrap;">    Pop = Pop * 2;</span></p><p><span style="text-wrap-mode: nowrap;">    //goto Skip;  </span></p><p><span style="text-wrap-mode: nowrap;">  }</span></p><p><span style="text-wrap-mode: nowrap;">Skip:</span></p><p><span style="text-wrap-mode: nowrap;">  </span></p><p><span style="text-wrap-mode: nowrap;">  //Determine ball number</span></p><p><span style="text-wrap-mode: nowrap;">  if (digitalRead(15) == LOW){</span></p><p><span style="text-wrap-mode: nowrap;">    //ball hit lower alley switch</span></p><p><span style="text-wrap-mode: nowrap;">    //if not already done so, increase Ball </span></p><p><span style="text-wrap-mode: nowrap;">    if (Shot == 0){</span></p><p><span style="text-wrap-mode: nowrap;">      //Set Lost = 0 since not on pressure pad</span></p><p><span style="text-wrap-mode: nowrap;">      Lost = 0;</span></p><p><span style="text-wrap-mode: nowrap;">      Pressure = analogRead(7) + 20;</span></p><p><span style="text-wrap-mode: nowrap;">      //set OldScore so as to reprint ball value on LCD</span></p><p><span style="text-wrap-mode: nowrap;">      OldScore =-1;</span></p><p><span style="text-wrap-mode: nowrap;">      Ball = Ball + 1;</span></p><p><span style="text-wrap-mode: nowrap;">      if (Ball == 6){</span></p><p><span style="text-wrap-mode: nowrap;">        Ball = 1;</span></p><p><span style="text-wrap-mode: nowrap;">        Score = 0;</span></p><p><span style="text-wrap-mode: nowrap;">        Target = 1;</span></p><p><span style="text-wrap-mode: nowrap;">        Roll = 1;</span></p><p><span style="text-wrap-mode: nowrap;">        Pop = 1;</span></p><p><span style="text-wrap-mode: nowrap;">      }</span></p><p><span style="text-wrap-mode: nowrap;">      Shot = 1;</span></p><p><span style="text-wrap-mode: nowrap;">    }</span></p><p><span style="text-wrap-mode: nowrap;">  }</span></p><p><span style="text-wrap-mode: nowrap;">  if (digitalRead(16) == LOW){</span></p><p><span style="text-wrap-mode: nowrap;">    //ball hit lower alley switch</span></p><p><span style="text-wrap-mode: nowrap;">    //if not already done so, increase Ball</span></p><p><span style="text-wrap-mode: nowrap;">    if (Shot == 0){</span></p><p><span style="text-wrap-mode: nowrap;">      //Set Lost = 0 since not on pressure pad</span></p><p><span style="text-wrap-mode: nowrap;">      Lost = 0;</span></p><p><span style="text-wrap-mode: nowrap;">      Pressure = analogRead(7) + 15;  </span></p><p><span style="text-wrap-mode: nowrap;">      //set OldScore so as to reprint ball value on LCD</span></p><p><span style="text-wrap-mode: nowrap;">      OldScore =-1;</span></p><p><span style="text-wrap-mode: nowrap;">      Ball = Ball + 1;</span></p><p><span style="text-wrap-mode: nowrap;">      if (Ball == 6){</span></p><p><span style="text-wrap-mode: nowrap;">        Ball = 1;</span></p><p><span style="text-wrap-mode: nowrap;">        Score = 0;</span></p><p><span style="text-wrap-mode: nowrap;">        Target = 1;</span></p><p><span style="text-wrap-mode: nowrap;">        Roll = 1;</span></p><p><span style="text-wrap-mode: nowrap;">        Pop = 1;</span></p><p><span style="text-wrap-mode: nowrap;">      }</span></p><p><span style="text-wrap-mode: nowrap;">      Shot = 1;</span></p><p><span style="text-wrap-mode: nowrap;">    }</span></p><p><span style="text-wrap-mode: nowrap;">  }</span></p><p><span style="text-wrap-mode: nowrap;"><br/></span></p><p><span style="text-wrap-mode: nowrap;">  if (analogRead(7) &gt; Pressure){</span></p><p><span style="text-wrap-mode: nowrap;">    //ball on pressure pad</span></p><p><span style="text-wrap-mode: nowrap;">    Shot = 0;</span></p><p><span style="text-wrap-mode: nowrap;">    if (Lost == 0){</span></p><p><span style="text-wrap-mode: nowrap;">      //mySerial.print(analogRead(7));</span></p><p><span style="text-wrap-mode: nowrap;">      //Score = Score + 100;</span></p><p><span style="text-wrap-mode: nowrap;">      Lost = 1;</span></p><p><span style="text-wrap-mode: nowrap;">      if (Ball == 5){</span></p><p><span style="text-wrap-mode: nowrap;">        //Game Over</span></p><p><span style="text-wrap-mode: nowrap;">        //flash rollovers and then turn off.</span></p><p><span style="text-wrap-mode: nowrap;">        for (int j=0; j&lt;3; j++){</span></p><p><span style="text-wrap-mode: nowrap;">          for (int i=0; i&lt;3; i++){</span></p><p><span style="text-wrap-mode: nowrap;">            digitalWrite(i+40, LOW);</span></p><p><span style="text-wrap-mode: nowrap;">          }</span></p><p><span style="text-wrap-mode: nowrap;">          delay(Flash);</span></p><p><span style="text-wrap-mode: nowrap;">          for (int i=0; i&lt;3; i++){</span></p><p><span style="text-wrap-mode: nowrap;">            digitalWrite(i+40, HIGH);</span></p><p><span style="text-wrap-mode: nowrap;">          }</span></p><p><span style="text-wrap-mode: nowrap;">          delay(Flash);</span></p><p><span style="text-wrap-mode: nowrap;">        }</span></p><p><span style="text-wrap-mode: nowrap;">        for (int i=0; i&lt;3; i++){</span></p><p><span style="text-wrap-mode: nowrap;">          digitalWrite(i+40, LOW);</span></p><p><span style="text-wrap-mode: nowrap;">          Rolls[i]=0;</span></p><p><span style="text-wrap-mode: nowrap;">        } </span></p><p><span style="text-wrap-mode: nowrap;">        // flash pop bumpers and then turn off</span></p><p><span style="text-wrap-mode: nowrap;">        for (int j=0; j&lt;3; j++){</span></p><p><span style="text-wrap-mode: nowrap;">          for (int i=0; i&lt;4; i++){</span></p><p><span style="text-wrap-mode: nowrap;">            digitalWrite(i+50, LOW);</span></p><p><span style="text-wrap-mode: nowrap;">          }</span></p><p><span style="text-wrap-mode: nowrap;">          delay(Flash);</span></p><p><span style="text-wrap-mode: nowrap;">          for (int i=0; i&lt;4; i++){</span></p><p><span style="text-wrap-mode: nowrap;">            digitalWrite(i+50, HIGH);</span></p><p><span style="text-wrap-mode: nowrap;">          }</span></p><p><span style="text-wrap-mode: nowrap;">          delay(Flash);</span></p><p><span style="text-wrap-mode: nowrap;">        }</span></p><p><span style="text-wrap-mode: nowrap;">        for (int i=0; i&lt;4; i++){</span></p><p><span style="text-wrap-mode: nowrap;">          digitalWrite(i+50, LOW);</span></p><p><span style="text-wrap-mode: nowrap;">          Pops[i]=0;</span></p><p><span style="text-wrap-mode: nowrap;">        } </span></p><p><span style="text-wrap-mode: nowrap;">        //Flash Targets and then turn off.</span></p><p><span style="text-wrap-mode: nowrap;">        for (int j=0; j&lt;3; j++){</span></p><p><span style="text-wrap-mode: nowrap;">          for (int i=0; i&lt;8; i++){</span></p><p><span style="text-wrap-mode: nowrap;">            digitalWrite(i+32, LOW);</span></p><p><span style="text-wrap-mode: nowrap;">          }</span></p><p><span style="text-wrap-mode: nowrap;">          delay(Flash);</span></p><p><span style="text-wrap-mode: nowrap;">          for (int i=0; i&lt;8; i++){</span></p><p><span style="text-wrap-mode: nowrap;">            digitalWrite(i+32, HIGH);</span></p><p><span style="text-wrap-mode: nowrap;">          }</span></p><p><span style="text-wrap-mode: nowrap;">          delay(Flash);</span></p><p><span style="text-wrap-mode: nowrap;">        }</span></p><p><span style="text-wrap-mode: nowrap;">        for (int i=0; i&lt;8; i++){</span></p><p><span style="text-wrap-mode: nowrap;">          digitalWrite(i+32, LOW);</span></p><p><span style="text-wrap-mode: nowrap;">          Targets[i]=0;</span></p><p><span style="text-wrap-mode: nowrap;">        } </span></p><p><span style="text-wrap-mode: nowrap;">        mySerial.write(12);                 // Clear</span></p><p><span style="text-wrap-mode: nowrap;">        delay(5);</span></p><p><span style="text-wrap-mode: nowrap;">        // Required delay</span></p><p><span style="text-wrap-mode: nowrap;">        mySerial.print(Score);  // First line</span></p><p><span style="text-wrap-mode: nowrap;">        mySerial.write(13);                 // Form feed</span></p><p><span style="text-wrap-mode: nowrap;">        mySerial.print("Game Over!!!");   // Second line</span></p><p><span style="text-wrap-mode: nowrap;">      }</span></p><p><span style="text-wrap-mode: nowrap;">    }</span></p><p><span style="text-wrap-mode: nowrap;">  }</span></p><p><span style="text-wrap-mode: nowrap;">  //print to LCD</span></p><p><span style="text-wrap-mode: nowrap;">  if (Score != OldScore){ </span></p><p><span style="text-wrap-mode: nowrap;">  mySerial.write(12);                 // Clear</span></p><p><span style="text-wrap-mode: nowrap;">  delay(5);                           // Required delay</span></p><p><span style="text-wrap-mode: nowrap;">  //mySerial.print(analogRead(7));</span></p><p><span style="text-wrap-mode: nowrap;">  mySerial.print(Score);  // First line</span></p><p><span style="text-wrap-mode: nowrap;">  mySerial.write(13);                 // Form feed</span></p><p><span style="text-wrap-mode: nowrap;">  mySerial.print("Ball = ");   // Second line</span></p><p><span style="text-wrap-mode: nowrap;">  mySerial.print(Ball);</span></p><p><span style="text-wrap-mode: nowrap;">  OldScore = Score;</span></p><p><span style="text-wrap-mode: nowrap;">  }</span></p><p><span style="text-wrap-mode: nowrap;">}</span></p><p><br/></p>		<center>
+					</center>
+	<p class="keyp">关键词：
+			<a href="https://m.eepw.com.cn/m/listbylabel/label/"/>
+		</p>
+
+<!--阅读全文-->
+	<div class="login-read" style="display: block;" id="con2">
+		<div class="linear-block"/>
+	    <div class="read-all-btn-box">
+	    	<a href="https://passport.eepw.com.cn/auth/login?url=https://m.eepw.com.cn/article/202511/475687.html" target="_blank" class="read-all-btn">阅读全文</a>
+	    </div>
+	</div>
+<script type="text/javascript" src="//webstorage.eepw.com.cn/js/2014/m/check_login.js"/>  
+<!--阅读全文end-->
+</div>
+
+<div class="content" style="margin-top:20px;">
+	<!--ad start-->
+	<div style="width: 100%;margin-bottom:1em;">
+	<!-- 广告位：M02 -->
+		<script type="text/javascript">&lt;!--//&lt;![CDATA[
+   var m3_u = (location.protocol=='https:'?'https://ad.eepw.com.cn/www/delivery/ajs.php':'http://ad.eepw.com.cn/www/delivery/ajs.php');
+   var m3_r = Math.floor(Math.random()*99999999999);
+   if (!document.MAX_used) document.MAX_used = ',';
+   document.write ("&lt;scr"+"ipt type='text/javascript' src='"+m3_u);
+   document.write ("?zoneid=123");
+   document.write ('&amp;amp;cb=' + m3_r);
+   if (document.MAX_used != ',') document.write ("&amp;amp;exclude=" + document.MAX_used);
+   document.write (document.charset ? '&amp;amp;charset='+document.charset : (document.characterSet ? '&amp;amp;charset='+document.characterSet : ''));
+   document.write ("&amp;amp;loc=" + escape(window.location));
+   if (document.referrer) document.write ("&amp;amp;referer=" + escape(document.referrer));
+   if (document.context) document.write ("&amp;context=" + escape(document.context));
+   if (document.mmm_fo) document.write ("&amp;amp;mmm_fo=1");
+   document.write ("'&gt;&lt;\/scr"+"ipt&gt;");
+//]]&gt;--&gt;</script><noscript><a href="http://ad.eepw.com.cn/www/delivery/ck.php?n=a3ee0761&amp;cb=INSERT_RANDOM_NUMBER_HERE" target="_blank"><img src="http://ad.eepw.com.cn/www/delivery/avw.php?zoneid=123&amp;cb=INSERT_RANDOM_NUMBER_HERE&amp;n=a3ee0761" border="0" alt=""/></a></noscript>
+	</div>
+	<!--ad end-->
+	
+<script>
+var $oBanana=$('#banana');
+$($oBanana).animate({'font-size':'24'},300);
+</script>	
+</div>]]></description></item><item>    <title><![CDATA[在FireBeetle2ESP32-C5上实现光照强度检测及显示-电子产品世界论坛]]></title>    <link>https://forum.eepw.com.cn/thread/397728/1</link>    <guid>https://forum.eepw.com.cn/thread/397728/1</guid>    <pubDate>2025-11-21 00:03:42.988611</pubDate>    <description><![CDATA[<!-- 帖子分类 && 页码 -->&#13;
 	<div class="postPage clear" style="margin-top:0px;">&#13;
 		<div class="page">&#13;
 			<div class="page">共1条&#13;
@@ -8279,432 +8615,4 @@ $($oBanana).animate({'font-size':'24'},300);
 
  
 <script src="https://www.eepw.com.cn/event/ad/m_right_box.js"/>
-</div>]]></description></item><item>    <title><![CDATA[了解低功耗蓝牙协议栈的架构-电子产品世界手机版]]></title>    <link>http://m.eepw.com.cn/article/202511/475592.html</link>    <guid>http://m.eepw.com.cn/article/202511/475592.html</guid>    <pubDate>2025-11-19 16:03:09.110617</pubDate>    <description><![CDATA[<h2>了解低功耗蓝牙协议栈的架构</h2>		
-		<div class="time_source news-info">
-		
-				<a href="/m/list/special/iot" class="news-lb">物联网与传感器</a> 
-		 
-				<span>   作者：Erick John Reyes，高级固件工程师；Mary Grace Legaspi，固件工程师；Eric Peňa，嵌入式系统架构师</span>
-				<span> 时间：2025-11-19</span><span>来源：EEPW</span>		</div>
-				<div class="editor">
-			<p><em>编者按：</em>本文深入介绍了低功耗蓝牙(BLE)协议栈架构，并探讨了如何运用现有的BLE应用，充分发挥低功耗无线通信的潜力。为了能够高效可靠地开展设计、解决问题和优化应用，这些知识必不可少。</p>
-		</div>
-				<div class="content" id="con1" style="overflow:hidden;">
-		<p style="text-indent: 2em;"><strong>引言</strong></p><p style="text-indent: 2em;">低功耗蓝牙(BLE)是物联网(IoT)生态系统的一项关键技术。BLE最初是作为一种无线协议开发的，用于取代键盘、鼠标和耳机等消费电子产品中的线缆，但时至今日，它的功能已经大大拓展，不再仅仅是线缆的替代方案。目前，它在医疗、零售、汽车等多个行业及位置标签、仪器控制等工业应用中发挥着重要作用。</p><p style="text-indent: 2em;">根据《2023年蓝牙市场更新报告》(2023 Bluetooth Market Update)，从2023年到2027年，支持蓝牙无线技术的设备出货量的复合年增长率(CAGR)为9%。1 在这种增长态势下，预计到2027年，BLE设备出货量将翻一番以上，并且在所有支持蓝牙技术的设备中，97%会采用BLE。<sup>1</sup></p><p style="text-indent: 2em;">BLE是一种无线技术，于2010年7月随蓝牙4.0规范推出。BLE前称为Bluetooth Smart（蓝牙智能），专为超低功耗设备而设计。</p><p style="text-indent: 2em;">我们熟悉的传统蓝牙技术主要用于将智能手机与耳机配对、传输音乐和照片等大量数据，而BLE则有着不同的用途。传统蓝牙虽然能够处理大量数据传输，但会因此而消耗更多的电池电量。相比之下，BLE针对不需要大量数据传输的应用进行了优化，因而成为各种功耗敏感应用的理想选择。传统蓝牙即使在不使用时，仍会保持活动状态并消耗电量，而BLE大部分时间处于休眠模式，仅在建立连接时才会唤醒，并且连接时间通常仅维持几毫秒。这种高效的电源管理，结合最高1 Mbps（BLE 5.0中达到2 Mbps）的数据速率，使得BLE设备能够以极低的功耗运行。</p><p style="text-align: center;"><img src="http://editerupload.eepw.com.cn/202511/1763536093924352.jpeg" title="1763536093924352.jpeg" alt="1.jpeg"/></p><p style="text-align: center;"><img src="http://editerupload.eepw.com.cn/202511/1763536118783808.jpeg" title="1763536118783808.jpeg" alt="2.jpeg"/></p><p style="text-align: center;"><em>图1 (a)经典蓝牙和(b)低功耗蓝牙规范要点<sup>2</sup></em></p><p style="text-align: center;"><img src="http://editerupload.eepw.com.cn/202511/1763536336403162.jpeg" title="1763536336403162.jpeg" alt="4.jpeg"/></p><p style="text-align: center;"><img src="http://editerupload.eepw.com.cn/202511/1763536345151942.jpeg" title="1763536345151942.jpeg" alt="5.jpeg"/></p><p style="text-align: center;"><em>图2 (a)经典蓝牙和(b)低功耗蓝牙的应用<sup>2</sup></em></p><p style="text-indent: 2em;"><strong>蓝牙规范</strong></p><p style="text-indent: 2em;">如图1和图2所示：</p><p style="text-indent: 2em;">■   <strong>经典蓝牙：</strong>代表蓝牙的最早版本，具有较高的数据速率能力，适用于流媒体、高带宽文件传输和耳机。它有79个RF信道，其中32个广播信道，以便其他设备可以发现和连接。</p><p style="text-indent: 2em;">■   <strong>低功耗蓝牙：</strong>针对数据传输不频繁的低功耗应用，例如传感器和其他低带宽传输。它有40个RF信道，其中3个信道用于设备发现。</p><p style="text-indent: 2em;"><strong>BLE应用概述</strong></p><p style="text-indent: 2em;">典型的BLE应用由两个设备组成：外围设备和中心设备。在建立连接之前，外围设备会通过一个称为BLE广播的过程对外宣告自身的存在。中心设备会扫描可用的外围设备。一旦中心设备找到所需的外围设备，两者之间就会建立连接。然后，每个设备中的应用可以通过BLE协议栈的不同层传输数据，实现相互通信。参见图3。</p><p style="text-indent: 2em;">例如，智能手机可以充当中心设备，而健身追踪器可以充当外围设备。健身追踪器作为服务器，收集心率、血压、ECG、步数甚至睡眠模式等数据。健身追踪器向附近设备广播自身的存在，包括作为客户端的智能手机。智能手机从健身追踪器中检索这些数据，并显示在用户易于理解的应用程序上。这只是BLE支持实现的众多应用中的一个例子，我们将在文章的后半部分讨论更多应用。</p><p style="text-align: center;"><img src="http://editerupload.eepw.com.cn/202511/1763536368455825.png" title="1763536368455825.png" alt="1763536368455825.png" width="600" height="340" border="0"/></p><p style="text-align: center;"><em>图3 外围设备和中心设备的各层</em></p><p style="text-indent: 2em;"><strong>BLE协议栈架构</strong></p><p style="text-indent: 2em;">BLE协议栈架构（如图4所示）是实现BLE设备之间通信的结构化软件框架。它定义了必要的层级和协议，用于建立、维持和终止蓝牙连接，方便设备间交换数据。</p><p style="text-indent: 2em;">BLE协议栈架构通常分为三个主要层级：应用层、主机层和控制器层。应用层是协议栈的最顶层。BLE设备上运行的应用程序在这一层利用和处理实际数据。主机层位于协议栈中的应用层和控制器层之间，实现了BLE通信所需的所有较高级别协议和配置文件。此外，它还提供高级应用程序编程接口(API)，使得应用程序能够与协议栈的较低层交互。控制器层是BLE协议栈的硬件部分，负责蓝牙信号的发送和接收。控制器层处理信号的跳频、调制和解调等任务。上述层级协同工作，实现BLE设备之间高效可靠的通信。</p><p style="text-align: center;"><img src="http://editerupload.eepw.com.cn/202511/1763536389194947.png" title="1763536389194947.png" alt="1763536389194947.png" width="600" height="418" border="0"/></p><p style="text-align: center;"><img src="http://editerupload.eepw.com.cn/202511/1763536408561184.png" title="1763536408561184.png" alt="1763536408561184.png" width="600" height="418" border="0"/></p><p style="text-align: center;"><em>图4 BLE协议栈架构</em></p><p style="text-indent: 2em;"><strong>应用</strong></p><p style="text-indent: 2em;">应用层用于实现BLE设备具体应用需求。应用层通过GATT(通用属性规范)与协议栈下层进行交互，基于GATT定义的服务、特征和相应数据。</p><p style="text-indent: 2em;">设备的特性和行为在应用层设计。其中包括定义服务和特征，指定数据交换方式，实现连接、断开连接、数据更新等事件处理逻辑。应用层的主要作用是根据设备及其预期使用场景的具体需求来定制BLE协议栈。</p><p style="text-indent: 2em;"><strong>主机</strong></p><p style="text-indent: 2em;">主机层包含BLE协议栈的其余上层协议，具体包括逻辑链路控制与适配协议(L2CAP)、安全管理器协议(SMP)、属性协议(ATT)、通用属性规范(GATT)和通用访问规范(GAP)。L2CAP作为上下层协议之间的通道接口，负责应用数据的分割和封装，并使用ACL链接传输数据包。L2CAP通过通道标识符(CID)和通道复用来正确定位设备上的端点。参见图5。</p><p style="text-align: center;"><img src="http://editerupload.eepw.com.cn/202511/1763536429683041.png" title="1763536429683041.png" alt="1763536429683041.png" width="600" height="264" border="0"/></p><p style="text-align: center;"><em>图5 L2CAP数据包</em></p><p style="text-indent: 2em;"><strong>L2CAP信号</strong></p><p style="text-indent: 2em;">在BLE协议栈中，命令以请求和响应的形式在设备之间交换。以下是有关命令的一些要点：</p><p style="text-indent: 2em;">■   命令以请求和响应的形式发送。</p><p style="text-indent: 2em;">■   每个协议数据单元(PDU)可以发送一个命令。</p><p style="text-indent: 2em;">■   包含L2CAP信令消息的PDU称为C帧（控制帧），而数据帧则分为B帧（基本信息帧）和LE帧（低功耗信息帧）。参见图6。</p><p style="text-align: center;"><img src="http://editerupload.eepw.com.cn/202511/1763536448927608.png" title="1763536448927608.png" alt="1763536448927608.png" width="600" height="300" border="0"/></p><p style="text-align: center;"><em>图6 L2CAP帧格式</em></p><p style="text-indent: 2em;">■   Command Reject（命令被拒绝）</p><p style="text-indent: 2em;">■   命令代码无法识别或命令长度不正确时发送的响应</p><p style="text-indent: 2em;">■   可能原因</p><p style="text-indent: 2em;">■   未知命令</p><p style="text-indent: 2em;">■   超出LCAP信令最大传输单元(MTU)</p><p style="text-indent: 2em;">■   请求中的CID无效</p><p style="text-indent: 2em;">■   Connection Parameter Update Request（连接参数更新请求）</p><p style="text-indent: 2em;">■   由LE节点向LE主节点发送，请求一组新的连接参数</p><p style="text-indent: 2em;">■   连接参数</p><p style="text-indent: 2em;">■   Interval min（最小间隔）</p><p style="text-indent: 2em;">■   Interval max（最大间隔）</p><p style="text-indent: 2em;">■   Node latency（节点延迟）</p><p style="text-indent: 2em;">■   Timeout multiplier（超时乘数）</p><p style="text-indent: 2em;">■   Connection Parameter Update Response（连接参数更新响应）</p><p style="text-indent: 2em;">■   由LE主节点向LE节点发送，以响应连接参数更新请求</p><p style="text-indent: 2em;">SMP定义了BLE设备之间的配对、认证和加密程序。SMP命令使用L2CAP服务执行这些程序。SMP命令包由代码字段和数据字段组成。代码字段用于标识命令的类型，而数据字段的长度和格式取决于命令类型。所有SMP程序都实现了30秒超时，用于判断程序是否失败。参见表1。</p><p style="text-align: center;"><strong>表1 SMP命令代码</strong></p><table align="center"><tbody><tr style=";height:22px" class="firstRow"><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(0, 111, 185); padding: 0px;"><p><strong><span style="color: rgb(255, 255, 255);">代码</span></strong></p></td><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(0, 111, 185); padding: 0px;"><p><strong><span style="color: rgb(255, 255, 255);">说明</span></strong></p></td><td valign="top" style="border-width: 1px; border-style: solid; border-image: initial; background: rgb(0, 111, 185); padding: 0px;"><p><strong><span style="color: rgb(255, 255, 255);">相位</span></strong></p></td></tr><tr style=";height:21px"><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(241, 242, 245); padding: 0px;"><p>0x00</p></td><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(241, 242, 245); padding: 0px;"><p>保留</p></td><td valign="top" style="border-width: 1px; border-style: solid; border-image: initial; background: rgb(241, 242, 245); padding: 0px;"><p>—</p></td></tr><tr style=";height:21px"><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(225, 226, 233); padding: 0px;"><p>0x01</p></td><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(225, 226, 233); padding: 0px;"><p>配对请求</p></td><td valign="top" style="border-width: 1px; border-style: solid; border-image: initial; background: rgb(225, 226, 233); padding: 0px;"><p>相位1</p></td></tr><tr style=";height:21px"><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(241, 242, 245); padding: 0px;"><p>0x02</p></td><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(241, 242, 245); padding: 0px;"><p>配对响应</p></td><td valign="top" style="border-width: 1px; border-style: solid; border-image: initial; background: rgb(241, 242, 245); padding: 0px;"><p>相位1</p></td></tr><tr style=";height:21px"><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(225, 226, 233); padding: 0px;"><p>0x03</p></td><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(225, 226, 233); padding: 0px;"><p>配对确认</p></td><td valign="top" style="border-width: 1px; border-style: solid; border-image: initial; background: rgb(225, 226, 233); padding: 0px;"><p>相位2</p></td></tr><tr style=";height:21px"><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(241, 242, 245); padding: 0px;"><p>0x04</p></td><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(241, 242, 245); padding: 0px;"><p>随机配对</p></td><td valign="top" style="border-width: 1px; border-style: solid; border-image: initial; background: rgb(241, 242, 245); padding: 0px;"><p>相位2</p></td></tr><tr style=";height:21px"><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(225, 226, 233); padding: 0px;"><p>0x05</p></td><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(225, 226, 233); padding: 0px;"><p>配对失败</p></td><td valign="top" style="border-width: 1px; border-style: solid; border-image: initial; background: rgb(225, 226, 233); padding: 0px;"><p>相位2</p></td></tr><tr style=";height:21px"><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(241, 242, 245); padding: 0px;"><p>0x06</p></td><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(241, 242, 245); padding: 0px;"><p>加密信息</p></td><td valign="top" style="border-width: 1px; border-style: solid; border-image: initial; background: rgb(241, 242, 245); padding: 0px;"><p>相位3</p></td></tr><tr style=";height:21px"><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(225, 226, 233); padding: 0px;"><p>0x07</p></td><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(225, 226, 233); padding: 0px;"><p>主节点标识</p></td><td valign="top" style="border-width: 1px; border-style: solid; border-image: initial; background: rgb(225, 226, 233); padding: 0px;"><p>相位3</p></td></tr><tr style=";height:21px"><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(241, 242, 245); padding: 0px;"><p>0x08</p></td><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(241, 242, 245); padding: 0px;"><p>识别信息</p></td><td valign="top" style="border-width: 1px; border-style: solid; border-image: initial; background: rgb(241, 242, 245); padding: 0px;"><p>相位3</p></td></tr><tr style=";height:21px"><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(225, 226, 233); padding: 0px;"><p>0x09</p></td><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(225, 226, 233); padding: 0px;"><p>身份地址信息</p></td><td valign="top" style="border-width: 1px; border-style: solid; border-image: initial; background: rgb(225, 226, 233); padding: 0px;"><p>相位3</p></td></tr><tr style=";height:21px"><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(241, 242, 245); padding: 0px;"><p>0x0A</p></td><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(241, 242, 245); padding: 0px;"><p>签名信息</p></td><td valign="top" style="border-width: 1px; border-style: solid; border-image: initial; background: rgb(241, 242, 245); padding: 0px;"><p>相位3</p></td></tr><tr style=";height:21px"><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(225, 226, 233); padding: 0px;"><p>0x0B</p></td><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(225, 226, 233); padding: 0px;"><p>安全请求</p></td><td valign="top" style="border-width: 1px; border-style: solid; border-image: initial; background: rgb(225, 226, 233); padding: 0px;"><p>相位1</p></td></tr><tr style=";height:21px"><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(241, 242, 245); padding: 0px;"><p>0x0C至0x0FF</p></td><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(241, 242, 245); padding: 0px;"><p>保留</p></td><td valign="top" style="border-width: 1px; border-style: solid; border-image: initial; background: rgb(241, 242, 245); padding: 0px;"><p>—</p></td></tr></tbody></table><p style="text-indent: 2em;">ATT定义了访问设备属性或数据的规则。它支持发现、读取和写入远程设备上的属性。ATT遵循客户端-服务器模型。服务器公开一组属性，而客户端可以发现、读取和写入这些属性。ATT中的属性结构由句柄、类型、值和权限组成。属性句柄是分配给服务器上每个属性的唯一非零标识符。属性类型通过通用唯一标识符(UUID)指定属性的含义。UUID可以是由蓝牙技术联盟(SIG)分配的16位UUID，也可以是自定义的128位UUID。属性值是属性的实际数据值，而属性权限决定了属性允许的访问级别。参见图7。</p><p style="text-align: center;"><img src="http://editerupload.eepw.com.cn/202511/1763536470148064.png" title="1763536470148064.png" alt="image.png"/></p><p style="text-align: center;"><em>图7 属性结构</em></p><p style="text-indent: 2em;">ATT定义了六种协议数据单元（PDU）类型：请求、响应、命令、确认、通知和指示（图8）。请求PDU由客户端发送给服务器，请求回复。响应PDU是请求回复时服务器对客户端的回复。命令PDU由客户端发送给服务器，无需回复。指示PDU由服务器发送给客户端，需要回复。确认PDU由客户端发送给服务器，作为对指示的回复。通知PDU由服务器发送给客户端，无需回复。通过这些PDU类型，客户端和服务器可以在BLE协议栈的ATT层交换信息和进行控制。</p><p style="text-align: center;"><img src="http://editerupload.eepw.com.cn/202511/1763536481372782.png" title="1763536481372782.png" alt="1763536481372782.png" width="600" height="446" border="0"/></p><p style="text-align: center;"><em>图8 不同类型的属性PDU</em></p><p style="text-indent: 2em;">ATT PDU包由操作码、属性参数和身份验证签名构成（图9）。操作码字段用于标识PDU的方法/类型，例如请求或响应。它还包括一个命令标志，用于指示PDU类型是否为命令；以及一个身份验证签名标志，用于指示数据包是否使用身份验证签名。</p><p style="text-align: center;"><img src="http://editerupload.eepw.com.cn/202511/1763536502241470.png" title="1763536502241470.png" alt="1763536502241470.png" width="600" height="177" border="0"/></p><p style="text-align: center;"><em>图9 ATT PDU包格式</em></p><p style="text-align: center;"><img src="http://editerupload.eepw.com.cn/202511/1763536513548363.png" title="1763536513548363.png" alt="1763536513548363.png" width="600" height="277" border="0"/></p><p style="text-align: center;"><em>图10 BLE层数据包格式</em></p><p style="text-indent: 2em;">图10总结了BLE协议栈架构中各层的数据包格式，并概要显示了数据的结构。</p><p style="text-indent: 2em;">沿着主机层往上，下一个更高的层级是GATT。通用属性规范(GATT)负责定义数据或属性的格式化、封装以及设备之间的交互规则。GATT程序包括属性发现、读取、写入、通知和指示。它为管理BLE设备中的数据提供了一个标准框架。</p><p style="text-indent: 2em;">一个BLE设备中可能存在多个GATT配置文件（图11）。蓝牙规范中定义了标准配置文件，以确保不同制造商生产的BLE设备能够互操作。但是，基于特定应用要求，也可以实现自定义配置文件。因此，了解GATT配置文件的结构至关重要。</p><p style="text-indent: 2em;">GATT配置文件由服务组成。服务指ATT协议中定义的一组相关属性。在GATT中，“特征”一词通常用于指代属性，但特征可能包含本身即为属性的描述符。特征是用户数据的容器，而描述符提供有关用户数据的说明或附加信息。</p><p style="text-align: center;"><img src="http://editerupload.eepw.com.cn/202511/1763536537773402.png" title="1763536537773402.png" alt="1763536537773402.png" width="600" height="900" border="0"/></p><p style="text-align: center;"><em>图11 GATT配置文件结构</em></p><p style="text-indent: 2em;">与ATT类似，GATT中也有两个角色：GATT客户端和GATT服务器。GATT客户端是访问远程GATT服务器上数据的设备。GATT服务器是支持远程GATT客户端访问数据的设备。在GATT中，一个设备的角色由数据访问的方向决定。</p><p style="text-indent: 2em;">在BLE协议栈的主机层中，通用访问规范（GAP - Generic Access Profile） 是顶层协议，定义了蓝牙设备如何相互访问和通信。GAP涵盖了设备的工作模式、发现流程、连接建立和安全机制。所有支持蓝牙技术的设备都需要实现GAP，因为它为BLE设备的控制提供了标准框架。</p><p style="text-indent: 2em;">GAP根据BLE设备的活动状态为其提供不同的角色。当不需要连接时，BLE设备可以充当广播者或观察者。广播者是一种在邻近范围内宣告自身存在的设备。它主要利用链路层的广播者角色发送广播。观察者与广播者相反，它利用链路层的扫描者角色扫描相关区域，以接收来自附近设备的广播。在现实生活中，广播者的例子有BLE信标，而观察者的例子有收集数据的BLE集线器。参见图12。</p><p style="text-align: center;"><img src="http://editerupload.eepw.com.cn/202511/1763536622282452.png" title="1763536622282452.png" alt="1763536622282452.png" width="600" height="253" border="0"/></p><p style="text-align: center;"><em>图12 广播者向观察者发送广播数据包</em></p><p style="text-indent: 2em;">当可以建立连接时，GAP为BLE设备提供两个额外的角色：外围设备和中心设备。外围设备与广播者类似，它会宣告自身的存在，并等待来自远程中心设备的连接请求。中心设备则充当观察者，扫描外围设备，并向所需外围设备发起连接请求。如前所述，外围设备的例子有智能手表、健身追踪器和家庭自动化传感器，而中心设备的例子有智能手机、平板电脑和笔记本电脑。参见图13。</p><p style="text-align: center;"><img src="http://editerupload.eepw.com.cn/202511/1763536647706221.png" title="1763536647706221.png" alt="1763536647706221.png" width="600" height="362" border="0"/></p><p style="text-align: center;"><em>图13 中心设备/外围设备vs广播者/观察者</em></p><p style="text-indent: 2em;">根据蓝牙规范的要求，在一个配置文件中GAP服务必须由GATT服务器实现。GAP服务涵盖有关设备基本信息的各种特征，通常包括：设备名称、设备外观、外围设备首选连接参数、中心设备地址解析，以及仅能通过解析获得的私有地址。</p><p style="text-indent: 2em;"><strong>控制器</strong></p><p style="text-indent: 2em;">控制器包含两层：链路层和物理层。物理层位于BLE协议栈的底层，负责无线信号的实际传输和接收。物理层工作在2.4 GHz ISM频段，采用高斯频移键控(GFSK)调制方案。这种调制方案通过改变载波信号的频率来实现高效的数据传输。</p><p style="text-indent: 2em;">物理层由40个信道组成，每个信道彼此间隔2 MHz：</p><p style="text-indent: 2em;">■   3个广播信道用于广播短数据包，以宣告广播者的存在及其可用的服务或信息。</p><p style="text-indent: 2em;">■   37个数据信道在中心设备与外围设备建立连接后使用。</p><p style="text-indent: 2em;">在蓝牙5核心规范发布前，BLE仅使用3个固定广播信道（37、38、39）。而蓝牙5引入的扩展广播功能，允许将原本用于数据传输的37个数据信道作为辅助广播信道使用。此扩展解锁了蓝牙5中的新特性，扩展了物理层的编码方案选择。参见图14。</p><p style="text-align: center;"><img src="http://editerupload.eepw.com.cn/202511/1763536666882917.png" title="1763536666882917.png" alt="1763536666882917.png" width="600" height="232" border="0"/></p><p style="text-align: center;"><em>图14 BLE信道</em></p><p style="text-indent: 2em;">蓝牙5引入了三种不同的物理层（PHY）类型，支持三种调制方案和四种数据传输速率（表2）。默认物理层（PHY）为LE 1M,以每秒1兆符号率（1 Msym/s）的调制方案运行，实现和每秒1兆比特率（1 Mbps）的数据传输速率，无线传输距离可达100米。另一类型物理层(PHY)为LE 2M，使用2 Msym/s调制方案，数据传输速率提升至2 Mbps。第三种物理层（PHY）为LE Coded，支持125Kbps和500Kbps两种数据传输速率。类似LE 1M模式，LE Coded采用1 Msym/s符号率调试方案。采用数据速率125Kbps的编码，每1比特数据扩展为8个符号（S=8），而采用数据速率500Kbps的编码，每1比特数据扩展为2个符号（S=2）。这种编码方案使得LE Coded PHY用于长距离模式应用，在空旷空间中传输距离可达1000米。（支持前向纠错，降低误码率。）</p><p style="text-align: center;"><strong>表2 BLE中的不同PHY</strong></p><table align="center"><tbody><tr style=";height:22px" class="firstRow"><td rowspan="2" valign="top" style="border-width: 1px; border-style: solid; background: rgb(0, 111, 185); padding: 0px; word-break: break-all;"><p><span style="color: rgb(255, 255, 255);"><strong> </strong></span><strong style="color: rgb(255, 255, 255);">PHY</strong></p></td><td rowspan="2" valign="top" style="border-width: 1px; border-style: solid; background: rgb(0, 111, 185); padding: 0px; word-break: break-all;"><p><span style="color: rgb(255, 255, 255);"><strong>调制方案</strong></span></p></td><td colspan="2" valign="top" style="border-width: 1px; border-style: solid; background: rgb(0, 111, 185); padding: 0px;"><p><span style="color: rgb(255, 255, 255);"><strong>编码方案</strong></span></p></td><td rowspan="2" valign="top" style="border-width: 1px; border-style: solid; border-image: initial; background: rgb(0, 111, 185); padding: 0px;"><p><span style="color: rgb(255, 255, 255);"><strong> </strong></span></p><p><span style="color: rgb(255, 255, 255);"><strong>数据速率</strong></span></p></td></tr><tr style=";height:21px"><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(0, 111, 185); padding: 0px;"><p><span style="color: rgb(255, 255, 255);"><strong>访问标头</strong></span></p></td><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(0, 111, 185); padding: 0px;"><p><span style="color: rgb(255, 255, 255);"><strong>有效载荷</strong></span></p></td></tr><tr style=";height:33px"><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(241, 242, 245); padding: 0px;"><p>LE 1M</p></td><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(241, 242, 245); padding: 0px;"><p>1 Msymps调制</p></td><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(241, 242, 245); padding: 0px;"><p>未编码</p></td><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(241, 242, 245); padding: 0px;"><p>未编码</p></td><td valign="top" style="border-width: 1px; border-style: solid; border-image: initial; background: rgb(241, 242, 245); padding: 0px;"><p>1 Mbps</p></td></tr><tr style=";height:21px"><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(225, 226, 233); padding: 0px;"><p>LE 2M</p></td><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(225, 226, 233); padding: 0px;"><p>配对请求</p></td><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(225, 226, 233); padding: 0px;"><p>未编码</p></td><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(225, 226, 233); padding: 0px;"><p>未编码</p></td><td valign="top" style="border-width: 1px; border-style: solid; border-image: initial; background: rgb(225, 226, 233); padding: 0px;"><p>2 Mbps</p></td></tr><tr style=";height:33px"><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(241, 242, 245); padding: 0px;"><p>LE Coded</p></td><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(241, 242, 245); padding: 0px; word-break: break-all;"><p>配对响应</p></td><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(241, 242, 245); padding: 0px;"><p>S = 8</p></td><td valign="top" style="border-width: 1px; border-style: solid; background: rgb(241, 242, 245); padding: 0px;"><p>S = 8</p><p>S = 2</p></td><td valign="top" style="border-width: 1px; border-style: solid; border-image: initial; background: rgb(241, 242, 245); padding: 0px;"><p>125 kbps</p><p>500 kbps</p></td></tr></tbody></table><p style="text-indent: 2em;">■   物理层（PHY）的上一层为链路层，链路层负责管理设备间的扫描、广播、连接建立、连接和链路的维护。链路层还管理这数据传输的信道先择，利用自适应跳频扩频来减少干扰。链路层状态机定义了五种状态：就绪态、广播态、扫描态、发起态、连接态。（见图15）</p><p style="text-indent: 2em;">■   空闲时链路层处于准备状态，不传输或接收数据包。</p><p style="text-indent: 2em;">■   在广播状态下，链路层（充当广播者）发送广播数据包，同时监听是否有设备请求额外信息。</p><p style="text-indent: 2em;">■   在扫描状态下，链路层（充当扫描者）监听广播者，并可主动发送扫描请求获取更多额外信息。</p><p style="text-indent: 2em;">■   在发起状态下，链路层（充当发起者）监听来自广播者的数据包，并响应广播包，向广播者发起连接请求。</p><p style="text-indent: 2em;">■   当链路层连接到另一个BLE设备的链路层，就处于已连接状态。</p><p style="text-align: center;"><img src="http://editerupload.eepw.com.cn/202511/1763536686328915.png" title="1763536686328915.png" alt="1763536686328915.png" width="600" height="296" border="0"/></p><p style="text-align: center;"><em>图15 链路层状态转换</em></p><p style="text-indent: 2em;">除了不同的状态之外，链路层还定义了如下事件：广播事件和连接事件。广播事件涉及使用广播信道传输数据包，而连接事件涉及通过数据信道在已连接状态下传输数据包。</p><p style="text-indent: 2em;">链路层还定义了由物理层传输的BLE数据包的格式。数据包格式分为编码PHY（Coded PHY）和未编码PHY（Uncoded PHY）。</p><p style="text-align: center;"><img src="http://editerupload.eepw.com.cn/202511/1763536728708903.png" title="1763536728708903.png" alt="1763536728708903.png" width="600" height="77" border="0"/></p><p style="text-align: center;"><em>图16 未编码PHY的BLE数据包</em></p><p style="text-indent: 2em;">如图16所示，未编码PHY的BLE数据包以前导码开始，之后是访问地址、PDU和循环冗余校验(CRC)。</p><p style="text-indent: 2em;">如图17所示，编码PHY的BLE数据包由前导码、前向纠错(FEC)块1和FEC块2组成。</p><p style="text-indent: 2em;">■   前导码是用于频率同步的1和0交替序列。对于LE 1M，其长度为1个字节；对于LE 2M，其长度为2个字节。</p><p style="text-indent: 2em;">■   访问地址用作关联码，供调谐到物理信道的设备使用；其长度为4个字节。对于物理广播信道，访问地址为固定值0x8E89BED6。</p><p style="text-indent: 2em;">■   PDU包含来自BLE协议栈上层的有效载荷。它可以是广播PDU或数据PDU，其中可能包含通信所需要的来自传感器或其他设备的重要信息。更多信息将在下一节中讨论。</p><p style="text-indent: 2em;">■   CRC用于错误校验。</p><p style="text-align: center;"><img src="http://editerupload.eepw.com.cn/202511/1763536747228262.png" title="1763536747228262.png" alt="1763536747228262.png" width="600" height="156" border="0"/></p><p style="text-align: center;"><em>图17 编码PHY的BLE数据包</em></p><p style="text-indent: 2em;">■   恒音扩展(CTE)由一串持续调制的非白化1序列组成，通常情况下是选择性使用的。CTE对于BLE的测向特性非常重要。</p><p style="text-indent: 2em;">■   FEC块1包含访问地址、编码指示符(CI)和块终止符(TERM1)。CI指示FEC块2使用的编码方案，而TERM1是3位块终止符。</p><p style="text-indent: 2em;">■   FEC块2包含PDU、CRC和TERM2，其编码方案与FEC块1中CI字段所示的编码方案相同。</p><p style="text-indent: 2em;">无论未编码PHY还是编码PHY，其使用的BLE数据包PDU都可以分为两类：广播信道PDU和数据信道PDU。参见图18至图21。</p><p style="text-align: center;"><img src="http://editerupload.eepw.com.cn/202511/1763536767460363.png" title="1763536767460363.png" alt="1763536767460363.png" width="600" height="77" border="0"/></p><p style="text-align: center;"><em>图18 广播物理信道PDU</em></p><p style="text-align: center;"><img src="http://editerupload.eepw.com.cn/202511/1763536787290766.png" title="1763536787290766.png" alt="1763536787290766.png" width="600" height="77" border="0"/></p><p style="text-align: center;"><em>图19 广播物理信道PDU标头</em></p><p style="text-indent: 2em;">如图19所示，广播信道PDU用于广播事件。它由2字节的标头和最多255字节的有效载荷组成。</p><p style="text-indent: 2em;">标头包含以下字段：PDU类型、RFU（保留以备将来使用）位、ChSel、TxAdd、RxAdd和长度。ChSel、TxAdd和RxAdd位的值取决于PDU类型，而长度字段用于描述有效载荷的长度（以字节为单位）。</p><p style="text-align: center;"><img src="http://editerupload.eepw.com.cn/202511/1763536806375075.png" title="1763536806375075.png" alt="1763536806375075.png" width="600" height="77" border="0"/></p><p style="text-align: center;"><em>图20 数据物理信道PDU</em></p><p style="text-align: center;"><img src="http://editerupload.eepw.com.cn/202511/1763536823411752.png" title="1763536823411752.png" alt="1763536823411752.png" width="600" height="107" border="0"/></p><p style="text-align: center;"><em>图21 数据物理信道PDU标头</em></p><p style="text-indent: 2em;">如上图所示，数据信道PDU由连接事件使用。它由2或3字节的标头、有效载荷以及用于加密链路的消息完整性校验(MIC)组成。</p><p style="text-indent: 2em;">数据信道PDU标头包含以下字段：LLID、NESN、SN、MD、CP、长度和CTEInfo。</p><p style="text-indent: 2em;">■   LLID用于描述链路层数据PDU的类型</p><p style="text-indent: 2em;">■   NESN（下一预期序列）用于标识预期对等设备发送的下一个数据包</p><p style="text-indent: 2em;">■   SN（序列号）用于标识当前数据包</p><p style="text-indent: 2em;">■   CP（CTEInfo存在）用于表示存在额外的CTEInfo字段</p><p style="text-indent: 2em;">■   长度字段用于描述有效载荷的长度（以字节为单位）</p><p style="text-indent: 2em;">■   CTEInfo用于描述CTE的类型和长度</p><p style="text-indent: 2em;"><strong>主机控制器接口(HCI)</strong></p><p style="text-indent: 2em;">HCI充当主机和控制器之间的中介。它提供了一组标准化的命令和事件，用于支持这两层之间的通信。</p><p style="text-indent: 2em;">HCI支持多种类型的传输层，包括UART、USB、SDIO和三线UART。每种传输层都有自己的规范和要求。本概述着重介绍UART传输层。</p><p style="text-indent: 2em;">根据蓝牙5.2规范，UART传输层支持五类数据包：命令、事件、异步无连接(ACL)数据、同步(SCO)数据和等时(ISO)数据。</p><p style="text-indent: 2em;">■   主机使用命令数据包向控制器发送命令。这些命令指示控制器执行特定的操作或配置。</p><p style="text-indent: 2em;">■   控制器使用事件数据包将已发生的事件告知主机。事件可以包括连接状态变化、数据接收或其他相关信息。</p><p style="text-indent: 2em;">■   ACL数据包用于主机与控制器之间交换数据。它支持传输异步数据，例如来自传感器或用户输入的信息。</p><p style="text-indent: 2em;">■   SCO数据包用于主机与控制器之间交换同步数据。但需要注意的是，BLE不支持SCO数据包，SCO数据包主要用于经典蓝牙中的语音或音频传输。</p><p style="text-indent: 2em;">■   ISO数据包是新增的数据包类型，支持利用BLE在设备之间传输有时限要求的数据。等时数据包专为需要精准时序的应用而设计，例如音频流传输或实时控制。</p><p style="text-align: center;"><img src="http://editerupload.eepw.com.cn/202511/1763536847286436.png" title="1763536847286436.png" alt="1763536847286436.png" width="600" height="357" border="0"/></p><p style="text-align: center;"><em>图22 蓝牙应用</em></p><p style="text-indent: 2em;"><strong>为何如此重要？</strong></p><p style="text-indent: 2em;">BLE广泛应用于从消费类产品到工业环境的各种场景中，因此了解BLE及其重要性会大有裨益。BLE是一种不断发展和升级的协议，为应用开发提供了无限的可能性。</p><p style="text-indent: 2em;"><strong>用例</strong></p><p style="text-indent: 2em;">BLE广泛应用于众多行业，在不知不觉中影响着我们的日常生活（图22）。熟悉BLE有助于人们在各种应用场景中理解并运用BLE的优势。BLE为很多领域做出了巨大贡献，推动了现有流程的革新。以下是其中的一些领域：</p><p style="text-indent: 2em;"><strong>BLE在医学领域的应用</strong></p><p style="text-indent: 2em;">BLE在医学领域发挥着至关重要的作用。BLE技术让血糖仪、血压监测仪等设备得以使用，甚至像起搏器这样要求超低功耗的植入式设备也能够更好地发挥作用。这些设备可以收集数据，并向患者和医疗机构传输实时报告。BLE还能用于患者追踪，定位房间或楼层号码，向医疗响应人员传输信息等。</p><p style="text-indent: 2em;"><strong>BLE在定位追踪中的应用</strong></p><p style="text-indent: 2em;">借助BLE技术，先进的追踪器或智能标签可以附着在包、钥匙甚至宠物上，以便追踪所在位置。这些标签设计得非常小巧且节能，因此BLE的低能耗特性至关重要。很多行业也在利用BLE技术，例如仓库货位监控、杂货店管理及室内导航。</p><p style="text-indent: 2em;"><strong>BLE在可穿戴设备中的应用</strong></p><p style="text-indent: 2em;">可穿戴设备对轻巧便携和长久续航的要求，使得BLE技术成为理想之选。智能手表、健身手环和智能眼镜等设备普遍采用BLE来实现无线连接并降低能耗。</p><p style="text-indent: 2em;"><strong>BLE在音频流传输中的应用</strong></p><p style="text-indent: 2em;">BLE在音频流传输应用中发挥着重要作用。随着LE Audio的推出，BLE现在支持低延迟的音频流传输，带来更佳的音质体验。LE Audio采用低复杂度通信编解码器(LC3)，能够在低数据速率下保证音频质量不受影响。这为无线音频消费开辟了新的可能性。</p><p style="text-indent: 2em;"><strong>BLE在自动化家居中的应用</strong></p><p style="text-indent: 2em;">在自动化家居领域，BLE是实现智能家居的基础技术。物联网在智能家居中得到广泛应用，而BLE支持各种智能设备之间无缝连接。市面上有各种各样支持BLE的智能设备可用于自动化家居，例如钥匙扣、家庭信标、开关等。BLE让用户能够控制和监控家里的方方面面，例如智能照明、高效节能的家庭能源管理、智能门锁、无线扬声器系统、家用机器人和安保系统。</p><p style="text-indent: 2em;"><strong>结论</strong></p><p style="text-indent: 2em;">在BLE协议栈中，应用数据需经过多层协议处理，才能到达另一台设备的远端应用程序（该设备也拥有自身的BLE协议栈）。完整流程如下：</p><p style="text-indent: 2em;"><strong>1.应用层：</strong>应用程序选择适当的属性来保存要传输的数据。</p><p style="text-indent: 2em;"><strong>2.ATT层：</strong>生成ATT层数据包，其中包含与远端设备目标属性对应的信息。</p><p style="text-indent: 2em;"><strong>3.L2CAP层：</strong>来自ATT层的数据包将经由L2CAP层处理。若有需要，L2CAP执行数据分段和重组。该层为每个L2CAP数据包添加L2CAP标头。</p><p style="text-indent: 2em;"><strong>4.链路层：</strong>将L2CAP数据包传递至链路层，链路层将数据包传递到物理层进行无线传输。给数据包添加链路层表头，形成协议数据单元（PDU）。</p><p style="text-indent: 2em;"><strong>5.物理层：</strong>在传输之前，物理层将必要的前导码、访问地址和CRC添加到PDU中。数据包随后通过无线方式传输。</p><p style="text-indent: 2em;">在接收端，远程BLE设备接收数据包，并执行逆过程来提取数据。</p><p style="text-indent: 2em;">在不同应用中实现BLE时，选择合适的硬件是实现最佳效率和优化的关键。针对不同的要求和应用，ADI公司提供了多种支持BLE的微控制器。</p><p style="text-indent: 2em;">MAX32665/MAX32666/MAX32667/MAX32668DARWIN系列低功耗微控制器针对广泛的实际应用而设计。这些MCU支持蓝牙5低功耗无线电连接，可以与多个设备进行无线连接以实现物联网应用，同时仍维持尽可能低的活动功耗和保持功耗3。DARWIN MCU还拥有同类产品中最大的嵌入式存储器，支持更大规模的应用和更多的协议栈。这种灵活性和能力为物联网领域的设计和应对各种挑战提供了无限可能性，既夯实了现代物联网解决方案的基石，又为未来发展铺平了道路。</p><p style="text-indent: 2em;"><strong>参考文献</strong></p><p style="text-indent: 2em;">1 2023 Bluetooth Market Update，Bluetooth，2023年。</p><p style="text-indent: 2em;">2 Bluetooth Technology Overview，Bluetooth。</p><p style="text-indent: 2em;">3 “了解DARWIN：一种全新低功耗物联网MCU”，ADI公司，2022年10月。</p><p style="text-indent: 2em;">4 Madhur Bhargava，“IoT Projects with Bluetooth Low Energy”，Packt Publishing Limited，2017年。</p><p style="text-indent: 2em;">5 “Bluetooth Core Specification Version 5.2 Feature Overview”，Bluetooth。</p><p style="text-indent: 2em;">6 “Core Specification 5.4”，Bluetooth。</p><p style="text-indent: 2em;">7 Naresh Gupta，“Inside Bluetooth Low Energy”，Artech House，2013年。</p><p style="text-indent: 2em;">8 “Stack Architecture”，Zephyr Project。</p><p style="text-indent: 2em;">Bluetooth<sup>®</sup>文字标记和徽标是Bluetooth SIG, Inc.的注册商标，ADI公司已获得许可使用此类标记。其他商标和商号均属各自所有人所有。</p><p style="text-indent: 2em;"><strong>作者简介</strong></p><p style="text-indent: 2em;">Erick Reyes是软件和安全部门的高级固件工程师，负责为汽车和能源、通信及航空航天事业部提供技术支持。他于2019年加入ADI公司，担任产品应用工程师，从事精密转换器和RF无线收发器相关工作。他毕业于马尼拉马普阿大学，获电子工程学士学位。</p><p style="text-indent: 2em;">Mary Grace Legaspi是软件和安全部门的固件工程师，负责为消费电子事业部提供技术支持。2018年9月加入ADI公司，工作地点位于菲律宾甲米地。她拥有塔拉克州立大学电子工程学士学位和菲律宾大学管理学硕士学位。</p><p style="text-indent: 2em;">Eric Peňa是ADI公司软件和安全部门的嵌入式软件架构师，负责为工业自动化事业部提供技术支持。2019年4月加入ADI公司，工作地点位于菲律宾甲米地。毕业于马尼拉亚当森大学，获计算机工程学士学位。Eric之前曾在Technology Enabler Designer担任固件工程师，还曾在Fujitsu Ten Solutions担任系统工程师。</p>		<center>
-					</center>
-	<p class="keyp">关键词：
-			<a href="https://m.eepw.com.cn/m/listbylabel/label/"/>
-		</p>
-
-<!--阅读全文-->
-	<div class="login-read" style="display: block;" id="con2">
-		<div class="linear-block"/>
-	    <div class="read-all-btn-box">
-	    	<a href="https://passport.eepw.com.cn/auth/login?url=https://m.eepw.com.cn/article/202511/475592.html" target="_blank" class="read-all-btn">阅读全文</a>
-	    </div>
-	</div>
-<script type="text/javascript" src="//webstorage.eepw.com.cn/js/2014/m/check_login.js"/>  
-<!--阅读全文end-->
-</div>
-
-<div class="content" style="margin-top:20px;">
-	<!--ad start-->
-	<div style="width: 100%;margin-bottom:1em;">
-	<!-- 广告位：M02 -->
-		<script type="text/javascript">&lt;!--//&lt;![CDATA[
-   var m3_u = (location.protocol=='https:'?'https://ad.eepw.com.cn/www/delivery/ajs.php':'http://ad.eepw.com.cn/www/delivery/ajs.php');
-   var m3_r = Math.floor(Math.random()*99999999999);
-   if (!document.MAX_used) document.MAX_used = ',';
-   document.write ("&lt;scr"+"ipt type='text/javascript' src='"+m3_u);
-   document.write ("?zoneid=123");
-   document.write ('&amp;amp;cb=' + m3_r);
-   if (document.MAX_used != ',') document.write ("&amp;amp;exclude=" + document.MAX_used);
-   document.write (document.charset ? '&amp;amp;charset='+document.charset : (document.characterSet ? '&amp;amp;charset='+document.characterSet : ''));
-   document.write ("&amp;amp;loc=" + escape(window.location));
-   if (document.referrer) document.write ("&amp;amp;referer=" + escape(document.referrer));
-   if (document.context) document.write ("&amp;context=" + escape(document.context));
-   if (document.mmm_fo) document.write ("&amp;amp;mmm_fo=1");
-   document.write ("'&gt;&lt;\/scr"+"ipt&gt;");
-//]]&gt;--&gt;</script><noscript><a href="http://ad.eepw.com.cn/www/delivery/ck.php?n=a3ee0761&amp;cb=INSERT_RANDOM_NUMBER_HERE" target="_blank"><img src="http://ad.eepw.com.cn/www/delivery/avw.php?zoneid=123&amp;cb=INSERT_RANDOM_NUMBER_HERE&amp;n=a3ee0761" border="0" alt=""/></a></noscript>
-	</div>
-	<!--ad end-->
-	
-<script>
-var $oBanana=$('#banana');
-$($oBanana).animate({'font-size':'24'},300);
-</script>	
-</div>]]></description></item><item>    <title><![CDATA[2026年广州国际智能制造技术与装备展览会，大湾区智能制造年度盛-电子产品世界手机版]]></title>    <link>http://m.eepw.com.cn/article/202511/475599.html</link>    <guid>http://m.eepw.com.cn/article/202511/475599.html</guid>    <pubDate>2025-11-19 16:03:02.980462</pubDate>    <description><![CDATA[<h2>2026年广州国际智能制造技术与装备展览会，大湾区智能制造年度盛</h2>		
-		<div class="time_source news-info">
-		
-		 
-				<span> 时间：2025-11-19</span><span>来源：</span>		</div>
-				<div class="content" id="con1" style="overflow:hidden;">
-		<h4><strong><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">广州，</span></span></strong><strong><span style="font-family: Arial;font-size: 15px">202</span></strong><strong><span style="font-family: 宋体;font-size: 15px"><span style="font-family:Arial">5</span></span></strong><strong><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">年</span></span></strong><strong><span style="font-family: 宋体;font-size: 15px"><span style="font-family:Arial">1</span></span></strong><strong><span style="font-family: PMingLiU;font-size: 15px"><span style="font-family:Arial">1</span></span></strong><strong><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">月</span></span></strong><strong><span style="font-family: 宋体;font-size: 15px"><span style="font-family:Arial">17</span></span></strong><strong><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">日。</span></span></strong><strong><span style="font-family: 宋体;font-size: 15px"><span style="font-family:宋体">广州国际</span><span style="font-family:宋体">智能制造</span><span style="font-family:宋体">技术与装备展览会</span></span></strong><strong><span style="font-family: 宋体;font-size: 15px">（</span></strong><strong><span style="font-family: Arial;font-size: 15px">SPS – Smart Production Solutions Guangzhou</span></strong><strong><span style="font-family: 宋体;font-size: 15px">）</span></strong><strong><span style="font-family: 宋体;font-size: 15px">将于</span></strong><strong><span style="font-family: Arial;font-size: 15px">2026</span></strong><strong><span style="font-family: 宋体;font-size: 15px">年</span></strong><strong><span style="font-family: Arial;font-size: 15px">3</span></strong><strong><span style="font-family: 宋体;font-size: 15px">月</span></strong><strong><span style="font-family: Arial;font-size: 15px">4</span></strong><strong><span style="font-family: 宋体;font-size: 15px">日至</span></strong><strong><span style="font-family: Arial;font-size: 15px">6</span></strong><strong><span style="font-family: 宋体;font-size: 15px">日</span></strong><strong><span style="font-family: 宋体;font-size: 15px">，</span></strong><strong><span style="font-family: 宋体;font-size: 15px">在广州中国进出口商品交易会展馆</span></strong><strong><span style="font-family: Arial;font-size: 15px">B</span></strong><strong><span style="font-family: 宋体;font-size: 15px">区隆重举行。作为粤港澳大湾区智能制造发展的</span></strong><strong><span style="font-family: 宋体;font-size: 15px">行业</span></strong><strong><span style="font-family: 宋体;font-size: 15px">盛会，展会立足这一华南重要经济与制造枢纽，不仅是中国制造业对接全球先进技术的重要窗口，更是推动产业结构优化与数字化转型的关键平台。</span></strong><strong><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">通过前沿技术展示、产业资源对接与国际协同合作，展会持续赋能中国制造业高质量发展，助力产业从</span></span></strong><strong><span style="font-family: 宋体;font-size: 15px">“</span></strong><strong><span style="font-family: 宋体;font-size: 15px">设备</span></strong><strong><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">单</span></span></strong><strong><span style="font-family: 宋体;font-size: 15px"><span style="font-family:宋体">点突破</span><span style="font-family:宋体">”迈向“</span></span></strong><strong><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">制造</span></span></strong><strong><span style="font-family: 宋体;font-size: 15px"><span style="font-family:宋体">系统重构</span><span style="font-family:宋体">”，加</span></span></strong><strong><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">速构建智能化、数字化的新型制造体系。</span></span></strong><span style="font-family: Arial; font-size: 15px;"> </span></h4><p><span style="font-family: 宋体;font-size: 15px">大湾区的</span><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">智能制造领域</span></span><span style="font-family: 宋体;font-size: 15px">在政策支持与产学研协同合作的多重驱动下，正展现出强劲的发展势头。大湾区</span><span style="font-family: 宋体;font-size: 15px">运</span><span style="font-family: 宋体;font-size: 15px">用香港、澳门的国际化科研优势和珠三角九市世界级的制造业基础，构建了从基础研发、生产制造到金融支持与人才保障的完整产业价值链。</span></p><p><span style="font-family: Arial;font-size: 15px">2025</span><span style="font-family: 宋体;font-size: 15px">年，广东省在年初预算中安排了</span><span style="font-family: Arial;font-size: 15px">262</span><span style="font-family: 宋体;font-size: 15px">亿元人民币（</span><span style="font-family: Arial;font-size: 15px">36</span><span style="font-family: 宋体;font-size: 15px"><span style="font-family:宋体">亿美元）支持</span><span style="font-family:宋体">“制造业当家”战略。同时，广东省属国企也计划到</span></span><span style="font-family: Arial;font-size: 15px">2027</span><span style="font-family: 宋体;font-size: 15px">年在人工智能相关领域投资超过</span><span style="font-family: Arial;font-size: 15px">200</span><span style="font-family: 宋体;font-size: 15px">亿元人民币（</span><span style="font-family: PMingLiU;font-size: 15px"><span style="font-family:Arial">28</span></span><span style="font-family: 宋体;font-size: 15px">亿美元），以期带动超千亿元（</span><span style="font-family: PMingLiU;font-size: 15px"><span style="font-family:Arial">140</span></span><span style="font-family: 宋体;font-size: 15px">亿美元）的产业规模。</span></p><p><span style="font-family: Arial;font-size: 15px"> </span><span style="font-family: Arial; font-size: 15px;">202</span><span style="font-family: 宋体; font-size: 15px;"><span style="font-family:Arial">6</span></span><span style="font-family: Arial; font-size: 15px;"><span style="font-family:宋体">年</span></span><span style="font-family: 宋体; font-size: 15px;">广州国际智能制造技术与装备展览会</span><span style="font-family: 宋体; font-size: 15px;">响应国家发展战略，</span><span style="font-family: 宋体; font-size: 15px;">为制造业转型升级提供从底层硬件到顶层软件的全方位技术支撑</span><span style="font-family: 宋体; font-size: 15px;">，提供高度定制化的系统解决方案，助力企业实现提质、增效与智能化升级。</span><span style="font-family: 宋体; font-size: 15px;">依托</span><span style="font-family: Arial; font-size: 15px;">SPS</span><span style="font-family: 宋体; font-size: 15px;">全球品牌系列展会的国际化平台优势，展会有效整合全球技术与产业资源，为中国企业拓展</span><span style="font-family: 宋体; font-size: 15px;">境</span><span style="font-family: 宋体; font-size: 15px;">内外市场、国际供应商扎根大湾区提供高效、专业的对接渠道。</span></p><p><span style="font-family: 宋体; font-size: 15px;">本届展会汇聚全球智能制造标杆企业，截至<span style="font-family:Arial">10</span>月明治传感、奥托尼克斯、宾德、熊大、云物智联、科瑞、德夫尔、鼎实、意普兴、高诚、科迪通达、馥融传动、合熠智能、虹润、佳尔灵、加玮、精研技术、科力光电、领航机器人、精奇、贸泽电子、零点、燧石、荣越电气、视界纵横、深视智能、思沛泽、神武、思谷智能、台春、天立、同创、尤提乐、万捷电子、瓦特尚、魏德电气等品牌已确认参展，涵盖</span><span style="font-family: 宋体; font-size: 15px;">多元化</span><span style="font-family: 宋体; font-size: 15px;">智能制造关键领域，为观众呈现前沿技术与智能工厂解决方案。</span></p><p><span style="font-family: 宋体; font-size: 15px;"/></p><p><strong><span style="font-family: 宋体;font-size: 15px">三</span></strong><strong><span style="font-family: 宋体;font-size: 15px">大同期</span></strong><strong><span style="font-family: 宋体;font-size: 15px">展</span></strong><strong><span style="font-family: 宋体;font-size: 15px">会</span></strong><strong><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">聚力，</span></span></strong><strong><span style="font-family: 宋体;font-size: 15px">全方位</span></strong><strong><span style="font-family: 宋体;font-size: 15px">打造智能制造科技盛宴</span></strong></p><p><span style="font-family: 宋体;font-size: 15px"><span style="font-family:Arial">2026</span><span style="font-family:宋体">年广州国际智能制造技术与装备展览会将继续携手广州工业科技展及亚洲国际模具展</span></span><span style="font-family: PMingLiU;font-size: 15px"> </span><span style="font-family: Arial;font-size: 15px">— </span><span style="font-family: 宋体;font-size: 15px">广州站，共同打造行业盛事。三场同期展会</span><span style="font-family: 宋体;font-size: 15px">将</span><span style="font-family: 宋体;font-size: 15px">汇聚全球领先智能制造、工业自动化、机器人技术、模具、冲压及增材制造技术，全面展示从核心零部件到智能工厂的全产业链创新成果。</span></p><p><span style="font-family: 宋体;font-size: 15px">今年广州工业科技展旗下除广州国际轴承及专用制造装备展外，</span><span style="font-family: 宋体;font-size: 15px">将</span><span style="font-family: 宋体;font-size: 15px">新增广</span><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">州国际机器人及智能装备展。</span></span><span style="font-family: 宋体;font-size: 15px">新增</span><span style="font-family: 宋体;font-size: 15px">的一系列展出将</span><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">以机器人全产业链为主线，</span></span><span style="font-family: 宋体;font-size: 15px">系统展示</span><span style="font-family: 宋体;font-size: 15px">核心零部件、系统集成应用的</span><span style="font-family: 宋体;font-size: 15px">创新成果，展品范围涵盖</span><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">工业机器人、服务机器人、特种机器人、智能装备、流体传动</span></span><span style="font-family: 宋体;font-size: 15px">与</span><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">机械传动、空压技术、</span>AI<span style="font-family:宋体">工业应用等相关产品，搭建高效对接平台，助力企业抢占新工业革命的增长机遇。</span></span></p><p><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体"/></span></p><p><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">亚洲国际模具展</span></span><span style="font-family: PMingLiU;font-size: 15px"> </span><span style="font-family: Arial;font-size: 15px">— </span><span style="font-family: 宋体;font-size: 15px">广州站则聚焦</span><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">模具制造技术，全面展示模具、精密注塑、智能冲压、先进压铸及增材制造（</span>3D<span style="font-family:宋体">打印）等全产业链技术。</span></span></p><p><span style="font-family: Arial;font-size: 15px"> </span><span style="font-family: 宋体; font-size: 15px;">三大展会协同合作构筑综合性平台，覆盖智能制造全生态链，吸引海内外知名企业参展。通过技术交流、商贸对接及行业论坛加速新技术落地，促进产业升级，助力大湾区巩固其智能制造枢纽的战略地位。</span></p><p><span style="font-family: Arial;font-size: 15px"> </span><strong><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">观众预登记系统重磅上线</span></span></strong></p><p><span style="font-family: 宋体;font-size: 15px">观众预登记系统现已全面启动</span><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">。</span></span><span style="font-family: 宋体;font-size: 15px">本届展会聚焦汽车工程、</span><span style="font-family: Arial;font-size: 15px">3C </span><span style="font-family: 宋体;font-size: 15px">电子、家用电器、食品饮料、新能源等</span><span style="font-family: Arial;font-size: 15px"> 30 </span><span style="font-family: 宋体;font-size: 15px">多个应用行业，为制造企业提供开年首选的技术采购平台，助力把握市场先机，规划全年技术升级战略</span><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">。</span></span></p><p><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体"><img src="http://editerupload.eepw.com.cn/202511/1763538710420159.png" title="1763538710420159.png" alt="2fe2dc3e-c106-4d36-aa35-0e33a35a3aeb.png"/></span></span></p><p><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体"><img src="http://editerupload.eepw.com.cn/202511/1763538739955697.png" title="1763538739955697.png" alt="5a5576bd-f0ef-4bd5-a487-d390b10350ca.png"/></span></span><br/></p><p><span style="font-family: 宋体; font-size: 15px;"/></p><p><span style="font-family: 宋体;font-size: 15px">广州国际智能制造技术与装备展览会（</span><span style="font-family: Arial;font-size: 15px">SPS – Smart Production Solutions Guangzhou</span><span style="font-family: 宋体;font-size: 15px">）由广州光亚法兰克福展览有限公司、中国对外贸易广州展览有限公司、广州富洋展览有限公司及德国美赛高法兰克福展览有限公司共同举办。广东省自动化学会、广州市自动化学会及广州市仪器仪表学会担任名誉主办单位。中国机电一体化技术应用协会担任战略合作单位。广州工业机器人制造和应用产业联盟及西麦克国际展览有限责任公司担任特邀合作单位。</span></p><p><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">其他</span></span><span style="font-family: Arial;font-size: 15px">SPS</span><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">全球品牌系列展览会还有：</span></span></p><p><span style="font-family: Arial;font-size: 15px"> </span></p><p style="margin-right:0;margin-left:57px;line-height:19px"><span style="font-family: Symbol;font-weight: bold;font-size: 15px">· </span><strong><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">德国</span><span style="font-family:宋体">智能生产解决方案展览会</span><span style="font-family:宋体">（</span></span></strong><strong><span style="font-family: Arial;font-size: 15px">SPS – Smart Production Solutions </span></strong><strong><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">）</span></span></strong></p><p style="margin-left:57px"><span style="font-family: Arial;font-size: 15px">2025</span><span style="font-family: 宋体;font-size: 15px">年</span><span style="font-family: Arial;font-size: 15px">11</span><span style="font-family: 宋体;font-size: 15px">月</span><span style="font-family: Arial;font-size: 15px">25</span><span style="font-family: 宋体;font-size: 15px">至</span><span style="font-family: Arial;font-size: 15px">27</span><span style="font-family: 宋体;font-size: 15px">日，德国纽伦堡</span></p><p style="margin-right:0;margin-left:57px;line-height:19px"><span style="font-family:Symbol">· </span><strong><span style=";font-family:宋体">泰国智能制造技术展示论坛</span></strong><strong><span style=";font-family:Arial"> </span></strong><strong><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">（</span></span></strong><strong><span style=";font-family:Arial">SPS Stage Bangkok</span></strong><strong><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">）</span></span></strong><strong><span style=";font-family:Arial"><br/></span></strong><span style=";font-family:Arial">202</span><span style=";font-family:PMingLiU"><span style="font-family:Arial">6</span></span><span style=";font-family:Arial"><span style="font-family:宋体">年</span></span><span style=";font-family:Arial">3</span><span style=";font-family:Arial"><span style="font-family:宋体">月</span></span><span style=";font-family:PMingLiU"><span style="font-family:Arial">11</span></span><span style=";font-family:Arial"><span style="font-family:宋体">至</span></span><span style=";font-family:PMingLiU"><span style="font-family:Arial">13</span></span><span style=";font-family:Arial"><span style="font-family:宋体">日，泰国曼谷</span></span></p><p style="margin-right:0;margin-left:57px;line-height:19px"><span style="font-family:Symbol;font-weight:bold;font-size:15px">· </span><strong><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">马来西亚</span></span></strong><strong><span style=";font-family:宋体">智能制造技术展示论坛</span></strong><strong><span style=";font-family:Arial"> </span></strong><strong><span style=";font-family:宋体">（</span></strong><strong><span style="font-family: Arial;font-size: 15px">SPS Stage Kuala Lumpur</span></strong><strong><span style="font-family: 宋体;font-size: 15px">）</span></strong></p><p style="margin-right:0;text-indent:9px;line-height:19px"><span style=";font-family:Arial">           202</span><span style=";font-family:PMingLiU"><span style="font-family:Arial">6</span></span><span style=";font-family:Arial"><span style="font-family:宋体">年</span></span><span style=";font-family:Arial">5</span><span style=";font-family:Arial"><span style="font-family:宋体">月</span></span><span style=";font-family:Arial">1</span><span style=";font-family:PMingLiU"><span style="font-family:Arial">3</span></span><span style=";font-family:Arial"><span style="font-family:宋体">至</span></span><span style=";font-family:Arial">1</span><span style=";font-family:PMingLiU"><span style="font-family:Arial">5</span></span><span style=";font-family:Arial"><span style="font-family:宋体">日</span></span><span style=";font-family:宋体">，</span><span style=";font-family:Arial"><span style="font-family:宋体">马来西亚吉隆坡</span></span></p><p style="margin-right:0;margin-left:57px;line-height:19px"><span style="font-family: Symbol;font-size: 15px">· </span><strong><span style="font-family: Arial;font-size: 15px">SPS</span></strong><strong><span style="font-family: 宋体;font-size: 15px">意大利展（</span></strong><strong><span style="font-family: Arial;font-size: 15px">SPS Italia</span></strong><strong><span style="font-family: 宋体;font-size: 15px">）</span></strong></p><p style="text-indent:9px"><span style="font-family: Arial;font-size: 15px">            202</span><span style="font-family: PMingLiU;font-size: 15px"><span style="font-family:Arial">6</span></span><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">年</span></span><span style="font-family: Arial;font-size: 15px">5</span><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">月</span></span><span style="font-family: PMingLiU;font-size: 15px"><span style="font-family:Arial">26</span></span><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">至</span></span><span style="font-family: PMingLiU;font-size: 15px"><span style="font-family:Arial">28</span></span><span style="font-family: Arial;font-size: 15px"><span style="font-family:宋体">日，意大利帕尔马</span></span></p><p style="margin-right:0;margin-left:57px;line-height:19px"><span style="font-family:Symbol">· </span><strong><span style=";font-family:Arial">SPS</span></strong><strong><span style=";font-family:Arial"><span style="font-family:宋体">美国</span></span></strong><strong><span style="font-family: 宋体;font-size: 15px">展</span></strong><strong><span style=";font-family:Arial"><span style="font-family:宋体">（</span></span></strong><strong><span style=";font-family:Arial">SPS Atlanta</span></strong><strong><span style=";font-family:Arial"><span style="font-family:宋体">）</span></span></strong></p><p style="margin-right:0;text-indent:9px;line-height:19px"><span style=";font-family:Arial">           202</span><span style=";font-family:PMingLiU"><span style="font-family:Arial">7</span></span><span style=";font-family:Arial"><span style="font-family:宋体">年</span></span><span style=";font-family:Arial">9</span><span style=";font-family:Arial"><span style="font-family:宋体">月</span></span><span style=";font-family:Arial">1</span><span style=";font-family:PMingLiU"><span style="font-family:Arial">4</span></span><span style=";font-family:Arial"><span style="font-family:宋体">至</span></span><span style=";font-family:Arial">1</span><span style=";font-family:PMingLiU"><span style="font-family:Arial">6</span></span><span style=";font-family:Arial"><span style="font-family:宋体">日，美国亚特兰大</span></span></p><p><span style="font-family: Arial;font-size: 15px"> </span></p><p><span style="font-family: 宋体; font-size: 15px;"><br/></span><br/></p><p><br/></p>		<center>
-					</center>
-	<p class="keyp">关键词：
-			<a href="https://m.eepw.com.cn/m/listbylabel/label/"/>
-		</p>
-
-
-<div class="content" style="margin-top:20px;">
-	<!--ad start-->
-	<div style="width: 100%;margin-bottom:1em;">
-	<!-- 广告位：M02 -->
-		<script type="text/javascript">&lt;!--//&lt;![CDATA[
-   var m3_u = (location.protocol=='https:'?'https://ad.eepw.com.cn/www/delivery/ajs.php':'http://ad.eepw.com.cn/www/delivery/ajs.php');
-   var m3_r = Math.floor(Math.random()*99999999999);
-   if (!document.MAX_used) document.MAX_used = ',';
-   document.write ("&lt;scr"+"ipt type='text/javascript' src='"+m3_u);
-   document.write ("?zoneid=123");
-   document.write ('&amp;amp;cb=' + m3_r);
-   if (document.MAX_used != ',') document.write ("&amp;amp;exclude=" + document.MAX_used);
-   document.write (document.charset ? '&amp;amp;charset='+document.charset : (document.characterSet ? '&amp;amp;charset='+document.characterSet : ''));
-   document.write ("&amp;amp;loc=" + escape(window.location));
-   if (document.referrer) document.write ("&amp;amp;referer=" + escape(document.referrer));
-   if (document.context) document.write ("&amp;context=" + escape(document.context));
-   if (document.mmm_fo) document.write ("&amp;amp;mmm_fo=1");
-   document.write ("'&gt;&lt;\/scr"+"ipt&gt;");
-//]]&gt;--&gt;</script><noscript><a href="http://ad.eepw.com.cn/www/delivery/ck.php?n=a3ee0761&amp;cb=INSERT_RANDOM_NUMBER_HERE" target="_blank"><img src="http://ad.eepw.com.cn/www/delivery/avw.php?zoneid=123&amp;cb=INSERT_RANDOM_NUMBER_HERE&amp;n=a3ee0761" border="0" alt=""/></a></noscript>
-	</div>
-	<!--ad end-->
-	
-<script>
-var $oBanana=$('#banana');
-$($oBanana).animate({'font-size':'24'},300);
-</script>	
-</div>	
-	
-	<!-- 相关文章-->	
-	<div style="text-align: left; padding-left:10px;max-width:960px;margin: 0 auto;font-size: 1.25em;">
-			<h3>相关文章</h3>							
-	</div>
-	<section class="clear">
-		<div id="new_conwrap">
-			<ul>
-						
-				&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202408/462001.html">Tachyon单板计算机为AIoT应用嵌入智</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/embedded" class="news-lb">嵌入式系统</a>&#13;
-<span class="news-time">2024-08-14</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202408/462000.html">如何选择合适的微控制器</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/embedded" class="news-lb">嵌入式系统</a>&#13;
-<span class="news-time">2024-08-14</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202408/461999.html">Arm Cortex-M0+及其功能</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/embedded" class="news-lb">嵌入式系统</a>&#13;
-<span class="news-time">2024-08-14</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202408/461998.html">Canalys：今年 Q2 全球 AI PC</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/consume" class="news-lb">消费电子</a>&#13;
-<span class="news-time">2024-08-14</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202408/461997.html">技嘉发布旗下AM5主板BIOS更新，为AMD</a></div>					&#13;
-<div class="news-info">&#13;
-<span class="news-time">2024-08-14</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202408/461996.html">ROM、RAM、FLASH、DDR、EMMC</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/network" class="news-lb">网络与存储</a>&#13;
-<span class="news-time">2024-08-14</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202408/461995.html">诚迈科技荣获华为矿鸿OSV生态合作伙伴授牌，</a></div>					&#13;
-<div class="news-info">&#13;
-<span class="news-time">2024-08-14</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202408/461993.html">Wi-Fi 7：引领无线连接新时代</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/wireless" class="news-lb">手机与无线通信</a>&#13;
-<span class="news-time">2024-08-14</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-								
-				
-				
-			</ul>												
-		</div>						
-	</section>
-		<div class="computer">
-	<a href="https://www.eepw.com.cn/article/202511/475599.htm" target="_blank">查看电脑版</a>
-	</div>
-	<!-- footer begin -->
-	<footer>		
-		<p class="fontArial">Copyright © 电子产品世界  京ICP备12027778号-2</p>
-	</footer>
-	<!-- footer end -->
-	<!--百度推送-->
-	<script>
-	(function(){
-	    var bp = document.createElement('script');
-	    bp.src = '//push.zhanzhang.baidu.com/push.js';
-	    var s = document.getElementsByTagName("script")[0];
-	    s.parentNode.insertBefore(bp, s);
-	})();
-	</script>
-	<!--百度推送-->
-	<div style="display:none;">
-	<script type="text/javascript">
-	var keywords = document.querySelector('meta[name="keywords"]').getAttribute('content');
-	document.write("&lt;script language='JavaScript' src='http://datasheet.eepw.com.cn/count/index?title="+document.title+"&amp;keyword="+keywords+"&amp;url="+location.href+"&amp;refer="+document.referrer+"'&gt;&lt;\/script&gt;");
-	</script>
-	
-	<script>
-    var _hmt = _hmt || [];
-    (function() {
-      var hm = document.createElement("script");
-      hm.src = "https://hm.baidu.com/hm.js?c6033714cc2a1e329fdce55d9ceb29bd";
-      var s = document.getElementsByTagName("script")[0]; 
-      s.parentNode.insertBefore(hm, s);
-    })();
-    </script>
-	
-</div>
-<!--div id="DAKA">
-	<div id="DAKAInner"></div>
-	<div id="DAKAContent"><a href="http://m.eepw.com.cn/m/daka" target="_blank"><img src="//webstorage.eepw.com.cn/images/2014/wap/DAKA_icon_37x37.png"><span>下 载</span><p>DAKA——电子大咖<br/>超实用的电子设计领航者</p></a></div>
-</div-->
-
- 
-<script src="https://www.eepw.com.cn/event/ad/m_right_box.js"/>
-</div>]]></description></item><item>    <title><![CDATA[中汽创智发布 “人 - 车 - 路 - 云 - 星” 平台 车路云一体化战略落地发布-电子产品世界手机版]]></title>    <link>https://m.eepw.com.cn/article/202511/475271.html</link>    <guid>https://m.eepw.com.cn/article/202511/475271.html</guid>    <pubDate>2025-11-19 12:03:03.550256</pubDate>    <description><![CDATA[<h2>中汽创智发布 “人 - 车 - 路 - 云 - 星” 平台 车路云一体化战略落地发布</h2>		
-		<div class="time_source news-info">
-		
-				<a href="/m/list/special/auto" class="news-lb">汽车电子</a> 
-		 
-				<span> 时间：2025-11-11</span><span>来源：</span>		</div>
-				<div class="content" id="con1" style="overflow:hidden;">
-		<p style="text-indent:32px"><span style="font-size:16px;line-height:120%;font-family:'微软雅黑',sans-serif">2025 </span><span style="font-size:16px;line-height:120%;font-family:'微软雅黑',sans-serif">年 10 月 22 日，第三十二届中国汽车工程学会年会暨汽车创新技术展（SAECCE 2025）期间，中汽创智科技有限公司（以下简称 “中汽创智”）携手中国一汽、东风汽车、长安汽车、西部科学城智能网联汽车创新中心、头部低轨卫星运营商等核心合作伙伴，举办 “人 - 车 - 路 - 云 - 星” 全维信息技术平台联合创新体发布会。发布会以车路云一体化与低轨卫星通讯的深度融合为核心，系统阐述全域智能出行解决方案。发布会后，相关负责人接受采访，进一步解读车路云一体化战略的技术逻辑与落地规划。</span></p><h2><span style="font-size:19px;line-height:120%;font-family:'微软雅黑',sans-serif">发布会核心：“人 - 车 - 路 - 云 - 星” 联合创新体的战略架构</span></h2><p style="text-indent:32px"><span style="font-size:16px;line-height:120%;font-family:'微软雅黑',sans-serif">此次发布的 “人 - 车 - 路 - 云 - 星” 全维信息技术平台联合创新体，是中汽创智应对全球智能网联汽车竞争的关键布局，其核心在于深度融合 “车路云一体化” 与 “卫星强国” 两大国家战略，通过技术、产业、生态三重协同，推动智能驾驶从 “单点智能” 向 “全域全场景智能” 升级。</span></p><p style="text-indent:32px"><span style="font-size:16px;line-height:120%;font-family:'微软雅黑',sans-serif">平台明确 “车为终端、路为延伸、云为中枢、星为链接” 的定位分工：车端作为信息采集与执行核心，承接用户需求与场景交互；路侧设施延伸车端感知边界，弥补单车视野局限；云端承担数据处理、模型训练与全局调度职能；低轨卫星构建全域无死角通信链接，破解地面网络覆盖盲区。这种 “空天地” 协同架构，可有效应对高速偏远路段、恶劣天气等复杂场景的感知与通信痛点。</span></p><p style="text-align:left;text-indent:32px"><span style="font-size: 16px;font-family:'微软雅黑',sans-serif">中汽创智 CEO 谈民强表示，全球汽车产业正经历智能化变革，联合创新体以端到端智驾、车路云一体化、低轨卫星通信为底座，突破数据融合、天地通信等关键领域，加速智能化方案落地。平台核心 “两纵五横” 架构，“两纵” 兼顾存量系统兼容过渡与增量星端、AI 大模型技术跃迁；“五横” 打通人、车、路、云、星维度，实现数据流、控制流、价值流闭环协同。</span></p><h2><span style="font-size:19px;line-height:120%;font-family:'微软雅黑',sans-serif">深度解读：车路云一体化的技术突破与落地路径</span></h2><p style="text-indent:32px"><span style="font-size:16px;line-height:120%;font-family:'微软雅黑',sans-serif">发布会后，相关负责人围绕车路云一体化的核心价值、行业挑战与未来规划展开深度解读。</span></p><p style="text-indent:32px"><span style="font-size:16px;line-height:120%;font-family:'微软雅黑',sans-serif">谈及平台在车路云一体化层面的核心亮点，相关负责人表示：“车路云一体化是中国重点推进的平面智能驾驶解决方案，低轨卫星通讯是国家战略方向，两者深度结合不是简单叠加，而是通过技术、产业、生态融合实现全维升级。传统车路云聚焦地面场景，存在覆盖有限、通信断点等问题，低轨卫星提供全域无死角连接，能让车路云智能从‘平面’延伸到‘立体’，这是行业首次落地的理念与方案。”</span></p><p style="text-indent:32px"><span style="font-size:16px;line-height:120%;font-family:'微软雅黑',sans-serif">对于未来移动出行形态，负责人作出展望：“未来出行将是‘地面 + 低空’的立体网络，网络与模型融合是关键。汽车不再是孤立代步工具，而是‘数据载体’和‘场景载体’—— 作为数据载体，成为社会信息网络节点；作为场景载体，联动路、云、星资源提供适配服务。最终汽车会与社会、道路、城市及人的生活深度融合，车路云结合低轨卫星的全域覆盖技术，正是实现这一目标的最佳途径。”</span></p><p style="text-indent:32px"><span style="font-size:16px;line-height:120%;font-family:'微软雅黑',sans-serif">在智能汽车安全保障方面，负责人强调：“近期新能源汽车事故多因单车智能有‘感知边界’，无法预判远处或遮挡处危险。车路云一体化能融合城市、道路、人等信息形成‘全域感知网络’，路侧设施探测盲区，云端预判风险并触发避险动作。这种‘系统级安全’能力，将显著增强消费者对智能汽车的信心。”</span></p><p style="text-indent:32px"><span style="font-size:16px;line-height:120%;font-family:'微软雅黑',sans-serif">针对算力支撑问题，负责人介绍了 “算力卸载” 思路：“单车算力有天花板且增加成本能耗，我们将计算需求拆分分配到车、路、云、星各侧。云端处理计算量大但实时性低的任务，如交通流预判、模型训练；车端处理实时性极高的任务，如碰撞预警、紧急避让。这种分工既保证实时安全，又避免算力浪费。”</span></p><p style="text-indent:32px"><span style="font-size:16px;line-height:120%;font-family:'微软雅黑',sans-serif">通信带宽与覆盖难题的解决方案则聚焦 “多网融合”：“目前通信主要依赖 5G，但存在覆盖不全、传输断点等短板。我们通过地面直连通讯与 5G 融合提升覆盖密度，再引入低轨卫星提供全域大带宽、低时延服务，即便戈壁、山区也能保障传输，为算力卸载与全域感知筑牢通信基础。”</span></p><p style="text-indent:32px"><span style="font-size:16px;line-height:120%;font-family:'微软雅黑',sans-serif">对于车路云一体化向乘用车 C 端的拓展，负责人表示：“单车智能与车路云是‘并行协同’关系，前者是基础，后者是补充升级。当前局限于封闭场景，核心因基础设施与网络覆盖不足。‘人 - 车 - 路 - 云 - 星’平台通过卫星的全域覆盖能力，突破基础设施边界，无需每条公路铺满路侧设施，即可将应用场景拓展到乘用车 C 端。”</span></p><p style="text-indent:32px"><span style="font-size:16px;line-height:120%;font-family:'微软雅黑',sans-serif">在高精定位技术方面，负责人透露：“目前采用‘惯导定位 + RTK 定位’组合，RTK 提供高精度位置，惯导在信号弱时维持精度。未来将升级‘通导一体’技术，融合通信与定位信号，通过网络基站实现定位，最终形成惯性导航、卫星定位、网络定位的‘组合体系’，解决隧道、地下车库等场景的定位问题。”</span></p><p style="text-indent:32px"><span style="font-size:16px;line-height:120%;font-family:'微软雅黑',sans-serif">关于成本控制与方案选择，负责人分析：“短期内国内车企大概率坚持‘多传感器融合 + 车路云协同’方案。一方面，卫星模块等成本会随规模增长指数级下降，参考 TBOX 从高价到 200-300 元的演变；另一方面，中国道路复杂，多元感知融合能通过多源数据互补，缩短与国外顶尖车企的技术代差，符合国情需求。”</span></p><h2><span style="font-size:19px;line-height:120%;font-family:'微软雅黑',sans-serif">行业意义：车路云一体化开启智能出行新阶段</span></h2><p style="text-indent:32px"><span style="font-size:16px;line-height:120%;font-family:'微软雅黑',sans-serif">此次 “人 - 车 - 路 - 云 - 星” 全维信息技术平台联合创新体的发布，标志着中国智能网联汽车产业进入 “系统级协同” 新阶段。不再局限于单一技术突破，而是通过 “车 - 路 - 云 - 星” 全域协同，构建符合中国国情的智能出行生态。</span></p><p style="text-indent:32px"><span style="font-size:16px;line-height:120%;font-family:'微软雅黑',sans-serif">正如发布会上所强调，车路云一体化不是 “技术概念”，而是解决实际痛点的 “落地方案”：突破单车智能局限，提升智能汽车安全性与实用性；整合跨领域资源，推动交通、通信、城市管理协同升级；为中国汽车产业构建全球竞争 “差异化优势”，助力从 “汽车大国” 向 “智能出行强国” 跃迁。</span></p><p><br/></p>		<center>
-					</center>
-	<p class="keyp">关键词：
-			<a href="https://m.eepw.com.cn/m/listbylabel/label/中汽创智">中汽创智</a>
-		<a href="https://m.eepw.com.cn/m/listbylabel/label/ SAECCE"> SAECCE</a>
-		<a href="https://m.eepw.com.cn/m/listbylabel/label/车路云一体化">车路云一体化</a>
-		</p>
-
-
-<div class="content" style="margin-top:20px;">
-	<!--ad start-->
-	<div style="width: 100%;margin-bottom:1em;">
-	<!-- 广告位：M02 -->
-		<script type="text/javascript">&lt;!--//&lt;![CDATA[
-   var m3_u = (location.protocol=='https:'?'https://ad.eepw.com.cn/www/delivery/ajs.php':'http://ad.eepw.com.cn/www/delivery/ajs.php');
-   var m3_r = Math.floor(Math.random()*99999999999);
-   if (!document.MAX_used) document.MAX_used = ',';
-   document.write ("&lt;scr"+"ipt type='text/javascript' src='"+m3_u);
-   document.write ("?zoneid=123");
-   document.write ('&amp;amp;cb=' + m3_r);
-   if (document.MAX_used != ',') document.write ("&amp;amp;exclude=" + document.MAX_used);
-   document.write (document.charset ? '&amp;amp;charset='+document.charset : (document.characterSet ? '&amp;amp;charset='+document.characterSet : ''));
-   document.write ("&amp;amp;loc=" + escape(window.location));
-   if (document.referrer) document.write ("&amp;amp;referer=" + escape(document.referrer));
-   if (document.context) document.write ("&amp;context=" + escape(document.context));
-   if (document.mmm_fo) document.write ("&amp;amp;mmm_fo=1");
-   document.write ("'&gt;&lt;\/scr"+"ipt&gt;");
-//]]&gt;--&gt;</script><noscript><a href="http://ad.eepw.com.cn/www/delivery/ck.php?n=a3ee0761&amp;cb=INSERT_RANDOM_NUMBER_HERE" target="_blank"><img src="http://ad.eepw.com.cn/www/delivery/avw.php?zoneid=123&amp;cb=INSERT_RANDOM_NUMBER_HERE&amp;n=a3ee0761" border="0" alt=""/></a></noscript>
-	</div>
-	<!--ad end-->
-	
-<script>
-var $oBanana=$('#banana');
-$($oBanana).animate({'font-size':'24'},300);
-</script>	
-</div>	
-	
-	<!-- 相关文章-->	
-	<div style="text-align: left; padding-left:10px;max-width:960px;margin: 0 auto;font-size: 1.25em;">
-			<h3>相关文章</h3>							
-	</div>
-	<section class="clear">
-		<div id="new_conwrap">
-			<ul>
-						
-				&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202511/475271.html">中汽创智发布 “人 - 车 - 路 - 云 </a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/auto" class="news-lb">汽车电子</a>&#13;
-<span class="news-time">2025-11-11</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202510/474759.html">中汽创智重磅亮相SAECCE 2025，行业</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/iot" class="news-lb">物联网与传感器</a>&#13;
-<span class="news-time">2025-10-26</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-&#13;
-<li class="news2 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202210/439674.html">强强联合，恩智浦携手中汽创智加速自动驾驶新发</a></div>					&#13;
-<div class="news-info">&#13;
-<a href="/m/list/special/auto" class="news-lb">&#13;
-汽车电子</a>&#13;
-<span class="news-time">2022-10-27</span></div>																						&#13;
-					</div>	&#13;
-					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202210/439674.html">&#13;
-					<img src="http://editerupload.eepw.com.cn/202210/1666834852578850.png"/>&#13;
-					</a></div>	&#13;
-				</li>&#13;
-&#13;
-&#13;
-	&#13;
-								
-				
-				
-			</ul>												
-		</div>						
-	</section>
-		<div class="computer">
-	<a href="https://www.eepw.com.cn/article/202511/475271.htm" target="_blank">查看电脑版</a>
-	</div>
-	<!-- footer begin -->
-	<footer>		
-		<p class="fontArial">Copyright © 电子产品世界  京ICP备12027778号-2</p>
-	</footer>
-	<!-- footer end -->
-	<!--百度推送-->
-	<script>
-	(function(){
-	    var bp = document.createElement('script');
-	    bp.src = '//push.zhanzhang.baidu.com/push.js';
-	    var s = document.getElementsByTagName("script")[0];
-	    s.parentNode.insertBefore(bp, s);
-	})();
-	</script>
-	<!--百度推送-->
-	<div style="display:none;">
-	<script type="text/javascript">
-	var keywords = document.querySelector('meta[name="keywords"]').getAttribute('content');
-	document.write("&lt;script language='JavaScript' src='http://datasheet.eepw.com.cn/count/index?title="+document.title+"&amp;keyword="+keywords+"&amp;url="+location.href+"&amp;refer="+document.referrer+"'&gt;&lt;\/script&gt;");
-	</script>
-	
-	<script>
-    var _hmt = _hmt || [];
-    (function() {
-      var hm = document.createElement("script");
-      hm.src = "https://hm.baidu.com/hm.js?c6033714cc2a1e329fdce55d9ceb29bd";
-      var s = document.getElementsByTagName("script")[0]; 
-      s.parentNode.insertBefore(hm, s);
-    })();
-    </script>
-	
-</div>
-<!--div id="DAKA">
-	<div id="DAKAInner"></div>
-	<div id="DAKAContent"><a href="http://m.eepw.com.cn/m/daka" target="_blank"><img src="//webstorage.eepw.com.cn/images/2014/wap/DAKA_icon_37x37.png"><span>下 载</span><p>DAKA——电子大咖<br/>超实用的电子设计领航者</p></a></div>
-</div-->
-
- 
-<script src="https://www.eepw.com.cn/event/ad/m_right_box.js"/>
-</div>]]></description></item><item>    <title><![CDATA[意法半导体独有双量程运动传感器赋能工业数字化转型-电子产品世界手机版]]></title>    <link>http://m.eepw.com.cn/article/202511/475586.html</link>    <guid>http://m.eepw.com.cn/article/202511/475586.html</guid>    <pubDate>2025-11-19 11:03:36.903101</pubDate>    <description><![CDATA[<h2>意法半导体独有双量程运动传感器赋能工业数字化转型</h2>		
-		<div class="time_source news-info">
-		
-				<a href="/m/list/special/iot" class="news-lb">物联网与传感器</a> 
-		 
-				<span> 时间：2025-11-19</span><span>来源：EEPW</span>		</div>
-				<div class="content" id="con1" style="overflow:hidden;">
-		<p><em><span style="text-wrap-mode: nowrap;">• 独特的MEMS创新产品让监测安保设备即便在恶劣环境下也具有深度环境感知能力</span></em></p><p><em><span style="text-wrap-mode: nowrap;">• 运动与事件高精度追踪，高低重力同步独立感知</span></em></p><p><em><span style="text-wrap-mode: nowrap;">• 集成ST先进的传感器内边缘AI技术，赋能自主化、高性能与节能降耗</span></em></p><p><br/></p><p>意法半导体(STMicroelectronics，简称ST)近日发布了一款面向数据密集型工业物联网应用的三合一微型运动传感器ISM6HG256X，为边缘人工智能的发展提供更多助力。这款高精度IMU（智能惯性测量单元）传感器的独特之处是，在一个体积紧凑的封装内整合低加速度（±16g）和高加速度（±256g）同步检测功能与一个稳定的高性能陀螺仪，确保从细微运动或振动到剧烈冲击的所有关键事件都能无一遗漏地被捕捉到。</p><p style="text-align: center;"><img src="http://editerupload.eepw.com.cn/202511/1763519747149916.png" title="1763519747149916.png" alt="image.png"/></p><p>ISM6HG256X解决了工业物联网应用领域对可靠、高性能传感器日益增长的需求，例如，资产跟踪、穿戴式工人安全防护设备、状态监测、机器人、工厂自动化和黑匣子事件记录。通过集成双量程加速计，测量不同的加速幅度无需多个传感器，简化了系统设计，降低了设计整体复杂性。其嵌入式边缘处理能力和自配置功能支持实时事件检测和场景自适应感知，这个特性对于资产长久跟踪传感器节点、穿戴式安保设备、工业设备工况连续监测和自动化工厂系统至关重要。</p><p><br/></p><p>意法半导体APMS产品部副总裁兼MEMS子产品部总经理Simone Ferri表示：“传统解决方案需要多个传感器来测量低加速度和高加速度事件，这会增加系统的设计复杂性、功耗和成本。为了克服这些挑战，ISM6HG256X提供一个高集成度的单传感器解决方案。这些新的感知能力在恶劣的环境中也能正常工作，结合IMU传感器内部运行的机器学习，可以对运动、活动和事件进行快速识别、跟踪并分类，同时功耗很低，帮助企业在数字化转型的过程中做出数据驱动的明智决策”。</p><p><br/></p><p>边缘AI是意法半导体MEMS业务增长的重要驱动力。在传感器上实时处理数据，可以减少处理延迟，降低能耗，提高性能和能效。本地处理数据还可以增强隐私保护和信息安全，降低对外部处理的依赖度，并为各种应用带来系统可扩展性和设计灵活性。此外，边缘AI支持先进感知和物联网融合等创新用途，以满足对智能互联设备日益增长的需求。</p><p><br/></p><p>意法半导体是当今小型化惯性传感器微机电系统（MEMS）技术大厂之一，拥有600多项专利和自营产能，保障供应链的韧性和品控，这些积累沉淀为公司技术团队研发ISM6HG256X 提供了一个跳板。ISM6HG256X在同一封装内集成能够同时连续运行的16g量程和256g量程的两种加速度计，以及一个用于测量角速率的高精度MEMS陀螺仪。</p><p><br/></p><p><strong>技术信息</strong></p><p>ISM6HG256X 包含独特的机器学习核心(MLC)和有限状态机(FSM)，以及自适应自配置功能(ASC)和低功耗传感器融合算法(SFLP)。这些特性将边缘AI直接引入传感器，对检测到的事件进行自主分类，确保系统具有实时处理、低延迟性能和超低系统功耗。这种嵌入式技术可以重建信号强度动态范围，提供高保真的运动跟踪。得益于嵌入式SFLP算法，仅消耗几微安的电流即可实现3D方向跟踪。</p><p><br/></p><p>意法半导体新推出的X-NUCLEO-IKS5A1工业扩展板，配合MEMS Studio设计环境和丰富的软件库 X-CUBE-MEMS1，可帮助开发人员实现高低加速度幅值融合、传感器数据融合、场景感知、资产跟踪、校准等功能。</p><p><br/></p><p>ISM6HG256X现已上市，采用2.5mm x 3mm表面贴装封装，可在-40°C至105°C的严苛工业环境下工作。</p><p><br/></p><p>同时，ISM6HG256X 包含在意法半导体长期供货计划内，该计划确保关键组件供货至少10 年，以支持客户的工业产品开发。</p><p><br/></p><p>更多详情访问产品页面：面向工业5.0的MEMS传感器。</p><p><br/></p><p>意法半导体将在 11 月 20 日 举办的线上STM32 峰会上的“从数据到洞察：使用 ST 智能传感器和 STM32 构建智能、低功耗的物联网解决方案”专题技术研讨会上讨论其最新的 MEMS 传感器技术。</p><p><br/></p>		<center>
-					</center>
-	<p class="keyp">关键词：
-			<a href="https://m.eepw.com.cn/m/listbylabel/label/意法半导体">意法半导体</a>
-		<a href="https://m.eepw.com.cn/m/listbylabel/label/双量程运动传感器">双量程运动传感器</a>
-		<a href="https://m.eepw.com.cn/m/listbylabel/label/运动传感器">运动传感器</a>
-		</p>
-
-<!--阅读全文-->
-	<div class="login-read" style="display: block;" id="con2">
-		<div class="linear-block"/>
-	    <div class="read-all-btn-box">
-	    	<a href="https://passport.eepw.com.cn/auth/login?url=https://m.eepw.com.cn/article/202511/475586.html" target="_blank" class="read-all-btn">阅读全文</a>
-	    </div>
-	</div>
-<script type="text/javascript" src="//webstorage.eepw.com.cn/js/2014/m/check_login.js"/>  
-<!--阅读全文end-->
-</div>
-
-<div class="content" style="margin-top:20px;">
-	<!--ad start-->
-	<div style="width: 100%;margin-bottom:1em;">
-	<!-- 广告位：M02 -->
-		<script type="text/javascript">&lt;!--//&lt;![CDATA[
-   var m3_u = (location.protocol=='https:'?'https://ad.eepw.com.cn/www/delivery/ajs.php':'http://ad.eepw.com.cn/www/delivery/ajs.php');
-   var m3_r = Math.floor(Math.random()*99999999999);
-   if (!document.MAX_used) document.MAX_used = ',';
-   document.write ("&lt;scr"+"ipt type='text/javascript' src='"+m3_u);
-   document.write ("?zoneid=123");
-   document.write ('&amp;amp;cb=' + m3_r);
-   if (document.MAX_used != ',') document.write ("&amp;amp;exclude=" + document.MAX_used);
-   document.write (document.charset ? '&amp;amp;charset='+document.charset : (document.characterSet ? '&amp;amp;charset='+document.characterSet : ''));
-   document.write ("&amp;amp;loc=" + escape(window.location));
-   if (document.referrer) document.write ("&amp;amp;referer=" + escape(document.referrer));
-   if (document.context) document.write ("&amp;context=" + escape(document.context));
-   if (document.mmm_fo) document.write ("&amp;amp;mmm_fo=1");
-   document.write ("'&gt;&lt;\/scr"+"ipt&gt;");
-//]]&gt;--&gt;</script><noscript><a href="http://ad.eepw.com.cn/www/delivery/ck.php?n=a3ee0761&amp;cb=INSERT_RANDOM_NUMBER_HERE" target="_blank"><img src="http://ad.eepw.com.cn/www/delivery/avw.php?zoneid=123&amp;cb=INSERT_RANDOM_NUMBER_HERE&amp;n=a3ee0761" border="0" alt=""/></a></noscript>
-	</div>
-	<!--ad end-->
-	
-<script>
-var $oBanana=$('#banana');
-$($oBanana).animate({'font-size':'24'},300);
-</script>	
 </div>]]></description></item>  </channel></rss>
