@@ -1,4 +1,159 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[RISC-V怎么实现核间中断？核心本地中断控制器（CLINT）深度解析]]></title>    <link>https://www.elecfans.com/d/7494170.html</link>    <guid>https://www.elecfans.com/d/7494170.html</guid>    <pubDate>2025-12-13 14:06:00</pubDate>    <description><![CDATA[<div class="vditor-preview__action"/><div class="vditor-reset"><p><strong>全称为Core Local In<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>rruptor（核心本地中断<a href="https://www.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>），是 <a href="https://bbs.elecfans.com/zhuti_riscvmcu_1.html" target="_blank"><u>RISC-V</u></a> 特权架构规范（Privileged Architecture Specification）中明确定义的内建于每个核心 / 硬件线程（hart）的中断控制器，专门处理「核心本地、非共享」的中断类型，区别于处理外设共享中断的 PLIC（Platform-Level Interrupt Controller，平台级中断控制器）。</strong></p><h3>1、为什么需要 CLINT？</h3><p><strong><a href="https://bbs.elecfans.com/zhuti_riscvmcu_1.html" target="_blank"><u>RISC</u></a>-V 核心在运行时，需要处理两类截然不同的中断需求：</strong></p><p>一类是全局共享中断（如 <a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a> 收发、GPIO 电平变化、SPI <a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>完成等），这类中断来自外部外设，需多个核心共享处理；</p><p><strong>另一类是核心本地中断（如定时任务、核心间通信），这类中断仅属于单个核心，要求极低的响应延迟，无需总线仲裁。</strong></p><p><strong>CLINT 的设计初衷正是为了解决第二类需求 —— 通过将中断控制器 “内嵌” 到每个 hart 中，避免总线传输带来的延迟，确保核心对本地关键事件（如<a href="https://www.elecfans.com/tags/定时器/" target="_blank"><u>定时器</u></a>到期、核心间唤醒）的快速响应，这也是其 “Core Local”（核心本地）命名的由来。</strong></p><p><strong>CLINT</strong> 模块产生 <strong><a href="https://www.elecfans.com/tags/csr/" target="_blank"><u>CSR</u></a>****<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>的定时器中断、软件中断和计时器。</strong></p><p><img src="https://file1.elecfans.com/web3/M00/41/42/wKgZPGk5BUWAD25AAAAzYsiC2P445.jpeg" alt=""/></p><p>CLINT的系统架构示意图</p><p><strong>2、CLINT 功能说明</strong></p><p><strong>CLINT</strong> 由软件中断触发器、定时器中断触发器、计数器组成。 软件中断触发器由一个寄存器构成，直连 <strong><a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a></strong> 的机器级软件中断。 计数器负责提供 <strong>CPU</strong> 的 <strong><a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>TI</u></a>ME</strong> 与 <strong>TIMEH</strong> ，并参与定时器中断的触发。 定时器中断触发器用于定时器中断 的触发，当计数器值大于配置的值时会触发定时器中断**，**定时器中断是嵌入式系统中最常用的中断类型，几乎所有 <strong><a href="https://www.elecfans.com/tags/RTOS/" target="_blank"><u>RTOS</u></a>（如 <a href="https://m.elecfans.com/v/tag/1019/" target="_blank"><u>FreeRTOS</u></a>、<a href="https://bbs.elecfans.com/zhuti_emb_1.html" target="_blank"><u>RT-Thread</u></a>）的任务调度都依赖定时器中断提供的 “<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>节拍”</strong> 。</p><p><strong>2.1 <strong>CLINT</strong>初始化</strong></p><p><img src="https://file1.elecfans.com/web3/M00/41/42/wKgZPGk5BUWARvFRAAJk1SVMZgc08.jpeg" alt=""/></p><p><strong>2.2 软件中断：</strong></p><p>写 0 则清除中断挂起状态</p><p><img src="https://file1.elecfans.com/web3/M00/41/40/wKgZO2k5BUWAB0cjAABjFzlnqQA33.jpeg" alt=""/></p><p><strong>2.3定时器中断：</strong></p><p>中断处理函数中，更新比较阈值（实现周期性触发），并执行调度逻辑（如 <strong>RTOS 的任务切换）。</strong></p><p><img src="https://file1.elecfans.com/web3/M00/41/40/wKgZO2k5BUWABv77AAER3oGli9o56.jpeg" alt=""/></p><p><strong>2.3读取CLINT计数器：</strong></p><p><img src="https://file1.elecfans.com/web3/M00/41/40/wKgZO2k5BUWARRsKAABlgeX7t1823.jpeg" alt=""/></p><p><strong>2.4延时函数通过计数器功能计算延时时间</strong></p><p>CLINT 的 64 位全局计数器time/timeh提供了<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>的时间基准，可直接用于实现微秒级 / 毫秒级精准延时，无需依赖外部定时器。</p><p>延时函数实现原理：</p><p>进入延时函数时，读取当前计数器值told；</p><p>计算需要的总时钟节拍数（ticks = 延时时间(us) × 时钟频率(MHz)）；</p><p>循环读取当前计数器值tnow，计算累计节拍数tcnt；</p><p>当tcnt &gt;= ticks时，延时结束。</p><p><img src="https://file1.elecfans.com/web3/M00/41/42/wKgZPGk5BUaASnqjAAEABonA66g64.jpeg" alt=""/></p><p><strong>3、CLINT 的常见应用场景</strong></p><p>① RTOS 时钟节拍生成</p><p>FreeRTOS 等 RTOS 的任务调度依赖固定周期的时钟节拍，通常将 CLINT 定时器中断配置为 1ms 触发一次，在中断处理函数中调用vTaskIncrementTick()，实现任务就绪状态更新和调度器切换。</p><p>② 多核系统启动</p><p>在 RISC-V 多核芯片中，主核心启动后，通过向从核心的SOFTICR寄存器写 1，触发从核心的软件中断，从核心在中断处理函数中完成栈初始化、应用加载，实现多核心协同工作。</p><p>③ 精准数据采样</p><p>在<a href="https://www.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>、<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>采集等场景中，需按固定时间间隔（如 100us）采集数据，通过 CLINT 定时器中断触发采样函数，确保采样周期的稳定性和精准度。</p></div>]]></description></item><item>    <title><![CDATA[星载电子系统元器件SEE阈值测试与防护策略研究]]></title>    <link>https://www.elecfans.com/d/7500452.html</link>    <guid>https://www.elecfans.com/d/7500452.html</guid>    <pubDate>2025-12-13 14:08:00</pubDate>    <description><![CDATA[<div class="vditor-preview__action"/><div class="vditor-reset"><p><strong>摘要</strong> ：随着我国航天事业的快速发展，星载电子系统的自主可控与国产化替代已成为保障国家空间安全的重要战略方向。单粒子效应（Single Event Effects, SEE）作为空间辐射环境对微电子器件造成的主要威胁之一，其阈值测试与防护策略研究在国产化<a href="https://m.hqchip.com/ic/0" target="_blank"><u>元器件</u></a>的宇航级应用验证中占据核心地位。本文基于国科安芯推出的ASP4644系列<a href="https://m.hqchip.com/app/1731" target="_blank"><u>电源管理</u></a>芯片、ASM1042S2S型<a href="https://www.hqchip.com/app/2004" target="_blank"><u>CAN</u></a> FD<a href="https://www.hqchip.com/app/1809" target="_blank"><u>收发器</u></a>及AS32S601ZIT2型<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>等多型国产宇航级元器件的试验数据，系统梳理了当前国产化星载<a href="https://www.hqchip.com/gongsi.html" target="_blank"><u>电子元器件</u></a>在SEE效应评估中的技术路径、测试方法体系、防护设计策略及在轨验证现状。通过对比重离子、质子及脉冲激光三种主流SEE测试技术手段，分析了不同测试方法的适用场景与技术局限性；结合破坏性物理分析（DPA）、自主可控等级评估及总剂量效应（<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>TI</u></a>D）协同测试，提出了面向宇航应用的元器件全周期可靠性保障体系。</p><p><strong>1 引言</strong></p><p>空间辐射环境是制约星载电子系统长期可靠服役的关键因素之一。地球轨道上的高能质子和重离子能够穿透航天器屏蔽层，与<a href="https://m.elecfans.com/v/tag/123/" target="_blank"><u>集成电路</u></a>材料发生核反应或直接电离作用，引发单粒子效应（SEE），包括单粒子锁定（SEL）、单粒子翻转（SEU）、单粒子烧毁（SEB）及单粒子功能中断（SEFI）等多种失效模式。</p><p>本文聚焦国产化星载电子元器件的SEE阈值测试与防护策略，基于国科安芯推出的ASP4644系列四通道降压稳压器、ASM1042S2S型CAN FD收发器及AS32S601ZIT2型MCU等典型型号的系统性试验数据，开展技术评估与分析。这些元器件由国内多家单位协同研制，通过了工业和信息化部电子第五研究所、中国科学院国家空间科学中心及北京中科芯试验空间科技有限公司等权威机构的第三方测试验证，形成了涵盖DPA分析、自主可控等级评估、重离子/质子辐照试验、脉冲激光模拟及总剂量效应测试的技术链条。</p><p><strong>2 国产化星载元器件SEE效应研究现状</strong></p><p><strong>2.1 SEE效应机理与宇航级元器件的特殊要求</strong></p><p>单粒子效应的物理本质是高能带电粒子在器件敏感区产生电荷沉积，当收集电荷超过临界阈值时引发电路状态改变。对于星载应用，元器件通常需满足LET阈值≥37.4 MeV·cm²/mg的基本要求，部分高轨或深空任务甚至要求≥75 MeV·cm²/mg。传统商用器件的SEE敏感性往往高出1-2个数量级，必须通过工艺加固、设计加固或系统级防护方能满足宇航要求。</p><p>当前国产化宇航级元器件主要采用"设计加固+工艺管控+筛选测试"的技术路线。以ASP4644系列为例，该型四通道<a href="https://www.elecfans.com/tags/dc/dc/" target="_blank"><u>DC/DC</u></a>降压稳压器采用BGA77封装，内置功率<a href="https://www.elecfans.com/tags/mosfet/" target="_blank"><u>MOSFET</u></a>与电感，支持4-14V宽输入电压范围，单通道最大输出<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>达5A。根据中国电子元器件自主可控等级评估通用准则，ASP4644I6B与ASP4644M2B型号均获得C级<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>，表明其核心原材料与零部件已实现国内供应链主导，关键原材料包括<a href="https://www.hqchip.com/app/1703" target="_blank"><u>DC</u></a>DC<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>晶圆、<a href="https://m.hqchip.com/app/1558" target="_blank"><u>肖特基</u></a><a href="https://m.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>及多层陶瓷<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>等主要由国内厂商提供，为后续SEE测试的样本代表性提供了基础保障。</p><p><strong>2.2 国产化SEE测试能力体系建设</strong></p><p>我国已建立覆盖重离子加速器、质子回旋加速器及脉冲激光模拟的SEE测试平台网络。中国科学院国家空间科学中心拥有H-13串列加速器，可提供LET值达37.4 MeV·cm²/mg的重离子束流；中国原子能科学研究院的100MeV质子回旋加速器可模拟太阳宇宙线及辐射带质子环境；北京中科芯试验空间科技有限公司的脉冲激光系统则提供5-100 MeV·cm²/mg的等效LET值快速评估能力。三类测试手段形成技术互补：重离子试验为鉴定级标准，质子试验评估实际空间质子环境效应，脉冲激光适用于快速筛选与失效机理分析。然而，各测试平台在数据互认、标准执行一致性方面仍存在改进空间。</p><p><strong>3 SEE阈值测试方法与技术实现</strong></p><p><strong>3.1 重离子单粒子效应试验</strong></p><p>重离子试验遵循QJ10005A-2018及ESCC 25100标准，通过加速器产生的高能重离子对开封装器件进行直接辐照。以ASP4644S2B为例，2025年8月在中国原子能科学研究院开展的试验采用7<a href="https://www.elecfans.com/v/tag/9979/" target="_blank"><u>4G</u></a>e离子，LET值37.4 MeV·cm²/mg，总注量8.3×10⁶ ion/cm²。试验设置12V偏置条件，监测四通道中一路的输出电压与工作电流，DC电源设置300mA限流保护。</p><p>试验结果显示，辐照过程中器件工作电流随注量增加呈现缓慢上升趋势，在3×10⁶ ion/cm²时达到限流值300mA，但停止辐照后电流可逐步恢复；继续辐照至8.3×10⁶ ion/cm²时电流超过1A，但经过一周静置后恢复至正常值71mA，输出电压始终稳定在1.5V。该现象符合单粒子瞬态（SET）诱导的闩锁敏感特征，而非破坏性SEL。最终判定ASP4644S2B在测试条件下未发生SEL或SEB现象。需要特别指出的是，37.4 MeV·cm²/mg的测试条件虽满足商业航天级基本要求，但尚不能完全证明器件在更高LET值下的行为特性，这是当前测试能力的主要局限。</p><p>ASM1042S2S型CAN FD收发器在相同LET值、注量1×10⁷ ion/cm²条件下，5V工作电流稳定在8mA，5Mbps<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>无误码，验证了其在测试条件下的SEL/SEU耐受能力。试验中的在线监测技术包括工作电流实时测量与功能回读比对，确保了对软错误的捕捉能力。</p><p><strong>3.2 质子单粒子效应试验</strong></p><p>质子试验依据GJB9397-2018及GB18871-2002标准，重点评估器件对空间天然质子环境的敏感性。ASP4644S2B的质子试验于2025年在中国原子能科学研究院100MeV质子回旋加速器上完成，注量率1×10⁷ p·cm⁻²·s⁻¹，总注量1×10¹⁰ p/cm²。试验过程中器件未出现功能异常，判定合格。ASM1042S2S及AS32S601ZIT2型MCU的质子试验同样采用100MeV能量、1×10¹⁰总注量，结果显示均无SEL/SEU现象，验证了其在低LET端（质子LET值约0.1-10 MeV·cm²/mg）的鲁棒性。</p><p>质子试验的技术挑战在于其较低LET值难以触发某些加固器件的SEE，但高注量可评估累积效应。试验中需严格控制总剂量累积不超过TID能力的80%，避免剂量效应与位移损伤效应干扰SEE判定。所有质子试验样品均配有未辐照参考样片，以排除测试系统漂移影响。此外，质子试验的环境参数（温度15-35℃，相对湿度20-80%）需严格记录，确保试验可重复性。</p><p><strong>3.3 脉冲激光单粒子效应<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a></strong></p><p>脉冲激光技术依据GB/T43967-2024及GJB10761-2022标准，利用皮秒激光脉宽短、能量可控的特点，在器件正面或背面注入电荷，模拟重离子效应。AS32S601型MCU的激光试验在LET值5-75 MeV·cm²/mg范围内扫描，当能量达1585pJ（对应LET=65 MeV·cm²/mg）时监测到SEU，引发<a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>复位；而未观察到SEL，表明其SEL阈值高于75 MeV·cm²/mg。该结果与重离子试验形成交叉验证，但需注意激光模拟的电荷注入剖面与重离子存在差异，特别是在深层敏感区模拟方面存在局限。</p><p>ASM1042系列（SIT1042AQ、TCAN1042HGVD、ASM1042A）的激光试验揭示出不同型号间的敏感性差异：SIT1042AQ在920pJ（LET=37 MeV·cm²/mg）出现SEL；TCAN1042HGVD在610pJ（LET=25 MeV·cm²/mg）出现SEFI，重启无法恢复；而ASM1042A在最高3050pJ（LET=100 MeV·cm²/mg）仍未失效，展现出不同的抗辐照能力。激光试验的快速反馈能力为设计迭代与批次筛选提供了有效手段，但其结果需通过重离子试验最终确认。</p><p><strong>4 协同测试与全周期可靠性保障</strong></p><p><strong>4.1 破坏性物理分析（DPA）与工艺一致性评估</strong></p><p>DPA是宇航元器件批产质量控制的必要环节。ASP4644S2B的DPA报告显示，样品通过外部目检、X射线检查、声学扫描显微镜（SAM）及内部目检，未见分层、空洞或键合异常。键合强度测试采用20μm与30μm金线，拉力值符合GJB548B-2025要求，但报告明确指出"结果仅作工程观察，不作合格判定"，体现了对宇航级器件高可靠性的审慎态度。DPA与SEE测试的关联性在于：金属化缺陷、钝化层不完整等工艺问题会显著降低SEE阈值，因此DPA合格是开展SEE测试的前提。对于塑封器件，SAM检查需特别注意芯片背面分层问题，这可能影响散热与应力分布。</p><p><strong>4.2 总剂量效应（TID）与SEE的协同评估</strong></p><p>空间辐射环境同时包含电离总剂量与单粒子效应，二者存在协同作用。ASP4644S2B的TID试验参照QJ10004A-2018标准，采用钴60γ源，剂量率25 rad(Si)/s，累积剂量达150 krad(Si)后加50%过辐照（225 krad(Si)）。试验前后工作电流稳定在72mA，输出电压1.5V无漂移，判定抗TID能力&gt;125 krad(Si)。ASM1042S2S与AS32S601ZIT2的TID试验均达标&gt;150 krad(Si)。</p><p>TID测试的偏置条件设计需贴近实际工作模式。ASP4644S2B采用12V输入，四通道分别输出3.3V、2.5V、1.5V、1.2V，空载监测1.5V通道，确保内部<a href="https://www.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>与功率管均受辐照。AS32S601ZIT2则加3.3V静态偏置，监测CAN通信与FLASH/<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>擦写功能。移位测试的时间间隔控制在72小时内，以捕捉退火效应。协同测试表明，国产元器件在TID与SEE双重应力下性能稳定，但需警惕某些器件在TID损伤后SEE敏感性增加的风险，这要求在实际任务中进行综合裕量设计。</p><p><strong>4.3 自主可控等级评估对测试可信度的支撑</strong></p><p>依据ZKB3101-001-2022《军用电子元器件自主可控评估通用准则》，ASP4644I6B与M2B型号获C级认证，表明其设计、制造、封装、测试环节实现国内自主可控，但部分原材料存在境外替代风险。关键原材料清单显示，ASP3605晶圆由国科环宇自研，MBR4010DF由富芯森美<a href="https://www.hqchip.com/gongsi.html" target="_blank"><u>半导体</u></a>提供，无源元件与基板均选自风华高科、江西红板等国产供应商，键合丝、塑封料亦实现国产化。自主可控评估为SEE测试提供了供应链可信度背书，确保测试样品与在轨器件的技术状态一致性，这对于测试结果的可追溯性与任务风险评估至关重要。</p><p><strong>5 防护策略工程应用分析</strong></p><p><strong>5.1 器件级加固设计的实现路径</strong></p><p>国产宇航级器件采用多种加固技术：工艺上选用UMC 55nm、VIS 0.15μm BCD等成熟工艺节点，避免FinFET等敏感结构；设计上增加保护环、冗余节点与电流限幅电路；版图优化敏感节点间距，降低电荷共享效应。ASP4644S2B的BGA77封装采用77个焊球阵列，功率地（GND）与<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>地（SGND）分离设计，降低单粒子瞬态干扰。内置电感与功率MOSFET的集成设计减少了外部互连，降低了单粒子感应噪声的<a href="https://www.elecfans.com/tags/耦合/" target="_blank"><u>耦合</u></a>路径。</p><p>AS32S601ZIT2的MCU内核采用<a href="https://bbs.elecfans.com/zhuti_riscvmcu_1.html" target="_blank"><u>RISC-V</u></a>架构，集成ECC纠错功能的SRAM与FLASH，有效缓解SEU影响。其512KiB SRAM与2MiB P-Flash的存储结构对单粒子翻转的敏感性不同，要求差异化的测试策略。存储器的ECC设计虽能纠正单位错，但对多位翻转（MBU）的防护能力有限，这在高LET值重离子环境中需特别关注。</p><p><strong>5.2 系统级防护架构的工程实现</strong></p><p>星载电源系统通常采用"浪涌抑制+限流保护+冷冗余"三级防护架构。ASP4644S2B在轨应用中，其4通道并联输出16A能力为卫星载荷供电，测试条件下SEL阈值&gt;37.4 MeV·cm²/mg的设计指标降低了系统级防护压力。实际工程中会配置外部 watchdog 与电流监测电路，一旦检测到异常功耗即触发断电重启，响应时间通常控制在毫秒级。对于多电源并联系统，还需考虑单粒子瞬态引发的输出电压波动对负载的影响，输出端需增加LC滤波与储能电容。</p><p>通信系统则通过"<a href="https://www.elecfans.com/tags/看门狗/" target="_blank"><u>看门狗</u></a>+三模冗余（TMR）+重传机制"应对SEFI与SEU。ASM1042S2S的CAN FD<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>支持5Mbps高速率，其SEL阈值在测试条件下表现良好，配合总线级CRC校验与应答机制，可确保数据传输可靠性。对于关键指令传输，常采用双CAN总线冗余与交叉校验策略，避免SEFI导致的总线永久性失效。系统级防护还需考虑单粒子效应对同步信号（如CLKIN/CLKOUT）的干扰，ASP4644S2B的<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>同步功能在测试中未受影响，但在实际任务中仍需评估时钟抖动对分布式系统的影响。</p><p><strong>5.3 在轨验证的工程意义与挑战</strong></p><p>ASP4644S2B与ASM1042S2S已于2025年5月搭载于TY29"天仪29星"高光谱地质遥感卫星与TY35<a href="https://www.elecfans.com/v/tag/4854/" target="_blank"><u>光学</u></a>遥感卫星，截至2025年7月在轨运行约2个月期间供电稳定、通信正常。在轨数据与地面试验的相关性分析是验证测试有效性的最终环节。目前数据表明，地面试验中在37.4 MeV·cm²/mg条件下未发生SEL的器件在轨未出现锁定事件，初步验证了测试方法的保守性。</p><p>然而，在轨验证面临多重挑战：首先，空间辐射环境的动态变化（太阳质子事件、地磁扰动）难以在地面试验中完全模拟；其次，在轨监测数据的分辨率有限，难以区分SET与SEL的早期征兆；第三，在轨样本量小，统计置信度不足。因此，在轨验证应视为对地面试验的补充而非替代。未来的星载电子系统应集成健康监测单元，实时记录器件工作电流、温度及错误日志，通过遥测数据与地面协同分析，建立SEE效应的在轨预测模型。</p><p><strong>6 结论</strong></p><p>本文基于ASP4644、ASM1042S2S、AS32S601ZIT2等多型国产化星载器件的系统性试验数据，客观评估了SEE阈值测试与防护策略的技术现状。研究表明，国产元器件通过设计加固、工艺优化与严格测试，在SEL阈值、SEU阈值及TID耐受能力等关键指标上已达到商业航天级应用要求，部分型号获得初步在轨验证。重离子、质子与脉冲激光三种测试手段各有优势，协同测试可构建全周期可靠性保障体系。</p></div>]]></description></item><item>    <title><![CDATA[荣耀见证实力—Cincoze MXM GPU工控机夺下2026台湾精品奖]]></title>    <link>https://www.elecfans.com/d/7462003.html</link>    <guid>https://www.elecfans.com/d/7462003.html</guid>    <pubDate>2025-12-13 14:11:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[矢量网络分析仪与频谱分析仪：射频测量领域的双璧]]></title>    <link>https://www.elecfans.com/d/7494505.html</link>    <guid>https://www.elecfans.com/d/7494505.html</guid>    <pubDate>2025-12-13 13:56:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	在<a href="https://www.elecfans.com/v/tag/105/" target="_blank"><u>射频</u></a><a href="https://bbs.elecfans.com/zhuti_rf_1.html" target="_blank"><u>微波</u></a>测试领域，矢量网络分析仪(VNA)与频谱分析仪(SA)如同两把精密的钥匙，分别开启着<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>特性探索的不同维度。前者以相位测量为核心，后者聚焦频谱解析，二者在<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>、雷达、电子对抗等场景中扮演着不可替代的角色。本文将从<a href="https://www.elecfans.com/v/tag/773/" target="_blank"><u>工作原理</u></a>、功能差异、性能指标及应用场景四个维度，深入剖析这两类仪器的本质区别。</p>
+<p style="text-indent:2em;">
+	<img src="https://file1.elecfans.com/web3/M00/1B/3F/wKgZO2gtiq-AQShlAAGNlUa8BFg367.png" alt="wKgZO2gtiq-AQShlAAGNlUa8BFg367.png"/></p>
+<p style="text-indent:2em;">
+	一、工作原理：相位解构与频谱<a href="https://m.elecfans.com/v/tag/899/" target="_blank"><u>拆解</u></a>的差异</p>
+<p style="text-indent:2em;">
+	矢量网络分析仪的核心在于对信号相位与幅度的同步测量。其通过扫频信号源向被测件注入激励信号，利用接收机同步检测反射波与透射波的相位差，进而计算出S参数矩阵。这种机制使VNA能够精确<a href="https://www.elecfans.com/tags/解析器/" target="_blank"><u>解析器</u></a>件的幅频响应、群延迟等参数，其相位测量精度可达0.01°。而频谱分析仪则遵循傅里叶变换原理，将时域信号转换为频域图谱。内部模数转换模块将输入信号数字化后，通过快速傅里叶变换(FFT)提取各频率分量的幅度与相位信息，最终以瀑布图或迹线形式呈现频谱分布。</p>
+<p style="text-indent:2em;">
+	二、功能特性：网络参数与频谱特征的测量分野</p>
+<p style="text-indent:2em;">
+	VNA的强项在于表征器件的网络特性。其不仅能测量单<a href="https://m.hqchip.com/app/1808" target="_blank"><u>端口</u></a>反射系数(如S11)、双端口传输系数(S21)，还能通过误差修正模型消除系统误差，提取出真实的器件特性。在<a href="https://m.elecfans.com/v/tag/1225/" target="_blank"><u>5G</u></a>基站<a href="https://www.elecfans.com/tags/滤波器/" target="_blank"><u>滤波器</u></a>调试中，VNA可精准定位带内波纹与带外抑制指标。频谱分析仪则聚焦于信号本身的频谱特征，如占用带宽、邻道泄漏比、杂散发射等。现代高端SA还具备解调分析功能，可实时解析QAM、OFDM等复杂调制信号的EVM、星座图参数，成为通信协议合规性测试的关键工具。</p>
+<p style="text-indent:2em;">
+	三、性能指标：动态范围与频率分辨率的权衡</p>
+<p style="text-indent:2em;">
+	动态范围是衡量VNA性能的核心指标，高端机型可达140dB的动态范围，确保在强信号背景下仍能捕捉微弱反射信号。中频带宽(IFBW)设置需平衡测量速度与噪声水平，10Hz窄带宽模式适用于高Q值谐振腔测量。频谱分析仪的关键参数则是频率分辨率带宽(RBW)，1Hz分辨率下可分辨相邻5MHz载波上的微小杂散。显示平均噪声电平(DANL)决定了仪器检测微弱信号的能力，高端机型在1GHz频段可达-165dBm/Hz的噪声基底。</p>
+<p style="text-indent:2em;">
+	四、应用场景：从器件表征到信号监测的维度跨越</p>
+<p style="text-indent:2em;">
+	VNA在射频器件研发中不可或缺，其史密斯圆图显示功能使<a href="https://bbs.elecfans.com/zhuti_rf_1.html" target="_blank"><u>天线</u></a>阻抗匹配调试变得直观。在相控阵雷达系统中，VNA通过多端口测试模块校准各阵元相位一致性，保障波束指向精度。频谱分析仪则广泛应用于电磁<a href="https://m.elecfans.com/v/tag/1453/" target="_blank"><u>环境监测</u></a>，在航空无线电导航频段扫描中，SA能快速识别非法信号源。通信基站维护时，<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>利用频谱仪分析上行链路的干扰频谱，定位外部干扰源或设备故障。</p>
+<p style="text-indent:2em;">
+	这两类仪器如同射频工程师的左膀右臂：VNA以矢量维度解构器件本质，SA从频谱视角监测信号健康。随着6G通信与太赫兹技术的发展，兼具相位测量与宽带频谱分析能力的混合测试仪器正在涌现，但矢量网络分析仪与频谱分析仪作为各自领域的黄金标准，仍将在未来十年持续引领射频测试技术的演进。</p>]]></description></item><item>    <title><![CDATA[矢量网络分析仪与示波器的区别]]></title>    <link>https://www.elecfans.com/d/7494506.html</link>    <guid>https://www.elecfans.com/d/7494506.html</guid>    <pubDate>2025-12-13 13:57:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	在电子测量领域，矢量网络分析仪与<a href="https://m.elecfans.com/v/tag/577/" target="_blank"><u>示波器</u></a>如同两个并行的坐标系，分别以频域和时域为基准构建起不同的测量维度。前者聚焦于<a href="https://www.elecfans.com/v/tag/105/" target="_blank"><u>射频</u></a><a href="https://bbs.elecfans.com/zhuti_rf_1.html" target="_blank"><u>微波</u></a><a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>的相位与幅度解析，后者则专注于电信号随时间变化的波形捕捉。这种本质性的差异决定了二者在功能定位、应用场景和技术架构上的显著分野。</p>
+<p style="text-indent:2em;">
+	</p>
+<p align="center">
+	<img alt="" height="300" src="https://file1.elecfans.com/web3/M00/41/4D/wKgZPGk5Ih-ANgUuAAHouU85_o0928.png" width="500"/></p>
+<p style="text-indent:2em;">
+	</p>
+<p style="text-indent:2em;">
+	一、测量维度的本质差异</p>
+<p style="text-indent:2em;">
+	矢量网络分析仪(Vector Network Analyzer，VNA)的核心使命是解析射频微波网络的散射参数(S参数)。其通过向被测器件注入已知频率的电磁波，测量反射与传输信号的幅度与相位变化，进而构建起频域内的网络特性图谱。这种测量模式使得VNA能够精确量化<a href="https://www.elecfans.com/tags/滤波器/" target="_blank"><u>滤波器</u></a>的插入损耗、<a href="https://bbs.elecfans.com/zhuti_rf_1.html" target="_blank"><u>天线</u></a>的回波损耗等关键指标，其结果往往以史密斯圆图或极坐标形式呈现，为微波<a href="https://bbs.elecfans.com/zhuti_dianlu_1.html" target="_blank"><u>电路设计</u></a>提供直观的阻抗匹配依据。</p>
+<p style="text-indent:2em;">
+	示波器(Oscilloscope)则遵循时域测量范式，通过模数转换将电信号转化为时间-电压坐标系下的波形曲线。这种实时波形捕获能力使其成为观测信号完整性、时序关系及瞬态现象的理想工具。从<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>示波器的阴极射线管到数字示波器的高速<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>架构，技术演进始终围绕提升时基精度与带宽展开，以满足从纳秒级脉冲到GHz高速信号的分析需求。</p>
+<p style="text-indent:2em;">
+	二、应用场景的技术适配</p>
+<p style="text-indent:2em;">
+	VNA在射频<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>领域的统治地位源于其对相位信息的极致捕捉能力。<a href="https://m.elecfans.com/v/tag/1225/" target="_blank"><u>5G</u></a>基站的天线调试、卫星通信系统的链路优化，均需依赖VNA对微小相位差的高分辨率测量。其动态范围指标(典型值&gt;100dB)确保在强信号背景下仍能解析微弱反射分量，而中频带宽的动态调整机制则实现了测量速度与灵敏度的平衡。</p>
+<p style="text-indent:2em;">
+	示波器的应用疆域则向信号调试与故障诊断纵深拓展。<a href="https://bbs.elecfans.com/group_78" target="_blank"><u>汽车电子</u></a>系统中<a href="https://www.hqchip.com/app/2004" target="_blank"><u>CAN</u></a>总线的时序分析、<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>纹波的瞬态捕捉，均需示波器提供微秒级的时间分辨率。现代示波器更通过眼图分析、抖动分解等<a href="https://m.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>模块，将时域测量能力延伸至数字通信协议的合规性验证领域。</p>
+<p style="text-indent:2em;">
+	三、技术架构的进化路径</p>
+<p style="text-indent:2em;">
+	当代VNA正沿着宽带化与智能化方向演进。毫米波频段的测量需求推动着VNA向110GHz乃至THz频段扩展，而内置的误差修正算法与自动化校准流程，则大幅降低了复杂矢量测量的操作门槛。部分高端机型更集成非线性失真测试模块，使单一设备可覆盖从线性到非线性的全面表征。</p>
+<p style="text-indent:2em;">
+	示波器技术的突破集中在采样率与存储深度的提升。12位垂直分辨率的普及，使信号细节还原能力提升至小数点后4位精度;而高达1TB的存储容量，则为捕捉长时间低概率异常事件提供了可能。混合信号示波器(MSO)的诞生，更实现了模拟与<a href="https://www.hqchip.com/app/1381" target="_blank"><u>数字信号</u></a>的同步关联分析，打破了传统示波器的测量边界。</p>
+<p style="text-indent:2em;">
+	矢量网络分析仪与示波器的分野，本质上是电磁信号多维表征技术的必然产物。前者在频域构建起射频系统的宏观特性矩阵，后者在时域揭示信号微观层面的动态行为。这种互补性使得二者在现代电子研发流程中始终保持着不可替代的地位，共同支撑着从量子通信到<a href="https://www.elecfans.com/tags/自动驾驶/" target="_blank"><u>自动驾驶</u></a>的多样化技术场景。</p>]]></description></item><item>    <title><![CDATA[Keithley 6517B静电计微弱电流测量技术解析]]></title>    <link>https://www.elecfans.com/d/7494510.html</link>    <guid>https://www.elecfans.com/d/7494510.html</guid>    <pubDate>2025-12-13 13:58:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	在纳米材料研究、生物电<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>检测及<a href="https://www.hqchip.com/gongsi.html" target="_blank"><u>半导体</u></a>器件测试领域，微弱<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>测量精度直接决定实验结果的可靠性。面对飞安级(fA)电流信号，传统仪器往往因噪声干扰与系统误差难以胜任。作为<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>静电计的代表，Keithley 6517B通过精密的<a href="https://bbs.elecfans.com/zhuti_dianlu_1.html" target="_blank"><u>电路设计</u></a>与系统优化，为微弱电流测量提供了全新解决方案。</p>
+<p align="center">
+	<img src="https://file1.elecfans.com/web3/M00/0F/F5/wKgZO2fzqSCAcN4BAAB442iPpfc031.png" alt="wKgZO2fzqSCAcN4BAAB442iPpfc031.png"/></p>
+<p style="text-indent:2em;">
+	一、测量原理与技术突破</p>
+<p style="text-indent:2em;">
+	基于电荷累积原理，6517B通过监测<a href="https://www.hqchip.com/app/855" target="_blank"><u>电容器</u></a>电压变化间接计算电流。其核心创新在于三重噪声抑制系统：首先采用闭环反馈技术将内部噪声降低至0.1 fA以下;其次引入Guard<a href="https://www.elecfans.com/tags/保护电路/" target="_blank"><u>保护电路</u></a>，通过等电位屏蔽消除电缆与接插件漏电流;独创的交变极性测量法通过周期性反转电压极性，有效抵消样品自身极化效应与背景电流漂移。这种"硬件+<a href="https://m.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>"的双重优化，使仪器在10 fA～20 mA的跨量程范围内实现0.02%测量精度。</p>
+<p style="text-indent:2em;">
+	二、环境控制与系统配置</p>
+<p style="text-indent:2em;">
+	微弱电流测量对环境条件极为敏感。建议将测试系统置于双层屏蔽室内(内层铜箔+外层镍合金)，并通过独立接地线构建星形接地网络。温度控制方面，需使用精密恒温箱将样品温度稳定在±0.1℃范围内，同时采用氮气吹扫系统将环境湿度维持在15%RH以下。仪器设置时需启用自动量程模式，配合1秒积分时间与10次平均采样，在确保信噪比的同时避免热漂移。</p>
+<p style="text-indent:2em;">
+	三、样品处理与电极优化</p>
+<p style="text-indent:2em;">
+	样品表面状态直接影响测量重复性。对于绝缘材料，建议采用氧等离子体清洗机去除表面有机污染物，并使用真空蒸镀技术在表面沉积20 nm金膜以降低接触<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>。电极设计方面，推荐使用<a href="https://www.elecfans.com/soft/data/21-22/" target="_blank"><u>嵌入式</u></a>弹簧探针结构，通过0.5 N恒定压力确保接触稳定。针对薄膜样品，需采用四线开尔文连接法，将电压测量端与电流激励端物理分离，彻底消除引线电阻影响。</p>
+<p style="text-indent:2em;">
+	四、动态补偿与数据分析</p>
+<p style="text-indent:2em;">
+	6517B内置的智能补偿模块可实时监测系统漂移。当环境温度变化超过0.3℃时，仪器会自动调整零点偏移量;检测到电缆绝缘下降时，Guard电路将启动二级补偿机制。数据分析阶段，需采用时间常数分析法绘制电流-时间曲线，若曲线在30秒内达到稳态，则结果可信。对于存在瞬态脉冲的信号，建议结合<a href="https://m.elecfans.com/v/tag/577/" target="_blank"><u>示波器</u></a>触发模式捕捉有效数据段。</p>
+<p style="text-indent:2em;">
+	通过构建屏蔽-温控-补偿三位一体的测量体系，Keithley 6517B将微弱电流测量精度提升至物理极限。在石墨烯量子输运特性研究中，该仪器成功分辨出10 aA量级隧穿电流;在<a href="https://m.elecfans.com/v/tag/873/" target="_blank"><u>高压</u></a>电缆绝缘性能评估中，其稳定的0.05%年漂移指标确保了测试结果的长期有效性。这种技术突破不仅推动基础科学研究边界，更为纳米电子、生物医疗等领域提供了精准测量的基准工具。</p>]]></description></item><item>    <title><![CDATA[鸿道Intewell赋能第九届工业信息安全技能大赛！筑牢工业控制系统安全防线]]></title>    <link>https://www.elecfans.com/d/7494488.html</link>    <guid>https://www.elecfans.com/d/7494488.html</guid>    <pubDate>2025-12-13 14:00:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	2025年12月5日，由国家工业信息安全发展研究<a href="https://m.hqchip.com/tags" target="_blank"><u>中心</u></a>主办的“第九届工业信息安全技能大赛全国总决赛”在南京成功举办。来自全国各企事业单位、科研院所、院校的50支战队汇聚南京，进行了一场“<a href="https://www.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>系统安全运维技术”为主题的精彩技术对决。</p>
+<p style="text-indent:2em;">
+	作为本次大赛出题方及技术支持单位，深度参与赛事场景搭建与实战考核，搭建一套 基于鸿道Intewell新型工业操作系统 的<a href="https://bbs.elecfans.com/group_999" target="_blank"><u>PLC</u></a>、风速<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>器、监控界面组成的桥隧监测系统，构建从工业控制到数据安全的全流程竞技体系，为50支全国顶尖战队打造了极致贴近工业现场的技术比拼舞台。</p>
+<p style="text-indent:2em;">
+	总决赛紧扣新型工业化推进过程中的重大重点技术热点，围绕工业<a href="https://m.elecfans.com/v/tag/8966/" target="_blank"><u>控制系统</u></a>的推广和工业领域网络安全方向，通过模拟工业生产重要流程，设置了桥梁隧道、离散工业、电力能源等场景，通过工业控制系统产品应用和典型生产场景融合——而这一关键环节的技术底座，正是鸿道Intewell新型工业操作系统。</p>
+<p style="text-indent:2em;">
+	聚焦OT核心痛点</p>
+<p style="text-indent:2em;">
+	打造沉浸式PLC实战场景</p>
+<p style="text-indent:2em;">
+	工业控制系统是工业生产的“神经中枢”，而PLC(可<a href="https://bbs.elecfans.com/group_75" target="_blank"><u>编程</u></a>逻辑<a href="https://www.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>)作为OT侧核心控制设备，其安全直接关系到工业生产的稳定与安全。本次大赛聚焦工业信息安全实战能力，在桥梁隧道、离散工业、能源电力等典型场景中设置关键考核环节，其中PLC运维相关任务更是成为检验选手OT侧安全防护能力的核心内容——参赛选手需在基于鸿道Intewell<a href="https://m.elecfans.com/v/tag/527/" target="_blank"><u>操作系统</u></a>的PLC设备上，完成<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>隐患排查、控制逻辑修正、异常数据识别等实战操作，全面考验对工业控制设备安全运维的技术功底。</p>
+<p style="text-indent:2em;">
+	赛事现场，参赛选手需以“工业安全运维<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>”身份，在基于鸿道Intewell架构的PLC设备上，直面工业现场高频出现的三大核心安全隐患，完成全流程实战操作：</p>
+<p style="text-indent:2em;">
+	1、通信配置隐患排查：针对PLC与监控平台因IP、<a href="https://m.hqchip.com/app/1808" target="_blank"><u>端口</u></a>或<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>地址配置差异导致的风速数据“监测缺失”问题，选手需借助系统兼容的MaVIEW软件，精准定位ModbusTCP通信链路中的参数错误并修复，确保风速值在监控端稳定连续更新;</p>
+<p style="text-indent:2em;">
+	2、控制逻辑偏差修正：解决因模拟器点位映射错误导致的PLC接收风速值与实际模拟值不一致问题，通过修正输入点位，让风机“风速&gt;3.0m/s自动开启、&lt;2.5m/s自动关闭”的核心逻辑正常触发，实现监控界面与PLC实际逻辑的精准同步;</p>
+<p style="text-indent:2em;">
+	3、异常数据识别研判：基于系统采集的监控数据文件，识别风速从1.2m/s突变至50m/s等不符合物理规律的异常跳变点，并分析其可能引发的风机误启停、安全误报等风险，考验选手数据安全敏感度。</p>
+<p style="text-indent:2em;">
+	鸿道硬核技术加持，筑牢实战根基</p>
+<p style="text-indent:2em;">
+	作为本次大赛《桥隧安全监测场景》核心技术支撑，鸿道Intewell操作系统能精准匹配赛事对“高实时、高可靠、高安全”的实战化需求，鸿道Intewell操作系统沉淀30余年的工业级技术内核——从微内核架构设计到国际顶级安全<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>，从多协议生态兼容到国产化自主能力，每一项技术特性都深度契合工业现场OT的核心痛点，成为赛事还原真实工业安全场景的“技术锚点”。</p>
+<p style="text-indent:2em;">
+	●微秒级实时性，保障精准度：采用弹性微内核架构，实时性抖动微秒级，硬实时性能不仅达到国际工业控制领域的顶尖水平，更完美适配赛事通信配置隐患排查的核心需求;</p>
+<p style="text-indent:2em;">
+	●全层级安全性，护航控制逻辑：作为国内首家通过工业控制-IEC61508 SIL3、轨道交通-EN50128 SIL4、<a href="https://bbs.elecfans.com/group_78" target="_blank"><u>汽车电子</u></a>-ISO26262 ASIL D、医疗行业-IEC62304 Class 3等四项国际最高级别功能安全认证的操作系统，从内核层面实现指令级安全管控，确保控制链路可信;</p>
+<p style="text-indent:2em;">
+	●全场景兼容性，还原真实工业环境：鸿道Intewell覆盖“协议 - 硬件 - 软件” 的全栈兼容体系：在工业协议层面，支持Modbus TCP、EtherCAT、PROFINET、<a href="https://www.hqchip.com/app/2004" target="_blank"><u>CAN</u></a>open 等主流工业总线协议，完全匹配赛事对工业级数据传输的协议要求;</p>
+<p style="text-indent:2em;">
+	未来，鸿道Intewell将持续深耕工业操作系统技术创新，以自主可控、安全可靠的技术底座赋能更多工业信息安全赛事与人才培养。我们将携手产业链上下游伙伴、全球<a href="https://bbs.elecfans.com/group_1231" target="_blank"><u>开发者</u></a>社群与科研机构，共建自主可控、开放协同的工业操作系统产业生态，推动核心技术标准制定与行业应用落地，打破国外技术垄断，夯实我国工业软件自主化根基。</p>
+<p style="text-indent:2em;">
+	立足新型工业化发展全局，我们致力于以 “鸿道底座” 为核心，为制造业数字化、智能化、绿色化转型提供安全可信、高效协同、持续进化的数字基石，助力筑牢国家工业安全屏障，护航中国工业高质量发展行稳致远!</p>]]></description></item><item>    <title><![CDATA[人工智能产业迎来高速发展期 2026北京人工智能与机器人展将于3月举办]]></title>    <link>https://www.elecfans.com/d/7488785.html</link>    <guid>https://www.elecfans.com/d/7488785.html</guid>    <pubDate>2025-12-13 14:02:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	当前，全球正经历由<a href="https://m.elecfans.com/v/tag/150/" target="_blank"><u>人工智能</u></a>与<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>技术驱动的深刻变革，行业已进入高速发展的全新阶段，成为全球科技创新的核心引擎和经济增长的新支柱。据权威机构数据，全球人工智能应用行业呈现爆发性增长态势，2024年全球人工智能总投资规模为3,159亿美元，并有望在2029年增至12,619亿美元，五年复合增长率为31.9%。目前人工智能与实体经济已进入“深度渗透”的新阶段，特征愈发凸显。不仅在工业制造、医疗健康、金融服务、城市治理等关键领域实现规模化落地，更逐步渗透至日常生活的方方面面，推动社会迈向智能化新时代。这一高速发展态势，吸引了全球范围内的广泛关注与投入，众多企业、科研机构纷纷加大在这一领域的研发力度，推动着人工智能与机器人技术不断迈向新的高度。</p>
+<p style="text-indent:2em;">
+	2026年3月18日至20日，由北京人工智能学会、北京恒辉国际展览有限公司共同举办的2026北京国际人工智能应用与机器人创新博览会（<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a> Show 2026）将在中国国际展览<a href="https://m.hqchip.com/tags" target="_blank"><u>中心</u></a>（朝阳馆）盛大启幕！这场集前沿技术展示、行业深度交流、资源高效对接于一体的全球盛会，将汇聚全球顶尖企业、科研机构与创新力量，共同探索人工智能与机器人技术的无限可能。</p>
+<p style="text-indent:2em;">
+	AI Show将打造全方位创新生态盛宴，规划面积约30000㎡，汇聚450+品牌参展、50000+专业观众并实现超百万级线上线下曝光，还将布局人工智能基础层、人工智能技术层、人工智能应用层、智能全域机器人、AIoT（智能物联网）、机器人核心零部件、智慧<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>与终端、低空经济、AI教育及设备、<a href="https://www.elecfans.com/soft/data/39-96/" target="_blank"><u>消费电子</u></a>等十大主题展区，为参与者提供全产业链前沿科技一站式体验。</p>
+<p style="text-indent:2em;">
+	同期还将举办2026中国人工智能应用与机器人创新产业大会、人形机器人比赛、北京AI智能课堂等多场高端活动，邀请院士、企业领袖等各界大咖共探技术趋势、比拼落地应用、研讨教育场景融合，助力思想碰撞与产学研用衔接；此外，展会坚持国际化与市场化并重，将吸引德国、日本等多国企业参展并搭建国际化对接机制，精准覆盖75%以上技术及采购决策层的智能制造、医疗等多领域专业观众，同时携手主流媒体构建全媒体传播矩阵，为参展单位提供海量曝光与深度传播，助力搭建全球产业合作网络。</p>]]></description></item><item>    <title><![CDATA[尼得科精密检测科技将亮相SEMICON Japan 2025]]></title>    <link>https://www.elecfans.com/d/7494478.html</link>    <guid>https://www.elecfans.com/d/7494478.html</guid>    <pubDate>2025-12-13 14:03:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	尼得科精密检测科技株式会社将亮相2025年12月17日(周三)～12月19日(周五)于东京国际会展<a href="https://m.hqchip.com/tags" target="_blank"><u>中心</u></a>举办的“SEMICON Japan 2025”（2025日本东京<a href="https://www.hqchip.com/gongsi.html" target="_blank"><u>半导体</u></a>展览会）。</p>
+<p style="text-indent:2em;">
+	在本届展览会上，尼得科精密检测科技将以“One Stop Solu<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>ti</u></a>on（一站式解决方案）”为主题，展出面向<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>服务器、功率半导体的前沿解决方案。展示内容包括：专为面板级封装和基板产品优化的、融入了<a href="https://www.elecfans.com/soft/data/42-102/" target="_blank"><u>AI技术</u></a>的AVI、2D/3D<a href="https://www.elecfans.com/v/tag/4854/" target="_blank"><u>光学</u></a>检测设备，以及适用于<a href="https://www.hqchip.com/app/2048" target="_blank"><u>IGBT</u></a>/WBG器件等领域的晶圆（KGD）/模块的电特性测试设备。同时还将根据市场趋势提供前沿的检测技术方案（例如：可满足含热管理在内的新型检测需求的探针卡等）。</p>
+<p style="text-indent:2em;">
+	〈参展概要〉</p>
+<p style="text-indent:2em;">
+	・展期：2025年12月17日(周三)～12月19日(周五)</p>
+<p style="text-indent:2em;">
+	・地点：东京国际会展中心 东展厅</p>
+<p style="text-indent:2em;">
+	・展位：4Hall E4922</p>
+<p style="text-indent:2em;">
+	・官网：https://www.semiconjapan.org/en</p>
+<p style="text-indent:2em;">
+	〈参展亮点〉</p>
+<p style="text-indent:2em;">
+	■光学检测设备“RWi-300MK3”：融入了AI技术的2D+3D检测</p>
+<p style="text-indent:2em;">
+	■功率半导体检测设备“NATS Series”：可支持IGBT/WBG设备</p>
+<p style="text-indent:2em;">
+	■可支持高电压的加压结构探针卡：应用放电对策</p>
+<p style="text-indent:2em;">
+	■设备温度测量探针：应用热电偶技术</p>
+<p style="text-indent:2em;">
+	■2D-<a href="https://www.elecfans.com/v/tag/7888/" target="_blank"><u>MEMS</u></a> 探针卡：适用2D-MEMS技术，支持CMOS<a href="https://www.elecfans.com/tags/图像传感器/" target="_blank"><u>图像传感器</u></a></p>
+<p style="text-indent:2em;">
+	■垂直型窄间距对应探针卡：采用<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>电镀技术，支持55μm窄间距</p>
+<p style="text-indent:2em;">
+	■探针“NS Probe”：利用MEMS工艺实现微细化与特殊形状</p>
+<p style="text-indent:2em;">
+	■自动搬运装置“EFEM”：支持工厂自动化</p>
+<p style="text-indent:2em;">
+	■通电检测装置“GATS-8360A”：面向AI·LEO卫星基板</p>
+<p style="text-indent:2em;">
+	■通电检测装置“GATS-7885”：面向PLP/Interposer</p>]]></description></item><item>    <title><![CDATA[企业级Agent系统研发公司九科信息用bit-Agent赋能业务升级]]></title>    <link>https://www.elecfans.com/d/7494828.html</link>    <guid>https://www.elecfans.com/d/7494828.html</guid>    <pubDate>2025-12-13 14:04:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	随着<a href="https://m.elecfans.com/v/tag/150/" target="_blank"><u>人工智能</u></a>技术的持续迭代,企业级Agent系统已从概念走向实用,成为助力企业降本增效的核心工具。市场对智能化解决方案的需求日益迫切,而技术的成熟则为这种需求提供了实现可能。在技术与市场的双向奔赴中,九科信息作为专注于企业级Agent系统研发的公司,精准把握行业趋势,打造出bit-Agent产品,从底层技术引擎到上层应用落地,全方位满足企业多元化的智能化需求。</p>
+<p style="text-indent:2em;">
+	当前,不同行业、不同规模的企业,对Agent系统的需求呈现出明显的差异化特征。大型制造企业可能更关注生产流程中的数据实时处理与指令响应,而服务型企业则侧重客户咨询的智能分流与高效解答。这种需求的多样性,对研发公司的技术覆盖能力提出了高要求。九科信息在研发bit-Agent产品时,摒弃了单一功能的设计思路,构建了从底层到上层的全栈式解决方案,确保产品能够适配不同场景。</p>
+<p style="text-indent:2em;">
+	底层引擎的稳定性与兼容性,是企业级Agent系统发挥作用的基础。bit-Agent的底层技术架构经过多轮优化,具备强大的算力支撑与灵活的扩展能力。企业无需担心现有业务系统与Agent系统的衔接问题,bit-Agent可通过标准化<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>完成与各类业务软件的对接,实现数据的顺畅流转。同时,底层引擎具备自主学习能力,能够根据企业业务数据的变化持续优化,确保系统性能始终适配业务发展需求,避免因技术迭代导致的系统淘汰风险。</p>
+<p style="text-indent:2em;">
+	<img src="https://file1.elecfans.com//web3/M00/41/55/wKgZPGk5PoSAcvhEAAOQgsgpalE457.png" style="width:500px;height:280px;" alt="wKgZPGk5PoSAcvhEAAOQgsgpalE457.png"/></p>
+<p style="text-indent:2em;">
+	在上层应用层面,bit-Agent针对企业核心业务场景进行了专项优化。无论是面向内部管理的办公自动化场景,还是面向外部服务的客户交互场景,都能提供针对性的功能模块。企业可根据自身需求选择基础功能包或定制化模块,无需为冗余功能付费。例如,在研发型企业中,bit-Agent可协助完成文献检索、数据整理等基础工作;在电商企业中,则能承担订单处理、售后咨询等重复性任务,直接降低人力成本。</p>
+<p style="text-indent:2em;">
+	技术成熟为企业智能化转型提供了可能,市场需求则为技术落地指明了方向。企业级Agent系统研发公司九科信息以bit-Agent产品为载体,将自身的研发实力与企业的实际需求紧密结合,用专业的企业级Agent系统解决方案,助力企业突破效率瓶颈。</p>]]></description></item><item>    <title><![CDATA[RISC-V怎么实现核间中断？核心本地中断控制器（CLINT）深度解析]]></title>    <link>https://www.elecfans.com/d/7494170.html</link>    <guid>https://www.elecfans.com/d/7494170.html</guid>    <pubDate>2025-12-13 14:06:00</pubDate>    <description><![CDATA[<div class="vditor-preview__action"/><div class="vditor-reset"><p><strong>全称为Core Local In<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>rruptor（核心本地中断<a href="https://www.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>），是 <a href="https://bbs.elecfans.com/zhuti_riscvmcu_1.html" target="_blank"><u>RISC-V</u></a> 特权架构规范（Privileged Architecture Specification）中明确定义的内建于每个核心 / 硬件线程（hart）的中断控制器，专门处理「核心本地、非共享」的中断类型，区别于处理外设共享中断的 PLIC（Platform-Level Interrupt Controller，平台级中断控制器）。</strong></p><h3>1、为什么需要 CLINT？</h3><p><strong><a href="https://bbs.elecfans.com/zhuti_riscvmcu_1.html" target="_blank"><u>RISC</u></a>-V 核心在运行时，需要处理两类截然不同的中断需求：</strong></p><p>一类是全局共享中断（如 <a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a> 收发、GPIO 电平变化、SPI <a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>完成等），这类中断来自外部外设，需多个核心共享处理；</p><p><strong>另一类是核心本地中断（如定时任务、核心间通信），这类中断仅属于单个核心，要求极低的响应延迟，无需总线仲裁。</strong></p><p><strong>CLINT 的设计初衷正是为了解决第二类需求 —— 通过将中断控制器 “内嵌” 到每个 hart 中，避免总线传输带来的延迟，确保核心对本地关键事件（如<a href="https://www.elecfans.com/tags/定时器/" target="_blank"><u>定时器</u></a>到期、核心间唤醒）的快速响应，这也是其 “Core Local”（核心本地）命名的由来。</strong></p><p><strong>CLINT</strong> 模块产生 <strong><a href="https://www.elecfans.com/tags/csr/" target="_blank"><u>CSR</u></a>****<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>的定时器中断、软件中断和计时器。</strong></p><p><img src="https://file1.elecfans.com/web3/M00/41/42/wKgZPGk5BUWAD25AAAAzYsiC2P445.jpeg" alt=""/></p><p>CLINT的系统架构示意图</p><p><strong>2、CLINT 功能说明</strong></p><p><strong>CLINT</strong> 由软件中断触发器、定时器中断触发器、计数器组成。 软件中断触发器由一个寄存器构成，直连 <strong><a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a></strong> 的机器级软件中断。 计数器负责提供 <strong>CPU</strong> 的 <strong><a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>TI</u></a>ME</strong> 与 <strong>TIMEH</strong> ，并参与定时器中断的触发。 定时器中断触发器用于定时器中断 的触发，当计数器值大于配置的值时会触发定时器中断**，**定时器中断是嵌入式系统中最常用的中断类型，几乎所有 <strong><a href="https://www.elecfans.com/tags/RTOS/" target="_blank"><u>RTOS</u></a>（如 <a href="https://m.elecfans.com/v/tag/1019/" target="_blank"><u>FreeRTOS</u></a>、<a href="https://bbs.elecfans.com/zhuti_emb_1.html" target="_blank"><u>RT-Thread</u></a>）的任务调度都依赖定时器中断提供的 “<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>节拍”</strong> 。</p><p><strong>2.1 <strong>CLINT</strong>初始化</strong></p><p><img src="https://file1.elecfans.com/web3/M00/41/42/wKgZPGk5BUWARvFRAAJk1SVMZgc08.jpeg" alt=""/></p><p><strong>2.2 软件中断：</strong></p><p>写 0 则清除中断挂起状态</p><p><img src="https://file1.elecfans.com/web3/M00/41/40/wKgZO2k5BUWAB0cjAABjFzlnqQA33.jpeg" alt=""/></p><p><strong>2.3定时器中断：</strong></p><p>中断处理函数中，更新比较阈值（实现周期性触发），并执行调度逻辑（如 <strong>RTOS 的任务切换）。</strong></p><p><img src="https://file1.elecfans.com/web3/M00/41/40/wKgZO2k5BUWABv77AAER3oGli9o56.jpeg" alt=""/></p><p><strong>2.3读取CLINT计数器：</strong></p><p><img src="https://file1.elecfans.com/web3/M00/41/40/wKgZO2k5BUWARRsKAABlgeX7t1823.jpeg" alt=""/></p><p><strong>2.4延时函数通过计数器功能计算延时时间</strong></p><p>CLINT 的 64 位全局计数器time/timeh提供了<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>的时间基准，可直接用于实现微秒级 / 毫秒级精准延时，无需依赖外部定时器。</p><p>延时函数实现原理：</p><p>进入延时函数时，读取当前计数器值told；</p><p>计算需要的总时钟节拍数（ticks = 延时时间(us) × 时钟频率(MHz)）；</p><p>循环读取当前计数器值tnow，计算累计节拍数tcnt；</p><p>当tcnt &gt;= ticks时，延时结束。</p><p><img src="https://file1.elecfans.com/web3/M00/41/42/wKgZPGk5BUaASnqjAAEABonA66g64.jpeg" alt=""/></p><p><strong>3、CLINT 的常见应用场景</strong></p><p>① RTOS 时钟节拍生成</p><p>FreeRTOS 等 RTOS 的任务调度依赖固定周期的时钟节拍，通常将 CLINT 定时器中断配置为 1ms 触发一次，在中断处理函数中调用vTaskIncrementTick()，实现任务就绪状态更新和调度器切换。</p><p>② 多核系统启动</p><p>在 RISC-V 多核芯片中，主核心启动后，通过向从核心的SOFTICR寄存器写 1，触发从核心的软件中断，从核心在中断处理函数中完成栈初始化、应用加载，实现多核心协同工作。</p><p>③ 精准数据采样</p><p>在<a href="https://www.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>、<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>采集等场景中，需按固定时间间隔（如 100us）采集数据，通过 CLINT 定时器中断触发采样函数，确保采样周期的稳定性和精准度。</p></div>]]></description></item><item>    <title><![CDATA[星载电子系统元器件SEE阈值测试与防护策略研究]]></title>    <link>https://www.elecfans.com/d/7500452.html</link>    <guid>https://www.elecfans.com/d/7500452.html</guid>    <pubDate>2025-12-13 14:08:00</pubDate>    <description><![CDATA[<div class="vditor-preview__action"/><div class="vditor-reset"><p><strong>摘要</strong> ：随着我国航天事业的快速发展，星载电子系统的自主可控与国产化替代已成为保障国家空间安全的重要战略方向。单粒子效应（Single Event Effects, SEE）作为空间辐射环境对微电子器件造成的主要威胁之一，其阈值测试与防护策略研究在国产化<a href="https://m.hqchip.com/ic/0" target="_blank"><u>元器件</u></a>的宇航级应用验证中占据核心地位。本文基于国科安芯推出的ASP4644系列<a href="https://m.hqchip.com/app/1731" target="_blank"><u>电源管理</u></a>芯片、ASM1042S2S型<a href="https://www.hqchip.com/app/2004" target="_blank"><u>CAN</u></a> FD<a href="https://www.hqchip.com/app/1809" target="_blank"><u>收发器</u></a>及AS32S601ZIT2型<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>等多型国产宇航级元器件的试验数据，系统梳理了当前国产化星载<a href="https://www.hqchip.com/gongsi.html" target="_blank"><u>电子元器件</u></a>在SEE效应评估中的技术路径、测试方法体系、防护设计策略及在轨验证现状。通过对比重离子、质子及脉冲激光三种主流SEE测试技术手段，分析了不同测试方法的适用场景与技术局限性；结合破坏性物理分析（DPA）、自主可控等级评估及总剂量效应（<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>TI</u></a>D）协同测试，提出了面向宇航应用的元器件全周期可靠性保障体系。</p><p><strong>1 引言</strong></p><p>空间辐射环境是制约星载电子系统长期可靠服役的关键因素之一。地球轨道上的高能质子和重离子能够穿透航天器屏蔽层，与<a href="https://m.elecfans.com/v/tag/123/" target="_blank"><u>集成电路</u></a>材料发生核反应或直接电离作用，引发单粒子效应（SEE），包括单粒子锁定（SEL）、单粒子翻转（SEU）、单粒子烧毁（SEB）及单粒子功能中断（SEFI）等多种失效模式。</p><p>本文聚焦国产化星载电子元器件的SEE阈值测试与防护策略，基于国科安芯推出的ASP4644系列四通道降压稳压器、ASM1042S2S型CAN FD收发器及AS32S601ZIT2型MCU等典型型号的系统性试验数据，开展技术评估与分析。这些元器件由国内多家单位协同研制，通过了工业和信息化部电子第五研究所、中国科学院国家空间科学中心及北京中科芯试验空间科技有限公司等权威机构的第三方测试验证，形成了涵盖DPA分析、自主可控等级评估、重离子/质子辐照试验、脉冲激光模拟及总剂量效应测试的技术链条。</p><p><strong>2 国产化星载元器件SEE效应研究现状</strong></p><p><strong>2.1 SEE效应机理与宇航级元器件的特殊要求</strong></p><p>单粒子效应的物理本质是高能带电粒子在器件敏感区产生电荷沉积，当收集电荷超过临界阈值时引发电路状态改变。对于星载应用，元器件通常需满足LET阈值≥37.4 MeV·cm²/mg的基本要求，部分高轨或深空任务甚至要求≥75 MeV·cm²/mg。传统商用器件的SEE敏感性往往高出1-2个数量级，必须通过工艺加固、设计加固或系统级防护方能满足宇航要求。</p><p>当前国产化宇航级元器件主要采用"设计加固+工艺管控+筛选测试"的技术路线。以ASP4644系列为例，该型四通道<a href="https://www.elecfans.com/tags/dc/dc/" target="_blank"><u>DC/DC</u></a>降压稳压器采用BGA77封装，内置功率<a href="https://www.elecfans.com/tags/mosfet/" target="_blank"><u>MOSFET</u></a>与电感，支持4-14V宽输入电压范围，单通道最大输出<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>达5A。根据中国电子元器件自主可控等级评估通用准则，ASP4644I6B与ASP4644M2B型号均获得C级<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>，表明其核心原材料与零部件已实现国内供应链主导，关键原材料包括<a href="https://www.hqchip.com/app/1703" target="_blank"><u>DC</u></a>DC<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>晶圆、<a href="https://m.hqchip.com/app/1558" target="_blank"><u>肖特基</u></a><a href="https://m.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>及多层陶瓷<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>等主要由国内厂商提供，为后续SEE测试的样本代表性提供了基础保障。</p><p><strong>2.2 国产化SEE测试能力体系建设</strong></p><p>我国已建立覆盖重离子加速器、质子回旋加速器及脉冲激光模拟的SEE测试平台网络。中国科学院国家空间科学中心拥有H-13串列加速器，可提供LET值达37.4 MeV·cm²/mg的重离子束流；中国原子能科学研究院的100MeV质子回旋加速器可模拟太阳宇宙线及辐射带质子环境；北京中科芯试验空间科技有限公司的脉冲激光系统则提供5-100 MeV·cm²/mg的等效LET值快速评估能力。三类测试手段形成技术互补：重离子试验为鉴定级标准，质子试验评估实际空间质子环境效应，脉冲激光适用于快速筛选与失效机理分析。然而，各测试平台在数据互认、标准执行一致性方面仍存在改进空间。</p><p><strong>3 SEE阈值测试方法与技术实现</strong></p><p><strong>3.1 重离子单粒子效应试验</strong></p><p>重离子试验遵循QJ10005A-2018及ESCC 25100标准，通过加速器产生的高能重离子对开封装器件进行直接辐照。以ASP4644S2B为例，2025年8月在中国原子能科学研究院开展的试验采用7<a href="https://www.elecfans.com/v/tag/9979/" target="_blank"><u>4G</u></a>e离子，LET值37.4 MeV·cm²/mg，总注量8.3×10⁶ ion/cm²。试验设置12V偏置条件，监测四通道中一路的输出电压与工作电流，DC电源设置300mA限流保护。</p><p>试验结果显示，辐照过程中器件工作电流随注量增加呈现缓慢上升趋势，在3×10⁶ ion/cm²时达到限流值300mA，但停止辐照后电流可逐步恢复；继续辐照至8.3×10⁶ ion/cm²时电流超过1A，但经过一周静置后恢复至正常值71mA，输出电压始终稳定在1.5V。该现象符合单粒子瞬态（SET）诱导的闩锁敏感特征，而非破坏性SEL。最终判定ASP4644S2B在测试条件下未发生SEL或SEB现象。需要特别指出的是，37.4 MeV·cm²/mg的测试条件虽满足商业航天级基本要求，但尚不能完全证明器件在更高LET值下的行为特性，这是当前测试能力的主要局限。</p><p>ASM1042S2S型CAN FD收发器在相同LET值、注量1×10⁷ ion/cm²条件下，5V工作电流稳定在8mA，5Mbps<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>无误码，验证了其在测试条件下的SEL/SEU耐受能力。试验中的在线监测技术包括工作电流实时测量与功能回读比对，确保了对软错误的捕捉能力。</p><p><strong>3.2 质子单粒子效应试验</strong></p><p>质子试验依据GJB9397-2018及GB18871-2002标准，重点评估器件对空间天然质子环境的敏感性。ASP4644S2B的质子试验于2025年在中国原子能科学研究院100MeV质子回旋加速器上完成，注量率1×10⁷ p·cm⁻²·s⁻¹，总注量1×10¹⁰ p/cm²。试验过程中器件未出现功能异常，判定合格。ASM1042S2S及AS32S601ZIT2型MCU的质子试验同样采用100MeV能量、1×10¹⁰总注量，结果显示均无SEL/SEU现象，验证了其在低LET端（质子LET值约0.1-10 MeV·cm²/mg）的鲁棒性。</p><p>质子试验的技术挑战在于其较低LET值难以触发某些加固器件的SEE，但高注量可评估累积效应。试验中需严格控制总剂量累积不超过TID能力的80%，避免剂量效应与位移损伤效应干扰SEE判定。所有质子试验样品均配有未辐照参考样片，以排除测试系统漂移影响。此外，质子试验的环境参数（温度15-35℃，相对湿度20-80%）需严格记录，确保试验可重复性。</p><p><strong>3.3 脉冲激光单粒子效应<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a></strong></p><p>脉冲激光技术依据GB/T43967-2024及GJB10761-2022标准，利用皮秒激光脉宽短、能量可控的特点，在器件正面或背面注入电荷，模拟重离子效应。AS32S601型MCU的激光试验在LET值5-75 MeV·cm²/mg范围内扫描，当能量达1585pJ（对应LET=65 MeV·cm²/mg）时监测到SEU，引发<a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>复位；而未观察到SEL，表明其SEL阈值高于75 MeV·cm²/mg。该结果与重离子试验形成交叉验证，但需注意激光模拟的电荷注入剖面与重离子存在差异，特别是在深层敏感区模拟方面存在局限。</p><p>ASM1042系列（SIT1042AQ、TCAN1042HGVD、ASM1042A）的激光试验揭示出不同型号间的敏感性差异：SIT1042AQ在920pJ（LET=37 MeV·cm²/mg）出现SEL；TCAN1042HGVD在610pJ（LET=25 MeV·cm²/mg）出现SEFI，重启无法恢复；而ASM1042A在最高3050pJ（LET=100 MeV·cm²/mg）仍未失效，展现出不同的抗辐照能力。激光试验的快速反馈能力为设计迭代与批次筛选提供了有效手段，但其结果需通过重离子试验最终确认。</p><p><strong>4 协同测试与全周期可靠性保障</strong></p><p><strong>4.1 破坏性物理分析（DPA）与工艺一致性评估</strong></p><p>DPA是宇航元器件批产质量控制的必要环节。ASP4644S2B的DPA报告显示，样品通过外部目检、X射线检查、声学扫描显微镜（SAM）及内部目检，未见分层、空洞或键合异常。键合强度测试采用20μm与30μm金线，拉力值符合GJB548B-2025要求，但报告明确指出"结果仅作工程观察，不作合格判定"，体现了对宇航级器件高可靠性的审慎态度。DPA与SEE测试的关联性在于：金属化缺陷、钝化层不完整等工艺问题会显著降低SEE阈值，因此DPA合格是开展SEE测试的前提。对于塑封器件，SAM检查需特别注意芯片背面分层问题，这可能影响散热与应力分布。</p><p><strong>4.2 总剂量效应（TID）与SEE的协同评估</strong></p><p>空间辐射环境同时包含电离总剂量与单粒子效应，二者存在协同作用。ASP4644S2B的TID试验参照QJ10004A-2018标准，采用钴60γ源，剂量率25 rad(Si)/s，累积剂量达150 krad(Si)后加50%过辐照（225 krad(Si)）。试验前后工作电流稳定在72mA，输出电压1.5V无漂移，判定抗TID能力&gt;125 krad(Si)。ASM1042S2S与AS32S601ZIT2的TID试验均达标&gt;150 krad(Si)。</p><p>TID测试的偏置条件设计需贴近实际工作模式。ASP4644S2B采用12V输入，四通道分别输出3.3V、2.5V、1.5V、1.2V，空载监测1.5V通道，确保内部<a href="https://www.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>与功率管均受辐照。AS32S601ZIT2则加3.3V静态偏置，监测CAN通信与FLASH/<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>擦写功能。移位测试的时间间隔控制在72小时内，以捕捉退火效应。协同测试表明，国产元器件在TID与SEE双重应力下性能稳定，但需警惕某些器件在TID损伤后SEE敏感性增加的风险，这要求在实际任务中进行综合裕量设计。</p><p><strong>4.3 自主可控等级评估对测试可信度的支撑</strong></p><p>依据ZKB3101-001-2022《军用电子元器件自主可控评估通用准则》，ASP4644I6B与M2B型号获C级认证，表明其设计、制造、封装、测试环节实现国内自主可控，但部分原材料存在境外替代风险。关键原材料清单显示，ASP3605晶圆由国科环宇自研，MBR4010DF由富芯森美<a href="https://www.hqchip.com/gongsi.html" target="_blank"><u>半导体</u></a>提供，无源元件与基板均选自风华高科、江西红板等国产供应商，键合丝、塑封料亦实现国产化。自主可控评估为SEE测试提供了供应链可信度背书，确保测试样品与在轨器件的技术状态一致性，这对于测试结果的可追溯性与任务风险评估至关重要。</p><p><strong>5 防护策略工程应用分析</strong></p><p><strong>5.1 器件级加固设计的实现路径</strong></p><p>国产宇航级器件采用多种加固技术：工艺上选用UMC 55nm、VIS 0.15μm BCD等成熟工艺节点，避免FinFET等敏感结构；设计上增加保护环、冗余节点与电流限幅电路；版图优化敏感节点间距，降低电荷共享效应。ASP4644S2B的BGA77封装采用77个焊球阵列，功率地（GND）与<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>地（SGND）分离设计，降低单粒子瞬态干扰。内置电感与功率MOSFET的集成设计减少了外部互连，降低了单粒子感应噪声的<a href="https://www.elecfans.com/tags/耦合/" target="_blank"><u>耦合</u></a>路径。</p><p>AS32S601ZIT2的MCU内核采用<a href="https://bbs.elecfans.com/zhuti_riscvmcu_1.html" target="_blank"><u>RISC-V</u></a>架构，集成ECC纠错功能的SRAM与FLASH，有效缓解SEU影响。其512KiB SRAM与2MiB P-Flash的存储结构对单粒子翻转的敏感性不同，要求差异化的测试策略。存储器的ECC设计虽能纠正单位错，但对多位翻转（MBU）的防护能力有限，这在高LET值重离子环境中需特别关注。</p><p><strong>5.2 系统级防护架构的工程实现</strong></p><p>星载电源系统通常采用"浪涌抑制+限流保护+冷冗余"三级防护架构。ASP4644S2B在轨应用中，其4通道并联输出16A能力为卫星载荷供电，测试条件下SEL阈值&gt;37.4 MeV·cm²/mg的设计指标降低了系统级防护压力。实际工程中会配置外部 watchdog 与电流监测电路，一旦检测到异常功耗即触发断电重启，响应时间通常控制在毫秒级。对于多电源并联系统，还需考虑单粒子瞬态引发的输出电压波动对负载的影响，输出端需增加LC滤波与储能电容。</p><p>通信系统则通过"<a href="https://www.elecfans.com/tags/看门狗/" target="_blank"><u>看门狗</u></a>+三模冗余（TMR）+重传机制"应对SEFI与SEU。ASM1042S2S的CAN FD<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>支持5Mbps高速率，其SEL阈值在测试条件下表现良好，配合总线级CRC校验与应答机制，可确保数据传输可靠性。对于关键指令传输，常采用双CAN总线冗余与交叉校验策略，避免SEFI导致的总线永久性失效。系统级防护还需考虑单粒子效应对同步信号（如CLKIN/CLKOUT）的干扰，ASP4644S2B的<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>同步功能在测试中未受影响，但在实际任务中仍需评估时钟抖动对分布式系统的影响。</p><p><strong>5.3 在轨验证的工程意义与挑战</strong></p><p>ASP4644S2B与ASM1042S2S已于2025年5月搭载于TY29"天仪29星"高光谱地质遥感卫星与TY35<a href="https://www.elecfans.com/v/tag/4854/" target="_blank"><u>光学</u></a>遥感卫星，截至2025年7月在轨运行约2个月期间供电稳定、通信正常。在轨数据与地面试验的相关性分析是验证测试有效性的最终环节。目前数据表明，地面试验中在37.4 MeV·cm²/mg条件下未发生SEL的器件在轨未出现锁定事件，初步验证了测试方法的保守性。</p><p>然而，在轨验证面临多重挑战：首先，空间辐射环境的动态变化（太阳质子事件、地磁扰动）难以在地面试验中完全模拟；其次，在轨监测数据的分辨率有限，难以区分SET与SEL的早期征兆；第三，在轨样本量小，统计置信度不足。因此，在轨验证应视为对地面试验的补充而非替代。未来的星载电子系统应集成健康监测单元，实时记录器件工作电流、温度及错误日志，通过遥测数据与地面协同分析，建立SEE效应的在轨预测模型。</p><p><strong>6 结论</strong></p><p>本文基于ASP4644、ASM1042S2S、AS32S601ZIT2等多型国产化星载器件的系统性试验数据，客观评估了SEE阈值测试与防护策略的技术现状。研究表明，国产元器件通过设计加固、工艺优化与严格测试，在SEL阈值、SEU阈值及TID耐受能力等关键指标上已达到商业航天级应用要求，部分型号获得初步在轨验证。重离子、质子与脉冲激光三种测试手段各有优势，协同测试可构建全周期可靠性保障体系。</p></div>]]></description></item><item>    <title><![CDATA[荣耀见证实力—Cincoze MXM GPU工控机夺下2026台湾精品奖]]></title>    <link>https://www.elecfans.com/d/7462003.html</link>    <guid>https://www.elecfans.com/d/7462003.html</guid>    <pubDate>2025-12-13 14:11:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
 	强固型边缘运算工控机品牌 - Cincoze德承旗下的MXM <a href="https://www.elecfans.com/tags/gpu/" target="_blank"><u>GPU</u></a>工控机（GM-1100），凭借强大的运算效能、灵活的模块化设计与出色的环境适应力，继荣获国际红点设计奖肯定后，再度以创新实力夺下2026台湾精品奖殊荣。该奖项被誉为台湾制造创新产品的重要荣誉，而GM-1100由近千件报名产品中脱颖而出，如此殊荣除了肯定Cincoze德承在技术创新与产品设计的深厚实力外，也进一步强化全球客户对品牌的信赖与认同。</p>
 <p style="text-indent:2em;">
 	<strong>强劲效能 ×分流散热设计 –展现高度可靠性</strong></p>
@@ -1636,285 +1791,4 @@
 <p style="text-indent:2em;">
 	液冷散热的终局未定，但可以确定的是：未来服务器液冷散热的竞争，不仅在芯片，也将在散热系统、电源系统和材料体系中展开深水区博弈。</p>
 <p style="text-indent:2em;">
-	本文为哔哥哔特资讯原创文章，未经允许和授权，不得转载</p>]]></description></item><item>    <title><![CDATA[Sub-GHz射频收发模块RFM300L，IoT终端可靠的通讯“武器”]]></title>    <link>https://www.elecfans.com/d/7491361.html</link>    <guid>https://www.elecfans.com/d/7491361.html</guid>    <pubDate>2025-12-13 16:49:00</pubDate>    <description><![CDATA[<div class="vditor-preview__action"/><div class="vditor-reset"><p>万物互联时代背景下，<a href="https://bbs.elecfans.com/group_57" target="_blank"><u>物联网</u></a>产业正迎来设备规模与应用密度的双重爆发，海量物联网终端持续接入网络，使<a href="https://www.elecfans.com/v/tag/1252/" target="_blank"><u>无线通信</u></a>链路面临着前所未有的压力，同时数据的传输需求亦呈指数级增长，并对<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>速率、实时性、稳定性以及系统响应延迟提出了更高要求；传统无线传输方式已难以满足海量物联网终端对低功耗、高可靠与广覆盖的核心通信诉求。</p><p>在此行业背景下，华普微全新推出了一款能同时兼顾低功耗、强抗干扰、广覆盖与高稳定性的<a href="https://m.hqchip.com/app/1525" target="_blank"><u>Sub</u></a>-GHz无线<a href="https://m.elecfans.com/v/tag/105/" target="_blank"><u>射频</u></a>收发模块——<a href="https://bbs.elecfans.com/group_65" target="_blank"><u>RF</u></a>M300L，它是专为当代物联网应用所开发的面向大规模部署、高效传输与低功耗运行的Sub-GHz射频收发平台，可有效支撑物联网终端在长期运行、复杂电磁环境以及大规模节点协同下的稳定通信需求。</p><p><strong>在传输性能方面</strong> ，RFM300L的最大发射功率为+20 dBm，且支持根据不同应用场景灵活调节，既能满足远距离通信需求，又可避免不必要的能耗浪费；RFM300L的接收灵敏度高达-120dbm@2kbps 433.92MHz FSK，可精准捕捉微弱<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>，大幅提升复杂环境下的信号接收能力，显著延长物联网终端的有效通信距离。</p><p><strong>在运行功耗方面</strong> ，RFM300L的典型接收<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>仅为8.5 mA，待机电流低至0.3μA，并支持Duty-Cycle模式，可通过周期性唤醒策略大幅延长依赖电池供电的物联网终端的电池寿命，尤其适配智能水表、气表、户外环境<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>等难以频繁更换电池的物联网终端，显著降低后期维护成本和人力投入。</p><p><strong>在快速开发方面</strong> ，RFM300L集成丰富接口与配置能力，内置64-by<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a> Tx/Rx FIFO、多GPIO与中断机制，还支持信道侦听、<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a> <a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>SI、快速跳频、静噪输出等功能，同时配备SPI<a href="https://www.elecfans.com/v/tag/13179/" target="_blank"><u>通信接口</u></a>可轻松接入主控，让硬件开发更自由灵活；用户只需配合简单的数据解码设计，即可快速实现无线产品量产落地。</p><p><img src="https://file1.elecfans.com/web3/M00/40/FF/wKgZPGk3iUCAQOmzAAWjNlXzSL0328.png" alt="69e05065-2c2f-46e5-aa36-2be5ba1de9cb.png"/></p><p>RFM300L典型应用电路示意图<br/> 注：上图ANT引脚的π型匹配电路参数为默认值，具体参数请根据对应的<a href="https://bbs.elecfans.com/group_1219" target="_blank"><u>天线</u></a>进行匹配。</p><p><strong>在场景覆盖能力方面</strong> ，基于传输性能、功耗控制与开发便捷性上的综合优势，RFM300L 可满足多种典型行业的无线通信需求，尤其适配自动抄表、<a href="https://www.elecfans.com/v/tag/663/" target="_blank"><u>智能家居</u></a>与安防、工业监测与无线控制、ISM 开放频段无线数据通信、远距离遥控器、无线传感器节点与<a href="https://m.hqchip.com/tags" target="_blank"><u>标签</u></a>等场景，无论是大规模工业部署，还是<a href="https://www.elecfans.com/soft/data/39-96/" target="_blank"><u>消费电子</u></a>设备，都能轻松集成。</p><p><strong>在产品尺寸方面</strong> ，RFM300L大小仅为12<em>12</em>2.3mm，其紧凑的封装设计不仅可减少终端产品的整体体积，降低硬件结构设计难度，还能在有限的<a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>板空间内兼容更多功能组件，为物联网产品的小型化、集成化设计提供更大灵活性，助力终端厂商快速推出形态更轻薄、布局更紧凑的产品。</p><p>目前，RFM300L已推出433.92MHz、868MHz与915MHz多个版本，覆盖不同区域法规与市场需求，自上市起便为无线通信市场带来更具性价比、更高性能、更可靠的选择。它不仅是一个通信模块，更是一套适用于物联网长期发展趋势的底层无线能力支撑，将帮助各类智能设备迈向更低成本、更高稳定性与更长生命周期的新阶段。</p></div>]]></description></item><item>    <title><![CDATA[XMOS将在CES 2026展示系列面向未来的智能音频创新]]></title>    <link>https://www.elecfans.com/d/7500785.html</link>    <guid>https://www.elecfans.com/d/7500785.html</guid>    <pubDate>2025-12-13 11:34:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	<strong>中国北京，2025年12月</strong>——生成式系统级芯片（GenSoc）领先<a href="https://bbs.elecfans.com/group_1231" target="_blank"><u>开发者</u></a>及音视频媒体处理<a href="https://www.elecfans.com/soft/data/42-102/" target="_blank"><u>AI技术</u></a>提供商XMOS<a href="https://www.hqchip.com/gongsi.html" target="_blank"><u>半导体</u></a>日前宣布：公司将亮相2026年国际<a href="https://www.elecfans.com/soft/data/39-96/" target="_blank"><u>消费电子</u></a>展（CES 2026）并重磅发布全新技术和创新产品阵列，集中展示公司在<a href="https://m.hqchip.com/app/1537" target="_blank"><u>音频</u></a>、<a href="https://www.elecfans.com/v/tag/150/" target="_blank"><u>人工智能</u></a>及智能互联领域持续性创新成果。</p>
-<p style="text-indent:2em;">
-	随着人工智能技术快速渗透到各个领域，边缘<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>正在改变我们熟悉的方方面面，从而为电子信息技术领域带来诸多全新的机会。XMOS作为基础性、创新性的边缘AI处理技术和芯片产品提供商，将在CES 2026上展出多项可全面赋能智能终端设计的新技术，包括从下一代<a href="https://m.hqchip.com/app/1381" target="_blank"><u>数字信号</u></a>处理（<a href="https://m.hqchip.com/app/1378" target="_blank"><u>DSP</u></a>）工具到沉浸式游戏/高保真声场体验，再到前沿的边缘AI应用。为此，XMOS诚邀与会者亲临其展位共同研讨和探索，并共同推动这场重塑音视频媒体与边缘智能融合性发展的技术革新。</p>
-<p style="text-indent:2em;">
-	以下为部分演示亮点，在这里抢先剧透：</p>
-<p style="text-indent:2em;">
-	<strong>·为沉浸式游戏体验开发的空间音频——超低延迟3D音效，尽享身临其境的游戏体验</strong></p>
-<p style="text-indent:2em;">
-	感受游戏的全新维度——将现场展示为沉浸式游戏体验开发的空间音频技术，它可提供超逼真的3D声场，让玩家与游戏动作的距离无限贴近。依托XCORE®技术与Nsync Inc.技术加持，该演示可实现精准声源定位与超低延迟，带来真正的沉浸式游戏体验。</p>
-<p style="text-indent:2em;">
-	<strong>·<a href="https://m.hqchip.com/app/1720" target="_blank"><u>以太网</u></a>音频传输——基于IP网络的同步高可靠音频解决方案</strong></p>
-<p style="text-indent:2em;">
-	凭借其在IP网络环境中提供的超可靠、低延迟的音频传输，该方案是专业音频系统和分布式娱乐场景的理想之选。</p>
-<p style="text-indent:2em;">
-	<strong>·软件定义的<a href="https://www.elecfans.com/tags/数模转换器/" target="_blank"><u>数模转换器</u></a>（<a href="https://www.elecfans.com/tags/dac/" target="_blank"><u>DAC</u></a>）——简化硬件复杂度、降低成本，同时保障高性能</strong></p>
-<p style="text-indent:2em;">
-	这一创新性的解决方案无需专用DAC硬件，为音频设备设计提供了更精、高性价比的全新可能。</p>
-<p style="text-indent:2em;">
-	<strong>在CES 2026展会期间与XMOS团队共探创新</strong></p>
-<p style="text-indent:2em;">
-	近年来，XMOS在包括中国在内的全球创新生态中受到广泛欢迎，越来越多的开发者利用XCORE®<a href="https://m.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>开发了许多创新的、有趣的应用，并向全球的消费者提供了让人耳目一新的产品。因此，XMOS继续诚邀创新者在CES 2026展会期间与XMOS团队的会面，亲临现场体验多项前沿创新技术，共同探索用我们的解决方案助力创新组织去开发下一代智能系统，并在智能时代共求发展。</p>
-<p style="text-indent:2em;">
-	由于展会期间交流活动甚多，所以请使用以下“共享日历”来预约会议，选择适合您的会面日期与时间，即刻与我们建立一个会议约定。我们期待与您相聚，共探合作机遇、探讨您的下一个项目，并邀您亲身体验演示技术。<br/>
-	</p>]]></description></item><item>    <title><![CDATA[Matter 1.5版本解析，智能家居又添惊喜]]></title>    <link>https://www.elecfans.com/d/7493686.html</link>    <guid>https://www.elecfans.com/d/7493686.html</guid>    <pubDate>2025-12-13 16:50:00</pubDate>    <description><![CDATA[<div class="vditor-preview__action"/><div class="vditor-reset"><p>为进一步简化<a href="https://www.elecfans.com/v/tag/663/" target="_blank"><u>智能家居</u></a>开发流程、增强设备互操作性，同时为消费者与<a href="https://bbs.elecfans.com/group_1231" target="_blank"><u>开发者</u></a>打造更丰富、更可持续的互操作体验，连接标准联盟（CSA）已于2025年11月20日正式宣传推出Mat<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>r1.5版本；</p><p>本次版本更新主要新增了多个颇具影响力的设备类型及应用场景，包括对摄像头、闭合设备、土壤<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>的支持，同时还新增多项能源管理功能，可有效加强整个智能家居生态系统中的设备协同效应。</p><p>华普微，作为连接标准联盟（CSA）的Participant会员与中国本土资深的<a href="https://bbs.elecfans.com/group_57" target="_blank"><u>物联网</u></a><a href="https://www.elecfans.com/v/tag/1252/" target="_blank"><u>无线通信</u></a>系统级服务厂商，已于第一时间启动对Matter1.5版本的落地测试；</p><p>现阶段，华普微全系列Matter模块已全面兼容Matter1.5，可助力开发者响应市场需求，快速开发最新的Matter终端设备，让消费者更快享受到覆盖摄像头监控、闭合设备精准控制、土壤状态智能监测等多元场景的便捷服务。</p><h1>Matter1.5，核心功能更新细节一览</h1><p><strong>支持摄像头设备</strong></p><p>Matter1.5版本新增对摄像头设备的支持，可为不同品牌和生态系统的摄像头产品提供统一的互操作性框架，包括视频门铃、家庭安全摄像头、婴儿监视器和户外安全摄像头等；</p><p>目前，开发者已可借助Matter模块快速开发并<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>直接与Matter生态系统互操作的摄像头，无需依赖自定义A<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>或额外集成工作。</p><p>Matter摄像头采用成熟的WebRTC技术实现音视频实时流传输，支持双向<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>，并通过标准STUN和TURN协议实现本地与远程访问。</p><p>Matter1.5还定义了多流配置、云台控制（平移 - 倾斜 - 缩放）、检测区域与隐私区域设置，以及灵活的存储选项（包括本地或云端的连续录制或事件触发式录制）。</p><p>这一更新意义重大，对那些没有建立自有智能家居生态系统的摄像头制造商而言，通过开发Matter摄像头将能进入一个更广阔的市场；</p><p>对消费者而言，他们将能灵活地搭配不同类型、不同价位的Matter摄像头，获得更加协调统一、流畅便捷的使用体验，并彻底改变过去智能摄像头“生态绑定、多端操作”的痛点。</p><p><strong>统一支持闭合设备</strong></p><p>Matter1.5版本通过模块化功能集（cluster）设计新增对窗帘、幕帘、遮阳篷、大门、车库门等闭合设备的统一支持；</p><p>开发者如今可通过同一套代码块来适配不同运动及配置类型，降低开发复杂度并提升产品差异化空间，优化跨生态控制一致性与安全性。</p><p>对消费者而言，这一更新意味着跨应用和生态系统对闭合设备的控制将更一致、更灵活；通过精准的位置反馈，设备安全性与防护性得到提升；</p><p>同时，“检查是否记得关车库门或锁门” 这一核心智能家居场景，也能适配更多设备类型和家居环境。</p><p><strong>支持土壤传感器</strong></p><p>Mtter1.5版本新增对土壤传感器的支持，这意味着智能家居中的园艺与植物养护服务也将会快速纳入生态平台的支持体系中；</p><p>土壤传感器支持上传土壤的湿温度等数据，通过搭配与Matter兼容的水阀或灌溉系统，消费者将能实时关注与调整家中绿植的生长环境，有效避免水资源的过度消耗。</p><p><strong>能源管理能力升级</strong></p><p>Mtter1.5版本新增多项能源管理功能，支持设备之间交换标准化的能源定价、费率及电网碳强度信息，有助于构建统一的能源管理框架，推动智能家居行业向更规范、更统一的方向发展。</p><p>对于消费者而言，他们可通过设备利用能源定价等数据，根据费率方案自动调整设备运行状态，如在电价较低时运行大功率设备，实现更合理的用电规划；</p><p>同时，电动汽车充电相关功能升级，也让消费者可以更便捷地掌握充电情况，双向充电功能还为未来家庭能源共享提供了可能。</p><p><strong>基于TCP与大消息传输的优化数据传输</strong></p><p>Matter1.5版本新增TCP传输功能，可实现更快的数据传输，并支持图像和固件更新等大型有效载荷；</p><p>这一更新对于视频流等数据密集型应用场景而言，是提升可靠性和实现更快传输速度的理想选择。</p><h1>华普微，与Matter携手共进，共赴智能未来</h1><p>Matter协议的每一次版本更新，都围绕着一个共同目标：让互联设备更安全、更可靠地实现本地协同工作；</p><p>而华普微作为国内最早一批投身于Matter赛道的高新技术企业，一直紧跟着Matter协议的演进步伐，目前华普微的Matter模块方案已全面完成核心协议栈的升级测试，各型号模块皆可为设备制造商提供平滑的技术演进路径，例如：</p><p>HM-MT2401、HM-MT2401B与HM-MT2401C等Matter over Thre<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>ad</u></a>模块内嵌低功耗32位<a href="https://www.hqchip.com/app/1378" target="_blank"><u>ARM</u></a>® Cortex®-M33内核，片上集成1536kB Flash，256kB <a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>以及丰富的外设资源，尤其适用于存在低功耗、低带宽与小数据量传输等需求的智能家居设备。</p><p>HM-MT7201、HM-MT7203等Matter over <a href="https://www.elecfans.com/tags/wi-fi/" target="_blank"><u>Wi-Fi</u></a>模块同样内嵌功能强大的32位<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>和一套全面的外设<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>，是高度集成的单芯片Wi-Fi 802.11b/g/n和低功耗<a href="https://www.elecfans.com/tags/蓝牙/" target="_blank"><u>蓝牙</u></a>（BLE）解决方案，尤其适用于存在持续供电、低延迟、高带宽与大数据量传输等需求的智能家居设备。</p><p>对于设备制造商而言，他们只需要通过简单的接口设计，将上述Matter模块集成到智能家居终端设备中，即可将原有终端设备升级为符合最新Matter标准规范的Matter设备，可极大地简化了设备制造商的产品开发周期，可加快产品上市进程。</p><p>展望未来，华普微将持续深化与连接标准联盟（CSA）及行业伙伴的协作，围绕Matter生态的技术创新与场景拓展，不断优化模块性能与服务能力，推动行业向更开放、更智能、更可持续的方向发展，让“万物互联”的智慧生活愿景惠及更多用户。</p></div>]]></description></item><item>    <title><![CDATA[高通亮相2025数智科技生态大会]]></title>    <link>https://www.elecfans.com/d/7504194.html</link>    <guid>https://www.elecfans.com/d/7504194.html</guid>    <pubDate>2025-12-13 16:53:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	12月4日，由中国电信举办的2025数智科技生态大会在广州召开。大会以“智能领航智惠共生”为主题，汇聚产业链生态伙伴，展示科技创新与产业协同的新成果，探讨数智科技生态发展的新机遇。</p>
-<p style="text-indent:2em;">
-	作为中国电信的长期合作伙伴，<a href="https://www.elecfans.com/tags/高通/" target="_blank"><u>高通</u></a>公司再度参会并亮相展区，集中呈现终端侧<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>、连接与计算交汇下的创新实践，展示与中国电信等生态伙伴在AI手机、PC、扩展现实(XR)、<a href="https://www.elecfans.com/tags/wi-fi/" target="_blank"><u>Wi-Fi</u></a>、汽车、<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>、可穿戴等领域的合作成果，展现出高通与中国产业伙伴共同推动智能生态发展的清晰图景。</p>
-<p style="text-indent:2em;">
-	高通公司中国区董事长孟樸表示：“多年来，高通与中国电信在AI、连接、<a href="https://bbs.elecfans.com/group_57" target="_blank"><u>物联网</u></a>等领域紧密合作。双方持续推进先进技术的测试和验证，共同打造了多款性能卓越的智能终端和可穿戴设备，还推动了AI入端等多个创新应用场景的加速落地。在载波聚合、万兆网络应用、毫米波外场测试等领域，我们一起达成了多项里程碑，也为用户带来了由终端侧AI驱动的全新体验。”</p>
-<p style="text-indent:2em;">
-	AI入终端：性能与体验并进，让智能领航</p>
-<p style="text-indent:2em;">
-	<a href="https://www.elecfans.com/v/tag/150/" target="_blank"><u>人工智能</u></a>正成为推动产业变革与经济社会发展的关键力量。《国务院关于深入实施“人工智能+”行动的意见》提出，到2027年，新一代智能终端、智能体等应用普及率超70%;到2030年，这一数字将超90%。随着AI从“听指令”迈向“懂意图”，人机交互正在进入以智能体为核心的新阶段——AI正逐渐成为新的UI(用户界面)。</p>
-<p style="text-indent:2em;">
-	这场变革也正在推动AI架构从“云<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>”向“云+边+端”协同发展。在大会主<a href="https://www.elecfans.com/article/bbs/" target="_blank"><u>论坛</u></a>上，高通公司中国区董事长孟樸表示：“大模型和网络基础设施的快速演进，为AI的发展奠定了基础。但AI要真正普惠大众，要能在最贴近用户的终端上跑起来。与仅在云端处理AI工作负载不同，终端侧AI具备隐私、安全、性能、时延等多项优势。要把人工智能用好，让AI真正落地，离不开‘云强、网稳、端智能’”。</p>
-<p style="text-indent:2em;">
-	作为<a href="https://www.elecfans.com/soft/data/42-102/" target="_blank"><u>AI技术</u></a>发展的积极推动者，高通深耕AI领域已超过15年，为<a href="https://www.elecfans.com/v/tag/11230/" target="_blank"><u>智能手机</u></a>、XR头显和眼镜、汽车、PC、物联网等数十亿边缘终端提供行业先进的软硬件平台。最新发布的第五代骁龙8至尊版，支持真正的个性化智能体AI助手体验，通过持续的终端侧学习和实时感知，使多模态AI模型能够深度理解用户，从而实现主动推荐和基于情境的提示优化。今年9月，高通携手中国电信等伙伴共同启动“AI<a href="https://www.elecfans.com/tags/加速计/" target="_blank"><u>加速计</u></a>划”，推动智能体AI扩展至更多终端，探索更多AI应用场景，推动人工智能的规模化落地。</p>
-<p style="text-indent:2em;">
-	在推动AI入端的实践中，高通与中国电信取得了丰硕成果：高通助力中国电信打造“麦芒”系列AI手机，继麦芒30获得不错的市场表现后，麦芒40进一步将AI通话助手、AI修图等AI创新应用带给用户;双方打造的天翼AI眼镜也亮相展台，这款“第一视角智能交互终端”可针对不同场景定制语音、语义和多模态<a href="https://m.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>，支持智能识物、食物分析、展品讲解等丰富功能。</p>
-<p style="text-indent:2em;">
-	此外，在AI终端生态方面，展台还展示了多款搭载骁龙旗舰移动平台的AI<a href="https://m.elecfans.com/v/tag/107/" target="_blank"><u>手机</u></a>、基于骁龙X系列的AI PC，以及涵盖影像、办公、娱乐等多样化场景的终端侧智能体AI应用，例如骁龙手机和PC平台超速推理实现的每秒超200 tokens的端侧推理速度，基于荣耀终端的一语搜图追色、跨端搜传等，让参观者切实感受到“AI入端”带来的智慧生活新体验。</p>
-<p style="text-indent:2em;">
-	AI融连接：<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>与智算兼备，让智惠共生</p>
-<p style="text-indent:2em;">
-	智能体AI的规模化扩展，需要高速稳定、低时延的连接技术作为支撑。今年是6G标准化元年，连接与AI的融合正成为<a href="https://www.elecfans.com/soft/data/43-44/" target="_blank"><u>通信技术</u></a>的重要发展方向。在这一趋势下，6G原生的AI能力将使网络在通信基础上同时具备感知、计算、智能等能力，为产业创造新的价值空间，为社会数智化变革提供更强驱动力。</p>
-<p style="text-indent:2em;">
-	6G也将成为云端与边缘之间的连接桥梁，为人工智能提供更广阔的应用空间、更强大的算力协同能力，以及更出色的时延保障，实现“具备情境感知能力的智能计算无处不在”。面向6G，高通持续推动无线系统向AI原生架构演进，优化通信效率，广泛开展前沿技术研究，为未来6G的部署做好准备。</p>
-<p style="text-indent:2em;">
-	同时，6G的到来并非一蹴而就，只有将<a href="https://www.elecfans.com/v/tag/1225/" target="_blank"><u>5G</u></a>网络“建稳、用实”，才能为下一阶段的技术演进奠定坚实基础。在5G-A(5G <a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>Ad</u></a>vanced)稳步推进的过程中，高通与中国电信不断深化合作，在5G-A关键技术、创新应用和场景探索方面取得多项成果：双方携手完成了中国电信首个4CC载波聚合端到端验证，以及业界首个基于<a href="https://m.hqchip.com/app/1525" target="_blank"><u>Sub</u></a>-6GHz与毫米波频段的上下行载波聚合技术验证。今年6月，高通与上海电信等合作伙伴，将黄浦江游轮打造成水陆空5G-A立体组网、开创智慧文旅的新样板。在ChinaJoy期间，高通还携手上海电信打造了基于毫米波的XR沉浸式体验，吸引超过3300名观众现场体验，全程保持流畅稳定。此外，双方还携手探索6G前瞻方向，开拓下一代无线连接的广阔发展空间。</p>
-<p style="text-indent:2em;">
-	在上述联合创新之外，高通展台还展出了多项前沿连接技术和产品演示，包括基于5G-A万兆网络的“骁龙XR奇幻之旅”，与华硕、京东、小米等合作伙伴打造的多款Wi-Fi终端，以及6G技术愿景与前沿应用场景演示，涵盖低空<a href="https://www.elecfans.com/v/tag/12732/" target="_blank"><u>无人机</u></a>无线感知、基于数字孪生和生成式AI的网络切片等多个前沿领域。</p>
-<p style="text-indent:2em;">
-	智联拓边界：创新与场景协同，让价值涌现</p>
-<p style="text-indent:2em;">
-	从“互联网+”到“人工智能+”，这一转变不仅意味着技术体系的更新，更体现了经济发展范式的深刻转型。在“互联网+”所积累的海量数据与丰富场景基础上，“人工智能+”正在重组生产要素、拓展新的价值空间，成为培育新质生产力、推动产业高质量发展的关键力量。要推动“人工智能+”深入发展，不仅需要底层技术的深度融合，更离不开产业间的协同创新与生态合作。</p>
-<p style="text-indent:2em;">
-	依托“连接+计算+智能”方面的技术优势，高通持续深化与中国生态伙伴的合作，让技术创新更快融入行业场景，推动更多行业不断创造新的价值机遇。高通面向企业级市场推出的高通跃龙品牌，与消费级骁龙品牌形成补充，共同为消费终端与行业应用提供强劲的技术支撑。</p>
-<p style="text-indent:2em;">
-	在展台上，高通携手合作伙伴展示了多项具有代表性的行业应用成果。其中，表现出色的加速进化Booster K1极客版机器人，其核心计算平台由高通提供。该款机器人不仅能够完成挥手、舞蹈、回旋踢等多种动作组合，也作为具身开发的入门级优选平台，吸引更多<a href="https://bbs.elecfans.com/group_1231" target="_blank"><u>开发者</u></a>参与，共同推动机器人实现各类能力并落地到赛事、科研等不同场景。Booster K1具备充沛的端侧算力，在复杂的多态感知、实时决策与<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>控制任务中，机器人能够实现高效、低功耗的AI推理，确保系统响应迅捷、运行稳定。</p>
-<p style="text-indent:2em;">
-	基于高通跃龙IQ9系列<a href="https://www.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>打造的宇树机器人也在展台展出，这款具备出色终端侧AI性能、强大内置安全功能和设计灵活性的人形机器人，能够在极端环境下处理高计算量、节能高效的重负载工作，展现了其在复杂场景中的广泛应用潜力。</p>
-<p style="text-indent:2em;">
-	此外，魔方派3<a href="https://www.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>手、阿加犀智能工业相机、哈浮飞行相机、智能支付终端等多类物联网设备也在展台亮相，展示了高通跃龙平台在工业视觉、安防巡检、商业支付等多元场景中的端侧AI性能。</p>
-<p style="text-indent:2em;">
-	大会期间，高通公司中国区董事长孟樸参与了由中国电信发起的“息壤智能云生态联盟”成立仪式，聚焦“云-网-端”协同发展。此外，高通公司全球副总裁李晶出席了由中国电信发起的“星辰智能体生态联盟”、“中国电信终端产业联盟AI终<a href="https://www.hqchip.com/app/1529" target="_blank"><u>端子</u></a>联盟”等环节，进一步加强AI泛终端生态合作。值得一提的是，在12月6日举行的分论坛上，高通获颁中国电信“终端测试质量卓越奖”，展现了中国电信和行业对高通在推动终端品质与能力升级方面长期投入及贡献的认可。</p>
-<p style="text-indent:2em;">
-	高通植根中国发展三十年。从3G到5G时代，高通与中国电信在连接、人工智能、物联网等领域持续深化合作、拓展创新边界，共同见证并推动了中国通信产业的持续发展与技术升级。站在产业数智化变革的新阶段，高通将继续携手中国电信以及更广泛的生态伙伴，在技术探索、应用落地等方面深化合作，共同释放“AI+连接”时代的更大潜能。</p>
-<p style="text-indent:2em;">
-	</p>]]></description></item><item>    <title><![CDATA[闻泰科技张学政荣膺2025华人榜MACA企业家成就奖]]></title>    <link>https://www.elecfans.com/d/7504202.html</link>    <guid>https://www.elecfans.com/d/7504202.html</guid>    <pubDate>2025-12-13 16:57:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	近日，第十四届华人榜MACA（华奖）颁奖典礼在香港举行。凭借在<a href="https://m.hqchip.com/gongsi.html" target="_blank"><u>半导体</u></a>产业的突出贡献与影响力，张学政先生荣获“企业家成就奖”。这一荣誉不仅是对其领导力与企业家精神的高度认可，也是对公司高端制造、践行全球化使命的权威背书，彰显了民营企业在全球高科技领域的核心价值。</p>
-<p style="text-indent:2em;">
-	中国出发，走向世界</p>
-<p style="text-indent:2em;">
-	成就全球并购整合典范</p>
-<p style="text-indent:2em;">
-	作为一名在中国出生、成长、工作并创业的企业家，张学政先生凭借敏锐洞察力与战略定力，主导闻<a href="https://www.elecfans.com/tags/泰科/" target="_blank"><u>泰科</u></a>技成功并购安世半导体——这笔超300亿元的交易不仅是中国半导体领域规模最大的跨国并购案，更是华人企业融入全球产业生态的标志性实践。</p>
-<p style="text-indent:2em;">
-	并购完成后，张学政先生只身前往欧洲推进整合工作，推动这家百年老企焕发新生，带领安世跻身全球功率半导体产业第一梯队。按出货量统计，根据公司测算，安世半导体的市场份额从收购前的7%提升到了10%；在全球功率分立器件企业中的排名从2019年的第11名攀升至第3名，连续多年稳居中国第一。整合之后的表现，足以证明华人企业能成为全球产业链的可靠伙伴。</p>
-<p style="text-indent:2em;">
-	业绩稳健增长</p>
-<p style="text-indent:2em;">
-	筑牢全球供应链核心支撑</p>
-<p style="text-indent:2em;">
-	在张学政先生的战略部署下，安世半导体的经营效益实现全方位跃升：</p>
-<p style="text-indent:2em;">
-	营收从2019年103.07亿元迅速增至2022年160.01 亿元，即便在2023-2024年行业周期性调整期间，仍稳定在150亿元左右，显著高于收购前水平；</p>
-<p style="text-indent:2em;">
-	净利润从2019年的12.58亿元迅速增长至2022年的峰值37.49亿元。2025年Q3单季净利润达7.24亿元，创历史新高；</p>
-<p style="text-indent:2em;">
-	长期借款从90亿元降至0，财务结构持续优化。</p>
-<p style="text-indent:2em;">
-	如今，安世半导体已深度融入全球产业链的多个关键环节，成为众多国际大厂保障供应链稳定的重要基石。</p>
-<p style="text-indent:2em;">
-	研发创新持续加码</p>
-<p style="text-indent:2em;">
-	驱动产业技术迭代升级</p>
-<p style="text-indent:2em;">
-	技术创新是半导体产业的核心竞争力，也是全球产业链升级的关键动力，公司始终将研发创新置于战略核心。</p>
-<p style="text-indent:2em;">
-	从2019年至2025年，安世研发团队人数增长超三倍，为技术创新注入充足的人才活力；</p>
-<p style="text-indent:2em;">
-	近三年安世半导体专利数量净增近1000件，创新活力持续迸发；</p>
-<p style="text-indent:2em;">
-	同时公司产品矩阵不断丰富完善，在原有双极性<a href="https://m.hqchip.com/app/1555" target="_blank"><u>晶体管</u></a>、逻辑器件等优势产品线基础上，持续迭代升级并拓展至高功率分立器件（<a href="https://www.hqchip.com/app/2048" target="_blank"><u>IGBT</u></a>、SiC、GaN）、<a href="https://m.hqchip.com/app/1731" target="_blank"><u>电源管理</u></a>芯片、<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>链等高端领域，精准匹配EV、<a href="https://www.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>、<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>和<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>等新兴场景需求。</p>
-<p style="text-indent:2em;">
-	迈向新百年</p>
-<p style="text-indent:2em;">
-	直面挑战，坚定前行</p>
-<p style="text-indent:2em;">
-	当前，公司正朝着百亿美金营收目标稳步迈进，全力助力汽车电动化、智能化转型，积极拥抱AI和机器人时代，引领安世开启新百年发展征程。</p>
-<p style="text-indent:2em;">
-	然而，近期在荷兰经济部不当干预下，安世荷兰通过向企业法庭发起不当的诉讼程序，非法地剥夺了闻泰科技作为安世半导体股东的控制权和合法股东权益，导致全球半导体供应链出现混乱和动荡。</p>
-<p style="text-indent:2em;">
-	我们深知，在技术革命与全球产业链重构的过程中，难免面临各类挑战，但全球化仍是产业发展的必然趋势。安世半导体历经百年风雨，曾穿越诸多地缘政治风浪，始终坚守全球化道路，在坎坷中不断成长壮大。面对当前局面，公司始终以客户利益、产业链生态稳定及员工权益为重，坚持通过合法合规的方式，推动事件回归商业理性轨道妥善解决。</p>
-<p style="text-indent:2em;">
-	此次华人榜MACA（华奖）“企业家成就奖”授予张学政先生，既是对其深耕半导体产业、推动行业进步的高度认可，也体现了业界对民营企业赋能全球产业链的充分肯定。未来，公司将继续贯彻全球化战略，朝着百亿美金营收目标稳步前行，积极应对挑战，在新格局中与各地区深化产业合作，为全球半导体产业的持续发展贡献更多力量。</p>]]></description></item><item>    <title><![CDATA[广州数科集团亮相2025全球智能机械与电子产品博览会]]></title>    <link>https://www.elecfans.com/d/7504203.html</link>    <guid>https://www.elecfans.com/d/7504203.html</guid>    <pubDate>2025-12-13 17:01:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	来源：广州数字科技集团</p>
-<p style="text-indent:2em;">
-	核心导读</p>
-<p style="text-indent:2em;">
-	12月4日，2025全球智能机械与电子产品博览会（<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>E）在澳门、珠海双城开展。广州数科集团携旗下广电运通、海格<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>、广电计量、广州低空公司、广州信投、赛姆科技、领信数科等成员企业组团亮相智能交通与未来出行馆，一系列前沿产品与成功案例为参观者带来了一场沉浸式的“未来城市”体验。海格通信携低空产业、北斗导航、智能无人等前沿产品及解决方案亮相展会。广东省委书记黄坤明，省委副书记、省长、深圳市委书记孟凡利前往博览会珠海展区，现场巡展并调研。</p>
-<p style="text-indent:2em;">
-	在广州数科集团的展区上，人流络绎不绝。这里没有虚幻的概念，只有可触可感的解决方案：AI闸机快速识别、<a href="https://www.elecfans.com/v/tag/12732/" target="_blank"><u>无人机</u></a>灵活起降、智慧杆实时感知、数据流安全可视……</p>
-<p style="text-indent:2em;">
-	海格展台核心亮点</p>
-<p style="text-indent:2em;">
-	全方位展示低空经济产业布局</p>
-<p style="text-indent:2em;">
-	作为全频段覆盖的<a href="https://www.elecfans.com/v/tag/1252/" target="_blank"><u>无线通信</u></a>装备研制专家，海格通信展示了在低空经济领域深耕全产业链布局，着力构建 “空天地” 一体化运营体系。一方面，海格通信重点打造低空数据链，将低轨卫星通信与中国移动 <a href="https://www.elecfans.com/v/tag/1225/" target="_blank"><u>5G</u></a>-A 网络深度融合，构建起空天地一体化低空<a href="https://www.elecfans.com/tongxin/" target="_blank"><u>通信网络</u></a>，为低空场景通信需求提供坚实保障；另一方面，凭借频谱侦测、雷达、<a href="https://bbs.elecfans.com/group_350" target="_blank"><u>光电</u></a>及干扰反制等核心产品，创新融合中国移动 5G-A 通感一体技术，进一步构建多手段融合的监视反制网络，为低空领域安全运行筑牢防线。</p>
-<p style="text-indent:2em;">
-	在无人机研发与制造领域，海格通信深入解析客户需求，针对不同应用场景，开发了面向巡检任务的小型无人机、服务城市物流的轻型物流无人机、满足城际物流需求的大型无人机，打造了完整的飞行器产品矩阵。同时开展面向行业的无人机飞手培训，培养行业紧需人才，完成产品研发到服务的生态闭环。</p>
-<p style="text-indent:2em;">
-	展示北斗通导融合技术创新成果</p>
-<p style="text-indent:2em;">
-	在北斗应用迈向市场化、产业化、全球化的重要阶段，海格通信作为通导融合领域的领先企业，助力构建高效、可靠、覆盖全球的北斗综合时空基准网络。海格通信不仅深度参与北斗三号规模化应用，提供从IP核研发、芯片定制到核心模组设计的全链路技术解决方案。解决方案基于地基/星基增强技术，支持差分数据接收与RTK解算，提供静态毫米级、动态厘米级的精准定位和优于20纳秒的授时精度，满足各类应用场景下的高可靠时空基准需求。</p>
-<p style="text-indent:2em;">
-	此次展示的车载<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>卫惯设备等核心产品和解决方案备受与会领导关注。图中领导手中调研的产品，是海格通信基于卫星导航、惯性导航的车载高性能多源融合定位设备，集成了多模多频GNSS高精度板卡，具备在隧道、自动化港口、自动化矿区等复杂环境向车辆准确提供姿态、航向、位置、速度和<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>数据等信息的能力。</p>
-<p style="text-indent:2em;">
-	数科集团展区核心亮点</p>
-<p style="text-indent:2em;">
-	数智底座：aiCore System 4.0</p>
-<p style="text-indent:2em;">
-	集团自主研发的aiCore System 4.0数智底座，以“算力为基、AI为核、数据为脉、安全为盾”，通过统一门户深度融合数据、知识、模型与工具，为千行百业的数字化转型提供坚实、通用的能力支撑。</p>
-<p style="text-indent:2em;">
-	新一代智能自助登机闸机：智慧通行新标杆</p>
-<p style="text-indent:2em;">
-	运通智能研发的新一代智能自助登机闸机，是融合了三维场景感知<a href="https://m.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>与一体化高速证件核验技术的新一代智能终端，致力于打造高效、安全的“<a href="https://www.elecfans.com/v/tag/150/" target="_blank"><u>人工智能</u></a>+自助登机”体验。通过三维场景感知算法，实现人/物识别、高度与位置测量、速度检测与追踪保护、异常行为记录等功能，可准确识别常态旅客、儿童、轮椅或辅助旅客，行李/包箱位置，对并排、跨越及尾随等异常行为实时报警。边缘端具有6Tops算力，支持端侧部署10亿级参数的专用大模型。</p>
-<p style="text-indent:2em;">
-	AI算力信创设备：全栈国产化的坚实底座</p>
-<p style="text-indent:2em;">
-	广电五舟的AI算力设备S627H6与S74AK3服务器，分别基于海光与鲲鹏国产芯片，实现了从核心硬件到业务应用的全流程自主可控，为人工智能发展提供安全可靠的算力保障。</p>
-<p style="text-indent:2em;">
-	数字金融：便捷跨境无障碍兑换</p>
-<p style="text-indent:2em;">
-	数字人民币外币兑换机可识别23个币种、超过200个票面，在出入境口岸、机场、涉外酒店、国际展览<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>以及银行网点等提供全天候自助兑换服务，已成功应用于广交会、大湾区全运会等重要场景。</p>
-<p style="text-indent:2em;">
-	智慧政务：“粤智助”一体机打通服务“最后一公里”</p>
-<p style="text-indent:2em;">
-	集团联合研发的“粤智助”政务服务一体机，已覆盖广东全省超2万个镇村社区，上线服务超500项，累计服务人次超2000万。它集身份<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>、信息查询、证明材料打印等功能于一体，真正将政务窗口搬到群众家门口，实现“数据多跑路、老百姓少跑腿”，高效助力“百千万工程”落地见效。</p>
-<p style="text-indent:2em;">
-	智能巡检：自主协同的公共安全卫士</p>
-<p style="text-indent:2em;">
-	面向公共安全领域定制开发的全栈自研智巡<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>，具备3D雷达建模、自主导航、AI视觉识别与应急响应能力，可协同人防力量进行室内外巡逻执勤任务，目前已成功服务成都世界大学生运动会、湾区十五运会等活动，并在广州天河公园等场景常态化部署。</p>
-<p style="text-indent:2em;">
-	数字人前台一体机</p>
-<p style="text-indent:2em;">
-	数字前台产品深度融合人工智能、虚拟现实与大数据分析技术，具备高度拟人化的沟通能力与全场景业务导办能力，已广泛应用于政务大厅、银行网点、公共服务中心、文旅场馆及医疗机构，提供智能咨询、业务引导、政策宣贯与便民服务，实现7×24小时高效响应。</p>
-<p style="text-indent:2em;">
-	计量检测：全生命周期的质量卫士</p>
-<p style="text-indent:2em;">
-	作为国内领先的国有第三方计量检测上市企业，广电计量展示了覆盖全生命周期的质量管控解决方案，可为天上低空设备、航天航空器，及地上智能网联<a href="https://m.elecfans.com/v/tag/293/" target="_blank"><u>新能源</u></a>汽车提供从芯片到整车的全方位质量评价与综合检测保障服务。</p>
-<p style="text-indent:2em;">
-	“车路云一体化”：智慧综合杆织就城市感知网</p>
-<p style="text-indent:2em;">
-	作为广州“车路云一体化”试点运营主体，集团通过“车、路、云、数”全要素协同，累计建设近3万根智慧综合杆，覆盖广州近300条重要道路，构建起城市级智能感知网络。依托“城市级云控平台”，实现了从智能<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>调优到涵隧内涝预警的精细化治理，为数字城市提供物理信息基础支撑。</p>
-<p style="text-indent:2em;">
-	低空经济：从培训到运营的全链条布局</p>
-<p style="text-indent:2em;">
-	天乘飞行培训学院：自主研发制造的无人机灵活易操作，兼顾新手入门与行业实操训练需求，是低空经济人才培养的教培标杆。</p>
-<p style="text-indent:2em;">
-	低空飞服平台：集团运营的广州低空飞行综合管理服务平台，作为空中交通的“运行中枢”，实现了飞行计划全流程数字化管理，并持续拓展“低空+应急”“低空+农林”“低空飞行营地”等多元融合应用场景。</p>
-<p style="text-indent:2em;">
-	数据安全：构筑可信流通的“数字护城河”</p>
-<p style="text-indent:2em;">
-	没有数据安全就没有国家安全，领信数科展示的“深度可信数据空间”与“超级<a href="https://www.hqchip.com/app/1515" target="_blank"><u>连接器</u></a>”是保障空间平台数据安全接入的关键枢纽，通过“可用不可见”技术确保数据安全流通，已为十五运会等多项重大活动提供可靠的安全保障服务。</p>
-<p style="text-indent:2em;">
-	面向未来</p>
-<p style="text-indent:2em;">
-	立足湾区，面向世界。集团将继续紧扣新一轮科技革命与产业变革脉搏，聚焦数字经济与新质生产力发展方向，构建人工智能AI+、北斗+、数据要素×等数字经济新生态，赋能千行百业数字化转型，奋力建设生态融合型数字科技领军企业。</p>]]></description></item><item>    <title><![CDATA[广州数科集团举办2025年投资者集体交流会]]></title>    <link>https://www.elecfans.com/d/7504257.html</link>    <guid>https://www.elecfans.com/d/7504257.html</guid>    <pubDate>2025-12-13 17:23:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	核心导读</p>
-<p style="text-indent:2em;">
-	12月3日，广州数科集团举办2025年投资者集体交流会，旗下5家上市公司广电运通（股票代码：002152）、海格<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>（股票代码：002465）、广电计量（股票代码：002967）、广哈通信（股票代码：300711）、中科江南（股票代码：301153）参加，围绕“打造生态融合型数字科技领军企业”主题，通过“线上直播+线下路演”形式与现场数百位投资者面对面交流，回应市场关切，有力提振市场信心，共话数字科技投资发展新机遇。</p>
-<p style="text-indent:2em;">
-	广州市国资委、广东上市公司协会、中外投资机构代表、新闻媒体等200余人参加线下<a href="https://www.elecfans.com/article/bbs/" target="_blank"><u>论坛</u></a>，线上直播观看用户超15万。</p>
-<p style="text-indent:2em;">
-	广州市国资委党委委员、副主任方海卉充分肯定了广州数科集团在推动广州市数字经济发展中取得的显著成效，以及为全市科技创新和产业升级作出的重要贡献。她表示，市国资委将大力支持国企开展企业上市、投资并购、市值管理、资产证券化等工作，搭建国企与投资者共赢发展的坚实桥梁，期望广州数科集团继续发挥引领作用，持续深化资本与产业融合，推动数字技术与实体经济协同发展，助力打造粤港澳大湾区数字科技创新高地。</p>
-<p style="text-indent:2em;">
-	广州数科集团党委书记、董事长黄跃珍作主题演讲，全面阐述集团“实业+资本”双轮驱动发展成效，推动旗下5家上市公司与各产业板块协同发展。集团始终以“做一个负责任的股东”为重要使命，聚焦主责主业，以科技创新为核心动力，以资本运作为赋能引擎，锚定“十五五”规划战略航向，加快布局<a href="https://www.elecfans.com/v/tag/150/" target="_blank"><u>人工智能</u></a>、数据要素、数字安全、数字健康、数字立体交通、数字金融等前沿技术与未来产业领域，研发投入强度持续保持在12%以上，打造了全系列高端科研平台，累计拥有专利、产权超万项，为高质量发展筑牢技术根基。</p>
-<p style="text-indent:2em;">
-	路演环节</p>
-<p style="text-indent:2em;">
-	集团旗下5家上市公司围绕业绩亮点、数字经济布局、“十五五”战略规划等主题作演讲分享，共同探讨行业发展新趋势，展望数字科技融合新机遇，并与现场投资者围绕核心技术研发、市场拓展路径及未来业绩增长点等展开深入交流，投资者提问踊跃，现场气氛热烈，充分展现广州数科集团及旗下上市公司透明、开放的沟通态度与高质量发展的信心。</p>
-<p style="text-indent:2em;">
-	精彩观点</p>
-<p style="text-indent:2em;">
-	人工智能与金融科技板块</p>
-<p style="text-indent:2em;">
-	李叶东</p>
-<p style="text-indent:2em;">
-	广电运通总经理</p>
-<p style="text-indent:2em;">
-	广电运通创立于1999年，是国有控股的高科技上市企业。公司锚定“<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a> in all”战略，坚持科技自主创新，连续6年研发投入占营收比重近10%，深耕AI+金融科技、城市智能、智慧交通赛道，加速具身智能、国产算力、跨境支付等创新业务突破，全力打造“人工智能行业应用领军企业”。近年来，公司核心财务指标稳中有升，2024年营业收入首次突破百亿元大关。在保持高质量发展的同时，持续分红提升股东回报，自2007年上市以来，公司连续每年实施现金分红共18次，至今已累计现金分红近50亿元，持续用真金白银回馈投资者。</p>
-<p style="text-indent:2em;">
-	罗攀峰</p>
-<p style="text-indent:2em;">
-	中科江南董事长</p>
-<p style="text-indent:2em;">
-	中科江南成立于2011年，是智慧财政综合解决方案供应商。公司坚持把技术优势转化为发展动能，以电子化构筑公司核心护城河，积极拓展国库资金支付至广域政府资金管理，服务行政民生；积极引入AI助力财政管理从流程化走向智能化；医保领域和电子凭证领域厚积薄发提升业务规模，探索数据应用。</p>
-<p style="text-indent:2em;">
-	空天、军工与通信业务板块</p>
-<p style="text-indent:2em;">
-	余青松</p>
-<p style="text-indent:2em;">
-	海格通信董事长</p>
-<p style="text-indent:2em;">
-	海格通信2000年成立、2010年上市，业务涵盖<a href="https://www.elecfans.com/soft/data/43-45/" target="_blank"><u>无线通信</u></a>、北斗导航、航空航天、数智生态及创新业务，形成覆盖“广州、北京、西安”等多城市的地域布局。“十五五”规划将全面瞄准国家新质生产力（空天信息、低空经济、芯片、<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>、6G、智慧海洋等）的打造和新质战斗力（新域新质作战力量、无人智能作战力量等）的提升，围绕高端高科技制造业和高端现代服务业，军民共进，国内国际并发，将海格通信建设成为通导信息融合创新产业的最优秀现代企业。</p>
-<p style="text-indent:2em;">
-	杨文峰</p>
-<p style="text-indent:2em;">
-	广电计量董事长</p>
-<p style="text-indent:2em;">
-	广电计量2002年成立以来，主营计量校准、产品检测、<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>认可、评价咨询等业务，“十四五”期间60%以上收入来源于特殊行业、汽车、航空航天等高端制造与科技创新研发服务产业，面向高端制造服务、高端产业的收入占比提升至67%，较此前增加15个百分点。公司深度践行国家战略，聚焦前沿科技创新，以专业技术方案托举国之重器、护航民生安全、赋能数智未来，全力支撑质量强国建设，打造行业领先技术服务标杆。“十五五”期间重点发力航空航天、卫星互联网等领域，提供全产业链质量保障。</p>
-<p style="text-indent:2em;">
-	孙业全</p>
-<p style="text-indent:2em;">
-	广哈通信董事长</p>
-<p style="text-indent:2em;">
-	广哈通信1995年成立、2017年上市，2020年至2024年连续五年营收及净利润实现双位数增长，累计分红1.22亿元，近五年平均研发投入超15%，2025年前三季度营收、归母净利润分别同比增长41.9%、69.1%。站在30周年新起点，广哈通信将持续深化“可靠<a href="https://www.elecfans.com/tongxin/" target="_blank"><u>通信网络</u></a>、泛指挥调度系统、数智化服务”三位一体产业布局，聚力推进技术创新，巩固智能指挥调度领先优势，为行业数智化转型发展赋能。</p>
-<p style="text-indent:2em;">
-	展望未来</p>
-<p style="text-indent:2em;">
-	广州数科集团将以协同为核心、以赋能为抓手，与所有投资者、上市公司同仁们一起，凝聚共识、聚合势能、奋楫争先，加快布局战略性新兴产业、未来产业，在价值共创中深化合作，于时代机遇中聚力远航，共同铸就长期共赢的投资新生态、科创新未来！</p>
-<p style="text-indent:2em;">
-	全文转载自广州数字科技集团公众号</p>]]></description></item><item>    <title><![CDATA[YSUNG友上工业级RFID读写器新品上市]]></title>    <link>https://www.elecfans.com/d/7504272.html</link>    <guid>https://www.elecfans.com/d/7504272.html</guid>    <pubDate>2025-12-13 17:45:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	产品概述</p>
-<p style="text-indent:2em;">
-	YS-HR-I2S0-[485] 采用一体化设计，集<a href="https://m.hqchip.com/app/1252" target="_blank"><u>高精度</u></a> <a href="https://www.elecfans.com/tags/rfid/" target="_blank"><u>RFID</u></a> 读写功能与工业级 <a href="https://m.hqchip.com/app/1809" target="_blank"><u>RS485</u></a> <a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>于一体，全面支持标准 Modbus RTU 协议，适用于严苛工业环境下的自动识别与数据采集应用。</p>
-<p style="text-indent:2em;">
-	产品优势</p>
-<p style="text-indent:2em;">
-	工业级设计，坚固可靠</p>
-<p style="text-indent:2em;">
-	采用坚固的金属外壳结构，整体设计充分考虑恶劣工况下的使用需求。其防护等级高达IP67，具备卓越的防尘、防水性能，可在潮湿、多尘、高温或振动强烈的环境中稳定运行，确保数据采集不中断。通过2个M30螺母进行固定，安装牢固，抗冲击性强，适用于流水线、仓储物流、汽车制造、冶金化工等多种严苛应用场景。</p>
-<p style="text-indent:2em;">
-	卓越的抗干扰能力，适应复杂工业环境</p>
-<p style="text-indent:2em;">
-	除了芯片自身的NSR抗噪能力，<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>布局和外壳屏蔽的协同设计可以最大化其抗干扰潜力，确保在“复杂电磁环境”中“稳如磐石”。</p>
-<p style="text-indent:2em;">
-	支持快速读取</p>
-<p style="text-indent:2em;">
-	具备卓越的读写性能，支持快速<a href="https://m.hqchip.com/tags" target="_blank"><u>标签</u></a>识别，特别适合运动速度较快的应用场景。无论是在高速流水线、自动化仓储，还是在需要实时追踪与数据采集的智能制造环节，YS-HR-I2S0-[485]均能实现稳定、高效的读写操作，有效提升生产效率与管理精度。</p>
-<p style="text-indent:2em;">
-	技术参数</p>
-<p style="text-indent:2em;">
-	通信协议：Modbus RTU</p>
-<p style="text-indent:2em;">
-	工作频率：13.56MHz</p>
-<p style="text-indent:2em;">
-	输出功率：27.5dBm</p>
-<p style="text-indent:2em;">
-	无线速率：26.5kbit/s</p>
-<p style="text-indent:2em;">
-	读写距离：0~85mm(与标签、<a href="https://bbs.elecfans.com/zhuti_rf_1.html" target="_blank"><u>天线</u></a>有关)</p>
-<p style="text-indent:2em;">
-	通讯<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>：<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>485</p>
-<p style="text-indent:2em;">
-	通讯速率：9600~115200bit/s</p>
-<p style="text-indent:2em;">
-	应用场景</p>
-<p style="text-indent:2em;">
-	适用于生产作业自动化生产线、自动化分拣系统、零部件组装产线等工业领域。</p>]]></description></item>  </channel></rss>
+	本文为哔哥哔特资讯原创文章，未经允许和授权，不得转载</p>]]></description></item><item>    <title><![CDATA[Sub-GHz射频收发模块RFM300L，IoT终端可靠的通讯“武器”]]></title>    <link>https://www.elecfans.com/d/7491361.html</link>    <guid>https://www.elecfans.com/d/7491361.html</guid>    <pubDate>2025-12-13 16:49:00</pubDate>    <description><![CDATA[<div class="vditor-preview__action"/><div class="vditor-reset"><p>万物互联时代背景下，<a href="https://bbs.elecfans.com/group_57" target="_blank"><u>物联网</u></a>产业正迎来设备规模与应用密度的双重爆发，海量物联网终端持续接入网络，使<a href="https://www.elecfans.com/v/tag/1252/" target="_blank"><u>无线通信</u></a>链路面临着前所未有的压力，同时数据的传输需求亦呈指数级增长，并对<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>速率、实时性、稳定性以及系统响应延迟提出了更高要求；传统无线传输方式已难以满足海量物联网终端对低功耗、高可靠与广覆盖的核心通信诉求。</p><p>在此行业背景下，华普微全新推出了一款能同时兼顾低功耗、强抗干扰、广覆盖与高稳定性的<a href="https://m.hqchip.com/app/1525" target="_blank"><u>Sub</u></a>-GHz无线<a href="https://m.elecfans.com/v/tag/105/" target="_blank"><u>射频</u></a>收发模块——<a href="https://bbs.elecfans.com/group_65" target="_blank"><u>RF</u></a>M300L，它是专为当代物联网应用所开发的面向大规模部署、高效传输与低功耗运行的Sub-GHz射频收发平台，可有效支撑物联网终端在长期运行、复杂电磁环境以及大规模节点协同下的稳定通信需求。</p><p><strong>在传输性能方面</strong> ，RFM300L的最大发射功率为+20 dBm，且支持根据不同应用场景灵活调节，既能满足远距离通信需求，又可避免不必要的能耗浪费；RFM300L的接收灵敏度高达-120dbm@2kbps 433.92MHz FSK，可精准捕捉微弱<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>，大幅提升复杂环境下的信号接收能力，显著延长物联网终端的有效通信距离。</p><p><strong>在运行功耗方面</strong> ，RFM300L的典型接收<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>仅为8.5 mA，待机电流低至0.3μA，并支持Duty-Cycle模式，可通过周期性唤醒策略大幅延长依赖电池供电的物联网终端的电池寿命，尤其适配智能水表、气表、户外环境<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>等难以频繁更换电池的物联网终端，显著降低后期维护成本和人力投入。</p><p><strong>在快速开发方面</strong> ，RFM300L集成丰富接口与配置能力，内置64-by<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a> Tx/Rx FIFO、多GPIO与中断机制，还支持信道侦听、<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a> <a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>SI、快速跳频、静噪输出等功能，同时配备SPI<a href="https://www.elecfans.com/v/tag/13179/" target="_blank"><u>通信接口</u></a>可轻松接入主控，让硬件开发更自由灵活；用户只需配合简单的数据解码设计，即可快速实现无线产品量产落地。</p><p><img src="https://file1.elecfans.com/web3/M00/40/FF/wKgZPGk3iUCAQOmzAAWjNlXzSL0328.png" alt="69e05065-2c2f-46e5-aa36-2be5ba1de9cb.png"/></p><p>RFM300L典型应用电路示意图<br/> 注：上图ANT引脚的π型匹配电路参数为默认值，具体参数请根据对应的<a href="https://bbs.elecfans.com/group_1219" target="_blank"><u>天线</u></a>进行匹配。</p><p><strong>在场景覆盖能力方面</strong> ，基于传输性能、功耗控制与开发便捷性上的综合优势，RFM300L 可满足多种典型行业的无线通信需求，尤其适配自动抄表、<a href="https://www.elecfans.com/v/tag/663/" target="_blank"><u>智能家居</u></a>与安防、工业监测与无线控制、ISM 开放频段无线数据通信、远距离遥控器、无线传感器节点与<a href="https://m.hqchip.com/tags" target="_blank"><u>标签</u></a>等场景，无论是大规模工业部署，还是<a href="https://www.elecfans.com/soft/data/39-96/" target="_blank"><u>消费电子</u></a>设备，都能轻松集成。</p><p><strong>在产品尺寸方面</strong> ，RFM300L大小仅为12<em>12</em>2.3mm，其紧凑的封装设计不仅可减少终端产品的整体体积，降低硬件结构设计难度，还能在有限的<a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>板空间内兼容更多功能组件，为物联网产品的小型化、集成化设计提供更大灵活性，助力终端厂商快速推出形态更轻薄、布局更紧凑的产品。</p><p>目前，RFM300L已推出433.92MHz、868MHz与915MHz多个版本，覆盖不同区域法规与市场需求，自上市起便为无线通信市场带来更具性价比、更高性能、更可靠的选择。它不仅是一个通信模块，更是一套适用于物联网长期发展趋势的底层无线能力支撑，将帮助各类智能设备迈向更低成本、更高稳定性与更长生命周期的新阶段。</p></div>]]></description></item>  </channel></rss>
