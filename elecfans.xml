@@ -1,4 +1,115 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[苏州一条8英寸MEMS喷墨打印芯片产线正式投产，投资2.5亿元年产2万片晶圆]]></title>    <link>https://www.elecfans.com/d/7543650.html</link>    <guid>https://www.elecfans.com/d/7543650.html</guid>    <pubDate>2025-12-24 18:02:00</pubDate>    <description><![CDATA[<p>
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[【睿擎派】CANOpen总线之IO模块读写(DS401协议)]]></title>    <link>https://www.elecfans.com/d/7543676.html</link>    <guid>https://www.elecfans.com/d/7543676.html</guid>    <pubDate>2025-12-24 18:01:00</pubDate>    <description><![CDATA[<p>睿擎派以<a href="https://bbs.elecfans.com/zhuti_1179_1.html" target="_blank"><u>瑞芯微</u></a> RK3506 为主控芯片，底层搭载 <a href="https://bbs.elecfans.com/zhuti_emb_1.html" target="_blank"><u>RT-Thread</u></a> <a href="https://m.elecfans.com/v/tag/527/" target="_blank"><u>操作系统</u></a>，基于专为工业场景打造的睿擎工业平台进行开发。该平台是全栈自主可控的软硬件一体化解决方案，整合了数据采集、<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>、控制、工业协议、<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>、显示六大核心功能，精准适配工业应用需求。</p><p><br/></p><p>官方仅提供了基于 <a href="https://www.hqchip.com/app/2004" target="_blank"><u>CAN</u></a>Open 协议（即 DS402 设备规范）操作<a href="https://www.elecfans.com/v/tag/194/" target="_blank"><u>伺服电机</u></a>的示例代码，暂无 IO 模块相关的操作参考文档与实践案例。经过数日的深入钻研与反复调试，最终成功实现雷赛 EM32DX-C4 模块的 IO <a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>采集与输出控制功能。</p><p><br/></p><p>下面将简要分享这段时间积累的 CANOpen 相关技术要点，以及代码编写与调试的具体实践过程。</p><p><br/></p><p><strong>一、CANOpen背景知识介绍</strong></p><p>CAN 总线于 1986 年 2 月正式发布，CANOpen 协议则在 1994 年 11 月推出。作为基于 CAN 总线的工业级通信协议，CANOpen 遵循 EN 50325-4 标准，是工业自动化领域主流的现场总线解决方案之一。</p><p><br/></p><p>其核心优势体现在标准化设计上 —— 通过统一的对象字典保障设备间互操作性，支持 PDO（过程数据对象）、<a href="https://m.hqchip.com/app/1522" target="_blank"><u>SD</u></a>O（服务数据对象）等灵活通信机制，兼顾实时性与数据完整性。协议内置 DS401（IO 模块）、DS402（运动控制）等专用行规，可适配伺服电机、IO 模块、<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>等各类工业设备。</p><p><br/></p><p>我们自行生产的网关产品很早就集成了 CAN 总线功能，但仅用于与自有 IO 模块的实时通信，较少对接第三方模块。目前国内主流智能模块仍以 <a href="https://m.hqchip.com/app/1809" target="_blank"><u>RS485</u></a> 通信为主，我虽早已知晓 CANOpen 协议，但实际应用机会不多。随着计划基于睿赛德睿擎工业平台开发新一代网关产品，各类现场工业总线均需深入研究。</p><p><br/></p><p>CANOpen 协议相对复杂，核心原因是它要求设备遵循严格的状态机模式，主要包含四大核心状态：</p><p><strong>（1） 初始化状态（Ini<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>ti</u></a>alization）</strong></p><p>设备刚上电，正在进行硬件自检和协议栈初始化</p><p>不参与<a href="https://m.elecfans.com/v/tag/13320/" target="_blank"><u>网络通信</u></a>，不接收任何命令 (除基本复位)</p><p>完成后自动进入 Pre-operational 状态，并发送一个启动心跳信号</p><p><strong>（2） 预操作状态（Pre-operationa）</strong></p><p>设备已初始化完成，等待配置</p><p>可接收 SDO (服务数据对象)，进行参数配置和诊断</p><p>PDO (过程数据对象) 通信被禁用，无法进行正常数据交换</p><p>是唯一可修改对象字典的状态，适合设备参数配置</p><p><strong>（3） 操作状态（Operational）</strong></p><p>设备正常工作状态，所有功能激活</p><p>PDO 和 SDO 通信全部启用，可收发过程数据</p><p>设备自主执行任务，响应网络请求</p><p>由 NMT 主机发送 “Start Node” 命令触发进入</p><p><strong>（4） 停止状态（Stopped）</strong></p><p>设备的安全状态，功能受到限制。</p><p>PDO 通信被完全禁用，仅允许 NMT 命令和心跳</p><p>设备保持配置，但不执行控制任务</p><p>由 NMT 主机发送 “Stop Node” 命令触发，常用于安全暂停</p><p><img src="http://images.elecfans.net/uploads/20251224/75fa02f6-e0af-11f0-8ce9-92fbcf53809c.png" alt="75fa02f6-e0af-11f0-8ce9-92fbcf53809c.png"/></p><p><br/></p><p><strong>注：</strong>对伺服运动设备（DS402），还额外定义了<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>相关状态，比如电源禁用区，电源启用区，故障区等相关定义。</p><p><br/></p><p>CANOpen 协议的四大核心状态中，嵌套了三种核心通信模型，具体如下：</p><p>（1） 主 / 从站模型：与 Modbus 协议逻辑类似，核心差异是支持多主机架构，最多可接入 127 个从站，主要用于网络诊断和设备状态管理。</p><p>（2） 客户端 / 服务器模型：借鉴 TCP/IP 协议的交互模式，专门适配对象字典（OD）的读写操作。从设备作为服务器提供参数访问服务，主设备作为客户端发起读写请求。</p><p>（3） 生产者 / 消费者模型：与 MQTT 协议的通信逻辑一致，从设备担任数据生产者，主设备担任数据消费者。生产者可按主设备的明确请求（拉模型），或主动无请求推送（推模型），传输预设的目标数据。</p><p><br/></p><p><strong>了解了以上知识后，还需要了解CANOpen协议的如下相关概念</strong></p><p><strong>（1） 对象字典</strong></p><p>对象字典的功能类似 Modbus 协议中的<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>，是定义 CANOpen 节点所有行为、参数及通信规则的核心。与 Modbus 寄存器不同，它通过 “16 位<a href="https://m.hqchip.com/ic/0" target="_blank"><u>索引</u></a> + 8 位子索引” 的双标识方式，唯一确定每个条目。</p><p>对象字典分为公共对象字典和私有对象字典。其中 DS301 协议作为 CANOpen 的基础通用协议，明确了所有 CANOpen 设备必须遵循的公共对象字典规范。</p><p><img src="http://images.elecfans.net/uploads/20251224/760b3ca6-e0af-11f0-8ce9-92fbcf53809c.png" alt="760b3ca6-e0af-11f0-8ce9-92fbcf53809c.png"/></p><p><br/></p><p><strong>针对我们对接的EM32DX-C4查看设备手册，DS301对应的数据字典的通用参数如下：</strong></p><p><img src="http://images.elecfans.net/uploads/20251224/76133578-e0af-11f0-8ce9-92fbcf53809c.png" alt="76133578-e0af-11f0-8ce9-92fbcf53809c.png"/></p><p><br/></p><p><strong>设备参数如下：</strong></p><p><img src="http://images.elecfans.net/uploads/20251224/7624d846-e0af-11f0-8ce9-92fbcf53809c.png" alt="7624d846-e0af-11f0-8ce9-92fbcf53809c.png"/></p><p><br/></p><p>DS401属于子协议，专门定义数字量 / <a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>量 IO 的采集、控制、诊断等特有功能，索引范围集中在 0x6000-0x77FF，核心条目按 “数字量 IO”“模拟量 IO”“诊断” 分类</p><p><br/></p><p><img src="http://images.elecfans.net/uploads/20251224/76321a74-e0af-11f0-8ce9-92fbcf53809c.png" alt="76321a74-e0af-11f0-8ce9-92fbcf53809c.png"/></p><p><br/></p><p>查EM32DX-C4设备手册 DS401协议对应的对象字典参数如下：</p><p><img src="http://images.elecfans.net/uploads/20251224/7644997e-e0af-11f0-8ce9-92fbcf53809c.png" alt="7644997e-e0af-11f0-8ce9-92fbcf53809c.png"/></p><p><br/></p><p><strong>（2） COB-ID</strong></p><p>COB-ID其实就是11位CAN ID，它分两部分组成，高4位为功能码，低7位为从设备地址码，所以最多支持127个从设备。</p><p><img src="http://images.elecfans.net/uploads/20251224/764cfb32-e0af-11f0-8ce9-92fbcf53809c.png" alt="764cfb32-e0af-11f0-8ce9-92fbcf53809c.png"/></p><p><br/></p><p>功能码和具体的通信服务相关（如下图所示）：</p><p><img src="http://images.elecfans.net/uploads/20251224/765bc0b8-e0af-11f0-8ce9-92fbcf53809c.jpg" alt="765bc0b8-e0af-11f0-8ce9-92fbcf53809c.jpg"/></p><p><br/></p><p><strong>（3） 网络管理（NMT）</strong></p><p>NMT服务用于通过NMT命令（如：启动、停止、复位）来控制CANopen设备的状态（如：预运行、运行、停止）。</p><p>为了改变状态，NMT主机发送一个带有 CAN ID 的2字节消息（即功能代码和节点ID ）。所有从站节点都处理这个报文。节点ID 0表示广播命令。</p><p><br/></p><p><img src="http://images.elecfans.net/uploads/20251224/766aa2b8-e0af-11f0-8ce9-92fbcf53809c.png" alt="766aa2b8-e0af-11f0-8ce9-92fbcf53809c.png"/></p><p><br/></p><p><strong>功能代码如下：</strong></p><p><img src="http://images.elecfans.net/uploads/20251224/766aa2b8-e0af-11f0-8ce9-92fbcf53809c.png" alt="766aa2b8-e0af-11f0-8ce9-92fbcf53809c.png"/></p><p><br/></p><p><strong>（4） 服务数据对象（SDO）</strong></p><p>SDO（Server Data Object，服务数据对象）的核心功能是访问或修改 CANopen 设备对象字典内的参数值。例如，当应用主站需调整 CANopen 设备的特定配置参数时，可借助 SDO 服务完成参数的读写操作，实现设备配置的灵活变更。</p><p><strong>（5） 过程数据对象（PDO）</strong></p><p>PDO（Process Data Object，过程数据对象） 是专为设备间实时、高速数据传输设计的核心通信服务，是工业场景中过程数据交互的关键通道。</p><p>PDO数据上传有四种方式触发：</p><p>定时发送，同步传输（同步信号触发），远程请求和事件触发。</p><p><strong>（6） 心跳信号（Heartbeat）</strong></p><p>CANopen 的心跳服务具有双重核心目的：一是向网络发送 “设备在线” 的活动消息，二是确认 NMT 命令的执行状态。NMT 从设备会按预设周期（例如 200 毫秒）发送心跳消息，消息 CAN ID 遵循固定规则（如节点 2 的 CAN ID 为 0x702），其第一个数据字节携带节点当前的 NMT 状态码（如下图）。若心跳消息的接收方（如NMT主站）在设定时限内未收到该消息，将触发预设的离线响应机制。</p><p><img src="http://images.elecfans.net/uploads/20251224/76897936-e0af-11f0-8ce9-92fbcf53809c.png" alt="76897936-e0af-11f0-8ce9-92fbcf53809c.png"/></p><p><strong>（7） 同步（SYNC）</strong></p><p>CANopen 的 SYNC 报文核心作用是同步多个从设备的输入采集与输出响应，通常由应用主站发起。主站向 CANopen 网络发送 SYNC 消息（COB-ID 为 0x080），支持带或不带 SYNC 计数器两种传输形式。多个从节点可预先配置为响应 SYNC 信号，要么同步捕获输入数据并传输，要么与其他参与同步的节点协同设置输出，确保动作一致性。</p><p>SYNC 计数器的存在可灵活划分同步组，实现多组设备的独立同步操作，适配不同场景下的协同需求。</p><p><strong>（8） 紧急情况（<a href="https://bbs.elecfans.com/group_40" target="_blank"><u>EMC</u></a>Y）</strong></p><p>CANopen 的紧急服务（EMCY）专为设备发生致命错误（如传感器故障）设计，用于向网络其他节点及时上报故障状态。受影响的节点会以高优先级、单次触发式向网络发送 EMCY 消息（例如节点 2 的消息 COB-ID 为 0x082）。消息的数据字节携带具体错误码及相关辅助信息，通过查询设备手册或协议规范，可获取对应的故障详情。</p><p><strong>（9） 时间戳（Timestamp）</strong></p><p>该消息由主站发起，对应的 CAN ID 为 0x100。使用 6 字节 (48 位)表示。前 4 个字节 (32 位): 表示从午夜开始的毫秒数(范围: 0-4294967295 毫秒，约 1193 小时)。后 2 个字节 (16 位): 表示自 1984 年 1 月 1 日 0 时起的天数(范围: 0-65535 天，约 179.4 年) 。</p><p><br/></p><p><strong>二、CANOpen DS401协议实现</strong></p><p><br/></p><p>官方示例（06_bus_canopen_master_motor）在免费开源的CanFestival（LGPLv2 许可证）的基础上实现的。该开源代码实现了CANOpen协议如下功能：</p><p>（1）NMT（网络管理）：节点状态控制（初始化、预操作、操作、停止）和心跳监测</p><p>（2）PDO（过程数据对象）：高速实时数据传输，支持循环和事件触发模式，优化<a href="https://www.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>场景响应速度</p><p>（3）SDO（服务数据对象）：对象字典参数访问，支持快速下载和分段下载，用于设备配置和参数调整</p><p>（4）SYNC（同步对象）：网络<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>同步和周期性数据传输协调</p><p>（5）EMCY（紧急对象）：错误报告和故障通知机制</p><p><br/></p><p><img src="http://images.elecfans.net/uploads/20251224/769924f8-e0af-11f0-8ce9-92fbcf53809c.jpg" alt="769924f8-e0af-11f0-8ce9-92fbcf53809c.jpg"/></p><p><br/></p><p>我是在官方示例06_bus_canopen_master_motor的基础上进行大幅度修改而完成。除了canopen_callb<a href="https://www.hqchip.com/app/1703" target="_blank"><u>ac</u></a>k.*相关内容没有多少变化外，其他文件改动比较大。</p><p>讲解代码之前，先简单说一下硬件接线。查EM32DX-C4手册，CANOpen<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>采用了<a href="https://www.hqchip.com/app/1720" target="_blank"><u>以太网</u></a>的接口，管脚定义如下：</p><p><img src="http://images.elecfans.net/uploads/20251224/76a10880-e0af-11f0-8ce9-92fbcf53809c.jpg" alt="76a10880-e0af-11f0-8ce9-92fbcf53809c.jpg"/></p><p><br/></p><p>根据这个定义，自己做了一个CAN网络连接线，主要用到1,2两根线，对应的网线是1-白橙和2-橙色。白橙也就是CAN_P接入睿擎派的CAN_H接口，橙色接入睿擎派的CAN_L接口。</p><p><br/></p><p><img src="http://images.elecfans.net/uploads/20251224/76b377f4-e0af-11f0-8ce9-92fbcf53809c.jpg" alt="76b377f4-e0af-11f0-8ce9-92fbcf53809c.jpg"/></p><p><br/></p><p>由于我对 CANOpen 协议的了解不够深入，且是初次接触塞雷 EM32DX-C4 硬件模块，初期的调试工作遇到了不少阻碍。好在手头恰好有 PCAN-<a href="https://www.hqchip.com/app/1515" target="_blank"><u>USB</u></a> 模块，将其接入 CAN 总线后，我通过 PCAN-View 工具实时监听 CAN 帧数据，这一操作直接显著提升了开发与调试的效率（如下图）。</p><p><br/></p><p><img src="http://images.elecfans.net/uploads/20251224/76c43a94-e0af-11f0-8ce9-92fbcf53809c.png" alt="76c43a94-e0af-11f0-8ce9-92fbcf53809c.png"/></p><p><br/></p><p><strong>master402_od.c改名为master401_od.c</strong></p><p>主要是DS301和DS401对象字典定义的地方。对原有的数据字典进行了大幅度的删减。</p><p><strong>原有的对象字典定义：</strong></p><p/><ul><li/></ul><p>const indextable master402_objdict[] ={ { (<a href="https://m.hqchip.com/app/1525" target="_blank"><u>sub</u></a>index*)master402_Index1000,sizeof(master402_Index1000)/sizeof(master402_Index1000[0]), 0x1000}, { (subindex*)master402_Index1001,sizeof(master402_Index1001)/sizeof(master402_Index1001[0]), 0x1001}, { (subindex*)master402_Index1005,sizeof(master402_Index1005)/sizeof(master402_Index1005[0]), 0x1005}, { (subindex*)master402_Index1006,sizeof(master402_Index1006)/sizeof(master402_Index1006[0]), 0x1006}, { (subindex*)master402_Index1014,sizeof(master402_Index1014)/sizeof(master402_Index1014[0]), 0x1014}, { (subindex*)master402_Index1016,sizeof(master402_Index1016)/sizeof(master402_Index1016[0]), 0x1016}, { (subindex*)master402_Index1017,sizeof(master402_Index1017)/sizeof(master402_Index1017[0]), 0x1017}, { (subindex*)master402_Index1018,sizeof(master402_Index1018)/sizeof(master402_Index1018[0]), 0x1018}, { (subindex*)master402_Index1200,sizeof(master402_Index1200)/sizeof(master402_Index1200[0]), 0x1200}, { (subindex*)master402_Index1280,sizeof(master402_Index1280)/sizeof(master402_Index1280[0]), 0x1280}, { (subindex*)master402_Index1281,sizeof(master402_Index1281)/sizeof(master402_Index1281[0]), 0x1281}, { (subindex*)master402_Index1400,sizeof(master402_Index1400)/sizeof(master402_Index1400[0]), 0x1400}, { (subindex*)master402_Index1401,sizeof(master402_Index1401)/sizeof(master402_Index1401[0]), 0x1401}, { (subindex*)master402_Index1402,sizeof(master402_Index1402)/sizeof(master402_Index1402[0]), 0x1402}, { (subindex*)master402_Index1403,sizeof(master402_Index1403)/sizeof(master402_Index1403[0]), 0x1403}, { (subindex*)master402_Index1600,sizeof(master402_Index1600)/sizeof(master402_Index1600[0]), 0x1600}, { (subindex*)master402_Index1601,sizeof(master402_Index1601)/sizeof(master402_Index1601[0]), 0x1601}, { (subindex*)master402_Index1602,sizeof(master402_Index1602)/sizeof(master402_Index1602[0]), 0x1602}, { (subindex*)master402_Index1603,sizeof(master402_Index1603)/sizeof(master402_Index1603[0]), 0x1603}, { (subindex*)master402_Index1800,sizeof(master402_Index1800)/sizeof(master402_Index1800[0]), 0x1800}, { (subindex*)master402_Index1801,sizeof(master402_Index1801)/sizeof(master402_Index1801[0]), 0x1801}, { (subindex*)master402_Index1802,sizeof(master402_Index1802)/sizeof(master402_Index1802[0]), 0x1802}, { (subindex*)master402_Index1803,sizeof(master402_Index1803)/sizeof(master402_Index1803[0]), 0x1803}, { (subindex*)master402_Index1A00,sizeof(master402_Index1A00)/sizeof(master402_Index1A00[0]), 0x1A00}, { (subindex*)master402_Index1A01,sizeof(master402_Index1A01)/sizeof(master402_Index1A01[0]), 0x1A01}, { (subindex*)master402_Index1A02,sizeof(master402_Index1A02)/sizeof(master402_Index1A02[0]), 0x1A02}, { (subindex*)master402_Index1A03,sizeof(master402_Index1A03)/sizeof(master402_Index1A03[0]), 0x1A03}, { (subindex*)master402_Index2001,sizeof(master402_Index2001)/sizeof(master402_Index2001[0]), 0x2001}, { (subindex*)master402_Index2002,sizeof(master402_Index2002)/sizeof(master402_Index2002[0]), 0x2002}, { (subindex*)master402_Index2003,sizeof(master402_Index2003)/sizeof(master402_Index2003[0]), 0x2003}, { (subindex*)master402_Index2004,sizeof(master402_Index2004)/sizeof(master402_Index2004[0]), 0x2004}, { (subindex*)master402_Index2005,sizeof(master402_Index2005)/sizeof(master402_Index2005[0]), 0x2005}, { (subindex*)master402_Index2006,sizeof(master402_Index2006)/sizeof(master402_Index2006[0]), 0x2006}, { (subindex*)master402_Index2007,sizeof(master402_Index2007)/sizeof(master402_Index2007[0]), 0x2007}, { (subindex*)master402_Index2124,sizeof(master402_Index2124)/sizeof(master402_Index2124[0]), 0x2124}, { (subindex*)master402_Index2F00,sizeof(master402_Index2F00)/sizeof(master402_Index2F00[0]), 0x2F00}, { (subindex*)master402_Index2F01,sizeof(master402_Index2F01)/sizeof(master402_Index2F01[0]), 0x2F01}, { (subindex*)master402_Index6040,sizeof(master402_Index6040)/sizeof(master402_Index6040[0]), 0x6040}, { (subindex*)master402_Index6041,sizeof(master402_Index6041)/sizeof(master402_Index6041[0]), 0x6041}, { (subindex*)master402_Index6060,sizeof(master402_Index6060)/sizeof(master402_Index6060[0]), 0x6060}, { (subindex*)master402_Index6064,sizeof(master402_Index6064)/sizeof(master402_Index6064[0]), 0x6064}, { (subindex*)master402_Index606C,sizeof(master402_Index606C)/sizeof(master402_Index606C[0]), 0x606C}, { (subindex*)master402_Index607A,sizeof(master402_Index607A)/sizeof(master402_Index607A[0]), 0x607A}, { (subindex*)master402_Index607C,sizeof(master402_Index607C)/sizeof(master402_Index607C[0]), 0x607C}, { (subindex*)master402_Index6081,sizeof(master402_Index6081)/sizeof(master402_Index6081[0]), 0x6081}, { (subindex*)master402_Index6098,sizeof(master402_Index6098)/sizeof(master402_Index6098[0]), 0x6098}, { (subindex*)master402_Index6099,sizeof(master402_Index6099)/sizeof(master402_Index6099[0]), 0x6099}, { (subindex*)master402_Index60C1,sizeof(master402_Index60C1)/sizeof(master402_Index60C1[0]), 0x60C1}, { (subindex*)master402_Index60C2,sizeof(master402_Index60C2)/sizeof(master402_Index60C2[0]), 0x60C2}, { (subindex*)master402_Index60FF,sizeof(master402_Index60FF)/sizeof(master402_Index60FF[0]), 0x60FF},};</p><p><strong>删减后的对象字典定义：</strong></p><p/><ul><li/></ul><p>const indextable master401_objdict[] ={ { (subindex*)master401_Index1000,sizeof(master401_Index1000)/sizeof(master401_Index1000[0]), 0x1000}, { (subindex*)master401_Index1001,sizeof(master401_Index1001)/sizeof(master401_Index1001[0]), 0x1001}, { (subindex*)master401_Index1005,sizeof(master401_Index1005)/sizeof(master401_Index1005[0]), 0x1005}, { (subindex*)master401_Index1006,sizeof(master401_Index1006)/sizeof(master401_Index1006[0]), 0x1006}, { (subindex*)master401_Index1014,sizeof(master401_Index1014)/sizeof(master401_Index1014[0]), 0x1014}, { (subindex*)master401_Index1016,sizeof(master401_Index1016)/sizeof(master401_Index1016[0]), 0x1016}, { (subindex*)master401_Index1017,sizeof(master401_Index1017)/sizeof(master401_Index1017[0]), 0x1017}, { (subindex*)master401_Index1018,sizeof(master401_Index1018)/sizeof(master401_Index1018[0]), 0x1018}, { (subindex*)master401_Index1200,sizeof(master401_Index1200)/sizeof(master401_Index1200[0]), 0x1200}, { (subindex*)master401_Index1280,sizeof(master401_Index1280)/sizeof(master401_Index1280[0]), 0x1280}, { (subindex*)master401_Index1400,sizeof(master401_Index1400)/sizeof(master401_Index1400[0]), 0x1400}, { (subindex*)master401_Index1600,sizeof(master401_Index1600)/sizeof(master401_Index1600[0]), 0x1600}, { (subindex*)master401_Index1800,sizeof(master401_Index1800)/sizeof(master401_Index1800[0]), 0x1800}, { (subindex*)master401_Index1A00,sizeof(master401_Index1A00)/sizeof(master401_Index1A00[0]), 0x1A00}, { (subindex*)master401_Index2000,sizeof(master401_Index2000)/sizeof(master401_Index2000[0]), 0x2000}, { (subindex*)master401_Index2001,sizeof(master401_Index2001)/sizeof(master401_Index2001[0]), 0x2001},};</p><p><strong>相比原有代码，增加了DO和DI相关的对象字典的定义：</strong></p><ul><li/><li/></ul><p>/* -------------------------- 0x2000 本地DO输出缓存 -------------------------- */// 子索引0：最高子索引编号（=1，因为有2个子索引：0和1）// 子索引1：实际DO数据存储（uint16，RW）UNS8 master401_highestSubIndex_obj2000 =1; /* 最高子索引编号 = 子索引数量-1 */uint16_tmaster401_obj2000_do_val =0x0000; /* DO数据存储变量（关联g_em32dx_do）*/subindex master401_Index2000[] ={ // 子索引0：声明最高子索引编号（RO，不可写） { RO, uint8,sizeof(UNS8), (void*)&amp;master401_highestSubIndex_obj2000,NULL}, // 子索引1：实际DO数据（RW，uint16） { RW, uint16,sizeof(uint16_t), (void*)&amp;master401_obj2000_do_val,NULL}};/* -------------------------- 0x2001 本地DI输入缓存 -------------------------- */// 子索引0：最高子索引编号（=1）// 子索引1：实际DI数据存储（uint16，RO）UNS8 master401_highestSubIndex_obj2001 =1; /* 最高子索引编号 = 子索引数量-1 */uint16_tmaster401_obj2001_di_val =0x0000; /* DI数据存储变量（关联g_em32dx_di）*/subindex master401_Index2001[] ={ // 子索引0：声明最高子索引编号（RO，不可写） { RO, uint8,sizeof(UNS8), (void*)&amp;master401_highestSubIndex_obj2001,NULL}, // 子索引1：实际DI数据（RO，uint16，协议栈自动更新） { RO, uint16,sizeof(uint16_t), (void*)&amp;master401_obj2001_di_val,NULL}};</p><p>需要特别注意的是，master401_od.c中定义的对象字典仅适用于主设备 —— 这是我初期的核心困惑点，曾误以为主设备无需额外定义对象字典。且主设备对象字典中0x1400、0x1800 索引的含义，与从设备对应索引的描述恰好相反：具体来说，主设备的 TPDO1（发送过程数据对象 1）对应从设备的 RPDO1（接收过程数据对象 1），而主设备的 RPDO1 则对应从设备的 TPDO1。</p><p><br/></p><p>文件调整方面：已移除motor_control.c与motor_control.h文件，并将原文件中的相关 IO 操作整合至master401_canopen.c中；同时将原master402_canopen.c文件重命名为master401_canopen.c，且对文件内大部分核心代码进行了适配性修改。</p><p><br/></p><p><strong>从设备 IO 模块的对象字典配置，均在该文件中完成实现，具体代码如下：</strong></p><ul><li/></ul><p>/************************** 核心修改：IO模块PDO映射配置 **************************/// 说明：// - 从站（EM32DX-C4）接收DO输出：RPDO1(0x1400)映射DO0-DO15（2字节）// - 从站（EM32DX-C4）发送DI输入：TPDO1(0x1800)映射DI0-DI15（2字节）// - 复用原PDO通道，删除伺服相关映射/* TPDO1配置（从站→主站：DI输入）*/staticUNS8IO_DIS_SLAVE_TPDO1(uint8_tnodeId){  rt_kprintf("config...0!\n");  UNS32 TPDO_COBId =PDO_DISANBLE(0x00000180, nodeId); // COB-ID: 0x182（IO_NODEID=2）  returnwri<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>NetworkDictCallBack(OD_Data, nodeId,0x1800,1,4, uint32, &amp;TPDO_COBId, config_node_pa<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>ram</u></a>_cb,0);}staticUNS8IO_Write_SLAVE_TPDO1_Type(uint8_tnodeId){  rt_kprintf("config...1!\n");  UNS8 trans_type = PDO_TRANSMISSION_TYPE; // 同步传输  returnwriteNetworkDictCallBack(OD_Data, nodeId,0x1800,2,1, uint8, &amp;trans_type, config_node_param_cb,0);}staticUNS8IO_Clear_SLAVE_TPDO1_Cnt(uint8_tnodeId){  rt_kprintf("config...2!\n");  UNS8 pdo_map_cnt =0; // 清除原有映射  returnwriteNetworkDictCallBack(OD_Data, nodeId,0x1A00,0,1, uint8, &amp;pdo_map_cnt, config_node_param_cb,0);}staticUNS8IO_Write_SLAVE_TPDO1_Map(uint8_tnodeId){  rt_kprintf("config...3!\n");  // TPDO1映射：DI0-DI15（模块DI对应索引0x6100，子索引0x01，2字节）  UNS32 pdo_map_val =0x61000110; // 索引0x6100 + 子索引0x01 + 16位长度（0x10）  returnwriteNetworkDictCallBack(OD_Data, nodeId,0x1A00,1,4, uint32, &amp;pdo_map_val, config_node_param_cb,0);}staticUNS8IO_Write_SLAVE_TPDO1_Cnt(uint8_tnodeId){  rt_kprintf("config...4!\n");  UNS8 pdo_map_cnt =1; // 1个映射项（2字节）  returnwriteNetworkDictCallBack(OD_Data, nodeId,0x1A00,0,1, uint8, &amp;pdo_map_cnt, config_node_param_cb,0);}staticUNS8IO_EN_SLAVE_TPDO1(uint8_tnodeId){  rt_kprintf("config...5!\n");  UNS32 TPDO_COBId =PDO_ENANBLE(0x00000180, nodeId);  returnwriteNetworkDictCallBack(OD_Data, nodeId,0x1800,1,4, uint32, &amp;TPDO_COBId, config_node_param_cb,0);}//-----------------------------------------------------------///* RPDO1配置（主站→从站：DO输出）*/staticUNS8IO_DIS_SLAVE_RPDO1(uint8_tnodeId){  rt_kprintf("config...6!\n");  UNS32 RPDO_COBId =PDO_DISANBLE(0x00000200, nodeId); // COB-ID: 0x202（IO_NODEID=2）  returnwriteNetworkDictCallBack(OD_Data, nodeId,0x1400,1,4, uint32, &amp;RPDO_COBId, config_node_param_cb,0);}staticUNS8IO_Write_SLAVE_RPDO1_Type(uint8_tnodeId){  rt_kprintf("config...7!\n");  UNS8 trans_type = PDO_TRANSMISSION_TYPE; // 同步传输  returnwriteNetworkDictCallBack(OD_Data, nodeId,0x1400,2,1, uint8, &amp;trans_type, config_node_param_cb,0);}staticUNS8IO_Clear_SLAVE_RPDO1_Cnt(uint8_tnodeId){  rt_kprintf("config...8!\n");  UNS8 pdo_map_cnt =0; // 清除原有映射  returnwriteNetworkDictCallBack(OD_Data, nodeId,0x1600,0,1, uint8, &amp;pdo_map_cnt, config_node_param_cb,0);}staticUNS8IO_Write_SLAVE_RPDO1_Map(uint8_tnodeId){  rt_kprintf("config...9!\n");  // RPDO1映射：DO0-DO15（模块DO对应索引0x6300，子索引0x01，2字节）  UNS32 pdo_map_val =0x63000110; // 索引0x6300 + 子索引0x01 + 16位长度（0x10）  returnwriteNetworkDictCallBack(OD_Data, nodeId,0x1600,1,4, uint32, &amp;pdo_map_val, config_node_param_cb,0);}staticUNS8IO_Write_SLAVE_RPDO1_Cnt(uint8_tnodeId){  rt_kprintf("config...10!\n");  UNS8 pdo_map_cnt =1; // 1个映射项（2字节）  returnwriteNetworkDictCallBack(OD_Data, nodeId,0x1600,0,1, uint8, &amp;pdo_map_cnt, config_node_param_cb,0);}staticUNS8IO_EN_SLAVE_RPDO1(uint8_tnodeId){  rt_kprintf("config...11!\n");  UNS32 RPDO_COBId =PDO_ENANBLE(0x00000200, nodeId);  returnwriteNetworkDictCallBack(OD_Data, nodeId,0x1400,1,4, uint32, &amp;RPDO_COBId, config_node_param_cb,0);}//-----------------------------------------------------------///* 心跳配置（IO模块生产者心跳）*/staticUNS8IO_Write_SLAVE_Heartbeat(uint8_tnodeId){  rt_kprintf("config...12!\n");  UNS16 producer_heartbeat_time = PRODUCER_HEARTBEAT_TIME;  returnwriteNetworkDictCallBack(OD_Data, nodeId,0x1017,0,2, uint16, &amp;producer_heartbeat_time, config_node_param_cb,0);}/* 配置完成回调 */staticUNS8IO_Config_Done(uint8_tnodeId){  rt_kprintf("config...13!\n");  node_config_state *conf = &amp;slave_conf;  rt_sem_release(&amp;(conf-&gt;finish_sem));  return0;}// IO模块配置函数指针数组（按顺序执行）staticUNS8(*IOCFG_Operation[])(uint8_tnodeId)= {  // TPDO1（DI输入）配置（6步）  IO_DIS_SLAVE_TPDO1,    // 步骤0：禁用TPDO1  IO_Write_SLAVE_TPDO1_Type,// 步骤1：写TPDO1传输类型  IO_Clear_SLAVE_TPDO1_Cnt, // 步骤2：清除TPDO1映射数  IO_Write_SLAVE_TPDO1_Map, // 步骤3：写TPDO1映射  IO_Write_SLAVE_TPDO1_Cnt, // 步骤4：设置TPDO1映射数  IO_EN_SLAVE_TPDO1,     // 步骤5：启用TPDO1  // RPDO1（DO输出）配置（6步）  IO_DIS_SLAVE_RPDO1,    // 步骤6：禁用RPDO1  IO_Write_SLAVE_RPDO1_Type,// 步骤7：写RPDO1传输类型  IO_Clear_SLAVE_RPDO1_Cnt, // 步骤8：清除RPDO1映射数  IO_Write_SLAVE_RPDO1_Map, // 步骤9：写RPDO1映射  IO_Write_SLAVE_RPDO1_Cnt, // 步骤10：设置RPDO1映射数  IO_EN_SLAVE_RPDO1,     // 步骤11：启用RPDO1  // 心跳配置（1步）  IO_Write_SLAVE_Heartbeat, // 步骤12：写从站心跳  // 配置完成（1步）  IO_Config_Done,      // 步骤13：释放信号量};</p><p><strong>原先DS301一些逻辑我们进行了保留。</strong></p><p><strong>并且新增了一些 IO操作接口函数，代码如下：</strong></p><ul><li/><li/><li/></ul><p>/************************** 新增IO操作A<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>（上层调用） **************************//***@brief设置EM32DX-C4的DO输出*@paramdo_val: 16位DO值（bit0=DO0, bit15=DO15，1=导通，0=断开）*@retvalRT_EOK: 成功，-RT_ERROR: 失败*/rt_err_tem32dx_set_do(uint16_t do_val){  if(*can_node[1].nmt_state != Operational) {    rt_kprintf("EM32DX-C4 not in Operational state!\n");    return-RT_ERROR;  }  // 更新全局缓存  g_em32dx_do = do_val;  // 通过RPDO1发送DO值  UNS32size=2;  UNS32errorCode=writeLocalDict(OD_Data,0x2000,1, &amp;do_val, &amp;size,0);  if(errorCode != OD_SUCCESSFUL) {    rt_kprintf("Write DO fai<a href="https://www.hqchip.com/app/1721" target="_blank"><u>led</u></a>! Error code: 0x%08X\n", errorCode);    return-RT_ERROR;  }  returnRT_EOK;}/***@brief读取EM32DX-C4的DI输入*@paramdi_val: 输出参数，存储16位DI值（bit0=DI0, bit15=DI15，1=导通，0=断开）*@retvalRT_EOK: 成功，-RT_ERROR: 失败*/rt_err_tem32dx_get_di(){  if(*can_node[1].nmt_state != Operational) {    rt_kprintf("EM32DX-C4 not re<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>ad</u></a>y!\n");    return-RT_ERROR;  }  // 从本地字典读取TPDO1接收的DI值  uint16_tdi_val=0;  UNS32size=2;  UNS8 data_type;  UNS32errorCode=readLocalDict(OD_Data,0x2001,1, &amp;di_val, &amp;size, &amp;data_type,0);  if(errorCode != OD_SUCCESSFUL) {    rt_kprintf("Read DI failed! Error code: 0x%08X\n", errorCode);    return-RT_ERROR;  }  rt_kprintf("Read DI: 0x%04X\n", di_val);  // 更新全局缓存  g_em32dx_di = di_val;  returnRT_EOK;}MSH_CMD_EXPORT(em32dx_get_di, Get EM32DX-C4 DI input);/***@brief单独控制某一路DO*@paramchannel: DO通道（0-15）*@paramstate: 0=断开，1=导通*@retvalRT_EOK: 成功，-RT_ERROR: 失败*/rt_err_tem32dx_set_do_channel(uint8_t argc,char**argv){  if(argc &lt; 2) {          rt_kprintf("em32dx_set_do_channel 1 1\n");          return -RT_ERROR;    }    uint8_t channel = atoi(argv[1]);    uint8_t state = atoi(argv[2]);    rt_kprintf("channel=%d state=%d\n",channel,state);    if (channel &gt;=16) {    rt_kprintf("DO channel out of range (0-15)!\n");    return-RT_ERROR;  }  if(state) {    g_em32dx_do |= (1&lt;&lt; channel);    } else {        g_em32dx_do &amp;= ~(1 &lt;&lt; channel);    }    return em32dx_set_do(g_em32dx_do);}MSH_CMD_EXPORT(em32dx_set_do_channel, Set single DO channel (channel 0-15, state 0/1));</p><p><br/></p><p><strong>代码编译完成后，我们将其部署至睿擎派，具体操作步骤如下：</strong></p><p>（1）执行 canopen_start 指令，完成 CANOpen 服务的初始化与启动；</p><p>（2）执行 em32dx_get_di 指令，获取 16 路开关量的当前状态；</p><p>（3）执行 em32dx_set_do_channel 1 1 指令，配置 16 路 DO 通道的输出状态。</p><p>其中第一个参数为通道索引（取值范围：0–15），第二个参数为输出状态（0 = 关闭，1 = 打开）。</p><p><br/></p><p><img src="http://images.elecfans.net/uploads/20251224/76d27686-e0af-11f0-8ce9-92fbcf53809c.png" alt="76d27686-e0af-11f0-8ce9-92fbcf53809c.png"/><img src="http://images.elecfans.net/uploads/20251224/76da88bc-e0af-11f0-8ce9-92fbcf53809c.png" alt="76da88bc-e0af-11f0-8ce9-92fbcf53809c.png"/></p><p><br/></p><p>上述指令执行完成后，我们可以观察到对应的 DO 通道状态指示灯，会同步呈现出预期的状态变化（与指令配置的输出状态一致）。</p><p><br/></p><p><img src="http://images.elecfans.net/uploads/20251224/76e917e2-e0af-11f0-8ce9-92fbcf53809c.png" alt="76e917e2-e0af-11f0-8ce9-92fbcf53809c.png"/></p><p><br/></p><p><br/></p><p><strong>源代码下载链接：</strong></p><p>链接:<span style="color:rgb(0,128,255);"><u>https://pan.baidu.com/s/1aZDxzb3NNhn3WRBA4OeN4w?pwd=w8au</u></span></p><p>提取码: w8au</p><p><br/></p><p><strong>附录：</strong></p><p>（1）CANOpen DS301、DS302、DS401、DS402等全套协议下载：</p><p style="text-align:justify;"><span style="color:rgb(0,128,255);"><u>https://link.gitcode.com/i/614ed2a5064e1990bff8<a href="https://www.hqchip.com/app/1518" target="_blank"><u>ffc</u></a>de2328ada?uuid_tt_dd=10_19283516180-1733805088376-790686&amp;isLogin=1&amp;from_id=142936482</u></span></p><p style="text-align:justify;"><br/></p><p>（2）DS301协议中文版</p><p style="text-align:justify;"><span style="color:rgb(0,128,255);"><u>https://files.cnblogs.com/files/winshton/301_v04020005_cn_v02_ro.pdf</u></span></p><p style="text-align:justify;"><span style="color:rgb(0,128,255);"><u>https://winshton.gitbooks.io/canopen-ds301-cn/content/</u></span></p><p><br/></p><p style="text-align:center;">————————————————</p><p style="text-align:center;"><br/></p><p><strong>版权声明：</strong>本文为RT-Thread<a href="https://www.elecfans.com/article/bbs/" target="_blank"><u>论坛</u></a>用户「yefanqiu」的原创文章，遵循CC 4.0 BY-SA版权协议，转载请附上原文出处链接及本声明。</p><p><br/></p><p>原文链接：</p><p><span style="color:rgb(0,128,255);"><u>https://club.rt-thread.org/ask/article/bb8a52de0882d43b.html</u></span></p><p><br/></p><p/>]]></description></item><item>    <title><![CDATA[廿年之约，缺你不可——RT-Thread开发者大会终极邀请 | 活动预告]]></title>    <link>https://www.elecfans.com/d/7543678.html</link>    <guid>https://www.elecfans.com/d/7543678.html</guid>    <pubDate>2025-12-24 18:01:00</pubDate>    <description><![CDATA[<p style="margin-left:8px;"><span style="color:rgba(0,0,0,0.9);"><img src="http://images.elecfans.net/uploads/20251224/7ca9b178-e0af-11f0-8ce9-92fbcf53809c.jpg" alt="7ca9b178-e0af-11f0-8ce9-92fbcf53809c.jpg"/></span><br/></p><p style="margin-left:8px;"><span style="color:rgba(0,0,0,0.9);">2025年末，上海将开源作为一项“系统工程”来打造，重点布局基础软件、工业软件等关键领域，以开源作为制度创新原动力，全面推动产业转型升级战略布局。为积极响应上海市委、市政府将开源体系建设提升至战略级高度的号召，2026年1月17日，作为国产嵌入式<a href="https://m.elecfans.com/v/tag/527/" target="_blank"><u>操作系统</u></a>领航者的<a href="https://bbs.elecfans.com/zhuti_emb_1.html" target="_blank"><u>RT-Thread</u></a>睿赛德科技将在成立20周年之际，于上海举办年度最高规格的<a href="https://bbs.elecfans.com/group_1231" target="_blank"><u>开发者</u></a>盛会。</span></p><p style="margin-left:8px;"><span style="color:rgba(0,0,0,0.9);">本次大会由RT-Thread睿赛德、上海临港科技创新发展基金会、临港投控新片区基金公司联合主办，以“开源向实，打造<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>智能时代基础软件平台”为核心议题，将首次集结中国工程院院士、50余家国内外行业巨头、全球技术领袖、上千名核心开发者，汇聚政，产，学，研，用等各场景，发布前沿技术、芯片生态与AI融合的最新成果，全景展示工业、汽车、<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>、能源、通讯、<a href="https://www.elecfans.com/v/tag/12732/" target="_blank"><u>无人机</u></a>等重点领域的创新实践。</span></p><p style="margin-left:8px;"><span style="color:rgba(0,0,0,0.9);">廿载耕耘，从开源社区到数十亿级装机；智启新程，从代码筑基到生产力革新。这不仅是一场庆典，更是一次定义未来十年国产自主操作系统发展的关键集结。</span></p><hr/><p style="margin-left:8px;"><br/></p><p><br/></p><p style="margin-left:0pt;text-align:center;"><strong>报名参会</strong></p><p style="margin-left:0pt;"><strong>1、个人报名：前500名将锁定</strong><span style="color:rgb(255,76,0);"><strong>「开源锦鲤」</strong></span><strong>身份，中奖机会大幅提升！</strong></p><p style="margin-left:0pt;text-align:center;"><img src="http://images.elecfans.net/uploads/20251224/7cb48936-e0af-11f0-8ce9-92fbcf53809c.png" alt="7cb48936-e0af-11f0-8ce9-92fbcf53809c.png"/></p><p style="margin-left:0pt;text-align:center;"><br/></p><hr/><p style="margin-left:0pt;text-align:center;"><br/></p><p style="margin-left:8px;"><br/></p><p style="margin-left:0pt;text-align:center;"><strong>会议主题</strong></p><p style="margin-left:8px;text-align:center;"><span style="color:rgba(0,0,0,0.9);">开源向实·生产力进化启示录</span></p><p style="margin-left:0pt;text-align:center;"><strong>会议时间</strong></p><p style="margin-left:8px;text-align:center;"><span style="color:rgba(0,0,0,0.9);">2026年1月17日（周六）</span></p><p style="margin-left:0pt;text-align:center;"><strong>会议地点</strong></p><p style="margin-left:8px;text-align:center;"><span style="color:rgba(0,0,0,0.9);">上海临港<a href="https://m.hqchip.com/tags" target="_blank"><u>中心</u></a>（顶科路200号）</span></p><p style="margin-left:0pt;text-align:center;"><strong>会议亮点</strong></p><p style="margin-left:0pt;"><strong>主<a href="https://www.elecfans.com/article/bbs/" target="_blank"><u>论坛</u></a>：对话院士，20年战略重磅首发</strong></p><p style="margin-left:8px;"><span style="color:rgba(0,0,0,0.9);">中国工程院院士将首次公开“探寻智能制造业数字底座的自主方案”；RT-Thread睿赛德创始人熊谱翔将发布“廿载征程：从零到亿”演讲；在“院士对话”环节，顶尖学者将与产业领袖现场激辩“科研范式与生产力革命”。此外，大会还将举行2026年度首批生态伙伴签约仪式，并现场点亮“RT-Thread睿赛德生态树”——这颗汇聚了核心合作伙伴的全球生态版图，将见证RT-Thread睿赛德从技术创新到生态主导的战略能级跃升。</span></p><p style="margin-left:0pt;"><strong>四大分论坛：汽车、工业、机器人、教育全场景覆盖</strong></p><p style="margin-left:8px;"><span style="color:rgba(0,0,0,0.9);"><strong>【芯片+生态分论坛】</strong>国际图形界面标准<a href="https://www.elecfans.com/v/tag/1073/" target="_blank"><u>LVGL</u></a>创始人远道而来展望行业未来发展，<a href="https://www.elecfans.com/tags/瑞萨/" target="_blank"><u>瑞萨</u></a>、<a href="https://www.elecfans.com/tags/英飞凌/" target="_blank"><u>英飞凌</u></a>、恩智浦、<a href="https://www.elecfans.com/tags/意法半导体/" target="_blank"><u>意法半导体</u></a>、玄铁、富瀚微、<a href="https://www.elecfans.com/tags/兆易创新/" target="_blank"><u>兆易创新</u></a>、纳芯微等芯片原厂闪亮登场，带来各自AI领域的应用实战。</span></p><p style="margin-left:8px;"><span style="color:rgba(0,0,0,0.9);"><strong>【汽车+AI分论坛】</strong>AUTOSAR中国中心将揭秘“AUTOSAR标准的开放与开源”；伊世智能、芯必达、吉利集团、中国电信等产业大咖共话智能汽车的“灵魂与盔甲”等前沿议题。</span></p><p style="margin-left:8px;"><span style="color:rgba(0,0,0,0.9);"><strong>【工业+机器人分论坛】</strong>智元机器人揭秘智能机器人的“感知-决策-执行”；华成工控将公开“具身智能小脑”<a href="https://www.elecfans.com/v/tag/8966/" target="_blank"><u>控制系统</u></a>框架；RT-Thread联合创始人邱祎现场演示睿擎平台如何构建工业坚实底座；新北洋、<a href="https://bbs.elecfans.com/zhuti_1179_1.html" target="_blank"><u>瑞芯微</u></a>等行业头部企业也将共话行业未来发展。</span></p><p style="margin-left:8px;"><span style="color:rgba(0,0,0,0.9);"><strong>【开源+教育分论坛】</strong>中科院软件所、华东师范大学、上海大学、甲辰计划、天工开物基金会、上海开源信息技术协会等高校和组织，探讨如何让科研机构和开源组织成为开源生态的“第一公里”；更有B站科技UP主“同济子豪兄”带来精彩分享。</span></p><p style="margin-left:0pt;text-align:center;"><strong>会议价值</strong></p><p style="margin-left:27pt;text-align:center;"><span style="color:rgb(0,0,0);"><strong>硬核内容，洞见未来</strong></span></p><p style="margin-left:0pt;"><strong>院士对话</strong>：<span style="color:rgba(0,0,0,0.9);">院士领衔，超50位行业专家大咖齐聚，共议开源与大模型如何重塑科研与生产力和生产新范式。</span></p><p style="margin-left:0pt;"><strong>前沿议题</strong>：<span style="color:rgba(0,0,0,0.9);">聚焦“AI智能时代基础软件平台”战略升级，从芯片生态、汽车智能座舱、工业操作系统到具身智能控制，揭示下一代操作系统核心技术趋势。</span></p><p style="margin-left:0pt;"><strong>前瞻展望</strong>：<span style="color:rgba(0,0,0,0.9);">聆听RT-Thread睿赛德对未来技术发展和生态演进的战略蓝图，了解基础软件如何驱动工业、汽车与机器人领域的范式革命。</span></p><p style="margin-left:27pt;text-align:center;"><span style="color:rgb(0,0,0);"><strong>生态链接，无限可能</strong></span></p><p style="margin-left:0pt;"><strong>人脉链接</strong><span style="color:rgba(0,0,0,0.9);">：千人盛会，各行业核心技术领军人物齐聚，链接产学研用全链条精英，拓展技术视野与人脉网络。</span></p><p style="margin-left:0pt;"><strong>创新项目</strong><span style="color:rgba(0,0,0,0.9);">：近距离接触工业、汽车、机器人、能源等领域基于RT-Thread睿赛德的最新落地案例与解决方案。</span></p><p style="margin-left:0pt;"><strong>战略签约</strong><span style="color:rgba(0,0,0,0.9);">：直击RT-Thread睿赛德与关键伙伴的年度战略合作发布，把握生态合作先机。</span></p><p style="margin-left:27pt;text-align:center;"/><p style="margin-left:27pt;text-align:center;"><span style="color:rgb(0,0,0);"><strong>稀缺体验，超值回馈</strong></span></p><p style="margin-left:0pt;"><strong>参会有礼</strong>：<span style="color:rgba(0,0,0,0.9);">每位现场参会者均有机会领取专属“开发板盲盒”，惊喜开启来自RT-Thread睿赛德的硬核技术礼物。</span></p><p style="margin-left:0pt;"><strong>团体有奖</strong><span style="color:rgba(0,0,0,0.9);">：团队报名即可解锁升级版专属奖励，赢取五星级酒店奢华食宿、冰雪世界、海洋公园、博物馆门票等丰厚礼品。</span></p><p style="margin-left:0pt;text-align:center;"><strong>跨界联动，精彩纷呈</strong></p><p style="margin-left:0pt;"><strong>大V互动</strong>：<span style="color:rgba(0,0,0,0.9);">特邀商业科技大V【雅各布专栏】创始人现场主持，跨界对谈，更有B站<a href="https://www.hqchip.com/gongsi.html" target="_blank"><u>知名</u></a>科技博主同济子豪兄前来助阵，带来不一样的观察视角。</span></p><p style="margin-left:0pt;"><br/></p><p style="margin-left:0pt;text-align:center;"><strong>议程概览</strong></p><p style="margin-left:0pt;text-align:center;"/><p><img src="http://images.elecfans.net/uploads/20251224/7cbcb3e0-e0af-11f0-8ce9-92fbcf53809c.jpg" alt="7cbcb3e0-e0af-11f0-8ce9-92fbcf53809c.jpg"/></p><p><br/></p><p><br/></p><p style="margin-left:0pt;text-align:center;"><strong>报名参会</strong></p><p style="margin-left:0pt;"><strong>1、个人报名：前500名将锁定</strong><span style="color:rgb(255,76,0);"><strong>「开源锦鲤」</strong></span><strong>身份，中奖机会大幅提升！</strong></p><p style="margin-left:0pt;text-align:center;"><img src="http://images.elecfans.net/uploads/20251224/7cb48936-e0af-11f0-8ce9-92fbcf53809c.png" alt="7cb48936-e0af-11f0-8ce9-92fbcf53809c.png"/></p><p style="margin-left:0pt;"><br/></p><p style="margin-left:0pt;"><span style="color:rgba(0,0,0,0.9);">RT-Thread系统知名品牌手表、限量定制版伴手礼、20周年纪念徽章、独家开源硬件纪念套装等好礼抽不停。</span></p><p style="margin-left:0pt;"><img src="http://images.elecfans.net/uploads/20251224/7ce0ac6e-e0af-11f0-8ce9-92fbcf53809c.png" alt="7ce0ac6e-e0af-11f0-8ce9-92fbcf53809c.png"/></p><p style="margin-left:0pt;"><strong>2、团体报名：将一起来参会成员名单发送至企业微信</strong><span style="color:rgb(255,76,0);"><strong>【睿赛德科技】</strong></span><strong>，可抽取「开源旅行团」福利。</strong></p><p style="margin-left:0pt;text-align:center;"><img src="http://images.elecfans.net/uploads/20251224/7cee4590-e0af-11f0-8ce9-92fbcf53809c.png" alt="7cee4590-e0af-11f0-8ce9-92fbcf53809c.png"/></p><p style="margin-left:0pt;"><img src="http://images.elecfans.net/uploads/20251224/7cfa399a-e0af-11f0-8ce9-92fbcf53809c.png" alt="7cfa399a-e0af-11f0-8ce9-92fbcf53809c.png"/></p><p style="margin-left:0pt;"><img src="http://images.elecfans.net/uploads/20251224/7d0b8574-e0af-11f0-8ce9-92fbcf53809c.png" alt="7d0b8574-e0af-11f0-8ce9-92fbcf53809c.png"/></p><h4 style="margin-left:0px;"><span style="background-color:transparent;"><strong>3、重磅启事：临港“开源向实”标杆项目全球招募</strong></span></h4><p style="margin-left:0pt;"><span style="color:rgba(0,0,0,0.9);">为切实推动开源技术转化为现实生产力，本届大会特别联合上海临港新片区，发起“开源向实”标杆项目招募计划。</span></p><p style="margin-left:0pt;"><span style="color:rgba(0,0,0,0.9);">我们正在全球范围内，寻找基于RT-Thread睿赛德或其它开源技术、具备高成长性和产业变革潜力的优秀创业团队与项目。入选的标杆项目将有机会获得临港新片区提供的全方位重磅支持：</span></p><p style="margin-left:0pt;"><span style="color:rgba(0,0,0,0.9);"><strong>落地无忧：</strong>可获得“<a href="https://bbs.elecfans.com/group_831" target="_blank"><u>创客</u></a>之家”最长3年的免费办公空间，让您专注创新，零成本启航。</span></p><p style="margin-left:0pt;"><span style="color:rgba(0,0,0,0.9);"><strong>人才资金助力：</strong>可申报获得最高100万元人民币的资助，为您的技术研发和市场开拓注入强心剂。</span></p><p style="margin-left:0pt;"><span style="color:rgba(0,0,0,0.9);"><strong>安家长远：</strong>核心团队成员更有机会获得最高500万元人民币的购房补贴，在上海临港这片热土扎根成长，心无旁骛地追逐梦想。</span></p><p style="margin-left:0pt;"><span style="color:rgba(0,0,0,0.9);">如果您和您的团队，正用代码书写智能世界的未来，并渴望将蓝图变为现实，这里就是您最好的舞台！</span></p><p style="margin-left:4pt;text-align:center;"><span style="background-color:rgb(255,255,255);color:rgb(15,17,21);"><strong><img src="http://images.elecfans.net/uploads/20251224/7d1495e2-e0af-11f0-8ce9-92fbcf53809c.png" alt="7d1495e2-e0af-11f0-8ce9-92fbcf53809c.png"/>  </strong></span><img src="http://images.elecfans.net/uploads/20251224/7d1a3c4a-e0af-11f0-8ce9-92fbcf53809c.png" alt="7d1a3c4a-e0af-11f0-8ce9-92fbcf53809c.png"/></p><p style="margin-left:0pt;"><span style="color:rgba(0,0,0,0.9);">立即扫码，了解详情并提交项目信息或添加企业微信<strong>【睿赛德科技】</strong>与小睿沟通申报。</span></p><p style="margin-left:0pt;"><span style="color:rgba(0,0,0,0.9);">二十年积淀，亿级边端，丰富生态，邀您携手共启下一个AI智能时代的开源廿年。</span></p><p style="margin-left:0pt;text-align:center;"><strong>2026年1月17日，上海临港中心，我们不见不散！</strong></p><p><br/></p>]]></description></item><item>    <title><![CDATA[国产机器人独角兽傅利叶，公布千元级六维力传感器！（全球首款）]]></title>    <link>https://www.elecfans.com/d/7543648.html</link>    <guid>https://www.elecfans.com/d/7543648.html</guid>    <pubDate>2025-12-24 18:02:00</pubDate>    <description><![CDATA[<p>
+	  12月22日，行业领先的国产智能<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>公司傅利叶，对外公布了一款专为人形机器人打造的六维力<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>。  值得注意的是，尽管傅利叶官方并未进一步透露产品的更多细节，但据渠道信息透露，该款产品的定价将降至“千元级”，可应用于人形机器人灵巧手等核心部位，这与目前市场上同级别人形机器人六维力传感器万元至十万元的价格，显著下探，或将颠覆六维力传感器市场。  <img src="https://file1.elecfans.com//web3/M00/43/BF/wKgZO2lLus6ATrjAAAFHUV-VyVY567.jpg" alt="wKgZO2lLus6ATrjAAAFHUV-VyVY567.jpg"/>   六维力传感器等人形机器人核心零部件价格的下降，是人形机器人普及的必然趋势。   2万美元！降价90%！马斯克吹响人形机器人降价号角，六维力传感器等核心零部件面临成本等三大难题   人形机器人浪潮刚刚兴起，但其降本的号角已经吹响。   刚刚过去的11月份，马斯克的 TeslaAI 官宣特斯拉人形机器人试生产线已经开始运行，其第三代人形机器人产线也将于2026年投产，最令人注目的是，TeslaAI 称“机器人规模化生产后，预计每台成本将控制在2万美元以内”。   据摩根士丹利近期发布的《机器人年鉴》（The Robot Almanac）<strong>报告显示，目前，<strong>一台功能齐全的人形机器人制造成本约为<strong>20 万美元，而<strong>摩根士丹利对中国企业高管的调查显示，92%的潜在买家认为，单位成本必须降至<strong>2.8 万美元（20 万元人民币）</strong>以下，才能实现广泛应用。</strong></strong></strong></strong>  售价，是人形机器人普及的最关键障碍。  <a href="https://www.elecfans.com/tags/特斯拉/" target="_blank"><u>特斯拉</u></a>“2万美元成本”的宣言，摩根士丹利2.8万美元成本的行业调查数据，均直指人形机器人整机的成本难题——如何让人形机器人价格降低90%？  这一趋势，造成市场对六维力传感器、触觉/柔性传感器等等人形机器人核心零部件价格下探的迫切需求。  <img src="https://file1.elecfans.com//web3/M00/43/BF/wKgZO2lLutOACNRbAACZyUOkw5Y161.jpg" alt="wKgZO2lLutOACNRbAACZyUOkw5Y161.jpg"/><img src="" alt=""/></p>
+<p>
+	▲<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>Te</u></a>sla<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>微博宣称资料，来源：微博</p>
+<p>
+	在技术上，六维力传感器是当前维度最高的力觉传感器，能为人形机器人提供最全面、最精准的力觉信息，是人形机器人不可或缺的感知部件。</p>
+<p>
+	据 MIRDATABANK的《2025年中国人形机器人六维力传感器市场调研报告书》显示，目前六维力传感器一般用在人形机器人的手腕和脚踝处，而用于多指灵巧手的微型六维力传感器处于研发测试阶段。</p>
+<p>
+	具体到每个机器人配置上，在机器人手腕、脚踝至少需要4个<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>六维力传感器——特斯拉人形机器人即如此配置，而灵巧手对六维力传感器的需求亦达4个，因此一个完整的人形机器人需配置至少约8个六维力传感器。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/43/BF/wKgZO2lLutOAfUCLAALl5IpBLDs048.png" alt="wKgZO2lLutOAfUCLAALl5IpBLDs048.png"/></p>
+<p>
+	▲人形机器人六维力传感器常见配置，来源：MIR DATABANK，仅机器人示例有所变动</p>
+<p>
+	该报告显示，用于上肢和灵巧手部位的六维力传感器的技术要求、价格较高，其中，上肢六维力传感器要求大小直径范围在30~35mm，目前价格约1万~3万元/个；灵巧手六维力传感器更要求直径小于20mm，目前价格在5万元/个以上。</p>
+<p>
+	可见，人形机器人对六维力传感器的性能（涵盖精度、大小、使用寿命等多维度）、成本有很高的要求。</p>
+<p>
+	除性能、成本外，能否批量生产（是否具备大规模量产交付能力），亦是人形机器人整机厂商考察传感器供应商的重点。</p>
+<p>
+	如何突破性能、成本、大规模量产交付三大难题，成为六维力传感器等人形机器人核心零部件当前的重要“考点”。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/43/BF/wKgZO2lLutSAa2oaAAH7Pjf6QP0378.png" alt="wKgZO2lLutSAa2oaAAH7Pjf6QP0378.png"/></p>
+<p>
+	▲人形机器人六维力传感器常见方案，来源：MIR DATABANK</p>
+<p>
+	与许多六维力传感器公司显著不同，傅利叶本身从事机器人整机业务，拥有丰富的行业经验，此前已在康复机器人等领域建立领先的市场地位，因此傅利叶更了解机器人产业的痛点和需求，对六维力传感器等核心零部件的产品定义和研发，有自己独到的见解。</p>
+<p>
+	据可信渠道透露，本次傅利叶公布的六维力传感器产品，即为破局性能、成本、大规模量产交付这三大阻碍六维力传感器在人形机器人普及的难题而来：</p>
+<p>
+	性能：突破性<a href="https://m.elecfans.com/v/tag/4854/" target="_blank"><u>光学</u></a>式结构，更小更轻，市面上首款为人形机器人量身打造的六维力传感器，适配灵巧手等模块使用，超50000小时寿命  傅利叶该款六维力传感器产品使用光学式结构工艺代替传统应变片式工艺，在保持工业级精度、响应频率与耐用性的同时，提升了产品的集成度与轻量化，满足人形机器人对轻量化、小体积与高集成的需求。  同时，该款六维力传感器专为人形机器人结构所需而自主研发——据悉是<b>目前市面上首款专为人形机器人结构需求打造的六维力传感器</b>，可更好适配诸如灵巧手等人形机器人特有应用场景，在产品定位方面具备差异化优势。  需要特别提及的是，据可靠信源透露，在同级别传感精度下，该款六维力传感器产品的实验测试使用寿命超5万小时（约6年，基于通电小时数），耐用性和传感衰退速度均达到了更优水平。  <img src="https://file1.elecfans.com//web3/M00/43/BF/wKgZO2lLutSAeCk1AAGnYoG__Z4397.png" alt="wKgZO2lLutSAeCk1AAGnYoG__Z4397.png"/></p>
+<p>
+	▲傅利叶六维力传感器产品，来源：傅利叶官方资料</p>
+<p>
+	 成本&amp;大规模交付：“千元级”价格，售价较同等位降低90%！良品率高、一致性好，可全自动化标定及批量生产  如上文所述，傅利叶本次公布的六维力传感器产品突破性地选用了光学结构工艺。其中原因或是为了解决传统应变片六维力传感器一致性差、成本高、自动化程度低的问题。  应变片六维力传感器现存的这些问题，主要由其技术特性决定：  成本高昂：传统应变片六维力传感器需要多达24片以上的应变片，物料成本较高，导致六维力传感器成本高昂。 制造工艺复杂难以自动化：在贴片、温度补偿、标定等关键工艺上，传统应变片六维力传感器的许多工序难以自动化，造成良品率、一致性、批量化等一系列困难。  而通过光学结构工艺技术的引入和突破，傅利叶六维力传感器则可支持全自动化标定与批量生产、大幅提升了生产效率与性能一致性，从而让六维力传感器成本大幅下降——可靠信息指出，傅利叶此次公布的六维力传感器产品定价区间降至五千元以内，成为极少数的“千元级”高精度六维力传感器产品。  <img src="https://file1.elecfans.com//web3/M00/43/BF/wKgZO2lLutSABmfuAAYZIIn-jCQ959.png" alt="wKgZO2lLutSABmfuAAYZIIn-jCQ959.png"/>   在MIR DATABANK的相关报告中，我们看到应用于上肢的六维力传感器售价普遍在1万~3万元/个，而灵巧手六维力传感器价格更是高达5万元/个以上。   傅利叶该款六维力传感器精度高、寿命长、体积小，可支持人形机器人灵巧手的应用，定价低至5千元以下，仅为当前同等性能产品的十分之一！有望大幅降低人形机器人整机成本压力。   获红杉中国、IDG资本等知名机构投资，与英伟达、苹果达成合作，中国及全球领先的智能机器人公司   此次六维力传感器产品的推出，对傅利叶来说有迹可循。得益于多年在医疗康养领域的经验沉淀，傅利叶此前在力控技术领域已积累了深厚的研发优势。当前，傅利叶建立了可实时修正运动轨迹，赋予重力补偿，适配个性化康复及交互需求的力反馈技术体系，未来还将持续推进高精度多维力学传感器的开发，以实现柔顺控制、交互力控及智能决策。   事实上，作为国产头部智能机器人企业，傅利叶早已获得市场的广泛关注。   资料显示，傅利叶成立于2015年，是国内最早的一批机器人公司之一。傅利叶早期专注于康复机器人领域，随着技术发展，近年来涉足人形机器人领域。目前，傅利叶已形成涵盖GRx系列人形机器人、智能康复港、伽利略系统、核心零部件、开源产品等多系列的产品矩阵——本次披露的六维力传感器正是其产品矩阵之一。   在康复机器人领域，傅利叶为全球40多个国家和地区的2000余家机构与医院提供服务，是中国及全球领先的康复机器人公司，拥有近300个遍布全国各地级市、社区、乡镇卫生院的科室案例，覆盖患者人数超百万。   此外，傅利叶与英伟达、苹果等公司在机器人技术研发上达成合作。英伟达发布的首个人形机器人开放基础模型，就部署在傅利叶的人形机器人上；苹果机器人团队联手傅利叶，基于傅利叶GRx人形机器人本体技术平台，验证了视觉语言大模型在手势生成、非语言交流里的适应性与自然度，展现出甚至超越真人的流畅度。 <img src="https://file1.elecfans.com//web3/M00/43/BF/wKgZO2lLutSAI0DjAALHblLXTps886.png" alt="wKgZO2lLutSAI0DjAALHblLXTps886.png"/></p>
+<p>
+	▲傅利叶产品矩阵，来源：傅利叶官方资料</p>
+<p>
+	 凭借领先的机器人技术实力和市场地位，据可查信息显示，2025年，傅利叶先后共获得超11亿元的融资，估值已达独角兽企业行列，其背后股东还包括：国鑫投资、红杉中国、元璟资本、前海母基金、国中创投、IDG资本、火山石资本、景旭创投、临港科创投等众多<a href="https://www.hqchip.com/gongsi.html" target="_blank"><u>知名</u></a>机构。  <img src="https://file1.elecfans.com//web3/M00/43/BF/wKgZO2lLutSAanlAAAINKDZkBwE911.png" alt="wKgZO2lLutSAanlAAAINKDZkBwE911.png"/><img src="https://file1.elecfans.com//web3/M00/43/BF/wKgZO2lLutWABNKkAAKftdGEYsI518.png" alt="wKgZO2lLutWABNKkAAKftdGEYsI518.png"/></p>
+<p>
+	▲傅利叶融资信息，来源：天眼查</p>
+<p>
+	 机器人有望迎来放量，百亿级六维力传感器需求！庞大的增量市场 据近期摩根士丹利发布的《机器人年鉴》（The Robot Almanac）报告显示，全球机器人市场将呈现爆发性增长趋势。  仅就机器人硬件销售额而言，摩根士丹利在报告中，预测全球市场将从2025 年的约 1000 亿美元激增至 2030 年的 5000 亿美元，2040 年达到 9 万亿美元，并在 2050 年攀升至 25 万亿美元。  报告中，这一预测仅涵盖硬件销售，若加上软件服务、维护及供应链相关收入，市场规模可能成倍增长。  <img src="https://file1.elecfans.com//web3/M00/43/BF/wKgZO2lLutWAbtthAAQK3_UY_Uk737.png" alt="wKgZO2lLutWAbtthAAQK3_UY_Uk737.png"/></p>
+<p>
+	▲机器人硬件销售额预测，来源：摩根士丹利</p>
+<p>
+	 同时，摩根士丹利在报告中预测，2030年、2040年、2050年全球售出的机器人数量级分别为9000万台、6亿台、14亿台——机器人数量快速攀升。  其中，小型<a href="https://www.elecfans.com/v/tag/12732/" target="_blank"><u>无人机</u></a>和家用机器人在近期最具市场潜力，而人形机器人预计在 2029-2030 年开始规模化部署。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/43/BF/wKgZO2lLutWAf1_KAAMQM6tBRoU771.png" alt="wKgZO2lLutWAf1_KAAMQM6tBRoU771.png"/></p>
+<p>
+	▲机器人数量预测，来源：摩根士丹利</p>
+<p>
+	 从上文数据中，我们可以看到，一台人形机器人约需要配置8个六维力传感器，到2050年，为满足14亿台机器人的力感知需求，将带动近百亿级的六维力传感器增量！  事实上， 六维力传感器市场已迎来高速增长，据MIR数据显示，2024年中国六维力传感器整体出货量约1.45万台，同比增长约53.4%。  MIR预测，2024-2026年，中国市场六维力传感器出货量将以年复合增长率（CAGR）超过51%的速度快速增长。2027年后，随着人形机器人的大规模普及，六维力传感器开始规模上量，2027-2030年间的六维力传感器CAGR达185%，预计到2023年中国六维力传感器出货量将超过百万台。  <img src="https://file1.elecfans.com//web3/M00/43/BF/wKgZO2lLutWAf9BQAAJ8m1Yxr6c727.png" alt="wKgZO2lLutWAf9BQAAJ8m1Yxr6c727.png"/></p>
+<p>
+	▲中国六维力传感器出货量规模预测，来源：MIR DATABANK</p>
+<p>
+	 力觉感知是人类最基本的感知能力之一，为实现力觉感知，机器人依赖于力/力矩传感器。  根据测力的维数，力/力矩传感器可分为一维力传感器、三维力传感器、六维力传感器。  六维力传感器同时测量三维空间坐标系（Oxyz）内的三个力（Fx、Fy、Fz）和三 个力矩（Mx、My、Mz），是目前感知精度最高的力传感器。  市场上主流的六维力技术路线包括：应变片式、压电式、<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>式、光学式等。  目前应变片式六维力传感器是市场主流，约占市场份额的80%。但由于工艺复杂、 成本高等缺点，近年来亦有许多厂商进行光学式、<a href="https://m.elecfans.com/v/tag/7888/" target="_blank"><u>MEMS</u></a>六维力传感器的技术探索，并推出相关产品。  本次傅利叶公布的六维力传感器新品，就是光学式技术路线的代表。  <img src="https://file1.elecfans.com//web3/M00/43/BF/wKgZO2lLutaATegMAASFLkkenVc129.png" alt="wKgZO2lLutaATegMAASFLkkenVc129.png"/></p>
+<p>
+	▲六维力传感器技术路线及优缺点，来源：MIR DATABANK</p>
+<p>
+	 结语 售价，是任何消费级产品普及永远绕不过去的门槛。  未来，人形机器人要大规模应用，进入全球亿万家庭中，从特斯拉、摩根士丹利等巨头的预估测算，成本需要控制到2万美元以下——这是当前机器人平均成本的十分之一！  人形机器人降价的号角已经吹响，将带来对六维力传感器、触觉/柔性传感器等机器人核心零部件的价格下探压力。  本次，傅利叶公布的新款六维力传感器，通过光学式结构技术革新，从性能、价格、大规模交付等方面，带来全面提升，售价仅为当前同等级六维力传感器的十分之一，能够充分满足机器人市场的降本需求，有力支撑未来机器人产业的大爆发。 </p>
+<p>
+	近年来，以傅利叶等中国高科技厂商为代表的国产力量，通过技术革新、整合中国供应链，正在全球前沿科技领域发挥颠覆性作用，加速新技术的普及。一个显著示例是，新兴的国产激光雷达传感器厂商对全球智驾、机器人感知领域的影响——国产激光雷达市场份额已占全球比例超80%。</p>
+<p>
+	六维力传感器领域，有望如同激光雷达等新兴传感器赛道，傅利叶等中国企业将独领风骚！</p>
+<p>
+	审核编辑 黄宇</p>
+<p>
+	</p>]]></description></item><item>    <title><![CDATA[突发，美国拟再制裁3家中国传感器公司！（附信件原文）]]></title>    <link>https://www.elecfans.com/d/7543649.html</link>    <guid>https://www.elecfans.com/d/7543649.html</guid>    <pubDate>2025-12-24 18:02:00</pubDate>    <description><![CDATA[<p>
+	12月18日，美国众议院中国事务特别委员会、国土安全委员会和情报委员会等9位议员，联名致信国防部，敦促将19家中企列为“中国军工企业”（1260H名单），里面有宇树科技、Deeseek、小米、京东方等中国<a href="https://m.hqchip.com/gongsi.html" target="_blank"><u>知名</u></a>高科技公司，其中，包括3家中国激光雷达<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>企业（文末附信件原文）。</p>
+<p>
+	这些公司分布于生物技术、基因组与生命科学；传感、监控、<a href="https://bbs.elecfans.com/group_756" target="_blank"><u>机器人</u></a>与具身<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>；<a href="https://www.elecfans.com/soft/data/39-96/" target="_blank"><u>消费电子</u></a>与智能终端；大模型AI；显示与成像；<a href="https://www.hqchip.com/gongsi.html" target="_blank"><u>半导体</u></a>与制造设备等6大领域，分别是（括号内中文名称为查阅相关资料后补充，可能存在错漏，请注意审阅）：</p>
+<p>
+	1、B<a href="https://www.elecfans.com/tags/iot/" target="_blank"><u>iot</u></a>ech,Genomics, and Life Sciences Manufacturing（生物技术、基因组与生命科学）</p>
+<p>
+	WuXi AppTec（药明康德）、WuXi Bio<a href="https://www.elecfans.com/tags/Cirrus logic/" target="_blank"><u>logic</u></a>s（药明生物）、WuXi X<a href="https://m.hqchip.com/app/1703" target="_blank"><u>DC</u></a>（药明合联）</p>
+<p>
+	建议制裁理由：与解放军军事医学科学院合作，参与军民融合项目。GenScript（金斯瑞） 建议制裁理由：与国防高校合作，创始人入选“千人计划”。 2、Sensing, Surveillance, Robo<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>ti</u></a>cs, and Embodied AI（传感、监控、机器人与具身AI） Tiandy（天地伟业） 建议制裁理由：向新疆、伊朗安全部队提供人脸识别与种族识别技术。 Unitree（宇树科技） 建议理由：其机器狗在军事演习中亮相，被列为杭州“六小龙”军民融合企业。 Livox（览沃）、RoboSense（速腾聚创）、LeiShen（镭神智能） 建议制裁理由：提供激光雷达（LiDAR）技术，部分产品已用于军事装备。 CloudMinds（达闼机器人） 建议制裁理由：被列入实体清单，与军民融合研究所合作，机器人用于公安系统。 北京人形机器人创新<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a> 建议制裁理由：明确用于“未来无人战场”训练平台。 3、Consumer Smart-Device Ecosystems（消费电子与智能终端） Xiaomi（小米） 建议制裁理由：虽曾被法院撤销军方认定，但近年参与国家AI平台、与军方医院合作、资助国防七子高校，参与国家重点研发计划。 4、Large-Scale Artificial <a href="https://www.elecfans.com/tags/intel/" target="_blank"><u>Intel</u></a>ligence Model Develope<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>rs</u></a>（大模型AI研发） DeepSeek（深度求索） 建议制裁理由：被官方指出向情报系统提供AI服务，参与150+军方采购项目，试图规避<a href="https://www.elecfans.com/tags/gpu/" target="_blank"><u>GPU</u></a>出口管制。 5、Display and Imaging Components（显示与成像）<br/>
+	BOE（京东方） 建议制裁理由：前身为军方工厂，现位于军民融合示范区，向军方供应商供货。 Tianma（天马微电子） 建议制裁理由：中航工业子公司，提供军用显示模块。 6、Semiconductors,<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>Ad</u></a>vanced Materials, and Manufacturing Equipment（半导体、先进材料和制造设备） Hua Hong（华虹半导体） 建议制裁理由：国家大基金投资，生产军工相关“成熟制程”芯片。 Shennan Circuits（深南电路） 建议制裁理由：中航国际控股分拆上市，主要股东为中航工业。 Kingsemi（芯源微电子） 建议制裁理由：提供光刻设备，服务军工高校如电子科大。7、动力电池与储能 Gotion High-<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>Te</u></a>ch（国轩高科） 建议制裁理由：与中国航天万源合资，参与军民两用电池研发。</p>
+<p>
+	可以看到，在Sensing, Surveillance, Robotics, and Embodied AI（传感、监控、机器人与具身AI）类别中，有Livox（览沃）、RoboSense（速腾聚创）、LeiShen（镭神智能）三家中国激光雷达企业被美国议员列入1260H清单制裁，主要制裁原因均指向激光<a href="https://bbs.elecfans.com/zhuti_rf_1.html" target="_blank"><u>雷达技术</u></a>在军事国防领域中的应用潜力。</p>
+<p>
+	值得一提的是，览沃、速腾聚创、镭神智能这三家激光雷达公司，其总部均位于广东深圳。</p>
+<p>
+	Livox（览沃）成立于2016年，是从<a href="https://www.elecfans.com/v/tag/10447/" target="_blank"><u>大疆无人机</u></a>激光雷达部门分拆出来的车载激光雷达子公司。Livox致力于提供高性能、低成本的激光雷达传感器，产品已应用于<a href="https://www.elecfans.com/tags/自动驾驶/" target="_blank"><u>自动驾驶</u></a>、智慧城市、测绘、移动机器人等行业，Livox产品已销往包括美国、加拿大、中国、日本和欧盟在内的 26 个国家和地区。</p>
+<p>
+	RoboSense（速腾聚创）成立于2014年，官网显示，RoboSense速腾聚创是激光雷达市占率排名全球第一的企业，目前已向全球超3400家机器人及相关产业客户、超350家汽车整车厂及一级供应商提供核心零部件及解决方案。在具身智能领域，RoboSense速腾聚创推出机器人视觉、灵巧手等创新技术产品。2024年1月，速腾聚创于港股上市，是“港股激光雷达第一股”，相关信息参看刚刚，2024年中国传感器第一股诞生！全球市值最高激光雷达企业！市值达190亿！</p>
+<p>
+	LeiShen（镭神智能）成立于2015年，是全球唯一掌握调频连续波、TOF、相位法、三角法四种激光雷达原理的企业，其实现了全产业链自主可控，产品服务领域覆盖自动驾驶、智慧交通、轨道交通、通用航空、机器人、智慧物流、高端安防、港口、测绘及<a href="https://m.elecfans.com/v/tag/633/" target="_blank"><u>工业自动化</u></a>等十大产业生态圈。</p>
+<p>
+	美国政界多次建议全面禁止激光雷达等中国传感器</p>
+<p>
+	美国政界已多次提议全面禁用激光雷达等中国传感器。目前在1260H清单上，中国及全球最大的激光雷达企业——禾赛科技，已被列入清单中。览沃、速腾聚创也已不是第一次被美国议员建议制裁。</p>
+<p>
+	早在2023年11月，包括美国众议院下设中国战略竞争特别委员会主席迈克·加拉格尔（R-WI）在内的20位议员，联名向拜登政府提交报告，要求对所有中国的激光雷达（光探测和测距 ，简称LiDAR) 技术公司进行调查，<strong>以确定是否有理由将其列入三个制裁名单——国防部的中国军工企业名单、商务部实体清单以及财政部的非 <a href="https://www.hqchip.com/app/1522" target="_blank"><u>SD</u></a>N 中国军工复合企业名单（CMIC清单）。</strong>  其中，该报告特别点名<strong>禾赛科技、速腾聚创、华为、<a href="https://m.elecfans.com/v/tag/1974/" target="_blank"><u>大疆</u></a>览沃</strong>四家国产激光雷达企业。相关信息参看《美议员要求拜登政府制裁中国激光雷达企业》  随后的2024年1月，美国国防部更新“中国涉军企业”名单（1260H名单），将禾赛科技列入该名单“拉黑”。  此后，禾赛科技对美国国防部提起诉讼，但最终败诉。  今年10月份，美国国防部副部长斯蒂芬·范伯格(Stephen Feinberg)，致函美众议院和参议院军事委员会负责人，指出多家中国实体值得被认定为“中国军事企业”，列入“中国军事企业清单”(又称CMC清单或1260H清单)——这里面就包括中国激光雷达企业速腾聚创。相关信息参看刚刚，美国防部又要将一家深圳激光雷达巨头列入制裁清单！危险！</p>
+<p>
+	12月12日，据路透社（Reuters）报道，美国议员再次提议逐步淘汰自动驾驶汽车和关键基础设施中使用的中国制造传感器。这些传感器可能在冲突期间被太空<a href="https://www.elecfans.com/v/tag/10353/" target="_blank"><u>黑客</u></a>攻击和禁用，使美国的庞大系统在几秒钟内瘫痪。</p>
+<p>
+	该法案的重点是逐步淘汰中国激光雷达传感器。激光雷达利用激光帮助自动驾驶车辆（例如<a href="https://www.elecfans.com/v/tag/472/" target="_blank"><u>无人驾驶</u></a>出租车）获取周围环境的三维图像，还可以用于港口岸桥等设备的自动化作业。相关信息参看突发，美国计划禁用中国传感器！</p>
+<p>
+	全球激光雷达市场格局方面，据Yole最新全球激光雷达产业报告《Automotive LiDAR 2025 》（2025车载激光雷达报告）数据显示，在2024年，中国激光雷达厂商禾赛科技占据33%的市场份额，其次是速腾聚创（24%）、华为（19%）和图达通（12%）。这四家中国厂商占据了88%的市场份额。</p>
+<p>
+	在Yole的报告中，用“四巨头”（The “Big Four”）的词语来形容中国这4家激光雷达厂商，堪称中国激光雷达“F4”。未来几年，中国激光雷达厂商将继续统治这条赛道。相关信息参看88%！中国激光雷达全球称雄！（最新报告）  <img src="https://file1.elecfans.com//web3/M00/43/BF/wKgZO2lLuteAOHQ-AANeAeaEUIk444.png" alt="wKgZO2lLuteAOHQ-AANeAeaEUIk444.png"/></p>
+<p>
+	▲来源：Yole</p>
+<p>
+	附录-美国众议院致信给国防部信件原文：</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/43/BF/wKgZO2lLuteAXSv8AAGu7SJNmm8236.png" alt="wKgZO2lLuteAXSv8AAGu7SJNmm8236.png"/><img src="https://file1.elecfans.com//web3/M00/43/BF/wKgZO2lLutiAE6ySAAHuvTJUxxQ148.png" alt="wKgZO2lLutiAE6ySAAHuvTJUxxQ148.png"/><img src="https://file1.elecfans.com//web3/M00/43/C0/wKgZO2lLutiAHXLVAAHwSm8Vjs8674.png" alt="wKgZO2lLutiAHXLVAAHwSm8Vjs8674.png"/><img src="https://file1.elecfans.com//web3/M00/43/C0/wKgZO2lLutiAfN95AAHK0R8i_tk157.png" alt="wKgZO2lLutiAfN95AAHK0R8i_tk157.png"/><img src="https://file1.elecfans.com//web3/M00/43/C0/wKgZO2lLutiAGd8aAADR4rWNcjs074.png" alt="wKgZO2lLutiAGd8aAADR4rWNcjs074.png"/><img src="https://file1.elecfans.com//web3/M00/43/C0/wKgZO2lLutiAW58DAAFUcbZd9Gs333.jpg" alt="wKgZO2lLutiAW58DAAFUcbZd9Gs333.jpg"/><img src="https://file1.elecfans.com//web3/M00/43/C0/wKgZO2lLutiABJxHAAGJJW_twCA617.png" alt="wKgZO2lLutiABJxHAAGJJW_twCA617.png"/><img src="https://file1.elecfans.com//web3/M00/43/C0/wKgZO2lLutmAKXBaAAIUxB_GVMo415.png" alt="wKgZO2lLutmAKXBaAAIUxB_GVMo415.png"/><img src="https://file1.elecfans.com//web3/M00/43/C0/wKgZO2lLutmAa77oAAHt5ImVZMo731.png" alt="wKgZO2lLutmAa77oAAHt5ImVZMo731.png"/><img src="https://file1.elecfans.com//web3/M00/43/C0/wKgZO2lLutmAWHVbAAE60t4YNug503.png" alt="wKgZO2lLutmAWHVbAAE60t4YNug503.png"/><img src="https://file1.elecfans.com//web3/M00/43/C0/wKgZO2lLutmAeUFyAAHW0DxTHOw098.png" alt="wKgZO2lLutmAeUFyAAHW0DxTHOw098.png"/><img src="https://file1.elecfans.com//web3/M00/43/C0/wKgZO2lLutmAPyV7AAD9hORb1g8750.png" alt="wKgZO2lLutmAPyV7AAD9hORb1g8750.png"/><b>审核编辑 黄宇</b></p>
+<p>
+	</p>]]></description></item><item>    <title><![CDATA[苏州一条8英寸MEMS喷墨打印芯片产线正式投产，投资2.5亿元年产2万片晶圆]]></title>    <link>https://www.elecfans.com/d/7543650.html</link>    <guid>https://www.elecfans.com/d/7543650.html</guid>    <pubDate>2025-12-24 18:02:00</pubDate>    <description><![CDATA[<p>
 	12月23日，据【苏州吴江发布】公众号报道，美清<a href="https://www.hqchip.com/gongsi.html" target="_blank"><u>半导体</u></a>（苏州）有限公司（以下简称“美清半导体”）投产仪式在汾湖高新区举行，其8英寸<a href="https://m.elecfans.com/v/tag/7888/" target="_blank"><u>MEMS</u></a>喷墨打印芯片产线正式投产，为汾湖半导体产业链高质量发展注入强劲动力。</p>
 <p>
 	<strong>美清半导体</strong>自2024年7月迁入汾湖，专注于<strong>打印芯片研发与生产</strong>，是国内<strong>唯一同时掌握热发泡打印芯片及压电打印芯片两大核心技术</strong>的企业。目前，公司已实现多种型号产品量产，此次投产的<strong>8英寸MEMS喷墨打印芯片产线项目</strong>，<strong>总投资约</strong><strong>2.5亿元</strong>，设备国产化率高达九成，工厂达产后，可<strong>年产超过2万片8英寸晶圆</strong>，持续为国产打印事业注入新活力。</p>
@@ -1945,327 +2056,4 @@
 <p style="text-indent:2em;">
 	｜菲力尔 Flir｜</p>
 <p style="text-indent:2em;">
-	Flir是工业应用智能传感解决方案的优秀领先者，在全球拥有约4000名员工。公司成立于1978年，一直专注于设计、开发、生产、营销和推广用于增强态势感知力的专业技术。通过<a href="https://www.elecfans.com/tags/红外/" target="_blank"><u>红外</u></a>热成像、可见光成像、声波成像、视频分析、测量和诊断以及先进的威胁检测系统，帮助专业人士做出更好、更快的决策，拯救生命，改善生活。</p>]]></description></item><item>    <title><![CDATA[薄膜射频/微波定向耦合器CP0603：设计与应用的理想之选]]></title>    <link>https://www.elecfans.com/d/7543531.html</link>    <guid>https://www.elecfans.com/d/7543531.html</guid>    <pubDate>2025-12-24 17:25:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_7543531" value="https://file1.elecfans.com/web3/M00/43/BD/wKgZO2lLr6KAAPjxAA4B4b49vGw946.pdf"/><h1>薄膜<a href="https://www.elecfans.com/v/tag/105/" target="_blank"><u>射频</u></a>/<a href="https://bbs.elecfans.com/zhuti_rf_1.html" target="_blank"><u>微波</u></a>定向<a href="https://www.hqchip.com/app/2020" target="_blank"><u>耦合器</u></a>CP0603：设计与应用的理想之选</h1>
-<p>在<a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>的日常设计工作中，射频/微波定向<a href="https://www.elecfans.com/tags/耦合/" target="_blank"><u>耦合</u></a>器是不可或缺的关键元件，它在众多高频无线系统里扮演着重要角色。今天，我们就来深入探讨一下薄膜射频/微波定向耦合器CP0302/CP0402/CP0603/CP0805和DB0603N/DB0805系列中的CP0603 SMD类型产品。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_7543531" target="_blank">CP0603A0947DWTR.pdf</a></p>
-<h2>工艺：集成薄膜技术的魅力</h2>
-<p>CP0603 SMD耦合器采用了集成薄膜（I<a href="https://m.hqchip.com/app/1522" target="_blank"><u>TF</u></a>）多层技术。这项技术可不简单，它让元件实现了微型化，在如今追求小巧紧凑设计的时代，体积优势明显。而且，在高频性能方面表现卓越，能有效保障<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>的稳定传输。同时，其坚固的结构设计，非常适合可靠的自动组装，大大提高了生产效率和产品的稳定性。</p>
-<h2>规格：多方面满足设计需求</h2>
-<h3>尺寸</h3>
-<table>
-<thead>
-<tr>
-<th>CP0603的尺寸为0603，具体参数如下表：</th>
-<th>参数</th>
-<th>尺寸（mm）</th>
-<th>尺寸（英寸）</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>L</td>
-<td>1.6 + 0.1</td>
-<td>0.063 + 0.004</td>
-</tr>
-<tr>
-<td>W</td>
-<td>0.84 + 0.1</td>
-<td>0.033 + 0.004</td>
-</tr>
-<tr>
-<td>T</td>
-<td>0.60 + 0.1</td>
-<td>0.028 + 0.004</td>
-</tr>
-<tr>
-<td>A</td>
-<td>0.35 + 0.15</td>
-<td>0.014 + 0.006</td>
-</tr>
-<tr>
-<td>B</td>
-<td>0.175 + 0.1</td>
-<td>0.007 + 0.004</td>
-</tr>
-<tr>
-<td>B1</td>
-<td>0.00 + 0.1 / 0 - 0.0</td>
-<td>0.00 + 0.004 / -0.0</td>
-</tr>
-</tbody>
-</table>
-<p>这样小巧的尺寸，在一些对空间要求苛刻的设计中能发挥很大作用，大家在设计时要充分考虑其尺寸是否满足布局需求。</p>
-<h3><a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>特性</h3>
-<ul>
-<li><strong>频率范围</strong>：该耦合器的频率范围为800MHz - 3GHz，可覆盖多种常见的<a href="https://www.elecfans.com/soft/data/43-45/" target="_blank"><u>无线通信</u></a>频段，如<a href="https://www.elecfans.com/v/tag/9979/" target="_blank"><u>4G</u></a> L<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>TE</u></a>和<a href="https://www.elecfans.com/v/tag/1225/" target="_blank"><u>5G</u></a> LTE等。这意味着它在不同的无线通信系统中都能找到用武之地。</li>
-<li><strong>特性阻抗</strong>：特性阻抗为50Ω，这是射频领域中非常常见且标准的阻抗值，与大多数射频系统的匹配度良好。</li>
-<li><strong>工作/存储温度</strong>：工作和存储温度范围为 -40ºC 到 +85ºC，能适应较为恶劣的环境条件，在工业、汽车等领域的应用中具有一定的可靠性保障。</li>
-<li><strong>功率额定值</strong>：连续功率额定值为3W，能满足一些中等功率的射频应用需求。</li>
-</ul>
-<h2>选型与订购：明确需求，精准选择</h2>
-<p>CP0603有多种不同型号可供选择，每个型号在频率范围、耦合度、插入损耗和电压驻波比（VSWR）等方面都有所差异。以下为部分型号的参数示例：</p>
-<h3>CP0603A系列</h3>
-<table>
-<thead>
-<tr>
-<th>P/N Examples</th>
-<th>Frequency Band [MHz]</th>
-<th>Coupling [dB]</th>
-<th>I.Loss max</th>
-<th>VSWR max</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>CP0603A0836AS</td>
-<td>824 - 849</td>
-<td>18.5 + 1</td>
-<td>0.25</td>
-<td>1.2</td>
-</tr>
-<tr>
-<td>CP0603A2442AS</td>
-<td>2400 - 2484</td>
-<td>10 ± 1</td>
-<td>0.85</td>
-<td>1.2</td>
-</tr>
-</tbody>
-</table>
-<h3>CP0603B系列</h3>
-<table>
-<thead>
-<tr>
-<th>P/N Examples</th>
-<th>Frequency Band [MHz]</th>
-<th>Coupling [dB]</th>
-<th>I.Loss max</th>
-<th>VSWR max</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>CP0603B0836AS</td>
-<td>824 - 849</td>
-<td>24.5 + 1</td>
-<td>0.2</td>
-<td>1.2</td>
-</tr>
-<tr>
-<td>CP0603B2442AS</td>
-<td>2400 - 2484</td>
-<td>15.5 + 1</td>
-<td>0.45</td>
-<td>1.2</td>
-</tr>
-</tbody>
-</table>
-<h3>CP0603D系列（高方向性）</h3>
-<table>
-<thead>
-<tr>
-<th>P/N Examples</th>
-<th>Frequency Band [MHz]</th>
-<th>Coupling [dB]</th>
-<th>I.Loss max. [dB]</th>
-<th>Return Loss [dB]</th>
-<th>Direc<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>ti</u></a>vity [dB]</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>CP0603D0836AS</td>
-<td>824 - 849</td>
-<td>13.50</td>
-<td>0.50</td>
-<td>23</td>
-<td>21</td>
-</tr>
-<tr>
-<td>CP0603D2442AS</td>
-<td>2400 - 2484</td>
-<td>5.50</td>
-<td>2.00</td>
-<td>15</td>
-<td>15</td>
-</tr>
-</tbody>
-</table>
-<p>在选型时，我们要根据具体的应用场景，如工作频率、所需的耦合度、允许的插入损耗等因素来综合考虑，选择最合适的型号。订购时，要注意产品是否符合RoHS标准，确保满足环保要求。</p>
-<h2>质量与应用：可靠保障，广泛应用</h2>
-<h3>质量检测</h3>
-<p>成品会进行100%的电气参数和外观特性测试，每个生产批次还会进行抽样评估，包括静态湿度测试（85°C，85% RH，160小时）和耐久性测试（125°C，4小时）等，以确保产品质量可靠。其<a href="https://www.hqchip.com/app/1529" target="_blank"><u>端子</u></a>采用镍/焊料涂层，与回流焊、波峰焊、汽相焊和手动焊接等自动焊接技术兼容，方便我们进行焊接操作。</p>
-<h3>应用领域</h3>
-<p>CP0603耦合器的应用非常广泛，涵盖了4G/5G基站、<a href="https://bbs.elecfans.com/group_78" target="_blank"><u>汽车电子</u></a>、<a href="https://www.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>、移动<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>、卫星电视接收、GPS、车辆定位系统和无线局域网等领域。在这些应用中，它能有效地实现信号的耦合、分配和监测等功能，为系统的稳定运行提供支持。</p>
-<p>总之，薄膜射频/微波定向耦合器CP0603凭借其先进的技术、丰富的规格型号、可靠的质量和广泛的应用领域，是电子工程师在射频设计中的一个不错选择。大家在实际应用中，要充分了解其特性，结合具体需求，做出最佳的设计决策。不知道大家在使用类似耦合器时遇到过哪些问题呢？欢迎在评论区分享交流。 </p>]]></description></item><item>    <title><![CDATA[TC9400/9401/9402：电压 - 频率/频率 - 电压转换器的设计与应用]]></title>    <link>https://www.elecfans.com/d/7543532.html</link>    <guid>https://www.elecfans.com/d/7543532.html</guid>    <pubDate>2025-12-24 17:25:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_7543532" value="https://file1.elecfans.com/web3/M00/43/BF/wKgZPGlLr6-AAhsKAAipldfyFys324.pdf"/><h1>TC9400/9401/9402：电压 - 频率/频率 - 电压<a href="https://www.hqchip.com/app/1718" target="_blank"><u>转换器</u></a>的设计与应用</h1>
-<p>在电子设计领域，电压 - 频率（V/F）和频率 - 电压（F/V）转换器是非常重要的器件，它们能够实现<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a><a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>和<a href="https://m.hqchip.com/app/1381" target="_blank"><u>数字信号</u></a>之间的转换，广泛应用于各种电子系统中。今天我们就来详细探讨一下 <a href="https://www.elecfans.com/tags/microchip/" target="_blank"><u>Microchip</u></a> 公司的 TC9400/9401/9402 系列 V/F/F/V 转换器。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_7543532" target="_blank">TC9400COD713.pdf</a></p>
-<h2>一、产品概述</h2>
-<p>TC9400/9401/9402 是低成本的 V/F 转换器，采用低功耗 CMOS 技术。它可以接受可变的模拟输入信号，并生成一个输出脉冲序列，其频率与输入电压呈线性比例关系。同时，该器件也可作为<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>的 F/V 转换器，接受几乎任何输入频率波形，并提供线性比例的电压输出。一个完整的 V/F 或 F/V 系统只需要添加两个<a href="https://www.hqchip.com/app/855" target="_blank"><u>电容器</u></a>、三个<a href="https://www.hqchip.com/app/865" target="_blank"><u>电阻器</u></a>和参考电压即可实现。</p>
-<h3>（一）主要特性</h3>
-<h4>1. 电压 - 频率转换特性</h4>
-<ul>
-<li><strong>线性度选择丰富</strong>：TC9401 可达 0.01%，TC9400 为 0.05%，TC9402 是 0.25%。</li>
-<li><strong>宽频率范围</strong>：直流到 100 kHz（F/V）或 1 Hz 到 100 kHz（V/F）。</li>
-<li><strong>低功耗</strong>：典型功耗为 27 mW。</li>
-<li><strong><a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>灵活性</strong>：支持单/双电源操作，电压范围为 +8V 到 +15V 或 ±4V 到 ±7.5V。</li>
-<li><strong>增益温度稳定性好</strong>：典型值为 ±25 ppm/°C。</li>
-<li><strong>可<a href="https://bbs.elecfans.com/group_75" target="_blank"><u>编程</u></a>比例因子</strong>。</li>
-</ul>
-<h4>2. 频率 - 电压转换特性</h4>
-<ul>
-<li><strong>工作频率范围</strong>：直流到 100 kHz。</li>
-<li><strong>线性度选择</strong>：TC9401 为 0.02%，TC9400 是 0.05%，TC9402 为 0.25%。</li>
-<li><strong>可编程比例因子</strong>。</li>
-</ul>
-<h3>（二）应用领域</h3>
-<ul>
-<li><strong><a href="https://www.hqchip.com/app/1382" target="_blank"><u>微处理器</u></a>数据采集</strong>：实现模拟信号到数字信号的转换，方便微处理器处理。</li>
-<li><strong>13 位<a href="https://www.elecfans.com/tags/模数转换器/" target="_blank"><u>模数转换器</u></a>（<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>）</strong>：提高转换精度。</li>
-<li><strong>模拟数据传输和记录</strong>：将模拟信号转换为频率信号进行传输和记录。</li>
-<li><strong>锁相环</strong>：用于频率合成和同步。</li>
-<li><strong>频率计/转速计</strong>：测量频率和转速。</li>
-<li><strong><a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机控制</u></a></strong>：实现对<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>的精确控制。</li>
-<li><strong>调频解调</strong>：用于调频信号的解调。</li>
-</ul>
-<h2>二、<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>特性与规格</h2>
-<h3>（一）绝对最大额定值</h3>
-<p>在使用 TC9400/9401/9402 时，需要注意其绝对最大额定值，超过这些值可能会导致器件永久性损坏。例如，电源电压、输入<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>、输出电压等都有相应的限制，同时还需要注意存储和工作温度范围以及封装功耗等参数。</p>
-<h3>（二）电气规格</h3>
-<p>文档中给出了详细的电气规格表，包括电压 - 频率转换的精度、线性度、增益温度漂移等参数，以及频率 - 电压转换的相关参数。这些参数在不同的测试条件下有不同的取值，<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>在设计时需要根据具体的应用场景进行选择。</p>
-<h2>三、引脚描述</h2>
-<h3>（一）引脚功能</h3>
-<p>TC9400/9401/9402 共有 14 个引脚，每个引脚都有其特定的功能。例如，IBIAS 引脚用于设置偏置电流，ZERO <a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>J 引脚用于低频调整，IN 引脚是 V/F 转换器的输入电流连接引脚等。</p>
-<h3>（二）关键引脚详解</h3>
-<h4>1. 偏置电流（IBIAS）</h4>
-<p>通过连接到 VSS 的外部<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>设置 TC9400 的偏置点，通常规格基于 RBIAS = 100 kΩ ±10%。减小 RBIAS 可以增加最大工作频率，但会增加线性误差。</p>
-<h4>2. 零调整（ZERO ADJ）</h4>
-<p>该引脚是<a href="https://www.hqchip.com/app/1737" target="_blank"><u>运算放大器</u></a>的同相输入，通过调整该引脚的电压可以确定低频设定点。</p>
-<h4>3. 输入电流（IIN）</h4>
-<p>在 V/F 模式下，它是运算放大器的反相输入和求和节点。输入电流指定为 10 μA，但最大可使用 50 μA 的过范围电流而不影响电路操作。</p>
-<h2>四、V/F 转换器设计信息</h2>
-<h3>（一）输入/输出关系</h3>
-<p>输出频率（Fout）与模拟输入电压（VIN）的关系由传递方程决定：Frequency Out = (VIN / RIN) <em> (1 / (<a href="https://www.elecfans.com/v/tag/3668/" target="_blank"><u>VR</u></a>EF </em> CREF))。</p>
-<h3>（二）外部组件选择</h3>
-<h4>1. RIN</h4>
-<p>选择该组件的值以提供约 10 μA 的满量程输入电流，通常使用<a href="https://m.hqchip.com/app/1102" target="_blank"><u>金属膜</u></a>电阻以提高精度。</p>
-<h4>2. CINT</h4>
-<p>其值与 CREF 相关，3CREF ≤ CINT ≤ 10CREF，当 CINT ≤ 4CREF 时可提高稳定性和线性度。</p>
-<h4>3. CREF</h4>
-<p>其值可用于微调满量程频率，推荐使用玻璃膜或空气微调<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>器。</p>
-<h4>4. 电源</h4>
-<p>推荐使用 ±5V 电源，对于高精度要求，需要使用 0.05% 的线路和负载调节以及 0.1 μF 的去耦电容器。</p>
-<h3>（三）调整程序</h3>
-<p>先将 VIN 设置为 10 mV，调整零调整电路以获得 10 Hz 的输出频率；然后将 VIN 设置为 10V，调整 RIN、VREF 或 CREF 以获得 10 kHz 的输出频率。</p>
-<h3>（四）单电源 V/F 转换器操作改进</h3>
-<p>通过使用两个<a href="https://m.hqchip.com/app/1560" target="_blank"><u>齐纳</u></a><a href="https://www.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>设置稳定的偏置电平，可实现单 12 到 15V 可变电源的操作。该电路可直接与 12V 到 15V 的 CMOS 逻辑<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>，也可通过连接输出上拉电阻到 +5V 电源来适应 TTL 或 5V CMOS 逻辑。</p>
-<h2>五、F/V 电路描述与设计信息</h2>
-<h3>（一）F/V 电路描述</h3>
-<p>当作为 F/V 转换器使用时，TC9400 会生成与输入频率波形线性成比例的输出电压。每个过零触发会使精确的电荷量（q = CREF * VREF）分配到运算放大器的求和节点，通过反馈电阻生成电压脉冲，再由电容器（CINT）将这些脉冲平均为直流电压。</p>
-<h3>（二）设计信息</h3>
-<h4>1. 输入/输出关系</h4>
-<p>输出电压与输入频率（FIN）的关系由传递方程决定：VOUT = [VREF <em> CREF </em> RINT] <em> FIN。响应时间等于（RINT </em> CINT），输出纹波与 CINT 和输入频率成反比。</p>
-<h4>2. 输入电压电平</h4>
-<p>输入频率施加到阈值检测器输入（<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>Pi</u></a>n 11），其阈值约为 (VDD + VSS) / 2 ±400 mV，输入电压范围从 VDD 到阈值以下约 2.5V。</p>
-<h4>3. 输入缓冲</h4>
-<p>Fout 和 Fout / 2 在 F/V 模式下可能用于缓冲，若不使用，Pins 8、9 和 10 应接地。</p>
-<h4>4. 输出滤波</h4>
-<p>可通过增加积分电容器的值或使用电容倍增电路来减少输出纹波。</p>
-<h2>六、F/V 电源上电复位</h2>
-<p>在 F/V 模式下，上电时输出电压可能会达到最大值，直到第一个脉冲施加到 FIN。对于需要上电输出为零的情况，可以通过连接电容器从 Pin 11 到 VDD 来实现上电复位。</p>
-<h2>七、封装信息</h2>
-<p>TC9400/9401/9402 提供 14 引脚的陶瓷双列直插式（CERDIP）、塑料双列直插式（PDIP）和塑料小外形（SOIC）封装。文档中给出了详细的封装尺寸和标记信息，工程师在设计 <a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a> 时需要根据具体的封装类型进行布局。</p>
-<h2>八、产品标识系统</h2>
-<p>通过产品标识系统，工程师可以方便地选择所需的器件，包括温度范围和封装类型。例如，TC9400COD 表示 0°C 到 +70°C 温度范围、14LD SOIC 封装的 TC9400 器件。</p>
-<p>综上所述，TC9400/9401/9402 系列 V/F/F/V 转换器具有丰富的特性和广泛的应用领域。在设计过程中，工程师需要根据具体的应用需求，合理选择外部组件，进行精确的调整，以确保器件的性能和稳定性。希望本文对大家在使用 TC9400/9401/9402 进行设计时有所帮助。大家在实际应用中遇到过哪些问题呢？欢迎在评论区分享交流。 </p>]]></description></item><item>    <title><![CDATA[IR2166：集PFC与镇流器控制于一身的高效芯片]]></title>    <link>https://www.elecfans.com/d/7543533.html</link>    <guid>https://www.elecfans.com/d/7543533.html</guid>    <pubDate>2025-12-24 17:25:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_7543533" value="https://file1.elecfans.com/web3/M00/43/BD/wKgZO2lLr7aAcfG4AAmcYRQkw6M629.pdf"/><h1>IR2166：集<a href="https://www.hqchip.com/app/1717" target="_blank"><u>PFC</u></a>与镇流器控制于一身的高效芯片</h1>
-<p>在<a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>的日常设计工作中，寻找一款能高效集成多种功能且具备可靠保护机制的芯片至关重要。今天，我们就来深入探讨国际整流器公司（Interna<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>ti</u></a>onal IOR Rectifier）的IR2166系列芯片，看看它如何在PFC和镇流器控制领域发挥独特优势。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_7543533" target="_blank">IR2166PBF.pdf</a></p>
-<h2>一、芯片概述</h2>
-<p>IR2166是一款全面集成且具备全方位保护功能的600V镇流器<a href="https://m.hqchip.com/app/1730" target="_blank"><u>控制芯片</u></a>，专为驱动各类荧光灯而设计。其最大的亮点在于将PFC（<a href="https://www.hqchip.com/app/1717" target="_blank"><u>功率因数</u></a>校正）、镇流器控制以及半桥驱动功能集成于一体，极大地简化了<a href="https://www.elecfans.com/v/tag/167/" target="_blank"><u>电路设计</u></a>。PFC电路采用临界传导模式（Critical Conduction Mode）的升压型（Boost Type）设计，能够有效实现高功率因数（PF）、低总谐波失真（THD）以及对直流母线的稳定调节。</p>
-<h3>（一）主要特性</h3>
-<ol>
-<li><strong>集成度高</strong>：集PFC、镇流器控制和半桥驱动于一体，减少了外部元件数量，降低了设计复杂度。</li>
-<li><strong>PFC特性</strong>：临界传导模式的升压型PFC，无需PFC<a href="https://www.hqchip.com/app/1782" target="_blank"><u>电流检测</u></a><a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>，实现了高效的功率因数校正。</li>
-<li><strong>可<a href="https://bbs.elecfans.com/group_75" target="_blank"><u>编程</u></a>功能丰富</strong>：支持可编程预热频率、预热时间、运行频率、死区时间、过流保护以及寿命终点保护等，为设计师提供了极大的灵活性。</li>
-<li><strong>保护功能完善</strong>：具备多种保护机制，如防灯管无法点亮、灯丝故障、寿命终点保护、直流母线欠压复位以及自动重启功能等，提高了系统的可靠性。</li>
-<li><strong>启动功耗低</strong>：采用微功耗启动（150µA），降低了启动时的功耗。</li>
-<li><strong>封装形式多样</strong>：提供16引脚PDIP和16引脚（窄体）SOIC两种封装形式，满足不同的应用需求。</li>
-</ol>
-<h2>二、技术参数详析</h2>
-<h3>（一）绝对最大额定值</h3>
-<p>绝对最大额定值定义了芯片能够承受的极限参数，超过这些值可能会对芯片造成损坏。例如，高侧浮动<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>电压（VB）的最大值为625V，而最大允许输出<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>（lOMAX）为±500mA。在设计电路时，必须确保所有参数在这些额定值范围内，以保证芯片的安全运行。</p>
-<h3>（二）推荐工作条件</h3>
-<p>为了确保芯片正常工作，建议在推荐的工作条件下使用。例如，高侧浮动电源电压（VBs）应在Vcc - 0.7V至VCLAMP之间，结温（TJ）应在 - 25°C至125°C之间。严格遵循这些条件可以提高芯片的性能和稳定性。</p>
-<h3>（三）<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>特性</h3>
-<p>电气特性详细描述了芯片在特定条件下的性能参数。例如，Vcc电源欠压正向阈值（VCcUV+）典型值为11.5V，而PFC误差<a href="https://www.elecfans.com/tags/放大器/" target="_blank"><u>放大器</u></a>输出<a href="https://m.hqchip.com/app/1725" target="_blank"><u>电流源</u></a>（ICOMP SOURCE）典型值为35µA。这些参数对于电路设计和性能评估至关重要。</p>
-<h2>三、功能模块解析</h2>
-<h3>（一）镇流器部分</h3>
-<ol>
-<li><strong>欠压锁定模式（UVLO）</strong>：当VCC低于芯片的开启阈值时，芯片进入欠压锁定模式。在此模式下，芯片保持超低的电源电流（小于400µA），并确保在高低侧输出<a href="https://m.hqchip.com/app/1847" target="_blank"><u>驱动器</u></a>激活之前芯片完全正常工作。通过合理设计启动和供电电路，如利用IR2166的启动电流和镇流器输出级的<a href="https://www.hqchip.com/app/1734" target="_blank"><u>电荷泵</u></a>，可以实现高效的供电。</li>
-<li><strong>预热模式（PH）</strong>：当VCC超过UVLO正向阈值时，芯片进入预热模式。在此模式下，HO和LO以预热频率（由RT和RPH以及CT共同决定）和50%的占空比振荡，同时通过内部的3µA电流源对CPH引脚的外部预热定时<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>进行线性充电。预热模式有助于将灯管灯丝加热到合适的发射温度，从而延长灯管寿命并降低所需的点火电压。</li>
-<li><strong>点火模式（IGN）</strong>：当CPH引脚的电压超过10V时，芯片进入点火模式。此时，RPH引脚与RT引脚连接，使工作频率从预热频率平滑过渡到点火频率，最终达到运行频率。同时，CS引脚的过流阈值可以保护镇流器免受灯管无法点亮或灯丝开路等故障的影响。</li>
-<li><strong>运行模式（RUN）</strong>：灯管成功点亮后，镇流器进入运行模式。运行模式的振荡频率由定时电阻RT和定时电容CT决定。如果在半桥处发生硬开关现象，CS引脚的电压将超过内部阈值（1.3V），芯片将进入故障模式，锁定高低侧和PFC的输出。</li>
-<li><strong>直流母线欠压复位</strong>：当直流母线电压在欠压或过载情况下过低时，VBUS引脚的电压会下降。当VBUS引脚电压低于3.0V时，VCC将放电至UVLO - 阈值，所有<a href="https://www.hqchip.com/app/1715" target="_blank"><u>栅极驱动</u></a>器输出将被锁定为低电平。通过合理设计PFC部分，可以确保在交流输入电压下降到镇流器额定输入电压以下之前，直流母线不会下降，从而实现镇流器的可靠关闭和重启。</li>
-<li><strong>CS和EOL故障模式（FAULT）</strong>：在运行模式下，如果<a href="https://m.hqchip.com/app/1522" target="_blank"><u>SD</u></a>/EOL引脚的电压超过3V或低于1V，芯片将进入故障模式，锁定所有栅极驱动器输出。要退出故障模式，需要将VCC循环回低于UVLO负向关闭阈值，或者将SD引脚拉高至5.2V以上。</li>
-</ol>
-<h3>（二）PFC部分</h3>
-<ol>
-<li><strong><a href="https://www.elecfans.com/v/tag/773/" target="_blank"><u>工作原理</u></a></strong>：IR2166的PFC电路采用临界传导模式的升压型<a href="https://www.hqchip.com/app/1718" target="_blank"><u>转换器</u></a>，通过不断监测直流电压并调整PFC <a href="https://www.elecfans.com/tags/mosfet/" target="_blank"><u>MOSFET</u></a>的导通时间，将直流母线电压调节到固定值。在每个开关周期中，电路会等待电感电流放电到零后再开启PFC MOSFET，从而实现高功率因数和低THD。</li>
-<li><strong>控制引脚</strong>：PFC<a href="https://www.elecfans.com/soft/data/4-10/" target="_blank"><u>控制电路</u></a>仅需四个控制引脚：VBUS用于检测直流母线电压，COMP用于编程PFC MOSFET的导通时间和反馈环路的速度，ZX用于检测电感电流是否放电到零，PFC为PFC MOSFET的低侧栅极驱动器输出。</li>
-<li><strong>导通时间调制</strong>：为了降低电流的总谐波失真和高次谐波，PFC控制部分增加了导通时间调制电路。该电路会在交流输入电压接近零交叉时动态增加PFC MOSFET的导通时间，从而减少线路电流的交叉失真。</li>
-<li><strong>保护功能</strong>：PFC部分具备过压保护（OVP）、欠压复位（U<a href="https://www.elecfans.com/v/tag/3668/" target="_blank"><u>VR</u></a>）和可选的过流保护等功能。过压保护会在直流母线电压超过内部阈值（4.3V）时禁用PFC输出，欠压复位会在VBUS引脚电压低于内部阈值（3V）时使芯片进入UVLO模式，而可选的过流保护可以通过在PFC MOSFET源极与地之间插入电流检测电阻来实现。</li>
-</ol>
-<h2>四、设计方程与应用</h2>
-<h3>（一）镇流器设计方程</h3>
-<p>镇流器设计过程中，需要根据所需的参数来选择合适的元件值。以下是一些关键的设计方程：</p>
-<ol>
-<li><strong>死区时间编程</strong>：$t<em>{DT}=C</em>{T} cdot 1475$（秒）或$C<em>{T}=fr<a href="https://www.hqchip.com/app/1703" target="_blank"><u>ac</u></a>{t</em>{DT}}{1475}$（法拉），通过选择合适的CT值可以编程HO和LO输出之间的死区时间。</li>
-<li><strong>运行频率编程</strong>：$f<em>{RUN}=frac{1}{2 cdot C</em>{T}(0.51 cdot R<em>{T}+1475)}$（赫兹）或$R</em>{T}=frac{1}{1.02 cdot C<em>{T} cdot f</em>{RUN}}-2892$（欧姆），根据所需的运行频率选择RT和CT的值。</li>
-<li><strong>预热频率编程</strong>：$f<em>{PH}=frac{1}{2 cdot C</em>{T} cdot (frac{0.51 cdot R<em>{T} cdot R</em>{PH}}{R<em>{T}+R</em>{PH}}+1475)}$（赫兹）或$R<em>{PH}=frac{(frac{1}{1.02 cdot C</em>{T} cdot f<em>{PH}}-2892) cdot R</em>{T}}{R<em>{T}-(frac{1}{1.02 cdot C</em>{T} cdot f_{PH}}-2892)}$（欧姆），通过RT、RPH和CT来编程预热频率。</li>
-<li><strong>预热时间编程</strong>：$t<em>{PH}=C</em>{PH} cdot 3.33e6$（秒）或$C<em>{PH}=t</em>{PH} cdot 0.3e - 6$（法拉），根据所需的预热时间选择CPH的值。</li>
-<li><strong>最大点火电流编程</strong>：$I<em>{IGN}=frac{1.3}{R</em>{CS}}$（安培峰值）或$R<em>{CS}=frac{1.3}{I</em>{IGN}}$（欧姆），通过RCS来编程最大点火电流。</li>
-</ol>
-<h3>（二）PFC设计方程</h3>
-<p>PFC设计同样需要精确的计算，以下是PFC设计的关键方程：</p>
-<ol>
-<li><strong>计算PFC电感值</strong>：$L<em>{PFC}=frac{(VBUS - sqrt{2} cdot VAC</em>{MIN}) cdot VAC<em>{MIN}^{2} cdot eta}{2 cdot f</em>{MIN} cdot P_{OUT} cdot VBUS}$（亨利），其中VBUS为直流母线电压，VACMIN为最小交流输入电压有效值，η为PFC效率（通常为0.95），fMIN为最小交流输入电压下的最小PFC开关频率，POUT为镇流器输出功率。</li>
-<li><strong>计算峰值PFC电感电流</strong>：$i<em>{PK}=frac{2 cdot sqrt{2} cdot P</em>{OUT}}{VAC_{MIN} cdot eta}$（安培峰值），确保PFC电感在该电流下不会饱和。</li>
-<li><strong>计算最大导通时间</strong>：$t<em>{ON</em>{Max}}=frac{2 cdot P<em>{OUT} cdot L</em>{PFC}}{VAC_{M H N}^{2} cdot eta}$（秒）。</li>
-<li><strong>计算最大COMP电压</strong>：$V<em>{COMP MAX}=frac{t</em>{ON MAX}}{0.9E - 6}$（伏特）。</li>
-<li><strong>选择<a href="https://m.hqchip.com/app/1560" target="_blank"><u>齐纳</u></a><a href="https://www.hqchip.com/app/1554" target="_blank"><u>二极管</u></a><a href="https://m.hqchip.com/app/1703" target="_blank"><u>DC</u></a>OMP值</strong>：$D<em>{COMP}$齐纳电压 ≈ $V</em>{COMP MAX}$（伏特）。</li>
-<li><strong>计算电阻<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>UPPLY值</strong>：$R<em>{SUPPLY}=frac{VAC</em>{MIN}+10}{IQCCUV}$（欧姆）。</li>
-</ol>
-<h2>五、总结与思考</h2>
-<p>IR2166芯片凭借其高度集成的功能、丰富的可编程特性和完善的保护机制，为电子工程师在设计荧光灯镇流器和PFC电路时提供了一个强大而可靠的解决方案。通过合理运用芯片的各项功能和设计方程，可以实现高效、稳定的照明系统。</p>
-<p>然而，在实际应用中，我们也需要考虑一些问题。例如，芯片的参数可能会受到环境温度等因素的影响，在设计时需要充分考虑这些因素并进行相应的补偿。此外，对于可选的PFC过流保护，需要根据具体的应用场景和实验结果来决定是否添加。</p>
-<p>作为电子工程师，我们应该不断探索和优化芯片的应用，结合实际需求充分发挥其优势，为推动照明技术的发展贡献自己的力量。你在使用IR2166芯片或类似芯片时遇到过哪些问题呢？又是如何解决的？欢迎在评论区分享你的经验和见解。 </p>]]></description></item><item>    <title><![CDATA[薄膜射频/微波定向耦合器：CP系列全解析]]></title>    <link>https://www.elecfans.com/d/7543534.html</link>    <guid>https://www.elecfans.com/d/7543534.html</guid>    <pubDate>2025-12-24 17:25:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_7543534" value="https://file1.elecfans.com/web3/M00/43/BF/wKgZPGlLr72AE9VHABqR38JSwCg190.pdf"/><h3>薄膜<a href="https://www.elecfans.com/v/tag/105/" target="_blank"><u>射频</u></a>/<a href="https://bbs.elecfans.com/zhuti_rf_1.html" target="_blank"><u>微波</u></a>定向<a href="https://www.hqchip.com/app/2020" target="_blank"><u>耦合器</u></a>：CP系列全解析</h3>
-<p>在电子工程领域，射频（<a href="https://www.elecfans.com/tongxin/rf/" target="_blank"><u>RF</u></a>）和微波技术的发展日新月异，而定向<a href="https://www.elecfans.com/tags/耦合/" target="_blank"><u>耦合</u></a>器作为其中关键的无源器件，在<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>处理、<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>系统、雷达等诸多应用中发挥着重要作用。今天我们就来深入探讨一下AVX公司的薄膜射频/微波定向耦合器，特别是CP0302/CP0402/CP0603/CP0805和DB0603N/DB0805 3dB 90° CP0805系列。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_7543534" target="_blank">CP0805A1880BWTR.pdf</a></p>
-<h4>1. 技术基础：集成薄膜（I<a href="https://m.hqchip.com/app/1522" target="_blank"><u>TF</u></a>）技术</h4>
-<p>这些定向耦合器采用了集成薄膜（ITF）多层技术。这种技术的优势显著，它能够打造出超小型的器件，同时具备出色的高频性能。而且，其坚固的结构设计也为自动化组装提供了可靠保障，确保在大规模生产中保持稳定的性能。这让我不禁思考，在未来的电子设备小型化趋势下，这种技术是否会成为更多器件的首选呢？</p>
-<h4>2. 产品特性与应用场景</h4>
-<ul>
-<li><strong>特性亮点</strong>
-<ul>
-<li><strong>尺寸小巧</strong>：以CP0805为例，其尺寸仅为0805规格，在如今追求小型化的电子设备中，能够节省大量的<a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>空间。</li>
-<li><strong>宽频率范围</strong>：覆盖800MHz - 3GHz，可适用于多种不同频率需求的无线系统。这意味着在不同的通信标准下，都能找到合适的工作频段。</li>
-<li><strong>标准阻抗</strong>：特征阻抗为50Ω，与大多数射频系统的标准阻抗相匹配，方便与其他设备集成。</li>
-<li><strong>宽温度范围</strong>：工作和储存温度范围在 -40°C 至 +85°C，能够在较为恶劣的环境条件下稳定工作。</li>
-<li><strong>功率额定值</strong>：连续功率额定值为3W，可满足一定功率要求的应用。</li>
-<li><strong>其他特性</strong>：低剖面、坚固的结构以及卷带封装，都为其在实际应用中的安装和使用提供了便利。</li>
-</ul></li>
-<li><strong>应用领域广泛</strong>
-包括移动通信、卫星电视<a href="https://m.hqchip.com/app/1847" target="_blank"><u>接收器</u></a>、GPS、车辆定位系统和无线局域网等。在这些应用中，定向耦合器能够精确地耦合和分离信号，确保系统的正常运行。</li>
-</ul>
-<h4>3. 产品选型与参数</h4>
-<p>该系列产品有多种布局类型，每种类型又有不同的子类型，并且针对每个子类型都有详细的型号示例和参数规格。</p>
-<ul>
-<li><strong>频率与耦合度</strong>：不同的型号对应不同的频率范围和耦合度。例如，CP0805A0836AS在824 - 849MHz频率范围内，耦合度为16.5±1dB；而CP0805B0836AS在相同频率范围内，耦合度为21.5±1dB。这就要求我们在选型时，要根据具体的应用需求来选择合适的频率和耦合度。</li>
-<li><strong>插入损耗和电压驻波比（VSWR）</strong>：插入损耗和VSWR也是重要的参数指标。一般来说，插入损耗越小，信号传输过程中的能量损失就越小；VSWR越接近1，说明器件与系统的匹配越好。在实际设计中，我们需要在不同型号之间进行权衡，以达到最佳的性能。</li>
-</ul>
-<h4>4. 订购与质量保障</h4>
-<ul>
-<li><strong>订购注意事项</strong>：产品符合RoHS标准，但在订购时需要选择正确的端接方式。这一点在实际采购过程中一定要特别注意，避免因端接方式选择错误而影响产品的使用。</li>
-<li><strong>质量检测严格</strong>：所有成品都会进行100%的<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>参数和外观特性测试。每个生产批次还会进行抽样评估，包括静态湿度（85°C，85% RH，160小时）和耐久性（125°C，IR，4小时）测试。这种严格的质量检测流程，确保了产品的可靠性和稳定性。</li>
-</ul>
-<h4>5. 端接与安装</h4>
-<p>这些耦合器的端接采用镍/焊料涂层（Sn，Pb），兼容自动焊接技术，如回流焊、波峰焊、汽相焊和手工焊接。在安装时，需要注意将白色（氧化铝）面朝下安装在电路板上，这一点在实际操作中非常关键，如果安装方向错误，可能会影响器件的性能。</p>
-<h4>6. 测试夹具与测量方法</h4>
-<p>对于CP0805和CP0603系列，还配备了专门的ITF测试夹具。该夹具基于FR4多层基板，采用50Ω微带线作为导线，并在中间层设置接地平面。<a href="https://www.hqchip.com/app/1515" target="_blank"><u>连接器</u></a>为SMA类型（母头）。在测量时，可以将器件焊接或用非金属棒按压，使其四个<a href="https://m.hqchip.com/app/1808" target="_blank"><u>端口</u></a>与相应的焊盘接触。通过不同的端口连接方式和器件旋转操作，可以测量耦合度、反射损耗和插入损耗等参数。这为我们在研发和生产过程中对器件性能的检测提供了便利。</p>
-<p>总之，AVX的薄膜射频/微波定向耦合器CP系列凭借其先进的技术、丰富的特性和严格的质量保障，为<a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>在设计高频无线系统时提供了可靠的选择。在实际应用中，我们需要根据具体的需求和设计要求，合理选择型号和参数，确保系统的性能达到最佳。大家在使用这些耦合器的过程中，有没有遇到过什么特别的问题或者有什么独特的应用经验呢？欢迎在评论区分享交流。 </p>]]></description></item>  </channel></rss>
+	Flir是工业应用智能传感解决方案的优秀领先者，在全球拥有约4000名员工。公司成立于1978年，一直专注于设计、开发、生产、营销和推广用于增强态势感知力的专业技术。通过<a href="https://www.elecfans.com/tags/红外/" target="_blank"><u>红外</u></a>热成像、可见光成像、声波成像、视频分析、测量和诊断以及先进的威胁检测系统，帮助专业人士做出更好、更快的决策，拯救生命，改善生活。</p>]]></description></item>  </channel></rss>
