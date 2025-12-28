@@ -1,4 +1,298 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[Cannot find package 'electron-store' imported from]]></title>    <link>https://segmentfault.com/a/1190000047508475</link>    <guid>https://segmentfault.com/a/1190000047508475</guid>    <pubDate>2025-12-28 22:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>问题现象</h2><p>electron build成功之后，执行安装包报错：</p><pre><code>19:55:13.550] [error] Failed to initialize application: Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'electron-store' imported from C:\Program Files\kuaibotong\resources\app.asar\elecdist\main.js
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[向量搜索升级指南：FAISS 到 Qdrant 迁移方案与代码实现 本文系转载，阅读原文
+https]]></title>    <link>https://segmentfault.com/a/1190000047508485</link>    <guid>https://segmentfault.com/a/1190000047508485</guid>    <pubDate>2025-12-28 23:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>FAISS 在实验阶段确实好用，速度快、上手容易，notebook 里跑起来很顺手。但把它搬到生产环境还是有很多问题：</p><p>首先是元数据的问题，FAISS 索引只认向量，如果想按日期或其他条件筛选还需要自己另外搞一套查找系统。</p><p>其次它本质上是个库而不是服务，让如果想对外提供接口还得自己用 Flask 或 FastAPI 包一层。</p><p>最后最麻烦的是持久化，pod 一旦挂掉索引就没了，除非提前手动存盘。</p><p>Qdrant 的出现解决了这些痛点，它更像是个真正的数据库，提供开箱即用的 API、数据重启后依然在、原生支持元数据过滤。更关键的是混合搜索（Dense + Sparse）和量化这些高级功能都是内置的。</p><h2>MS MARCO Passages 数据集</h2><blockquote><p>数据集地址：</p><p>MS MARCO 官方页面：<a href="https://link.segmentfault.com/?enc=VCiV%2FQ%2FAbfhvh6Q1v5oU0A%3D%3D.scJ4g6xaCaALCC2qatffUJbu8YSX52I8dEfKcsw8G%2BQr61yNQKjFbFIJPHuaLm9Y" rel="nofollow" target="_blank">https://microsoft.github.io/msmarco/</a></p></blockquote><p>这次用的是 MS MARCO Passage Ranking 数据集，信息检索领域的标准测试集。</p><p>数据是从网页抓取的约880万条短文本段落，选它的原因很简单：段落短（平均50词），不用处理复杂的文本分块，可以把精力放在迁移工程本身。</p><p>实际测试时用了10万条数据的子集，这样速度会很快</p><p>嵌入模型用的是 sentence-transformers/all-MiniLM-L6-v2，输出384维的稠密向量。</p><blockquote>SentenceTransformers 模型地址：<a href="https://link.segmentfault.com/?enc=8P06i3EfGigKymz5k9pnBA%3D%3D.egoh28b4aaLI1XlgAJKFRScRSN%2BGvuC6eC0TC6TLkt7QeidZT%2BXGhXtyU29c6pIWpOMxDNiR9gL7QJ2Zq%2FamIA%3D%3D" rel="nofollow" target="_blank">https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2</a></blockquote><h2>FAISS 阶段的初始配置</h2><h3>生成嵌入向量</h3><p>加载原始数据，批量生成嵌入向量。这里关键的一步是把结果存成 .npy 文件，避免后续重复计算。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047508487" alt="" title=""/></p><pre><code> import pandas as pd  
+from sentence_transformers import SentenceTransformer  
+import numpy as np  
+import os  
+import csv  
+
+DATA_PATH = '../data'  
+TSV_FILE = f'{DATA_PATH}/collection.tsv'  
+SAMPLE_SIZE = 100000  
+MODEL_ID = 'all-MiniLM-L6-v2'  
+
+def prepare_data():  
+   print(f"Loading Model '{MODEL_ID}'...")  
+   model = SentenceTransformer(MODEL_ID)  
+   print(f"Reading first {SAMPLE_SIZE} lines from {TSV_FILE}...")  
+   ids = []  
+   passages = []  
+   # Efficiently read line-by-line without loading entire 8GB file to RAM
+   try:  
+       with open(TSV_FILE, 'r', encoding='utf8') as f:  
+           reader = csv.reader(f, delimiter='\t')  
+           for i, row in enumerate(reader):  
+               if i &gt;= SAMPLE_SIZE:  
+                   break  
+               # MS MARCO format is: [pid, text]
+               if len(row) &gt;= 2:  
+                   ids.append(int(row[0]))  
+                   passages.append(row[1])         
+   except FileNotFoundError:  
+       print(f"Error: Could not find {TSV_FILE}")  
+       return  
+
+   print(f"Loaded {len(passages)} passages.")  
+    
+   # Save text metadata (for Qdrant payload)
+   print("Saving metadata to CSV...")  
+   df = pd.DataFrame({'id': ids, 'text': passages})  
+   df.to_csv(f'{DATA_PATH}/passages.csv', index=False)  
+   # Generate Embeddings
+   print("Encoding Embeddings (this may take a moment)...")  
+   embeddings = model.encode(passages, show_progress_bar=True)  
+   # Save binary files (for FAISS and Qdrant)
+   print("5. Saving numpy arrays...")  
+   np.save(f'{DATA_PATH}/embeddings.npy', embeddings)  
+   np.save(f'{DATA_PATH}/ids.npy', np.array(ids))  
+   print(f"Success! Saved {embeddings.shape} embeddings to {DATA_PATH}")  
+
+if __name__ == "__main__":  
+   os.makedirs(DATA_PATH, exist_ok=True)  
+    prepare_data()</code></pre><h3>构建索引</h3><p>用 IndexFlatL2 做精确搜索，对于百万级别的数据量来说足够了。</p><pre><code> import faiss  
+import numpy as np  
+import os  
+
+DATA_PATH = '../data'  
+INDEX_OUTPUT_PATH = './my_index.faiss'  
+
+def build_index():  
+   print("Loading embeddings...")  
+   # Load the vectors
+   if not os.path.exists(f'{DATA_PATH}/embeddings.npy'):  
+       print(f"Error: {DATA_PATH}/embeddings.npy not found.")  
+       return  
+   embeddings = np.load(f'{DATA_PATH}/embeddings.npy')  
+   d = embeddings.shape[1]  # Dimension (should be 384 for MiniLM)
+   print(f"Building Index (Dimension={d})...")  
+   # We use IndexFlatL2 for exact search (Simple &amp; Accurate for &lt;1M vectors).
+   index = faiss.IndexFlatL2(d)  
+   index.add(embeddings)  
+   print(f"Saving index to {INDEX_OUTPUT_PATH}..")  
+   faiss.write_index(index, INDEX_OUTPUT_PATH)  
+   print(f"Success! Index contains {index.ntotal} vectors.")  
+
+if __name__ == "__main__":  
+   os.makedirs(os.path.dirname(INDEX_OUTPUT_PATH), exist_ok=True)  
+    build_index()</code></pre><h3>语义搜索测试</h3><p>随便跑一个查询就能看出问题了。返回的是 [42, 105] 这种 ID，如果想拿到实际文本还得写一堆代码去 CSV 里查，这种割裂感是迁移的主要原因。</p><pre><code> import faiss  
+import numpy as np  
+import pandas as pd  
+from sentence_transformers import SentenceTransformer  
+
+INDEX_PATH = './my_index.faiss'  
+DATA_PATH = '../data'  
+MODEL_NAME = 'all-MiniLM-L6-v2'  
+
+def search_faiss():  
+   print("Loading Index and Metadata...")  
+   index = faiss.read_index(INDEX_PATH)  
+   # LIMITATION: We must manually load the CSV to get text back.
+   # FAISS only stores vectors, not the text itself.
+   df = pd.read_csv(f'{DATA_PATH}/passages.csv')  
+   model = SentenceTransformer(MODEL_NAME)  
+   # userquery
+   query_text = "What is the capital of France?"  
+   print(f"\nQuery: '{query_text}'")  
+   # Encode and Search
+   query_vector = model.encode([query_text])  
+   D, I = index.search(query_vector, k=3) # Search for top 3 results
+    
+   print("\n--- Results ---")  
+   for rank, idx in enumerate(I[0]):  
+       # LIMITATION: If we wanted to filter by "text_length &gt; 50",
+       # we would have to fetch ALL results first, then filter in Python.
+       # FAISS cannot filter during search.
+       text = df.iloc[idx]['text'] # Manual lookup
+       score = D[0][rank]  
+       print(f"[{rank+1}] ID: {idx} | Score: {score:.4f}")  
+       print(f"     Text: {text[:100]}...")  
+
+if __name__ == "__main__":  
+    search_faiss()</code></pre><h2>迁移步骤</h2><h3>从 FAISS 导出向量</h3><p>前面步骤已经有 embeddings.npy 了，直接加载 numpy 数组就行，省去了导出环节。</p><p>本地启动 Qdrant 很简单：</p><pre><code> docker run -p6333:6333 qdrant/qdrant</code></pre><blockquote>Collection 配置文档：<a href="https://link.segmentfault.com/?enc=CaKUcjiSXJOyAqd1ubZDUQ%3D%3D.1315EozCnQC82baYapH9ewOA7VsL2rfJ2bbbTwLFHAGK%2Bs3MbyQoNQBPmggBeMoyYcVCJiTW62iOA8sGF1LRQg%3D%3D" rel="nofollow" target="_blank">https://qdrant.tech/documentation/concepts/collections/</a></blockquote><pre><code> from qdrant_client import QdrantClient  
+from qdrant_client.models import VectorParams, Distance, HnswConfigDiff  
+
+QDRANT_URL = "http://localhost:6333"  
+COLLECTION_NAME = "ms_marco_passages"  
+
+def create_collection():  
+   client = QdrantClient(url=QDRANT_URL)  
+   print(f"Creating collection '{COLLECTION_NAME}'...")  
+    
+   client.recreate_collection(  
+       collection_name=COLLECTION_NAME,  
+       vectors_config=VectorParams(  
+           size=384,# Dimension (MiniLM)- we should follow the existing dimension from FAISS
+           distance=Distance.COSINE  
+       ),  
+       hnsw_config=HnswConfigDiff(  
+           m=16,                 # Links per node (default is 16)
+           ef_construct=100      # Search depth during build (default is 100)
+       )  
+   )  
+    
+   print(f"Collection '{COLLECTION_NAME}' created with HNSW config.")  
+
+if __name__ == "__main__":  
+    create_collection()</code></pre><p>批量上传数据</p><blockquote>Qdrant Python 客户端文档：<a href="https://link.segmentfault.com/?enc=Xq4Xz98ol9Ie5PjiGF1ulw%3D%3D.FXnh9BOomgEAkqSS8RS1QargjxRZ63VtdiDex3O27hrE2XQmJvkmvu9Rq%2FiOP4cJU8gSXGi%2F06LCcK0ktBrfaA%3D%3D" rel="nofollow" target="_blank">https://qdrant.tech/documentation/clients/python/</a></blockquote><pre><code> import pandas as pd  
+import numpy as np  
+from qdrant_client import QdrantClient  
+from qdrant_client.models import PointStruct  
+
+QDRANT_URL = "http://localhost:6333"  
+COLLECTION_NAME = "ms_marco_passages"  
+DATA_PATH = '../data'  
+BATCH_SIZE = 500  
+
+def upload_data():  
+   client = QdrantClient(url=QDRANT_URL)  
+   print("Loading local data...")  
+   embeddings = np.load(f'{DATA_PATH}/embeddings.npy')  
+   df_meta = pd.read_csv(f'{DATA_PATH}/passages.csv')  
+   total = len(df_meta)  
+   print(f"Starting upload of {total} vectors...")  
+   points_batch = []  
+    
+   for i, row in df_meta.iterrows():  
+       # Metadata to attach
+       payload = {  
+           "passage_id": int(row['id']),  
+           "text": row['text'],  
+           "text_length": len(str(row['text'])),  
+           "dataset_source": "msmarco_passages"  
+       }  
+       points_batch.append(PointStruct(  
+           id=int(row['id']),  
+           vector=embeddings[i].tolist(),  
+           payload=payload  
+       ))  
+       # Upload batch
+       if len(points_batch) &gt;= BATCH_SIZE or i == total - 1:  
+           client.upsert(  
+               collection_name=COLLECTION_NAME,  
+               points=points_batch  
+           )  
+           points_batch = []  
+           if i % 1000 == 0:  
+               print(f"  Processed {i}/{total}...")     
+   print("Upload Complete.")  
+
+if __name__ == "__main__":  
+    upload_data()</code></pre><p>验证迁移结果</p><pre><code> from qdrant_client import QdrantClient  
+from qdrant_client.models import Filter, FieldCondition, Range, MatchValue  
+from sentence_transformers import SentenceTransformer  
+
+QDRANT_URL = "http://localhost:6333"  
+COLLECTION_NAME = "ms_marco_passages"  
+MODEL_NAME = 'all-MiniLM-L6-v2'  
+
+def validate_migration():  
+   client = QdrantClient(url=QDRANT_URL)  
+   model = SentenceTransformer(MODEL_NAME)  
+   # Verify total count
+   count_result = client.count(COLLECTION_NAME)  
+   print(f"Total Vectors in Qdrant: {count_result.count}")  
+
+   # Query example
+   query_text = "What is a GPU?"  
+   print(f"\n--- Query: '{query_text}' ---")  
+   query_vector = model.encode(query_text).tolist()  
+    
+   # Filter Definition
+   print("Applying filters (Length &lt; 200 AND Source == msmarco)...")  
+   search_filter = Filter(  
+       must=[  
+           FieldCondition(  
+               key="text_length",  
+               range=Range(lt=200)  # can be changed as per the requirement
+           ),  
+           FieldCondition(  
+               key="dataset_source",  
+               match=MatchValue(value="msmarco_passages")  
+           )  
+       ]  
+   )  
+
+   results = client.query_points(  
+       collection_name=COLLECTION_NAME,  
+       query=query_vector,        
+       query_filter=search_filter,  
+       limit=3  
+   ).points  
+    
+   for hit in results:  
+       print(f"\nID: {hit.id} (Score: {hit.score:.3f})")  
+       print(f"Text: {hit.payload['text']}")  
+       print(f"Metadata: {hit.payload}")  
+
+if __name__ == "__main__":  
+    validate_migration()</code></pre><h2>性能对比</h2><p>针对10个常见查询做了对比测试。</p><p>FAISS（本地 CPU）：约 0.5ms，纯数学计算的速度</p><p>Qdrant（Docker）：约 3ms，包含了网络传输的开销</p><p>对 Web 服务来说3ms 的延迟完全可以接受，何况换来的是一堆新功能。</p><pre><code> import time  
+import faiss  
+import numpy as np  
+from qdrant_client import QdrantClient  
+from sentence_transformers import SentenceTransformer  
+
+FAISS_INDEX_PATH = './faiss_index/my_index.faiss'  
+QDRANT_URL = "http://localhost:6333"  
+COLLECTION_NAME = "ms_marco_passages"  
+MODEL_NAME = 'all-MiniLM-L6-v2'  
+
+QUERIES = [  
+   "What is a GPU?",  
+   "Who is the president of France?",  
+   "How to bake a cake?",  
+   "Symptoms of the flu",  
+   "Python programming language",  
+   "Best places to visit in Italy",  
+   "Define quantum mechanics",  
+   "History of the Roman Empire",  
+   "What is machine learning?",  
+   "Healthy breakfast ideas"  
+]  
+
+def run_comparison():  
+   print("---Loading Resources ---")  
+   # Load Model
+   model = SentenceTransformer(MODEL_NAME)  
+   # Load FAISS (The "Old Way")
+   print("Loading FAISS index...")  
+   faiss_index = faiss.read_index(FAISS_INDEX_PATH)  
+   # Connect to Qdrant (The "New Way")
+   print("Connecting to Qdrant...")  
+   client = QdrantClient(url=QDRANT_URL)  
+   print(f"\n---Running Race ({len(QUERIES)} queries) ---")  
+   print(f"{'Query':&lt;30} | {'FAISS (ms)':&lt;10} | {'Qdrant (ms)':&lt;10}")  
+   print("-" * 60)  
+
+   faiss_times = []  
+   qdrant_times = []  
+
+   for query_text in QUERIES:  
+       # Encode once
+       query_vector = model.encode(query_text).tolist()  
+       # --- MEASURE FAISS ---
+       start_f = time.perf_counter()  
+       # FAISS expects a numpy array of shape (1, d)
+       faiss_input = np.array([query_vector], dtype='float32')  
+       _, _ = faiss_index.search(faiss_input, k=3)  
+       end_f = time.perf_counter()  
+       faiss_ms = (end_f - start_f) * 1000  
+       faiss_times.append(faiss_ms)  
+       # --- MEASURE QDRANT ---
+       start_q = time.perf_counter()  
+       _ = client.query_points(  
+           collection_name=COLLECTION_NAME,  
+           query=query_vector,  
+           limit=3  
+       )  
+       end_q = time.perf_counter()  
+       qdrant_ms = (end_q - start_q) * 1000  
+       qdrant_times.append(qdrant_ms)  
+       print(f"{query_text[:30]:&lt;30} | {faiss_ms:&gt;10.2f} | {qdrant_ms:&gt;10.2f}")  
+
+   print("-" * 60)  
+   print(f"{'AVERAGE':&lt;30} | {np.mean(faiss_times):&gt;10.2f} | {np.mean(qdrant_times):&gt;10.2f}")  
+
+if __name__ == "__main__":  
+    run_comparison()</code></pre><p>测试结果：<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047508488" alt="" title="" loading="lazy"/></p><p>最大的差异不在速度，在于省心。</p><p>用 FAISS 时有次跑了个索引脚本处理大批数据，耗时40分钟，占了12GB内存。快完成时 SSH 连接突然断了，进程被杀，因为 FAISS 只是个跑在内存里的库一切都白费了。</p><p>换成 Qdrant 就不一样了：它像真正的数据库，数据推送后会持久化保存，即便突然断开 docker 连接重启后数据还在。</p><p>用过 FAISS 就知道为了把向量 ID 映射回文本，还需要额外维护一个 CSV 文件。迁移到 Qdrant 后这些查找逻辑都删掉了，文本和向量存在一起，直接查询 API 就能拿到完整结果，不再需要管理各种文件，就是在用一个微服务。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047508489" alt="" title="" loading="lazy"/></p><h2>迁移总结</h2><p>这次迁移断断续续做了一周但收获很大。最爽的不是写 Qdrant 脚本，是删掉旧代码——提交的 PR 几乎全是红色删除行。CSV 加载工具、手动 ID 映射、各种"代码"全删了，代码量减少了30%，可读性明显提升。</p><p>只用 FAISS 时，搜索有时像在碰运气——语义上相似但事实错误的结果时常出现。迁移到 Qdrant拿到的不只是数据库，更是对系统的掌控力。稠密向量配合关键词过滤（混合搜索），终于能回答"显示 GPU 相关的技术文档，但只要官方手册里的"这种精确查询，这在之前根本做不到。</p><p>信心的变化最明显，以前不敢加载完整的880万数据怕内存撑不住。现在架构解耦了可以把全部数据推给 Qdrant，它会在磁盘上处理存储和索引，应用层保持轻量。终于有了个在生产环境和 notebook 里都能跑得一样好的系统。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047508490" alt="" title="" loading="lazy"/></p><h2>总结</h2><p>FAISS 适合离线研究和快速实验，但要在生产环境跑起来Qdrant 提供了必需的基础设施。如果还在用额外的 CSV 文件来理解向量含义该考虑迁移了。</p><p><a href="https://link.segmentfault.com/?enc=lvfOOQ9zsy6LyH4anYluhw%3D%3D.F3h0qZuo4dNS1GaNgTP1%2BRgUAnwrqJYC0%2BsPo%2Fm49FHjZqoQajMoFy46WfIcyAh87zq7VQ27tGtRJk8c8O%2Bc2A%3D%3D" rel="nofollow" target="_blank">https://avoid.overfit.cn/post/ce7c45d8373741f6b8af465bb06bc398</a></p><p>作者：Sai Bhargav Rallapalli</p>]]></description></item><item>    <title><![CDATA[Cannot find package 'electron-store' imported from]]></title>    <link>https://segmentfault.com/a/1190000047508475</link>    <guid>https://segmentfault.com/a/1190000047508475</guid>    <pubDate>2025-12-28 22:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>问题现象</h2><p>electron build成功之后，执行安装包报错：</p><pre><code>19:55:13.550] [error] Failed to initialize application: Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'electron-store' imported from C:\Program Files\kuaibotong\resources\app.asar\elecdist\main.js
 Did you mean to import electron-store/index.js?
     at new NodeError (node:internal/errors:387:5)
     at packageResolve (node:internal/modules/esm/resolve:957:9)
@@ -1260,4 +1554,4 @@ CREATE CATALOG IF NOT EXISTS logistics_ctl PROPERTIES (
  ROUND(COUNT(DISTINCT CASE WHEN d.delivery_status = 1 THEN o.order_id END) / COUNT(DISTINCT o.order_id), 4) * 100 AS delivery_rate</code></pre><p>FROM internal.trading_db.order_info o<br/> JOIN delivery_info d ON o.order_id = d.order_id<br/> WHERE o.create_time &gt;= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY)<br/> GROUP BY o.order_type<br/> ORDER BY delivery_rate DESC;</p></li><li><p>全限定名查询</p><ul><li/></ul><p>SELECT</p><pre><code> o.order_type,
  COUNT(DISTINCT o.order_id) AS total_orders,
  COUNT(DISTINCT CASE WHEN d.delivery_status = 1 THEN o.order_id END) AS delivered_orders,
- ROUND(COUNT(DISTINCT CASE WHEN d.delivery_status = 1 THEN o.order_id END) / COUNT(DISTINCT o.order_id), 4) * 100 AS delivery_rate</code></pre><p>FROM internal.trading_db.order_info o<br/> JOIN logistics_ctl.logistics_db.delivery_info d ON o.order_id = d.order_id<br/> WHERE o.create_time &gt;= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY)<br/> GROUP BY o.order_type<br/> ORDER BY delivery_rate DESC;</p></li><li><p><strong>查询结果与优化验证</strong></p><ol><li>执行结果示例<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047506226" alt="实战演示.png" title="实战演示.png" loading="lazy"/></li><li><p>优化特性验证</p><ul><li>执行 <code>EXPLAIN</code> 查看执行计划，可发现：</li><li>虚拟集群模式下，执行计划中远端表扫描节点为 <code>VOlapScanNode</code>（与本地表一致），说明复用了 Doris 内表扫描优化；</li><li>Join 操作中自动启用 <code>Runtime Filter</code>，减少远端数据传输量。</li></ul></li></ol></li></ol><h2>总结与展望</h2><p>Doris Catalog 的推出，补齐了 Doris 跨集群联邦查询的性能短板。在此<strong>特别感谢社区同学的 Chen768959 和 HonestManXin 贡献</strong>，帮助延续了 Doris Catalog 生态“无需迁移、一站式分析”的核心优势，让多 Doris 集群从“数据孤岛”变为“互联一体”。</p><p>作为实验性特性，Doris Catalog 后续将持续迭代优化：</p><ul><li>增强 Arrow Flight 模式，使其能够访问任意支持标准 Arrow Flight 协议的数据源。</li><li>降低虚拟集群模式 FE 内存开销，优化元数据存储和同步策略；</li><li>支持存算分离部署的 Doris 集群（虚拟集群模式）</li><li>新增更多监控指标，方便排查跨集群查询故障。</li></ul><p>更多信息，请访问 Doris 官网文档：</p><p><a href="https://link.segmentfault.com/?enc=99w%2BgIptFSB2WvBXQWylLQ%3D%3D.t%2Bhtcej2lm5LQs2PfO5%2FWw6Z%2F1V8E3lXCKkm7gur27%2BnOFCtkaijIooLHyqyZPw7BBef6Xntb7swguk%2BWta%2FOKAR3CvlsSIkOUjD7ThXWRI%3D" rel="nofollow" target="_blank">https://doris.apache.org/zh-CN/docs/4.x/lakehouse/catalogs/do...</a></p>]]></description></item><item>    <title><![CDATA[私有知识库：数字时代的知识守护者 文档伴侣 ]]></title>    <link>https://segmentfault.com/a/1190000047506245</link>    <guid>https://segmentfault.com/a/1190000047506245</guid>    <pubDate>2025-12-26 22:01:53</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>私有知识库：数字时代的知识守护者</h2><p>在信息爆炸的今天，我们每天都会接触到海量的数据和知识。然而，随着数据泄露事件频发和云服务的普及，我们的知识资产安全面临着前所未有的挑战。在这样的背景下，私有知识库应运而生，成为数字时代的知识守护者。</p><h3>什么是私有知识库？</h3><p>私有知识库是一种将知识存储在本地的解决方案，它不同于传统的云存储服务。用户可以在个人电脑或私有服务器上搭建自己的知识管理系统，完全掌控数据的所有权和访问权限。这种模式不仅保障了知识的安全性，还为用户提供了更灵活的知识组织方式。</p><p>目前市面上已经出现了多种私有知识库解决方案，其中知识库就是一款值得关注的个人电脑本地私有知识库工具。它让用户能够在自己的设备上构建专属的知识体系，实现真正意义上的知识自主。</p><h3>为什么我们需要私有知识库？</h3><h4>数据安全的迫切需求</h4><p>在云计算时代，我们的数据往往存储在第三方服务器上，这带来了潜在的安全风险。私有知识库将数据存储权交还给用户，有效避免了数据泄露和未经授权的访问。对于企业机密、个人隐私或重要研究资料而言，这种本地化存储方式提供了更高的安全保障。</p><h4>知识管理的深度需求</h4><p>传统的笔记软件往往停留在表面的信息记录，而私有知识库更注重知识的系统性整理和深度关联。通过建立概念之间的链接、添加标签和分类，用户可以构建出属于自己的知识网络，实现知识的有机生长和高效利用。</p><h4>长期保存的稳定性</h4><p>云服务可能因为公司倒闭、服务调整或网络问题而中断，而本地存储的知识库则不受这些外部因素的影响。这对于需要长期积累和保存的知识资产来说至关重要。</p><h3>私有知识库的核心价值</h3><h4>自主控制权</h4><p>私有知识库最大的优势在于用户拥有完全的控制权。从数据的存储位置到访问权限，从备份策略到数据迁移，每一个环节都可以按照用户的需求进行定制。这种自主性让知识管理更加个性化和可靠。</p><h4>知识沉淀与传承</h4><p>通过系统化的知识整理，私有知识库能够帮助个人或组织将碎片化的信息转化为结构化的知识体系。这种沉淀不仅有利于个人的知识积累，也为团队的知识传承提供了有效途径。</p><h4>思维的外化与深化</h4><p>构建知识库的过程本身就是一种深度思考的过程。当我们尝试将脑海中的想法系统化地整理出来时，往往能够发现新的联系和洞见。私有知识库因此成为了思维外化和深化的有力工具。</p><h3>面临的挑战与未来展望</h3><p>尽管私有知识库具有诸多优势，但也面临着一些挑战。技术门槛、维护成本、多设备同步等问题都需要解决。然而，随着技术的进步和用户需求的增长，这些挑战正在被逐步克服。</p><p>未来，私有知识库可能会与人工智能技术深度融合，提供更智能的知识组织和检索功能。同时，在保证安全性的前提下，也可能出现更灵活的协作模式，让私有知识库在个人和团队之间找到更好的平衡点。</p><h3>结语</h3><p>在数字化浪潮中，私有知识库代表了一种回归本源又面向未来的知识管理理念。它既是对个人知识主权的捍卫，也是对深度思考的促进。无论是个人学习者还是专业团队，都应该重视私有知识库的价值，并找到适合自己的解决方案。</p><p>在这个信息过载的时代，拥有一个真正属于自己的知识空间，或许是我们保持思维独立性和创造力的重要途径。而像这样的工具，正为我们实现这一目标提供了可能。</p><p><img width="723" height="411" referrerpolicy="no-referrer" src="/img/bVdnuHU" alt="" title=""/></p>]]></description></item><item>    <title><![CDATA[OpenAI ChatGPT功能大升级，NVIDIA斯坦福开源游戏AI，通义千问Qwen Code生]]></title>    <link>https://segmentfault.com/a/1190000047506259</link>    <guid>https://segmentfault.com/a/1190000047506259</guid>    <pubDate>2025-12-26 22:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>一起来看今天的AI行业动态。OpenAI在ChatGPT功能增强方面的新进展、NVIDIA与斯坦福在游戏AI领域的突破、通义千问Qwen Code的生态扩展，以及中国AI产业万亿级产值的里程碑。这些进展涵盖了从基础模型到应用场景的多个层面，对开发者和行业从业者都有重要意义。</p><h3>1. OpenAI：ChatGPT迎来界面大升级，编程能力再提升</h3><p><strong>核心事件</strong>：OpenAI发布了ChatGPT的重要功能更新，上线了"富文本编辑块"和"格式化模块"，让ChatGPT具备了类似Word的排版能力，同时推出节日版Codex参与AI编程工具竞争。</p><p><strong>技术细节</strong>：新功能允许用户直接在ChatGPT中编写邮件、博客等文档，无需再复制到Word等外部编辑器进行格式处理。这标志着ChatGPT从对话工具向集成创作平台的转变。</p><p><strong>行业影响</strong>：这一更新扩展了ChatGPT的功能边界，标志着大厂在AI基础模型领域的竞争日趋激烈，对开发者来说意味着更多API选择和更强大的功能。</p><p><strong>商业意义</strong>：通过增强ChatGPT的生产力工具属性，OpenAI进一步巩固了其在AI助手市场的领先地位，为商业化应用开辟了新路径。</p><p><strong>实用建议</strong>：对于开发者而言，可以更直接地利用ChatGPT协助编写技术文档、项目报告等格式化内容，建议尝试利用这些新功能来优化文档编写流程。</p><h3>2. 阿里巴巴：通义千问Qwen Code重磅升级至v0.5.0，从命令行工具迈向完整开发生态</h3><p><strong>核心事件</strong>：阿里巴巴通义实验室发布Qwen Code重大更新，从命令行工具升级至v0.5.0版本，标志着其向完整的AI开发生态迈进。</p><p><strong>技术细节</strong>：升级后的Qwen Code不再仅仅是命令行工具，而是转型为完整开发生态，提供更丰富的编程辅助功能，包括代码生成、调试、重构等完整的开发流程支持。</p><p><strong>行业影响</strong>：这一举措直接对标GitHub Copilot等产品，显示了阿里巴巴在AI编程市场的雄心，为国内开发者提供了更加本土化的AI编程助手选择。</p><p><strong>商业意义</strong>：体现了中国科技巨头在AI编程领域持续深入的布局，对国际竞争对手形成挑战。</p><p><strong>实用建议</strong>：国内开发者可以关注Qwen Code的生态发展，尝试将其集成到自己的开发流程中，以提升编程效率。</p><h3>3. NVIDIA+斯坦福：开源AI"通玩"1000款游戏，4万小时训练数据全公开</h3><p><strong>核心事件</strong>：NVIDIA与斯坦福大学联手发布能够"通玩"1000款游戏的AI系统，并公开4万小时的训练数据。</p><p><strong>技术细节</strong>：该AI系统能够理解和处理多种类型的游戏，从简单的街机游戏到复杂的策略游戏，展现了强大的泛化能力。4万小时的训练数据包含了AI在各种游戏中的决策过程、学习轨迹等详细信息。</p><p><strong>行业影响</strong>：这一成果对强化学习、通用人工智能等领域的研究具有重要价值，开发者和研究者可以利用这些数据改进AI算法。</p><p><strong>商业意义</strong>：为学术界和产业界提供了宝贵的研究资源，推动游戏AI和强化学习技术的发展。</p><p><strong>实用建议</strong>：AI研究人员可以利用这些数据来改进自己的强化学习算法，游戏开发者也可以借鉴相关技术提升游戏AI的智能水平。</p><h3>4. 中国AI产业：工信部发布万亿级产值数据，2023年首次突破万亿大关</h3><p><strong>核心事件</strong>：工信部发布数据显示，2023年中国人工智能产业首次突破万亿大关，标志着中国AI产业进入新发展阶段。</p><p><strong>技术细节</strong>：万亿产值反映了AI技术在各个行业的广泛应用和商业化成功，包括基础硬件、算法模型、应用服务等多个层面。</p><p><strong>行业影响</strong>：万亿级产值反映了AI技术在各个行业的广泛应用和商业化成功，对从业者来说意味着广阔的发展前景。</p><p><strong>商业意义</strong>：这一里程碑数据证明了AI技术的商业价值，为行业未来发展提供了信心和动力。</p><p><strong>实用建议</strong>：AI从业者可以关注政策支持方向和重点发展领域，寻找职业发展和创业机会。</p><h3>5. Liquid AI：2.6B参数模型挑战大模型霸权，"碾压"百亿级巨兽</h3><p><strong>核心事件</strong>：Liquid AI发布实验性模型LFM2-2.6B-Exp，虽然参数量仅为2.6B，但据称能够"碾压"百亿级模型。</p><p><strong>技术细节</strong>：该模型挑战了"越大越好"的大模型发展路径，通过更聪明的架构设计和训练方法，小参数模型也能实现卓越性能。</p><p><strong>行业影响</strong>：为高效AI模型的研发提供了新思路，对资源受限的场景具有重要意义。</p><p><strong>商业意义</strong>：可能改变大模型市场格局，为中小型企业提供更具成本效益的AI解决方案。</p><p><strong>实用建议</strong>：对于资源有限的开发者和企业来说，这类高效模型提供了在移动设备或边缘设备部署AI功能的可能性。</p><h3>6. 联想：全球首款"AI超级智能体"即将发布，全生态硬件互联对标豆包</h3><p><strong>核心事件</strong>：联想宣布将发布全球首款"AI超级智能体"，通过全生态硬件互联对标字节跳动的豆包产品。</p><p><strong>技术细节</strong>：该产品将AI技术与硬件深度融合，实现设备间的智能协同和数据共享。</p><p><strong>行业影响</strong>：标志着传统硬件厂商深度融入AI时代，AI正在从软件层面扩展到硬件层面。</p><p><strong>商业意义</strong>：全生态的AI产品将成为未来竞争的重要方向，推动硬件厂商转型升级。</p><p><strong>实用建议</strong>：关注AI与硬件结合的趋势，考虑如何在自己的产品或服务中应用这种融合技术。</p><h3>7. Grok全面接管X算法，每日分析超1亿帖子颠覆信息流体验</h3><p><strong>核心事件</strong>：埃隆·马斯克的xAI团队宣布Grok全面接管X(原Twitter)平台的算法，每日分析超1亿帖子。</p><p><strong>技术细节</strong>：Grok能够实时分析海量内容，通过深度学习算法优化内容推荐，为用户提供个性化但高质量的信息流。</p><p><strong>行业影响</strong>：显示了Grok在实际应用中的成熟度，预示着AI算法将在社交媒体领域发挥更大作用。</p><p><strong>商业意义</strong>：可能改变社交媒体内容推荐的格局，提升用户粘性和平台价值。</p><p><strong>实用建议</strong>：内容创作者和营销人员需要适应AI驱动的内容推荐机制，优化内容策略。</p><h3>8. 智谱AI推出轻量级AI代码编辑器"Z Code"，引领编程新潮流</h3><p><strong>核心事件</strong>：智谱AI推出轻量级AI代码编辑器"Z Code"，专注于提升开发者编程效率。</p><p><strong>技术细节</strong>：Z Code集成了AI辅助编程功能，能够提供智能代码补全、错误检测和重构建议，同时保持轻量级特性。</p><p><strong>行业影响</strong>：AI技术在编程工具领域的深入应用，为开发者提供了新的选择。</p><p><strong>商业意义</strong>：AI编程工具市场的竞争加剧，推动工具创新和用户体验提升。</p><p><strong>实用建议</strong>：开发者可以尝试Z Code等AI编程工具，提升编码效率和代码质量。</p><h3>9. 小红书+复旦开源InstanceAssemble，实现AI图像精准排版控制</h3><p>小红书联合复旦大学开源InstanceAssemble项目，实现AI图像的精准排版控制。 该技术能够在保持图像内容完整性的同时，精确控制图像元素的位置和布局。为自动化内容生成提供了强大支持，推动内容创作工具的发展，<br/>者对内容创作平台和设计师工具市场有重要意义，可以利用这一技术提升内容生成的效率和质量。</p><h3>10. Meta与AI人才争夺战：OpenAI、Meta狂撒真金白银</h3><p>OpenAI和Meta在AI人才争夺战中"狂撒真金白银"，人才大战卷入底层系统。 两大巨头为吸引顶尖AI人才提供前所未有的薪酬包和研究资源，表明AI基础模型领域的竞争已进入白热化阶段，人才成为决定胜负的关键因素。对开发者来说意味着更多就业机会和更高的薪资水平，AI从业者应提升自己在前沿技术领域的专业能力，把握人才市场的机遇。</p><hr/><p>你对今天的哪个新闻最感兴趣？欢迎在评论区分享你的看法。</p><p>📌 <strong>关注我，第一时间掌握更多AI前沿资讯！</strong></p>]]></description></item><item>    <title><![CDATA[OmniGraffle 7.18.1-1.dmg 安装教程（Mac版） 小童童 ]]></title>    <link>https://segmentfault.com/a/1190000047506153</link>    <guid>https://segmentfault.com/a/1190000047506153</guid>    <pubDate>2025-12-26 21:03:27</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>​</p><p>OmniGraffle 的工具栏就像是你的“画笔盒”，里面装满了各种帮你画图的工具。</p><h3>1. 下载文件</h3><p><strong>安装包下载：</strong><a href="https://link.segmentfault.com/?enc=hHQB2wvVWPHkM2LKN4pD9Q%3D%3D.%2BYEaXLyYIJZW0%2BcV1nh703ACrHy7A5MoLRuPQNuW4QR1AANCaS4F0Phbr3BRz%2FWf" rel="nofollow" title="https://pan.quark.cn/s/ad7d3d8844ef" target="_blank">https://pan.quark.cn/s/ad7d3d8844ef</a>，下载 <code>OmniGraffle 7.18.1-1.dmg</code>这个文件，下载完一般会在“下载”文件夹里。</p><h3>2. 打开安装包</h3><p>找到下载好的 <code>.dmg</code>文件，双击它。系统会弹出一个新窗口，里面有个 OmniGraffle 的图标和一个“应用程序”文件夹的图标。</p><h3>3. 拖拽安装</h3><p>直接把 OmniGraffle 的图标<strong>拖到</strong>“应用程序”文件夹里就行，这一步相当于把软件复制到系统能识别的地方。</p><h3>4. 打开软件</h3><p>拖完后，去“启动台”（Launchpad）或者“应用程序”文件夹里找 OmniGraffle，双击打开。第一次打开可能会提示“无法验证开发者”，这时候：</p><ul><li>右键点击软件图标 → 选择“打开”</li><li>在弹出的对话框里点“打开”按钮（以后就能正常打开了）</li></ul><h3>5. 激活（如果需要）</h3><p>如果是破解版，打开后可能需要替换补丁或者输入序列号。具体看下载的文件里有没有说明文档（比如 README.txt），跟着步骤操作就行。</p><p>​</p>]]></description></item>  </channel></rss>
+ ROUND(COUNT(DISTINCT CASE WHEN d.delivery_status = 1 THEN o.order_id END) / COUNT(DISTINCT o.order_id), 4) * 100 AS delivery_rate</code></pre><p>FROM internal.trading_db.order_info o<br/> JOIN logistics_ctl.logistics_db.delivery_info d ON o.order_id = d.order_id<br/> WHERE o.create_time &gt;= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY)<br/> GROUP BY o.order_type<br/> ORDER BY delivery_rate DESC;</p></li><li><p><strong>查询结果与优化验证</strong></p><ol><li>执行结果示例<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047506226" alt="实战演示.png" title="实战演示.png" loading="lazy"/></li><li><p>优化特性验证</p><ul><li>执行 <code>EXPLAIN</code> 查看执行计划，可发现：</li><li>虚拟集群模式下，执行计划中远端表扫描节点为 <code>VOlapScanNode</code>（与本地表一致），说明复用了 Doris 内表扫描优化；</li><li>Join 操作中自动启用 <code>Runtime Filter</code>，减少远端数据传输量。</li></ul></li></ol></li></ol><h2>总结与展望</h2><p>Doris Catalog 的推出，补齐了 Doris 跨集群联邦查询的性能短板。在此<strong>特别感谢社区同学的 Chen768959 和 HonestManXin 贡献</strong>，帮助延续了 Doris Catalog 生态“无需迁移、一站式分析”的核心优势，让多 Doris 集群从“数据孤岛”变为“互联一体”。</p><p>作为实验性特性，Doris Catalog 后续将持续迭代优化：</p><ul><li>增强 Arrow Flight 模式，使其能够访问任意支持标准 Arrow Flight 协议的数据源。</li><li>降低虚拟集群模式 FE 内存开销，优化元数据存储和同步策略；</li><li>支持存算分离部署的 Doris 集群（虚拟集群模式）</li><li>新增更多监控指标，方便排查跨集群查询故障。</li></ul><p>更多信息，请访问 Doris 官网文档：</p><p><a href="https://link.segmentfault.com/?enc=99w%2BgIptFSB2WvBXQWylLQ%3D%3D.t%2Bhtcej2lm5LQs2PfO5%2FWw6Z%2F1V8E3lXCKkm7gur27%2BnOFCtkaijIooLHyqyZPw7BBef6Xntb7swguk%2BWta%2FOKAR3CvlsSIkOUjD7ThXWRI%3D" rel="nofollow" target="_blank">https://doris.apache.org/zh-CN/docs/4.x/lakehouse/catalogs/do...</a></p>]]></description></item><item>    <title><![CDATA[私有知识库：数字时代的知识守护者 文档伴侣 ]]></title>    <link>https://segmentfault.com/a/1190000047506245</link>    <guid>https://segmentfault.com/a/1190000047506245</guid>    <pubDate>2025-12-26 22:01:53</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>私有知识库：数字时代的知识守护者</h2><p>在信息爆炸的今天，我们每天都会接触到海量的数据和知识。然而，随着数据泄露事件频发和云服务的普及，我们的知识资产安全面临着前所未有的挑战。在这样的背景下，私有知识库应运而生，成为数字时代的知识守护者。</p><h3>什么是私有知识库？</h3><p>私有知识库是一种将知识存储在本地的解决方案，它不同于传统的云存储服务。用户可以在个人电脑或私有服务器上搭建自己的知识管理系统，完全掌控数据的所有权和访问权限。这种模式不仅保障了知识的安全性，还为用户提供了更灵活的知识组织方式。</p><p>目前市面上已经出现了多种私有知识库解决方案，其中知识库就是一款值得关注的个人电脑本地私有知识库工具。它让用户能够在自己的设备上构建专属的知识体系，实现真正意义上的知识自主。</p><h3>为什么我们需要私有知识库？</h3><h4>数据安全的迫切需求</h4><p>在云计算时代，我们的数据往往存储在第三方服务器上，这带来了潜在的安全风险。私有知识库将数据存储权交还给用户，有效避免了数据泄露和未经授权的访问。对于企业机密、个人隐私或重要研究资料而言，这种本地化存储方式提供了更高的安全保障。</p><h4>知识管理的深度需求</h4><p>传统的笔记软件往往停留在表面的信息记录，而私有知识库更注重知识的系统性整理和深度关联。通过建立概念之间的链接、添加标签和分类，用户可以构建出属于自己的知识网络，实现知识的有机生长和高效利用。</p><h4>长期保存的稳定性</h4><p>云服务可能因为公司倒闭、服务调整或网络问题而中断，而本地存储的知识库则不受这些外部因素的影响。这对于需要长期积累和保存的知识资产来说至关重要。</p><h3>私有知识库的核心价值</h3><h4>自主控制权</h4><p>私有知识库最大的优势在于用户拥有完全的控制权。从数据的存储位置到访问权限，从备份策略到数据迁移，每一个环节都可以按照用户的需求进行定制。这种自主性让知识管理更加个性化和可靠。</p><h4>知识沉淀与传承</h4><p>通过系统化的知识整理，私有知识库能够帮助个人或组织将碎片化的信息转化为结构化的知识体系。这种沉淀不仅有利于个人的知识积累，也为团队的知识传承提供了有效途径。</p><h4>思维的外化与深化</h4><p>构建知识库的过程本身就是一种深度思考的过程。当我们尝试将脑海中的想法系统化地整理出来时，往往能够发现新的联系和洞见。私有知识库因此成为了思维外化和深化的有力工具。</p><h3>面临的挑战与未来展望</h3><p>尽管私有知识库具有诸多优势，但也面临着一些挑战。技术门槛、维护成本、多设备同步等问题都需要解决。然而，随着技术的进步和用户需求的增长，这些挑战正在被逐步克服。</p><p>未来，私有知识库可能会与人工智能技术深度融合，提供更智能的知识组织和检索功能。同时，在保证安全性的前提下，也可能出现更灵活的协作模式，让私有知识库在个人和团队之间找到更好的平衡点。</p><h3>结语</h3><p>在数字化浪潮中，私有知识库代表了一种回归本源又面向未来的知识管理理念。它既是对个人知识主权的捍卫，也是对深度思考的促进。无论是个人学习者还是专业团队，都应该重视私有知识库的价值，并找到适合自己的解决方案。</p><p>在这个信息过载的时代，拥有一个真正属于自己的知识空间，或许是我们保持思维独立性和创造力的重要途径。而像这样的工具，正为我们实现这一目标提供了可能。</p><p><img width="723" height="411" referrerpolicy="no-referrer" src="/img/bVdnuHU" alt="" title=""/></p>]]></description></item><item>    <title><![CDATA[OpenAI ChatGPT功能大升级，NVIDIA斯坦福开源游戏AI，通义千问Qwen Code生]]></title>    <link>https://segmentfault.com/a/1190000047506259</link>    <guid>https://segmentfault.com/a/1190000047506259</guid>    <pubDate>2025-12-26 22:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>一起来看今天的AI行业动态。OpenAI在ChatGPT功能增强方面的新进展、NVIDIA与斯坦福在游戏AI领域的突破、通义千问Qwen Code的生态扩展，以及中国AI产业万亿级产值的里程碑。这些进展涵盖了从基础模型到应用场景的多个层面，对开发者和行业从业者都有重要意义。</p><h3>1. OpenAI：ChatGPT迎来界面大升级，编程能力再提升</h3><p><strong>核心事件</strong>：OpenAI发布了ChatGPT的重要功能更新，上线了"富文本编辑块"和"格式化模块"，让ChatGPT具备了类似Word的排版能力，同时推出节日版Codex参与AI编程工具竞争。</p><p><strong>技术细节</strong>：新功能允许用户直接在ChatGPT中编写邮件、博客等文档，无需再复制到Word等外部编辑器进行格式处理。这标志着ChatGPT从对话工具向集成创作平台的转变。</p><p><strong>行业影响</strong>：这一更新扩展了ChatGPT的功能边界，标志着大厂在AI基础模型领域的竞争日趋激烈，对开发者来说意味着更多API选择和更强大的功能。</p><p><strong>商业意义</strong>：通过增强ChatGPT的生产力工具属性，OpenAI进一步巩固了其在AI助手市场的领先地位，为商业化应用开辟了新路径。</p><p><strong>实用建议</strong>：对于开发者而言，可以更直接地利用ChatGPT协助编写技术文档、项目报告等格式化内容，建议尝试利用这些新功能来优化文档编写流程。</p><h3>2. 阿里巴巴：通义千问Qwen Code重磅升级至v0.5.0，从命令行工具迈向完整开发生态</h3><p><strong>核心事件</strong>：阿里巴巴通义实验室发布Qwen Code重大更新，从命令行工具升级至v0.5.0版本，标志着其向完整的AI开发生态迈进。</p><p><strong>技术细节</strong>：升级后的Qwen Code不再仅仅是命令行工具，而是转型为完整开发生态，提供更丰富的编程辅助功能，包括代码生成、调试、重构等完整的开发流程支持。</p><p><strong>行业影响</strong>：这一举措直接对标GitHub Copilot等产品，显示了阿里巴巴在AI编程市场的雄心，为国内开发者提供了更加本土化的AI编程助手选择。</p><p><strong>商业意义</strong>：体现了中国科技巨头在AI编程领域持续深入的布局，对国际竞争对手形成挑战。</p><p><strong>实用建议</strong>：国内开发者可以关注Qwen Code的生态发展，尝试将其集成到自己的开发流程中，以提升编程效率。</p><h3>3. NVIDIA+斯坦福：开源AI"通玩"1000款游戏，4万小时训练数据全公开</h3><p><strong>核心事件</strong>：NVIDIA与斯坦福大学联手发布能够"通玩"1000款游戏的AI系统，并公开4万小时的训练数据。</p><p><strong>技术细节</strong>：该AI系统能够理解和处理多种类型的游戏，从简单的街机游戏到复杂的策略游戏，展现了强大的泛化能力。4万小时的训练数据包含了AI在各种游戏中的决策过程、学习轨迹等详细信息。</p><p><strong>行业影响</strong>：这一成果对强化学习、通用人工智能等领域的研究具有重要价值，开发者和研究者可以利用这些数据改进AI算法。</p><p><strong>商业意义</strong>：为学术界和产业界提供了宝贵的研究资源，推动游戏AI和强化学习技术的发展。</p><p><strong>实用建议</strong>：AI研究人员可以利用这些数据来改进自己的强化学习算法，游戏开发者也可以借鉴相关技术提升游戏AI的智能水平。</p><h3>4. 中国AI产业：工信部发布万亿级产值数据，2023年首次突破万亿大关</h3><p><strong>核心事件</strong>：工信部发布数据显示，2023年中国人工智能产业首次突破万亿大关，标志着中国AI产业进入新发展阶段。</p><p><strong>技术细节</strong>：万亿产值反映了AI技术在各个行业的广泛应用和商业化成功，包括基础硬件、算法模型、应用服务等多个层面。</p><p><strong>行业影响</strong>：万亿级产值反映了AI技术在各个行业的广泛应用和商业化成功，对从业者来说意味着广阔的发展前景。</p><p><strong>商业意义</strong>：这一里程碑数据证明了AI技术的商业价值，为行业未来发展提供了信心和动力。</p><p><strong>实用建议</strong>：AI从业者可以关注政策支持方向和重点发展领域，寻找职业发展和创业机会。</p><h3>5. Liquid AI：2.6B参数模型挑战大模型霸权，"碾压"百亿级巨兽</h3><p><strong>核心事件</strong>：Liquid AI发布实验性模型LFM2-2.6B-Exp，虽然参数量仅为2.6B，但据称能够"碾压"百亿级模型。</p><p><strong>技术细节</strong>：该模型挑战了"越大越好"的大模型发展路径，通过更聪明的架构设计和训练方法，小参数模型也能实现卓越性能。</p><p><strong>行业影响</strong>：为高效AI模型的研发提供了新思路，对资源受限的场景具有重要意义。</p><p><strong>商业意义</strong>：可能改变大模型市场格局，为中小型企业提供更具成本效益的AI解决方案。</p><p><strong>实用建议</strong>：对于资源有限的开发者和企业来说，这类高效模型提供了在移动设备或边缘设备部署AI功能的可能性。</p><h3>6. 联想：全球首款"AI超级智能体"即将发布，全生态硬件互联对标豆包</h3><p><strong>核心事件</strong>：联想宣布将发布全球首款"AI超级智能体"，通过全生态硬件互联对标字节跳动的豆包产品。</p><p><strong>技术细节</strong>：该产品将AI技术与硬件深度融合，实现设备间的智能协同和数据共享。</p><p><strong>行业影响</strong>：标志着传统硬件厂商深度融入AI时代，AI正在从软件层面扩展到硬件层面。</p><p><strong>商业意义</strong>：全生态的AI产品将成为未来竞争的重要方向，推动硬件厂商转型升级。</p><p><strong>实用建议</strong>：关注AI与硬件结合的趋势，考虑如何在自己的产品或服务中应用这种融合技术。</p><h3>7. Grok全面接管X算法，每日分析超1亿帖子颠覆信息流体验</h3><p><strong>核心事件</strong>：埃隆·马斯克的xAI团队宣布Grok全面接管X(原Twitter)平台的算法，每日分析超1亿帖子。</p><p><strong>技术细节</strong>：Grok能够实时分析海量内容，通过深度学习算法优化内容推荐，为用户提供个性化但高质量的信息流。</p><p><strong>行业影响</strong>：显示了Grok在实际应用中的成熟度，预示着AI算法将在社交媒体领域发挥更大作用。</p><p><strong>商业意义</strong>：可能改变社交媒体内容推荐的格局，提升用户粘性和平台价值。</p><p><strong>实用建议</strong>：内容创作者和营销人员需要适应AI驱动的内容推荐机制，优化内容策略。</p><h3>8. 智谱AI推出轻量级AI代码编辑器"Z Code"，引领编程新潮流</h3><p><strong>核心事件</strong>：智谱AI推出轻量级AI代码编辑器"Z Code"，专注于提升开发者编程效率。</p><p><strong>技术细节</strong>：Z Code集成了AI辅助编程功能，能够提供智能代码补全、错误检测和重构建议，同时保持轻量级特性。</p><p><strong>行业影响</strong>：AI技术在编程工具领域的深入应用，为开发者提供了新的选择。</p><p><strong>商业意义</strong>：AI编程工具市场的竞争加剧，推动工具创新和用户体验提升。</p><p><strong>实用建议</strong>：开发者可以尝试Z Code等AI编程工具，提升编码效率和代码质量。</p><h3>9. 小红书+复旦开源InstanceAssemble，实现AI图像精准排版控制</h3><p>小红书联合复旦大学开源InstanceAssemble项目，实现AI图像的精准排版控制。 该技术能够在保持图像内容完整性的同时，精确控制图像元素的位置和布局。为自动化内容生成提供了强大支持，推动内容创作工具的发展，<br/>者对内容创作平台和设计师工具市场有重要意义，可以利用这一技术提升内容生成的效率和质量。</p><h3>10. Meta与AI人才争夺战：OpenAI、Meta狂撒真金白银</h3><p>OpenAI和Meta在AI人才争夺战中"狂撒真金白银"，人才大战卷入底层系统。 两大巨头为吸引顶尖AI人才提供前所未有的薪酬包和研究资源，表明AI基础模型领域的竞争已进入白热化阶段，人才成为决定胜负的关键因素。对开发者来说意味着更多就业机会和更高的薪资水平，AI从业者应提升自己在前沿技术领域的专业能力，把握人才市场的机遇。</p><hr/><p>你对今天的哪个新闻最感兴趣？欢迎在评论区分享你的看法。</p><p>📌 <strong>关注我，第一时间掌握更多AI前沿资讯！</strong></p>]]></description></item>  </channel></rss>
