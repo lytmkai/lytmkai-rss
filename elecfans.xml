@@ -1,4 +1,1512 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[浮动板对板连接器开发难在哪？核心挑战解析]]></title>    <link>https://www.elecfans.com/d/7534370.html</link>    <guid>https://www.elecfans.com/d/7534370.html</guid>    <pubDate>2026-01-04 17:18:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[京东金融鸿蒙端部署AI超分模型实践]]></title>    <link>https://www.elecfans.com/d/7539828.html</link>    <guid>https://www.elecfans.com/d/7539828.html</guid>    <pubDate>2026-01-04 17:05:00</pubDate>    <description><![CDATA[<p>
+	<strong>1. 背景</strong></p>
+<p>
+	<strong>这可能是全网第一篇完整讲解<a href="https://www.elecfans.com/v/tag/40/" target="_blank"><u>鸿蒙</u></a>端使用<a href="https://www.hqchip.com/app/2004" target="_blank"><u>CAN</u></a>N部署<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>模型的文章, 满满干货。</strong></p>
+<p>
+	社区作为用户交流、信息传递的核心载体，图片内容（如理财产品截图、投资经验分享配图、用户互动评论图片等）的展示质量直接影响用户的信息获取效率与平台信任感。从京东金融App社区的业务需求来看，当前用户上传图片普遍存在多样性失真问题：部分用户通过老旧设备拍摄的图片分辨率较低，部分用户为节省流量选择低画质压缩上传，还有部分截图类内容因原始来源清晰度不足导致信息模糊（如理财产品收益率数字、合同条款细节等），这些问题不仅降低了内容可读性，还可能因信息传递不清晰引发用户误解。</p>
+<p>
+	京东金融App团队已完成Real-ESRGAN-General-x4v3超分辨率模型在安卓端的部署，能够针对性提升评论区、内容详情页、个人主页等核心场景的图片清晰度，从视觉体验层面优化用户留存与互动意愿。</p>
+<p>
+	ESRGAN-General-x4v3模型在安卓端的部署，采用的是ONNX框架，该方案已有大量公开资料可参考，且取得显著业务成效。但鸿蒙端部署面临核心技术瓶颈：<a href="https://bbs.elecfans.com/harmonyos" target="_blank"><u>鸿蒙系统</u></a>不支持ONNX框架，部署端侧AI仅能使用华为自研的CANN（Compu<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a> Architecture for Neural Networks）架构，且当前行业内缺乏基于CANN部署端侧AI的公开资料与成熟方案，全程需技术团队自主探索。接下来我会以ESRGAN-General-x4v3为例, 分享从模型转换(NPU亲和性改造)到端侧离线模型部署的全部过程。</p>
+<p>
+	<strong>2. 部署前期准备</strong></p>
+<p>
+	<strong>2.1 离线模型转换</strong></p>
+<p>
+	CANN Kit当前仅支持Caffe、<a href="https://www.elecfans.com/tags/tensorflow/" target="_blank"><u>TensorFlow</u></a>、ONNX和Min<a href="https://m.hqchip.com/app/1378" target="_blank"><u>dSp</u></a>ore模型转换为离线模型，其他格式的模型需要<a href="https://bbs.elecfans.com/group_1231" target="_blank"><u>开发者</u></a>自行转换为CANN Kit支持的模型格式。模型转换为OM离线模型，移动端AI程序直接读取离线模型进行推理。</p>
+<p>
+	<strong>2.1.1 下载CANN工具</strong></p>
+<p>
+	从鸿蒙开发者官网下载 DDK-tools-5.1.1.1 , 解压使用Tools下的OMG工具，将ONNX、TensorFlow模型转换为OM模型。(OMG工具位于Tools下载的tools/tools_omg下，<strong>仅可运行在64位<a href="https://www.elecfans.com/v/tag/538/" target="_blank"><u>Linux</u></a>平台上</strong>。)</p>
+<p>
+	﻿<br/>
+	</p>
+<p>
+	<strong>2.1.2 下载ESRGAN-General-x4v3模型文件</strong></p>
+<p>
+	从https://aihub.qualcomm.com/compute/models/real_esrgan_general_x4v3 下载模型的onnx文件.</p>
+<p>
+	注意: 下载链接中的a8a8的量化模型使用了<a href="https://www.elecfans.com/tags/高通/" target="_blank"><u>高通</u></a>的算子(亲测无法转换), CANN工具无法进行转换, 因此请下载float的量化模型。</p>
+<p>
+	<strong>下载后有两个文件:</strong></p>
+<p>
+	•model.onnx文件 (模型结构): 包含计算图、opset版本、节点配置等，文件较小。</p>
+<p>
+	•model.data文件 (权重数据): 包含<a href="https://www.elecfans.com/tags/神经网络/" target="_blank"><u>神经网络</u></a>参数、权重等，文件较大。</p>
+<p>
+	现在我们需要把这种分离文件格式的模型合并成一个文件,后续的操作都使用这个。</p>
+<p>
+	<strong>合并文件:</strong></p>
+<p>
+	请使用JoyCode写个合并脚本即可, 提示词: 请写一个脚本, 把onnx模型文件的.onnx和.data文件合并。</p>
+<p>
+	<strong>2.1.3 OM模型转换</strong></p>
+<p>
+	<strong>1. ONNX opset 版本转换</strong></p>
+<p>
+	当前使用CANN进行模型转换, 支持ONNX opset版本7~18（最高支持到V1.13.1）, 首先需要查看原始的onnx模型的opset版本是否在支持范围, 这里我们使用Netron(点击下载)可视化工具进行查看。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/43/85/wKgZO2lKdWCAVdQiAAKJbdFUQiU025.png" alt="wKgZO2lKdWCAVdQiAAKJbdFUQiU025.png"/></p>
+<p>
+	﻿﻿<br/>
+	</p>
+<p>
+	﻿<br/>
+	</p>
+<p>
+	目前该模型使用的opset版本是20, 因此我们需要把该模型的opset版本转成18, 才可以用CANN转换成鸿蒙上可部署的模型。请使用JoyCode写个opset转换脚本即可, 提示词: 请写一个脚本, 把onnx模型文件的opset版本从20转换成18。</p>
+<p>
+	﻿<br/>
+	</p>
+<p>
+	<strong>2. OM离线模型</strong></p>
+<p>
+	命令行中的参数说明请参见OMG参数，转换命令：</p>
+<p>
+	</p>
+<pre>
+./tools/tools_omg/omg --model new_model_opset18.onnx --framework 5 --output ./model
+
+</pre>
+<p>
+	</p>
+<p>
+	转换完成后, 生成model.om的模型文件, 该模型文件就是鸿蒙上可以正常使用的模型文件</p>
+<p>
+	<strong>2.2 查看模型的输入/输出张量信息</strong></p>
+<p>
+	部署AI模式时, 我们需要确认模型的输入张量和输出张量信息, 请使用JoyCode编写一个脚本, 确定输入输出张量信息, 提示词: 写一个脚本查看onnx模型的输入输出张量信息。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/43/86/wKgZPGlKdWCAN4SQAARhSSbq9PI906.png" alt="wKgZPGlKdWCAN4SQAARhSSbq9PI906.png"/></p>
+<p>
+	﻿﻿<br/>
+	</p>
+<p>
+	﻿<br/>
+	</p>
+<p>
+	<strong>2.2.1 输入张量</strong></p>
+<p>
+	BCHW格式, 是<a href="https://m.elecfans.com/v/tag/448/" target="_blank"><u>深度学习</u></a>中常见的张量维度排列格式, 在图像处理场景中:</p>
+<p>
+	•B (Batch): 批次大小 - 一次处理多少个样本。</p>
+<p>
+	•C (Channel): 通道数 - 图像的颜色通道数。</p>
+<p>
+	•H (Height): 高度 - 图像的像素高度。</p>
+<p>
+	•W (Width): 宽度 - 图像的像素宽度。</p>
+<p>
+	由此可以得出结论, 该模型1个批次处理1张宽高为128*128的RGB图片(因为C是3,因此不包含R通道)。</p>
+<p>
+	﻿<br/>
+	</p>
+<p>
+	<strong>2.2.2 输出张量</strong></p>
+<p>
+	该模型1个批次输出1张宽高为512*512的RGB图片。</p>
+<p>
+	﻿<br/>
+	</p>
+<p>
+	<strong>2.2.3 BCHW和BHWC格式的区别:</strong></p>
+<p>
+	超分模型中的BCHW和BHWC是两种不同的张量存储格式，主要区别在于通道维度的位置：</p>
+<p>
+	﻿<br/>
+	</p>
+<p>
+	•<strong>BCHW格式（Batch-Channel-Height-Width）</strong></p>
+<p>
+	◦维度顺序：[批次, 通道, 高度, 宽度]</p>
+<p>
+	◦内存布局：通道维度在空间维度之前</p>
+<p>
+	◦常用框架：PyTorch、TensorRT等</p>
+<p>
+	示例: 形状为 (1, 3, 256, 256) 的RGB图像</p>
+<p>
+	<strong>内存中的存储顺序：</strong> R通道的所有像素 -&gt; G通道的所有像素 -&gt; B通道的所有像素</p>
+<p>
+	</p>
+<pre>
+tensor_bchw = torch.randn(1, 3, 256, 256)
+访问第一个像素的RGB值需要跨越不同的内存区域
+<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>pi</u></a>xel_0_0_r = tensor_bchw[0, 0, 0, 0]  # R通道
+pixel_0_0_g = tensor_bchw[0, 1, 0, 0]  # G通道  
+pixel_0_0_b = tensor_bchw[0, 2, 0, 0]  # B通道
+
+</pre>
+<p>
+	</p>
+<p>
+	•<strong>BHWC格式（Batch-Height-Width-Channel）</strong></p>
+<p>
+	◦维度顺序：[批次, 高度, 宽度, 通道]</p>
+<p>
+	◦内存布局：通道维度在最后，像素的所有通道连续存储</p>
+<p>
+	◦常用框架：TensorFlow、OpenCV等</p>
+<p>
+	示例：形状为 (1, 256, 256, 3) 的RGB图像</p>
+<p>
+	内存中的存储顺序：像素(0,0)的RGB -&gt; 像素(0,1)的RGB -&gt; ... -&gt; 像素(0,255)的RGB -&gt; 像素(1,0)的RGB...</p>
+<p>
+	</p>
+<pre>
+tensor_bhwc = <a href="https://m.hqchip.com/app/1522" target="_blank"><u>tf</u></a>.random.normal([1, 256, 256, 3])
+# 访问第一个像素的RGB值在连续的内存位置
+pixel_0_0_rgb = tensor_bhwc[0, 0, 0, :]  # [R, G, B]
+
+</pre>
+<p>
+	</p>
+<p>
+	﻿<br/>
+	</p>
+<p>
+	<strong>3. 鸿蒙端部署核心步骤</strong></p>
+<p>
+	<strong>3.1 创建项目</strong></p>
+<p>
+	1.创建DevEco Studio项目，选择“Na<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>ti</u></a>ve <a href="https://www.elecfans.com/tags/C++/" target="_blank"><u>C++</u></a>”模板，点击“Next”。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/43/85/wKgZO2lKdWGAcR0FAAD42DX18ac657.png" alt="wKgZO2lKdWGAcR0FAAD42DX18ac657.png"/></p>
+<p>
+	﻿﻿<br/>
+	</p>
+<p>
+	﻿<br/>
+	</p>
+<p>
+	2.按需填写“Project name”、“Save location”和“Module name”，选择“Compile <a href="https://m.hqchip.com/app/1522" target="_blank"><u>SD</u></a>K”为“5.1.0(18)”及以上版本，点击“Finish”。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/43/86/wKgZPGlKdWKAdfe4AACCHJ_zQxc560.png" alt="wKgZPGlKdWKAdfe4AACCHJ_zQxc560.png"/></p>
+<p>
+	﻿﻿<br/>
+	</p>
+<p>
+	﻿<br/>
+	</p>
+<p>
+	<strong>3.2 配置项目NAPI</strong></p>
+<p>
+	CANN部署只提供了C++<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>, 因此需要使用NAPI, 编译HAP时，NAPI层的so需要编译依赖NDK中的libneural_network_core.so和libhiai_foundation.so。</p>
+<p>
+	﻿<br/>
+	</p>
+<p>
+	<strong>头文件引用</strong></p>
+<p>
+	按需引用NNCore和CANN Kit的头文件。</p>
+<p>
+	</p>
+<pre>
+#include "neural_network_runtime/neural_network_core.h"
+#include "CANNKit/hiai_options.h"
+
+</pre>
+<p>
+	</p>
+<p>
+	<strong>编写CMakeLists.txt</strong></p>
+<p>
+	CMakeLists.txt示例代码如下。</p>
+<p>
+	</p>
+<pre>
+cmake_minimum_required(VERSION 3.5.0)
+project(myNpmLib)
+
+set(NATIVERENDER_ROOT_PATH ${CMAKE_CURRENT_SOURCE_DIR})
+
+include_directories(${NATIVERENDER_ROOT_PATH}
+                    ${NATIVERENDER_ROOT_PATH}/include)
+
+include_directories(${HMOS_SDK_NATIVE}/sysroot/usr/lib)
+FIND_LIBRARY(cann-lib hiai_foundation)
+
+<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>ad</u></a>d_library(imagesr SHARED HIAIModelManager.cpp ImageSuperResolution.cpp)
+target_link_libraries(imagesr PUBLIC lib<a href="https://m.hqchip.com/app/1703" target="_blank"><u>ac</u></a>e_napi.z.so
+    libhilog_ndk.z.so
+    librawfile.z.so
+    ${cann-lib}
+    libneural_network_core.so
+    )
+
+
+</pre>
+<p>
+	</p>
+<p>
+	<strong>3.3 集成模型</strong></p>
+<p>
+	模型的加载、编译和推理主要是在native层实现，应用层主要作为数据传递和展示作用。模型推理之前需要对输入数据进行预处理以匹配模型的输入，同样对于模型的输出也需要做处理获取自己期望的结果</p>
+<p>
+	﻿<br/>
+	</p>
+<p>
+	</p>
+<p>
+	﻿﻿<br/>
+	</p>
+<p>
+	<strong>3.3.1 加载离线模型</strong></p>
+<p>
+	为了让App运行时能够读取到模型文件和处理推理结果，需要先把离线模型和模型对应的结果<a href="https://m.hqchip.com/tags" target="_blank"><u>标签</u></a>文件预置到工程的“entry/src/main/resources/rawfile”目录中。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/43/86/wKgZPGlKdWaAUxU9AAHddnmmrSk282.png" alt="wKgZPGlKdWaAUxU9AAHddnmmrSk282.png"/></p>
+<p>
+	﻿﻿<br/>
+	</p>
+<p>
+	﻿<br/>
+	</p>
+<p>
+	在App应用创建时加载模型:</p>
+<p>
+	1.native层读取模型的buffer。</p>
+<p>
+	</p>
+<pre>
+const char* modelPath = "imagesr.om";
+RawFile *rawFile = OH_ResourceManager_OpenRawFile(resourceMgr, modelPath);
+long modelSize = OH_ResourceManager_GetRawFileSize(rawFile);
+std::unique_ptr&lt; uint8_t[] &gt; modelData = std::make_unique&lt; uint8_t[] &gt;(modelSize);
+int res = OH_ResourceManager_ReadRawFile(rawFile, modelData.get(), modelSize);
+
+</pre>
+<p>
+	</p>
+<p>
+	2.使用模型的buffer, 调用OH_NNCompilation_ConstructWithOfflineModelBuffer创建模型的编译实例</p>
+<p>
+	</p>
+<pre>
+HiAI_Compatibility compibility = HMS_HiAICompatibility_CheckFromBuffer(modelData, modelSize);
+OH_NNCompilation *compilation = OH_NNCompilation_ConstructWithOfflineModelBuffer(modelData, modelSize);
+
+</pre>
+<p>
+	</p>
+<p>
+	3.（可选）根据需要调用HMS_HiAIOptions_SetOmOptions接口，打开维测功能（如Profiling）。</p>
+<p>
+	</p>
+<pre>
+const char *out_path = "/data/storage/el2/base/haps/entry/files";
+HiAI_OmType omType = HIAI_OM_TYPE_PROFILING;
+OH_NN_ReturnCode ret = HMS_HiAIOptions_SetOmOptions(compilation, omType, out_path);     
+
+</pre>
+<p>
+	</p>
+<p>
+	4.设置模型的deviceID。</p>
+<p>
+	</p>
+<pre>
+size_t deviceID = 0;
+const size_t *allDevicesID = nullptr;
+uint32_t deviceCount = 0;
+OH_NN_ReturnCode ret = OH_NNDevice_GetAllDevicesID(&amp;allDevicesID, &amp;deviceCount);
+
+for (uint32_t i = 0; i &lt; deviceCount; i++) {
+    const char *name = nullptr;
+    ret = OH_NNDevice_GetName(allDevicesID[i], &amp;name);
+    if (ret != OH_NN_SUCCESS || name == nullptr) {
+        OH_LOG_ERROR(LOG_APP, "OH_NNDevice_GetName failed");
+        return deviceID;
+    }
+    if (std::string(name) == "HIAI_F") {
+        deviceID = allDevicesID[i];
+        break;
+    }
+}
+
+ret = OH_NNCompilation_SetDevice(compilation, deviceID);
+
+</pre>
+<p>
+	</p>
+<p>
+	5.调用OH_NNCompilation_Build，执行模型编译。</p>
+<p>
+	</p>
+<pre>
+ret = SetModelBui<a href="https://m.hqchip.com/app/1700" target="_blank"><u>ldO</u></a>ptions(compilation);
+ret = OH_NNCompilation_Build(compilation);
+
+</pre>
+<p>
+	</p>
+<p>
+	6.调用OH_NNExecutor_Construct，创建模型执行器。</p>
+<p>
+	</p>
+<pre>
+executor_ = OH_NNExecutor_Construct(compilation);
+
+</pre>
+<p>
+	</p>
+<p>
+	7.调用OH_NNCompilation_Destroy，释放模型编译实例。</p>
+<p>
+	﻿<br/>
+	</p>
+<p>
+	<strong>3.3.2 准备输入输出Tensor</strong></p>
+<p>
+	1.处理模型的输入，模型的输入为1*3*128*128格式(BCHW) Float类型的数据, 需要把RGB 数据转成BCHW格式并进行归一化。</p>
+<p>
+	</p>
+<pre>
+从图片中读取的RGB数据为BHWC,需要转换成模型可以识别的BCHW
+/**
+ * 把bhwc转成bchw
+ */
+uint8_t *rgbData = static_cast&lt; uint8_t* &gt;(data);
+uint8_t *floatData_tmp = new uint8_t[length];
+for (int c = 0; c &lt; 3; ++c) {
+    for (int h = 0; h &lt; 128; ++h) {
+        for (int w = 0; w &lt; 128; ++w) {
+            // HWC 索引: h * width * channels + w * channels +c 
+            int hwc_index = h * 128 * 3 + w * 3 + c;
+            // CHW 索引: C * height * width + h* width + W
+            int chw_index = c * 128 * 128 + h * 128 + w;
+            floatData_tmp[chw_index] = rgbData[hwc_index];
+        }
+    }
+}
+//归一化
+float *floatData = new float[length];
+for (size_t i = 0; i &lt; length; ++i) {
+    floatData[i] = static_cast&lt; float &gt;(floatData_tmp[i])/ 255.0f;
+}
+
+</pre>
+<p>
+	</p>
+<p>
+	2.创建模型的输入和输出Tensor，并把应用层传递的数据填充到输入的Tensor中</p>
+<p>
+	</p>
+<pre>
+// 准备输入张量
+size_t inputCount = 0;
+OH_NN_ReturnCode ret = OH_NNExecutor_GetInputCount(executor_, &amp;inputCount);
+for (size_t i = 0; i &lt; inputCount; ++i) {
+    NN_TensorDesc *tensorDesc = OH_NNExecutor_CreateInputTensorDesc(executor_, i);
+    NN_Tensor *tensor = OH_NNTensor_Create(deviceID_, tensorDesc);
+    if (tensor != nullptr) {
+        inputTensors_.push_back(tensor);
+    }
+    OH_NNTensorDesc_Destroy(&amp;tensorDesc);
+}
+
+
+ret = SetInputTensorData(inputTensors_, inputData);
+
+// 准备输出张量
+size_t outputCount = 0;
+ret = OH_NNExecutor_GetOutputCount(executor_, &amp;outputCount);
+
+for (size_t i = 0; i &lt; outputCount; i++) {
+    NN_TensorDesc *tensorDesc = OH_NNExecutor_CreateOutputTensorDesc(executor_, i);
+    NN_Tensor *tensor = OH_NNTensor_Create(deviceID_, tensorDesc);
+    if (tensor != nullptr) {
+        outputTensors_.push_back(tensor);
+    }
+    OH_NNTensorDesc_Destroy(&amp;tensorDesc);
+}
+if (outputTensors_.size() != outputCount) {
+    DestroyTensors(inputTensors_);
+    DestroyTensors(outputTensors_);
+    OH_LOG_ERROR(LOG_APP, "output size mismatch.");
+    return OH_NN_FAILED;
+}
+
+</pre>
+<p>
+	</p>
+<p>
+	﻿<br/>
+	</p>
+<p>
+	<strong>3.3.3 进行推理</strong></p>
+<p>
+	调用OH_NNExecutor_RunSync，完成模型的同步推理。</p>
+<p>
+	</p>
+<pre>
+OH_NN_ReturnCode ret = OH_NNExecutor_RunSync(executor_, inputTensors_.data(), inputTensors_.size(),
+                                                 outputTensors_.data(), outputTensors_.size());
+
+</pre>
+<p>
+	</p>
+<p>
+	说明</p>
+<p>
+	•如果不更换模型，则首次编译加载完成后可多次推理，即一次编译加载，多次推理。</p>
+<p>
+	•所有关于模型的操作, 均无法多线程执行。</p>
+<p>
+	﻿<br/>
+	</p>
+<p>
+	<strong>3.3.4 获取模型输出并处理数据</strong></p>
+<p>
+	1.调用OH_NNTensor_GetDataBuffer，获取输出的Tensor，在输出Tensor中会得到模型的输出数据。</p>
+<p>
+	</p>
+<pre>
+// 获取第一个输出张量
+NN_Tensor* tensor = outputTensors_[0];
+
+// 获取张量数据缓冲区
+void *tensorData = OH_NNTensor_GetDataBuffer(tensor);
+
+// 获取张量大小
+size_t size = 0;
+OH_NN_ReturnCode ret = OH_NNTensor_GetSize(tensor, &amp;size);
+
+float *tensorDataOutput = (float*)malloc(size);
+// 将tensorData的数据一次性复制到tensorDataOutput中
+memcpy(tensorDataOutput, tensorData, size);
+
+</pre>
+<p>
+	</p>
+<p>
+	﻿<br/>
+	</p>
+<p>
+	2.对Tensor输出数据进行相应的处理</p>
+<p>
+	把模型输出的BCHW转成BHWC, 并进行反归一化处理</p>
+<p>
+	﻿<br/>
+	</p>
+<p>
+	</p>
+<pre>
+//把模型输出的BCHW转成BHWC
+float *outputResult = static_cast&lt; float * &gt;(tensorData);
+float *output_tmp = new float[size/sizeof(float)];
+for (int h = 0; h &lt; 512; ++h) {
+    for (int w = 0; w &lt; 512; ++w) {
+        for (int c = 0; c &lt; 3; ++c) {
+            output_tmp[h * 512 * 3 + w* 3 + c] = outputResult[c * 512 * 512 + h * 512 + w];
+        }
+    }
+}
+std::vector&lt; float &gt; output(size / sizeof(float), 0.0);
+for (size_t i = 0; i &lt; size / sizeof(float); ++i) {
+    output[i] = output_tmp[i];
+}
+delete [] output_tmp;
+
+
+ // 计算总的数据大小
+size_t totalSize = output.size();
+
+// 分配结果数据内存
+std::unique_ptr&lt; uint8_t[] &gt; result_data = std::make_unique&lt; uint8_t[] &gt;(totalSize);
+
+// 将float数据转换为uint8_t (反归一化)
+size_t index = 0;
+for (float value : result) {
+    // 将float值转换为uint8_t (0-255范围)
+    float sca<a href="https://www.hqchip.com/app/1721" target="_blank"><u>led</u></a>Value = value * 255.0f;
+    scaledValue = std::max(0.0f, std::min(255.0f, scaledValue));
+    result_data[index++] = static_cast&lt; uint8_t &gt;(scaledValue);
+}
+
+result_data 就是最终的超分数据,可以正常显示
+
+</pre>
+<p>
+	</p>
+<p>
+	﻿<br/>
+	</p>
+<p>
+	<strong>4. 总结与技术展望</strong></p>
+<p>
+	京东金融App在鸿蒙端部署Real-ESRGAN-General-x4v3超分辨率模型的完整实践过程，成功解决了ONNX模型到OM离线模型转换、BCHW与BHWC张量格式处理、以及基于CANN Kit和NAPI的完整部署链路等关键技术难题。</p>
+<p>
+	展望端智能的未来发展，随着芯片算力的指数级增长、模型压缩技术的突破性进展以及边缘计算架构的日趋成熟，端侧设备将从单纯的数据采集终端演进为具备强大推理能力的智能计算节点，通过实现多模态AI融合、实时个性化学习、隐私保护计算和跨设备协同等核心能力，将大语言模型、<a href="https://www.elecfans.com/v/tag/3744/" target="_blank"><u>计算机视觉</u></a>、<a href="https://www.elecfans.com/tags/语音识别/" target="_blank"><u>语音识别</u></a>等<a href="https://www.elecfans.com/soft/data/42-102/" target="_blank"><u>AI技术</u></a>深度集成到移动设备中，构建起无需联网即可提供智能服务的自主计算生态，推动人机交互从被动响应向主动感知、预测和服务的范式转变，最终开启真正意义上的普惠<a href="https://www.elecfans.com/v/tag/150/" target="_blank"><u>人工智能</u></a>时代。</p>]]></description></item><item>    <title><![CDATA[新品 | 采用高爬电距离TO-247-4引脚封装的CoolSiC™ 1400V MOSFET G2]]></title>    <link>https://www.elecfans.com/d/7569012.html</link>    <guid>https://www.elecfans.com/d/7569012.html</guid>    <pubDate>2026-01-04 17:06:00</pubDate>    <description><![CDATA[<p style="margin-left:0px;text-align:justify;">新品</p><p style="margin-left:0px;text-align:justify;">采用高爬电距离TO-247-4引脚封装</p><p style="margin-left:0px;text-align:justify;">的CoolSiC 1400V <a href="https://www.elecfans.com/tags/mosfet/" target="_blank"><u>MOSFET</u></a> G2</p><p style="margin-left:0%;text-align:justify;"><img src="http://images.elecfans.net/uploads/20260104/b2cea13c-e94c-11f0-8ce9-92fbcf53809c.png" alt="b2cea13c-e94c-11f0-8ce9-92fbcf53809c.png"/></p><p style="margin-left:0px;text-align:justify;"><br/></p><p style="margin-left:0px;text-align:justify;">CoolSiC 1400V MOSFET G2器件采用TO-247-4引脚封装，兼具前沿的SiC技术与高爬电距离的坚固封装特性。该器件支持直流母线电压超过1000V的系统设计，既为现有应用提供额外的电压裕量与增强的可靠性，又能实现更高的开关速度，从而提升系统效率。其引脚与现有封装完全兼容，适用于光伏发电、电动汽车充电、储能系统及其他工业应用领域。</p><p style="margin-left:0px;text-align:justify;"><br/></p><p style="margin-left:0px;text-align:justify;"><strong>产品型号：</strong></p><p style="margin-left:0px;text-align:justify;"><span style="color:rgb(108,180,173);">■</span>IMZC140R011M2H</p><p style="margin-left:0px;text-align:justify;"><span style="color:rgb(108,180,173);">■</span>IMZC140R019M2H</p><p style="margin-left:0px;text-align:justify;"><span style="color:rgb(108,180,173);">■</span>IMZC140R024M2H</p><p style="margin-left:0px;text-align:justify;"><span style="color:rgb(108,180,173);">■</span>IMZC140R029M2H</p><p style="margin-left:0px;text-align:justify;"><span style="color:rgb(108,180,173);">■</span>IMZC140R038M2H</p><p style="text-align:justify;"><img src="http://images.elecfans.net/uploads/20260104/b2ec475a-e94c-11f0-8ce9-92fbcf53809c.gif" alt="b2ec475a-e94c-11f0-8ce9-92fbcf53809c.gif"/></p><p style="margin-left:0px;text-align:justify;"><br/></p><p style="margin-left:0px;text-align:justify;"><span style="background-color:rgb(94,162,144);">系统框图</span></p><p style="margin-left:0px;text-align:justify;"><br/></p><p style="margin-left:0px;text-align:center;"><strong>PV</strong></p><p style="text-align:justify;"><img src="http://images.elecfans.net/uploads/20260104/b2fdae6e-e94c-11f0-8ce9-92fbcf53809c.png" alt="b2fdae6e-e94c-11f0-8ce9-92fbcf53809c.png"/></p><p style="margin-left:0px;text-align:justify;"><br/></p><p style="margin-left:0px;text-align:center;"><strong>ESS</strong></p><p style="text-align:justify;"><img src="http://images.elecfans.net/uploads/20260104/b30de798-e94c-11f0-8ce9-92fbcf53809c.png" alt="b30de798-e94c-11f0-8ce9-92fbcf53809c.png"/></p><p style="margin-left:0px;text-align:justify;"><br/></p><p style="margin-left:0px;text-align:center;"><strong>EV Charging</strong></p><p style="text-align:justify;"><img src="http://images.elecfans.net/uploads/20260104/b325a072-e94c-11f0-8ce9-92fbcf53809c.png" alt="b325a072-e94c-11f0-8ce9-92fbcf53809c.png"/></p><p style="margin-left:0px;text-align:justify;"><br/></p><p style="margin-left:0px;text-align:justify;"><span style="background-color:rgb(94,162,144);">产品特性</span></p><p style="margin-left:0px;text-align:justify;"><br/></p><p style="margin-left:0px;text-align:center;">漏源极电压VDSS=1400V（结温Tvj≥25°C时）</p><p style="margin-left:0px;text-align:center;">导通电阻RDS(on)低至11mΩ（栅源极电压 VGS=18V，结温 Tvj=25°C时）</p><p style="margin-left:0px;text-align:center;">极低的开关损耗，有助于实现高效率</p><p style="margin-left:0px;text-align:center;">2µs短路耐受时间</p><p style="margin-left:0px;text-align:center;">更宽的栅源极工作电压范围：-10V至+25V</p><p style="margin-left:0px;text-align:center;">基准级栅极阈值电压：4.2V</p><p style="margin-left:0px;text-align:justify;"><br/></p><p style="margin-left:0px;text-align:justify;"><span style="background-color:rgb(94,162,144);">应用价值</span></p><p style="margin-left:0px;text-align:justify;"><br/></p><p style="margin-left:0px;text-align:center;">更高的功率密度</p><p style="margin-left:0px;text-align:center;">提升的整体系统效率</p><p style="margin-left:0px;text-align:center;">增加的系统输出功率</p><p style="margin-left:0px;text-align:center;">增强的冷却优化效果</p><p style="margin-left:0px;text-align:center;">简化的系统设计流程</p><p style="margin-left:0px;text-align:justify;"><br/></p><p style="margin-left:0px;text-align:justify;"><span style="background-color:rgb(94,162,144);">竞争优势</span></p><p style="margin-left:0px;text-align:justify;"><br/></p><p style="margin-left:0px;text-align:center;">支持直流母线电压超过1000V的系统设计</p><p style="margin-left:0px;text-align:center;">采用高爬电距离封装，可靠性卓越</p><p style="margin-left:0px;text-align:center;">具备优异的瞬态过载抗扰度</p><p style="margin-left:0px;text-align:center;">对于上限为1000V的应用：提供充足的电压裕量，支持大峰值<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>下的更高开关频率</p><p style="margin-left:0px;text-align:center;">其高功率密度有助于缩小整体系统尺寸</p><p style="margin-left:0px;text-align:justify;"><br/></p><p style="margin-left:0px;text-align:justify;"><span style="background-color:rgb(94,162,144);">应用领域</span></p><p style="margin-left:0px;text-align:justify;"><br/></p><p style="margin-left:0px;text-align:center;">电动汽车充电</p><p style="margin-left:0px;text-align:center;">储能系统</p><p style="margin-left:0px;text-align:center;">组串式<a href="https://www.elecfans.com/tags/逆变器/" target="_blank"><u>逆变器</u></a></p><p style="margin-left:0px;text-align:center;">不间断<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a></p><p style="margin-left:0px;text-align:center;">通用<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>驱动</p><p style="margin-left:0px;text-align:center;"/>]]></description></item><item>    <title><![CDATA[国内五大做大模型辅助的无人机硬件性能仿真与研发优化系统介绍]]></title>    <link>https://www.elecfans.com/d/7568980.html</link>    <guid>https://www.elecfans.com/d/7568980.html</guid>    <pubDate>2026-01-04 17:07:00</pubDate>    <description><![CDATA[<p>
+	  以下是对五款大模型辅助的<a href="https://www.elecfans.com/v/tag/12732/" target="_blank"><u>无人机</u></a>硬件性能<a href="https://bbs.elecfans.com/zhuti_proteus_1.html" target="_blank"><u>仿真</u></a>与研发优化系统的精简优化版介绍，在保留原意基础上提升语言凝练度与逻辑清晰度：<br/>
+	 1.北京华盛恒辉：大模型辅助的无人机硬件性能仿真与研发优化系统<br/>
+	 该系统融合<a href="https://www.elecfans.com/v/tag/150/" target="_blank"><u>人工智能</u></a>大模型与高保真多物理场<a href="https://www.elecfans.com/soft/data/27-29/" target="_blank"><u>仿真技术</u></a>，实现从需求输入到优化输出的全流程智能闭环。<br/>
+	 核心优势：<br/>
+	 全周期覆盖：支持概念设计、结构仿真、故障验证到参数优化；<br/>
+	 <a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>深度赋能：理解自然语言需求、自动生成仿真方案与飞控逻辑，基于历史数据推荐优化策略；<br/>
+	 高保真仿真：集成三维建模、气动/力学/热学多场<a href="https://www.elecfans.com/tags/耦合/" target="_blank"><u>耦合</u></a>分析及硬件在环（HIL）测试；<br/>
+	 智能决策闭环：自动完成“建模→仿真→诊断→优化”迭代。<br/>
+	 典型价值：<br/>
+	 研发周期缩短30%~50%，物理样机减少80%以上；可提前识别共振、电磁干扰等缺陷，并协同优化抗风性、续航与载荷等关键指标；大幅降低仿真使用门槛。<br/>
+	 2.北京五木恒润：大模型AI辅助的无人机硬件性能仿真与研发优化系统<br/>
+	 整合多模态大模型与高逼真仿真平台，显著提升无人机研发智能化水平。<br/>
+	 核心能力：<br/>
+	 多模态仿真：支持无人机、地面车辆及<a href="https://www.elecfans.com/tags/iot/" target="_blank"><u>IoT</u></a>设备，内置IMU、GPS、摄像头、激光雷达等<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>模型；<br/>
+	 虚实结合测试：兼容PX4、Ardu<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>Pi</u></a>lot等飞控，支持硬件在环（HIL）与软件在环（SIL）仿真；<br/>
+	 高保真环境：基于虚幻引擎构建城市、山地、室内等真实3D场景，强化视觉导航<a href="https://m.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>训练；<br/>
+	 集群与扩展性：支持多机协同编队仿真，模块化架构便于算法与硬件扩展；<br/>
+	 大模型决策：结合任务目标与上下文，生成并评估多种行为方案，输出最优任务规划。<br/>
+	 应用场景：<br/>
+	 <a href="https://www.elecfans.com/tags/自动驾驶/" target="_blank"><u>自动驾驶</u></a>算法开发、GPS拒止环境下的SLAM避障、农业植保、物流配送、军事侦察打击，以及教育科研等。<br/>
+	 3.Gazebo<br/>
+	 由南加州大学开发，现由开源<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>基金会（OS<a href="https://bbs.elecfans.com/group_65" target="_blank"><u>RF</u></a>）维护，是<a href="https://m.elecfans.com/v/tag/1004/" target="_blank"><u>ROS</u></a>生态中的主流仿真工具。<br/>
+	 特点：<br/>
+	 模块化设计，支持多种物理引擎、传感器模型和复杂机器人结构（如<a href="https://www.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>臂、双足机器人）；<br/>
+	 支持多无人机协同仿真，适用于空中交通或编队研究。<br/>
+	 局限：场景渲染与视觉效果已落后于当前主流引擎。<br/>
+	 适用领域：通用机器人及无人机的算法验证与系统集成。<br/>
+	 4.X-Plane<br/>
+	 由LaminarResearch开发，以<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>飞行动力学著称。<br/>
+	 特点：<br/>
+	 基于“叶片元理论”分解飞行器受力，精准<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>飞行性能与故障；<br/>
+	 内置大量真实商用/军用机型与全球地形贴图；<br/>
+	 插件架构支持功能扩展，支持UDP<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>协议。<br/>
+	 适用领域：无人机飞行性能分析、故障模拟及飞行控制算法验证。<br/>
+	 5.FlightGear<br/>
+	 始于1997年的开源跨平台飞行模拟器，持续活跃开发。<br/>
+	 特点：<br/>
+	 基于<a href="https://m.hqchip.com/app/1522" target="_blank"><u>Sim</u></a>Gear框架，采用JSBSim飞行动力学模型，整合<a href="https://www.elecfans.com/tags/nas/" target="_blank"><u>NAS</u></a>ALaR<a href="https://www.elecfans.com/tags/csi/" target="_blank"><u>Csi</u></a>m气动数据；<br/>
+	 提供约100种飞行器模型、全球20,000+真实跑道；<br/>
+	 支持实时天气、多云气象、多人联机及源码开放（SVN获取）。<br/>
+	 适用领域：飞行训练、航空研究及无人机气动特性仿真。<br/><br/>
+	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[京东自研电商数据库内核DongSQL简介]]></title>    <link>https://www.elecfans.com/d/7474309.html</link>    <guid>https://www.elecfans.com/d/7474309.html</guid>    <pubDate>2026-01-04 17:07:00</pubDate>    <description><![CDATA[<p>
+	团队于今年(2025.9)打磨出了深度优化的自研数据库内核——DongSQL V1.1.0。</p>
+<p>
+	[如果对前因后果比较感兴趣，可以移步上一篇文章《宝剑锋从磨砺出——零售数据库内核，为大促铸剑！》]</p>
+<p>
+	本文将深度解析DongSQL在语法扩展、并发控制、查询优化等方面的内核改造，以及在电商场景下的优化实践。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/40/27/wKgZPGkwC8SANV8-AASnBpMpEmI977.png" alt="wKgZPGkwC8SANV8-AASnBpMpEmI977.png"/></p>
+<p>
+	1、DongSQL在语法扩展上的优化</p>
+<p>
+	1.1. RETURNING子句功能</p>
+<p>
+	<strong>▶︎ 语法扩展创新</strong>：DongSQL在标准SQL语法基础上扩展了RETURNING子句，这是重要语法创新。RETURNING子句允许DML语句(INSERT、UPDA<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>TE</u></a>、DELETE、REPL<a href="https://m.hqchip.com/app/1703" target="_blank"><u>AC</u></a>E)在执行数据修改操作的同时返回受影响的行数据，无需额外查询。</p>
+<p>
+	传统数据库在执行DML操作后，如果需要获取操作结果，必须执行额外的SELECT查询，这在高并发场景下会产生额外的网络往返开销。DongSQL通过RETURNING子句彻底解决了这一问题。</p>
+<p>
+	--INSERT操作返回自增ID INSERTINTOorde<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>rs</u></a>(customer_id,order_date)VALUES(1001,NOW())RETURNINGorder_id; --UPDATE操作返回更新后的数据 UPDATEproduc<a href="https://www.hqchip.com/app/1593" target="_blank"><u>tsS</u></a>ETprice=price*1.1WHEREcategory='electronics' RETURNINGproduct_id,name,old_price,price; --DELETE操作返回被删除的记录 DELETEFROMex<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>pi</u></a>red_sessionsWHEREexpire_<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>ti</u></a>me&lt; NOW()   RETURNING session_id, user_id, expire_time;</p>
+<p>
+	<strong>▶︎ 性能提升效果</strong>：经测试验证，RETURNING子句在不同场景下都能带来显著的性能提升：</p>
+<p>
+	•<strong>固定行更新场景</strong>：16并发时TPS提升61%，响应时间降低44%</p>
+<p>
+	•<strong>随机行更新场景</strong>：128并发时TPS提升18%</p>
+<p>
+	•<strong>大规模更新测试</strong>：2000万次操作中平均TPS提升5-10%</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/40/27/wKgZO2kwC8WAfUf8AAFrs2YJ1dg489.png" alt="wKgZO2kwC8WAfUf8AAFrs2YJ1dg489.png"/></p>
+<p>
+	<strong>▶︎ 生产落地预期</strong>：该功能与DongDAL发号器逻辑高度匹配，有望将发号器性能瓶颈大幅提升(DongDAL团队配套开发推进中)</p>
+<p>
+	1.2. Hint语法扩展</p>
+<p>
+	<strong>▶︎ 多样化Hint支持</strong>：DongSQL扩展了Hint语法体系，提供了针对电商场景的专用提示功能，包括并发控制、库存管理等领域特定的优化。</p>
+<p>
+	<strong>▶︎ Inventory Hint</strong>：专门针对电商库存管理场景设计的提示语法，提供目标影响行<a href="https://m.elecfans.com/v/tag/949/" target="_blank"><u>数控</u></a>制、自动提交/回滚等特性。</p>
+<p>
+	--库存扣减：确保只影响一行，成功自动提交，失败自动回滚 UPDATE/*+TARGET_AFFECT_ROW(1)COMMIT_ON_SUCCESSROLLBACK_ON_FAIL*/ inventorySETstock=stock-5 WHEREproduct_id=1001ANDstock&gt;=5;</p>
+<p>
+	<strong>▶︎ 性能提升数据</strong>：在16并发的库存扣减场景下，使用Inventory Hint比不使用hint性能提升215%。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/40/27/wKgZPGkwC8aAKgCJAAGx5Tx1Pjw932.png" alt="wKgZPGkwC8aAKgCJAAGx5Tx1Pjw932.png"/></p>
+<p>
+	2、DongSQL在并发控制上的优化</p>
+<p>
+	2.1. CCL并发控制</p>
+<p>
+	<strong>▶︎ 多维度限流机制</strong>：DongSQL实现了CCL(Concurrency Control)并发控制功能，通过多维度的限流策略，有效解决电商秒杀场景下的热点数据访问问题。</p>
+<p>
+	传统数据库在面对高并发热点数据访问时，往往会因为激烈的锁竞争导致性能急剧下降，甚至系统雪崩。DongSQL的CCL通过智能排队机制，将无序的并发请求转换为有序处理，从根本上解决了这一问题。</p>
+<p>
+	<strong>▶︎ 多维度控制策略</strong>：</p>
+<p>
+	•<strong>基于字段的限流</strong>：ccl_queue_field(column_name, concurrency)，对特定字段值进行并发控制</p>
+<p>
+	•<strong>基于值的限流</strong>：ccl_queue_value(value, concurrency)，对特定数据值进行精准限流</p>
+<p>
+	•<strong>基于SQL指纹的限流</strong>：ccl_queue_digest(concurrency)，对相同SQL模式进行统一管控</p>
+<p>
+	--对<a href="https://www.hqchip.com/ask/" target="_blank"><u>商品</u></a>ID为999的热门商品进行限流，并发度限制为5 SELECT/*+ccl_queue_value(999,5)*/*FROMproductsWHEREproduct_id=999;  --对库存扣减操作按商品ID进行限流 UPDATE/*+ccl_queue_field(product_id,8)*/inventorySETstock=stock-1WHEREproduct_id=?;  --对相同SQL模式进行统一限流 SELECT/*+ccl_queue_digest(10)*/*FROMhot_productsWHEREstatus=1;</p>
+<p>
+	<strong>▶︎ 性能突破数据</strong>：</p>
+<p>
+	•<strong>秒杀场景优化</strong>：在4096并发下，使用CCL限流后TPS从573提升至1337，性能提升133%</p>
+<p>
+	•<strong>系统稳定性</strong>：有效防止系统雪崩，将无序并发转换为有序处理</p>
+<p>
+	•<strong>热点缓解</strong>：通过队列机制显著降低热点数据的锁竞争</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/40/27/wKgZO2kwC8eAP0vNAAHGruJB5cs700.png" alt="wKgZO2kwC8eAP0vNAAHGruJB5cs700.png"/></p>
+<p>
+	2.2. Statement Outline执行计划及自定义提示管理</p>
+<p>
+	<strong>▶︎ 企业级计划稳定性</strong>：DongSQL提供了Statement Outline功能，用于固化重要SQL的执行计划，防止因数据变化导致的计划不稳定问题。</p>
+<p>
+	<strong>▶︎ 自定义Hint注入工具</strong>：包括但不限于上述秒杀、CCL限流场景的Hint，即使业务研发预期外的过载或者突发流量发生，应急情况下DBA也可以通过Statement Outline功能对问题SQL进行干预</p>
+<p>
+	--为重要SQL固化执行计划 CALLdbms_outln.<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>ad</u></a>d_index_outline( 'test_db','',1,'USEINDEX','idx_status','', 'SELECT*FROMordersWHEREstatus="PAID"' ); --为特定查询添加ccl_queue_digest限流hint，限制并发度为2 CALLdbms_outln.add_optimizer_outline( 'test_db','',1,'/*+ccl_queue_digest(2)*/', 'SELECT*FROMordersWHEREcustomer_id=1001');</p>
+<p>
+	<strong>▶︎ 核心价值</strong>：</p>
+<p>
+	•<strong>性能稳定性</strong>：保障核心SQL性能不因数据变化而波动</p>
+<p>
+	•<strong>智能限流</strong>：支持基于SQL指纹的手动限流和自动限流(自动限流默认不开启，需要开启的业务需单独申请)</p>
+<p>
+	•<strong>企业级管理</strong>：提供生产级的执行计划管理能力</p>
+<p>
+	3、DongSQL在查询优化上的改进</p>
+<p>
+	3.1. 单点查询优化</p>
+<p>
+	<strong>▶︎ 查询路径优化</strong>：DongSQL实现了单点查询bypass功能，针对主键等值查询这类高频简单查询，绕过部分SQL层处理逻辑，直接访问存储引擎，大幅提升查询性能。</p>
+<p>
+	电商场景中，商品详情查询、用户信息查询等基于主键的简单查询占据了很大比例。虽然这些查询逻辑简单，但在高并发下仍然消耗大量<a href="https://m.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>资源。DongSQL的单点查询优化针对这一痛点进行了专项优化。</p>
+<p>
+	<strong>▶︎ 性能提升数据</strong>：</p>
+<p>
+	•<strong>不同环境性能提升</strong>：容器环境提升20%，物理机环境提升30%</p>
+<p>
+	•<strong>高并发场景</strong>：当CPU达到瓶颈时，QPS提升20-28%</p>
+<p>
+	•<strong>资源效率</strong>：相同硬件配置下处理能力显著提升</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/40/27/wKgZPGkwC8iAavQLAAF884_51xI694.png" alt="wKgZPGkwC8iAavQLAAF884_51xI694.png"/></p>
+<p>
+	3.2. 线程池优化</p>
+<p>
+	<strong>▶︎ 高并发处理能力</strong>：DongSQL实现了企业级线程池功能，通过智能线程调度和资源管理，显著提升了系统在高并发场景下的处理能力和稳定性。</p>
+<p>
+	传统数据库在面对大量并发连接时，会为每个连接创建独立线程，这在高并发下会导致线程切换开销过大、内存消耗激增等问题。DongSQL的线程池优化通过复用线程资源，有效解决了这些问题。</p>
+<p>
+	<strong>▶︎ 调度机制</strong>：</p>
+<p>
+	•<strong>线程复用：</strong>通过线程池复用减少线程创建销毁开销</p>
+<p>
+	•<strong>负载均衡：</strong>分配任务到不同线程，避免热点线程</p>
+<p>
+	•<strong>优先级调度：</strong>支持任务优先级，保障重要业务优先处理</p>
+<p>
+	<strong>▶︎ 性能突破数据</strong>（基于8C32G测试环境，sysbench 16张表每张1000万行数据）：</p>
+<p>
+	<strong>只读场景性能对比</strong>：</p>
+<p>
+	•<strong>低并发优势</strong>：32线程时，线程池模式QPS达到141,261，相比传统模式的110,658提升27.6%</p>
+<p>
+	•<strong>高并发稳定性</strong>：在512线程高并发下，线程池模式QPS保持131,939，而传统模式仅61,580，性能提升114%</p>
+<p>
+	•<strong>延迟控制</strong>：512线程时TP99延迟从传统模式的297.92ms优化到118.92ms，降低60%</p>
+<p>
+	<strong>纯写场景性能突破</strong>：</p>
+<p>
+	•<strong>中等并发</strong>：64线程时QPS从46,577提升到57,655，性能提升23.8%</p>
+<p>
+	•<strong>高并发场景</strong>：512线程时QPS从29,541提升到58,166，性能提升97%</p>
+<p>
+	•<strong>超高并发</strong>：4096线程时QPS从28,571提升到54,687，性能提升91%</p>
+<p>
+	<strong>读写混合场景优化</strong>：</p>
+<p>
+	•<strong>128线程</strong>：QPS从54,870提升到80,244，性能提升46%</p>
+<p>
+	•<strong>256线程</strong>：QPS从48,787提升到77,961，性能提升60%</p>
+<p>
+	•<strong>延迟优化</strong>：256线程时TP99延迟从196.89ms优化到158.63ms，降低19%</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/40/27/wKgZO2kwC8mAOI2lAALPWfC9TNs008.png" alt="wKgZO2kwC8mAOI2lAALPWfC9TNs008.png"/></p>
+<p>
+	3.3. 其他查询执行优化</p>
+<p>
+	<strong>▶︎ 执行路径优化</strong>：DongSQL在查询执行引擎层面进行了多项优化，包括算子优化、内存管理优化、并行执行优化等。</p>
+<p>
+	<strong>▶︎ 缓存机制增强</strong>：优化了Buffer Pool管理策略，页面mutex优化，提升了数据访问效率，降低了I/O锁冲突。</p>
+<p>
+	4、性能基准测试汇总</p>
+<p>
+	OLTP标准基准测试</p>
+<p>
+	基于标准测试环境的性能数据（16C32G, 16张表，每张表100万行）：</p>
+<table><tbody><tr><td>
+				测试场景</td>
+			<td>
+				最佳线程数</td>
+			<td>
+				TPS</td>
+			<td>
+				QPS</td>
+			<td>
+				TP99延迟</td>
+			<td>
+				平均延迟</td>
+		</tr><tr><td>
+				只读查询</td>
+			<td>
+				64</td>
+			<td>
+				19,484</td>
+			<td>
+				311,745</td>
+			<td>
+				21.50ms</td>
+			<td>
+				3.28ms</td>
+		</tr><tr><td>
+				只写操作</td>
+			<td>
+				256</td>
+			<td>
+				17,004</td>
+			<td>
+				102,025</td>
+			<td>
+				29.72ms</td>
+			<td>
+				15.05ms</td>
+		</tr><tr><td>
+				插入操作</td>
+			<td>
+				256</td>
+			<td>
+				25,614</td>
+			<td>
+				25,614</td>
+			<td>
+				15.83ms</td>
+			<td>
+				9.99ms</td>
+		</tr><tr><td>
+				读写混合</td>
+			<td>
+				128</td>
+			<td>
+				9,795</td>
+			<td>
+				195,908</td>
+			<td>
+				33.12ms</td>
+			<td>
+				13.06ms</td>
+		</tr><tr><td>
+				点查询</td>
+			<td>
+				64</td>
+			<td>
+				560,933</td>
+			<td>
+				560,933</td>
+			<td>
+				0.18ms</td>
+			<td>
+				0.11ms</td>
+		</tr></tbody></table><p>
+	电商场景专项性能汇总</p>
+<table><tbody><tr><td>
+				优化模块</td>
+			<td>
+				测试场景</td>
+			<td>
+				性能提升幅度</td>
+			<td>
+				关键指标</td>
+		</tr><tr><td>
+				<strong>RETURNING子句</strong></td>
+			<td>
+				固定行更新</td>
+			<td>
+				<strong>61%</strong></td>
+			<td>
+				TPS: 925→1,490</td>
+		</tr><tr><td>
+				<strong>CCL并发控制</strong></td>
+			<td>
+				秒杀场景</td>
+			<td>
+				<strong>133%</strong></td>
+			<td>
+				TPS: 573→1,337</td>
+		</tr><tr><td>
+				<strong>Inventory Hint</strong></td>
+			<td>
+				库存扣减</td>
+			<td>
+				<strong>215%</strong></td>
+			<td>
+				TPS: 1,537→4,843</td>
+		</tr><tr><td>
+				<strong>单点查询优化</strong></td>
+			<td>
+				主键查询</td>
+			<td>
+				<strong>28%</strong></td>
+			<td>
+				QPS: 76,432→98,470</td>
+		</tr></tbody></table><p>
+	5、未来规划</p>
+<p>
+	1.<strong>持续语法扩展</strong>：基于业务需求继续扩展SQL语法功能</p>
+<p>
+	2.<strong>智能优化增强</strong>：引入<a href="https://m.elecfans.com/v/tag/557/" target="_blank"><u>机器学习</u></a>优化执行计划选择</p>
+<p>
+	3.<strong>内核级技术支持</strong>：具备内核研发能力的团队，持续从最底层为业务研发提供深度优化的数据库解决方案</p>
+<p>
+	4.<strong>云原生存算分离</strong>：继续打造属于京东自己的高性能低成本数据库产品</p>
+<p>
+	6、结语</p>
+<p>
+	从开源内核到自研DongSQL，京东零售数据库团队始终以"业务价值驱动技术创新"为核心理念。DongSQL作为专为京东电商场景设计的数据库，通过语法扩展、并发控制、查询优化等多个模块的深度创新，为电商业务的快速发展提供了强有力的数据库技术支撑。</p>
+<p>
+	这些优化不仅提升了系统性能，更重要的是为集团基础技术底座提供了坚实的基础。未来，京东零售数据库团队将持续深耕数据库内核技术，让数据库更好地服务业务发展。</p>]]></description></item><item>    <title><![CDATA[SN54AHC123A和SN74AHC123A双可重触发单稳态多谐振荡器的设计与应用]]></title>    <link>https://www.elecfans.com/d/7568988.html</link>    <guid>https://www.elecfans.com/d/7568988.html</guid>    <pubDate>2026-01-04 17:10:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_7568988" value="https://file1.elecfans.com/web3/M00/45/7E/wKgZPGlaLEaALKamAA7pJwpkP6U535.pdf"/><h1>SN54AHC123A和SN74AHC123A双可重触发单稳态多谐<a href="https://m.hqchip.com/app/850" target="_blank"><u>振荡器</u></a>的设计与应用</h1>
+<p>在电子设计领域，单稳态多谐振荡器是一种常用的电路元件，它能够产生特定宽度的脉冲<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>，广泛应用于定时、脉冲生成等场景。今天，我们就来深入探讨一下<a href="https://www.elecfans.com/tags/德州仪器/" target="_blank"><u>德州仪器</u></a>（<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>TI</u></a>）的SN54AHC123A和SN74AHC123A双可重触发单稳态多谐振荡器。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_7568988" target="_blank">SN74AHC123AN.pdf</a></p>
+<h2>一、产品概述</h2>
+<p>SN54AHC123A和SN74AHC123A是专门为2V至5.5V Vcc<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>电压范围设计的双可重触发单稳态多谐振荡器。它们具有以下显著特点：</p>
+<ol>
+<li><strong>宽电压范围</strong>：能够在2V至5.5V的电源电压下稳定工作，适用于多种不同的电源环境。</li>
+<li><strong>施密特触发输入</strong>：在 $overline{A}$、B和CLR输入上采用了施密特触发器，具有足够的滞后特性，能够处理缓慢的输入转换速率，并在输出端实现无抖动触发。</li>
+<li><strong>可重触发功能</strong>：通过对低电平有效（$overline{A}$）或高电平有效（B）输入进行重触发，可以延长基本脉冲持续时间。</li>
+<li><strong>脉冲控制灵活</strong>：可以通过将CLR置低来缩短脉冲持续时间，并且CLR输入可以覆盖 $overline{A}$ 或B输入。</li>
+<li><strong>上电复位无毛刺</strong>：在上电时，Q输出处于低电平状态，$overline{Q}$ 输出处于高电平状态，无需施加复位脉冲即可实现无毛刺输出。</li>
+<li><strong><a href="https://m.hqchip.com/app/1587" target="_blank"><u>ESD</u></a>保护</strong>：具备出色的静电放电（ESD）保护能力，超过JESD 22标准的要求，包括2000V人体模型（A114 - A）、200V机器模型（A115 - A）和1000V充电设备模型（C101）。</li>
+</ol>
+<h2>二、订购信息</h2>
+<p>这两款器件提供了多种封装选项，以满足不同的应用需求。具体的订购信息如下：</p>
+<h3>SN74AHC123A（-40°C至85°C工作温度范围）</h3>
+<table>
+<thead>
+<tr>
+<th>封装类型</th>
+<th>包装形式</th>
+<th>可订购部件编号</th>
+<th>顶面标记</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PDIP - N</td>
+<td>管装</td>
+<td>SN74AHC123AN</td>
+<td>SN74AHC123AN</td>
+</tr>
+<tr>
+<td>SOIC - D</td>
+<td>管装</td>
+<td>SN74AHC123<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a></td>
+<td>AHC123A</td>
+</tr>
+<tr>
+<td>SOIC - D</td>
+<td>卷带包装</td>
+<td>SN74AHC123ADR</td>
+<td/>
+</tr>
+<tr>
+<td>SSOP - DB</td>
+<td>卷带包装</td>
+<td>SN74AHC123ADBR</td>
+<td>HA123A</td>
+</tr>
+<tr>
+<td><a href="https://www.hqchip.com/app/1593" target="_blank"><u>TSS</u></a>OP - PW</td>
+<td>卷带包装</td>
+<td>SN74AHC123APWR</td>
+<td>HA123A</td>
+</tr>
+<tr>
+<td><a href="https://www.hqchip.com/app/1587" target="_blank"><u>TVS</u></a>OP - DGV</td>
+<td>卷带包装</td>
+<td>SN74AHC123ADG<a href="https://m.elecfans.com/v/tag/3668/" target="_blank"><u>VR</u></a></td>
+<td>HA123A</td>
+</tr>
+</tbody>
+</table>
+<h3>SN54AHC123A（-55°C至125°C工作温度范围）</h3>
+<table>
+<thead>
+<tr>
+<th>封装类型</th>
+<th>包装形式</th>
+<th>可订购部件编号</th>
+<th>顶面标记</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CDIP - J</td>
+<td>管装</td>
+<td>SNJ54AHC123AJ</td>
+<td>SNJ54AHC123AJ</td>
+</tr>
+<tr>
+<td>CFP - W</td>
+<td>管装</td>
+<td>SNJ54AHC123AW</td>
+<td>SNJ54AHC123AW</td>
+</tr>
+<tr>
+<td>LCCC - FK</td>
+<td>管装</td>
+<td>SNJ54AHC123AFK</td>
+<td>SNJ54AHC123AFK</td>
+</tr>
+</tbody>
+</table>
+<h2>三、<a href="https://www.elecfans.com/v/tag/773/" target="_blank"><u>工作原理</u></a></h2>
+<h3>脉冲触发与持续时间控制</h3>
+<p>输出脉冲持续时间可以通过选择外部<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>和<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>值来<a href="https://bbs.elecfans.com/group_75" target="_blank"><u>编程</u></a>。外部定时电容必须连接在 $C<em>{ext}$ 和 $R</em>{ext}/C<em>{ext}$（正极）之间，外部电阻连接在 $R</em>{ext}/C<em>{ext}$ 和 $V</em>{CC}$ 之间。如果需要获得可变的脉冲持续时间，可以在 $R<em>{ext}/C</em>{ext}$ 和 $V_{CC}$ 之间连接一个外部可变电阻。此外，将CLR置低也可以缩短输出脉冲持续时间。
+脉冲触发发生在特定的电压电平上，与输入脉冲的转换时间没有直接关系。具体的触发方式有三种：</p>
+<ol>
+<li>$overline{A}$ 输入为低电平，B输入从低电平变为高电平。</li>
+<li>B输入为高电平，$overline{A}$ 输入从高电平变为低电平。</li>
+<li>$overline{A}$ 输入为低电平，B输入为高电平，且CLR输入从低电平变为高电平。</li>
+</ol>
+<h3>重触发与清除功能</h3>
+<p>一旦触发，基本脉冲持续时间可以通过对低电平有效（$overline{A}$）或高电平有效（B）输入进行重触发来延长。而将CLR置低则可以缩短脉冲持续时间，并且CLR输入可以覆盖 $overline{A}$ 或B输入。</p>
+<h2>四、<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>特性与参数</h2>
+<h3>绝对最大额定值</h3>
+<table>
+<thead>
+<tr>
+<th>在使用这两款器件时，需要注意其绝对最大额定值，以避免对器件造成永久性损坏。以下是一些重要的绝对最大额定值参数：</th>
+<th>参数</th>
+<th>数值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>电源电压范围，$V_{CC}$</td>
+<td>0.5V至7V</td>
+</tr>
+<tr>
+<td>输入电压范围，$V_{I}$</td>
+<td>-0.5V至7V</td>
+</tr>
+<tr>
+<td>输出电压范围（高或低状态），$V_{O}$</td>
+<td>-0.5V至$V_{CC}$ + 0.5V</td>
+</tr>
+<tr>
+<td>输出电压范围（断电状态），$V_{O}$</td>
+<td>-0.5V至7V</td>
+</tr>
+<tr>
+<td>输入钳位<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>，$I<em>{IK}$（$V</em>{I}$ &lt; 0）</td>
+<td>-20mA</td>
+</tr>
+<tr>
+<td>输出钳位电流，$I<em>{OK}$（$V</em>{O}$ &lt; 0或$V<em>{O}$ &gt; $V</em>{CC}$）</td>
+<td>20mA</td>
+</tr>
+<tr>
+<td>连续输出电流，$I<em>{O}$（$V</em>{O}$ = 0至$V_{CC}$）</td>
+<td>25mA</td>
+</tr>
+<tr>
+<td>通过$V_{CC}$或GND的连续电流</td>
+<td>50mA</td>
+</tr>
+<tr>
+<td>存储温度范围，$T_{stg}$</td>
+<td>-65°C至150°C</td>
+</tr>
+</tbody>
+</table>
+<h3>推荐工作条件</h3>
+<table>
+<thead>
+<tr>
+<th>为了确保器件的正常工作和性能稳定性，建议在以下工作条件下使用：</th>
+<th>参数</th>
+<th>SN54AHC123A</th>
+<th>SN74AHC123A</th>
+<th>单位</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>电源电压，$V_{CC}$</td>
+<td>2V至5.5V</td>
+<td>2V至5.5V</td>
+<td>V</td>
+</tr>
+<tr>
+<td>高电平输入电压，$V_{IH}$</td>
+<td>根据$V_{CC}$不同而变化</td>
+<td>根据$V_{CC}$不同而变化</td>
+<td>V</td>
+</tr>
+<tr>
+<td>低电平输入电压，$V_{IL}$</td>
+<td>根据$V_{CC}$不同而变化</td>
+<td>根据$V_{CC}$不同而变化</td>
+<td>V</td>
+</tr>
+<tr>
+<td>输入电压，$V_{I}$</td>
+<td>0V至5.5V</td>
+<td>0V至5.5V</td>
+<td>V</td>
+</tr>
+<tr>
+<td>输出电压，$V_{O}$</td>
+<td>0V至$V_{CC}$</td>
+<td>0V至$V_{CC}$</td>
+<td>V</td>
+</tr>
+<tr>
+<td>高电平输出电流，$I_{OH}$</td>
+<td>根据$V_{CC}$不同而变化</td>
+<td>根据$V_{CC}$不同而变化</td>
+<td>μA或mA</td>
+</tr>
+<tr>
+<td>低电平输出电流，$I_{OL}$</td>
+<td>根据$V_{CC}$不同而变化</td>
+<td>根据$V_{CC}$不同而变化</td>
+<td>μA或mA</td>
+</tr>
+<tr>
+<td>外部定时电阻，$R_{ext}$</td>
+<td>根据$V_{CC}$不同而变化</td>
+<td>根据$V_{CC}$不同而变化</td>
+<td>Ω</td>
+</tr>
+<tr>
+<td>上电斜坡速率，$Delta V_{CC}$</td>
+<td>1ms/V</td>
+<td>1ms/V</td>
+<td/>
+</tr>
+<tr>
+<td>工作环境温度，$T_{A}$</td>
+<td>-55°C至125°C</td>
+<td>-40°C至85°C</td>
+<td>°C</td>
+</tr>
+</tbody>
+</table>
+<h3>电气特性</h3>
+<p>文档中还给出了详细的电气特性参数，包括不同电源电压下的输出电压、输入电流、静态电流、动态电流等。例如，在不同的负载电流和电源电压下，输出高电平电压和输出低电平电压的典型值和最大值都有明确的规定。这些参数对于<a href="https://www.elecfans.com/v/tag/167/" target="_blank"><u>电路设计</u></a>和性能评估非常重要。</p>
+<h2>五、应用注意事项</h2>
+<h3>噪声防护</h3>
+<p>为了防止由于噪声引起的故障，建议在$V<em>{CC}$和GND之间连接一个<a href="https://www.elecfans.com/tags/高频电容/" target="_blank"><u>高频电容</u></a>，并尽量缩短外部组件与$C</em>{ext}$和$R<em>{ext}/C</em>{ext}$<a href="https://m.hqchip.com/app/1529" target="_blank"><u>端子</u></a>之间的布线长度。</p>
+<h3>掉电考虑</h3>
+<p>当使用较大的$C<em>{ext}$电容时，在掉电过程中可能会出现问题。因为电容中存储的能量会通过引脚2或引脚14的保护<a href="https://www.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>从$V</em>{CC}$放电。为了避免损坏器件，需要将输入保护二极管的电流限制在30mA以内，因此$V<em>{CC}$电源的关断时间不能快于$t = V</em>{CC} × C<em>{ext} / 30mA$。通常情况下，由于电源经过了大量的滤波处理，不会出现这种快速放电的情况。如果$V</em>{CC}$需要更快地降至零，可以使用外部钳位二极管。</p>
+<h3>输出脉冲持续时间计算</h3>
+<p>输出脉冲持续时间$t<em>{w}$主要由外部电容（$C</em>{T}$）和定时电阻（$R<em>{T}$）的值决定。计算公式为：
+$t</em>{w} = K × R<em>{T} × C</em>{T}$
+其中，当$C<em>{T} ≥ 1000pF$时，$K = 1.0$；当$C</em>{T} &lt; 1000pF$时，$K$的值可以从图9中确定。</p>
+<h3>重触发数据</h3>
+<p>最小输入重触发时间（$t<em>{MIR}$）是初始信号之后再次触发输入所需的最小时间。实验表明，为了重触发输出脉冲，两个相邻的输入信号之间的时间间隔应该为$t</em>{MIR}$，其中$t<em>{MIR} = 0.30 × t</em>{w}$。重触发脉冲持续时间$t<em>{RT}$的计算公式为：
+$t</em>{RT} = t<em>{W} + t</em>{PLH} = (K × R<em>{T} × C</em>{T}) + t<em>{PLH}$
+其中，$t</em>{PLH}$是传播延迟。为了确保重触发输出，从输入脉冲结束到重触发输出开始的最小时间应该约为15ns。</p>
+<h2>六、<a href="https://www.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>数据与封装信息</h2>
+<p>文档中还提供了各种封装的机械数据和尺寸信息，包括不同封装的外形图、引脚排列、尺寸公差等。这些信息对于<a href="https://bbs.elecfans.com/group_1221" target="_blank"><u>PCB设计</u></a>和器件布局非常重要。例如，对于不同的封装类型，如SOIC、SSOP、TSSOP等，都有详细的尺寸标注和相关的设计注意事项。</p>
+<h2>七、总结</h2>
+<p>SN54AHC123A和SN74AHC123A双可重触发单稳态多谐振荡器是两款性能出色、功能丰富的器件。它们具有宽电压范围、灵活的脉冲控制、良好的ESD保护等优点，适用于多种不同的应用场景。在使用过程中，需要注意其电气特性、应用注意事项和机械数据，以确保器件的正常工作和系统的稳定性。希望通过本文的介绍，能够帮助<a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>更好地了解和应用这两款器件。</p>
+<p>大家在实际设计过程中，有没有遇到过类似器件的使用问题呢？欢迎在评论区分享你的经验和见解。 </p>]]></description></item><item>    <title><![CDATA[服务器数据恢复—供电不稳引发服务器EXT4分区挂载失败的数据恢复案例]]></title>    <link>https://www.elecfans.com/d/7538341.html</link>    <guid>https://www.elecfans.com/d/7538341.html</guid>    <pubDate>2026-01-04 17:10:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	服务器数据恢复环境：</p>
+<p style="text-indent:2em;">
+	某品牌730系列服务器+MD3200阵列,系列存储，<a href="https://www.elecfans.com/v/tag/538/" target="_blank"><u>linux</u></a> centos7<a href="https://m.elecfans.com/v/tag/527/" target="_blank"><u>操作系统</u></a>+EXT4文件系统，分配一个lun。</p>
+<p style="text-indent:2em;">
+	服务器故障：</p>
+<p style="text-indent:2em;">
+	服务器在运行过程中突然关机且无法启动。服务器管理员对故障服务器进行修复后，虽然服务器可以正常启动，但服务器分区无法挂载。服务器管理员修复&amp;挂载无法挂载的分区，查看数据后发现部分文件丢失。</p>
+<p style="text-indent:2em;">
+	服务器数据恢复过程：</p>
+<p style="text-indent:2em;">
+	1、服务器数据恢复<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>到达现场后将故障服务器以只读模式映射到北亚企安备份服务器上，然后将故障服务器上的数据完整镜像到备份服务器上。后续的数据分析和数据恢复操作都基于备份服务器上的数据进行。服务器数据恢复工程师对备份服务器内的数据进行分析后，初步判断服务器故障是由于机房供电电压不稳造成的。</p>
+<p style="text-indent:2em;">
+	2、服务器数据恢复工程师分析故障服务器的底层数据后发现目录项被破坏，但底层数据仍然存在。由于服务器管理员对文件系统进行过fsck修复，损坏的目录项修复失败后以目录节点号命名，存放于lost+found文件目录内，这些目录项所对应的数据区<a href="https://m.hqchip.com/ic/0" target="_blank"><u>索引</u></a>也被清除。经过北亚企安数据恢复工程师的会诊，敲定数据恢复方案：通过被删除的虚拟磁盘文件的文件系统和文件类型排查vmfs卷自由空间，匹配&amp;重新合并碎片，恢复删除的虚拟磁盘文件。</p>
+<p style="text-indent:2em;">
+	<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>Ti</u></a>ps：故障服务器使用EXT4文件系统，该文件系统中的文件丢失后其节点信息也会被清除，所以不能通过节点信息恢复数据，而应该通过将丢失的文件目录项节点号和lost+found目录下的文件名称进行匹配的方法恢复数据。服务器数据恢复工程师提取目录项节点号，与lost+found目录下的文件名进行一一对应，还原服务器的原始目录结构。</p>
+<p style="text-indent:2em;">
+	3、根据上述数据恢复方案，服务器数据恢复工程师分析底层数据。扫描底层空间的目录项的区域，统计和记录目录项的节点号、数量等信息。根据服务器磁盘中的文件系统信息整合&amp;匹配统计的目录项和节点号，然后和lost+found目录下的文件记录号进行匹配，恢复服务器内丢失的数据。</p>
+<p style="text-indent:2em;">
+	4、用户方工程师对恢复出来的数据进行检测后，确认恢复出来的数据完整有效。本次数据恢复工作完成。</p>]]></description></item><item>    <title><![CDATA[滤波器腔体精密加工：以极致精度铸就卓越通信品质]]></title>    <link>https://www.elecfans.com/d/7538322.html</link>    <guid>https://www.elecfans.com/d/7538322.html</guid>    <pubDate>2026-01-04 17:11:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	在<a href="https://www.elecfans.com/v/tag/1225/" target="_blank"><u>5G</u></a><a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>、卫星导航、雷达探测等高频电子系统中，<a href="https://www.elecfans.com/tags/滤波器/" target="_blank"><u>滤波器</u></a>作为<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>筛选的核心部件，其性能直接决定了系统的信号完整性与抗干扰能力。而滤波器腔体作为信号传输与谐振的关键载体，其加工精度、表面质量与结构稳定性对滤波器的<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>频率、插入损耗、带外抑制等核心指标具有决定性影响。随着高频化、小型化技术趋势的推进，滤波器腔体精密加工已成为制约电子设备性能升级的核心技术环节，其技术难度与工艺要求也随之大幅提升。</p>
+<p style="text-indent:2em;">
+	一、滤波器腔体精密加工的核心技术要求</p>
+<p style="text-indent:2em;">
+	1、尺寸精度：需达到微米级管控，谐振腔内部尺寸公差需控制在±1~3μm范围内，相当于头发丝直径的百分之一，微小偏差就可能导致中心频率偏移超出允许带宽；</p>
+<p style="text-indent:2em;">
+	2、表面质量：要求极高，腔体内壁粗糙度需低于Ra0.4μm，部分高端毫米波产品甚至要求Ra≤0.05μm，以减少高频信号的趋肤效应损耗，避免表面凹凸引发信号反射；</p>
+<p style="text-indent:2em;">
+	3、材料适配性：要求严格，针对铝合金、无氧铜、可伐合金及陶瓷等不同基材，需开发专用加工工艺，防止加工过程中产生裂纹、变形或组织损伤。</p>
+<p style="text-indent:2em;">
+	二、滤波器腔体精密加工的关键工艺环节</p>
+<p style="text-indent:2em;">
+	1、材料预处理环节：这是保障加工精度的基础前提。对于金属腔体常用的铝合金、无氧铜等材料，需通过锻造、热处理等工艺消除内部应力，避免加工后因应力释放导致变形；对于陶瓷等脆性材料，则需通过等静压成型确保密度均匀，提升加工稳定性；</p>
+<p style="text-indent:2em;">
+	2、成型加工环节：该环节是实现腔体结构的核心步骤，主流技术为五轴联动CNC铣削与微细电火花加工。五轴联动加工可实现复杂腔体结构的一体化成型，避免多次装夹带来的定位误差，重复定位精度可达±0.01mm，能精准加工谐振腔、<a href="https://www.elecfans.com/tags/耦合/" target="_blank"><u>耦合</u></a>槽等关键结构；</p>
+<p style="text-indent:2em;">
+	3、表面处理与精整环节：表面质量直接影响信号传输效率，此环节需通过研磨、抛光、电镀等工艺提升表面性能。金属腔体内壁通常采用磁流变抛光技术，可将表面粗糙度从Ra0.4μm降至Ra0.05μm，显著降低插入损耗；</p>
+<p style="text-indent:2em;">
+	4、装配与测试环节：精密加工的最终效果需通过装配调试验证。采用真空钎焊或激光封焊技术实现腔体与盖板的密封装配，控制热影响区范围，确保气密性。装配后通过矢量网络分析仪测试频率响应，若参数不达标，采用激光调谐修正谐振腔尺寸，直至满足设计要求。</p>
+<p style="text-indent:2em;">
+	三、滤波器腔体精密加工的精度控制策略</p>
+<p style="text-indent:2em;">
+	微米级精度的实现离不开全流程的精度控制体系，核心策略包括设备升级、工艺优化与在线监测三个维度。</p>
+<p style="text-indent:2em;">
+	1、设备升级：引入<a href="https://m.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>五轴联动<a href="https://m.elecfans.com/v/tag/949/" target="_blank"><u>数控</u></a>机床、纳米级研磨机、慢走丝线切割机等设备，提升复杂结构加工能力与尺寸控制精度，国产五轴加工中心当前市占率已提升至37.6%，逐步替代进口设备。</p>
+<p style="text-indent:2em;">
+	2、工艺优化：针对不同材料特性调整加工参数，如铝镁合金加工采用超细晶粒硬质合金刀具，主轴转速控制在4000~4500r/min，进给量550~600mm/min，配合低温切削液冷却，避免高温变形与燃烧风险；</p>
+<p style="text-indent:2em;">
+	3、在线监测：通过三坐标测量仪、在线激光测量系统实时反馈加工数据，及时修正刀具路径与切削参数，避免批量性不良，同时建立加工参数追溯体系，便于质量管控。</p>
+<p style="text-indent:2em;">
+	四、滤波器腔体精密加工的技术发展趋势</p>
+<p style="text-indent:2em;">
+	1、超精密加工设备国产化：重点突破高端五轴加工中心的核心部件，提升纳米级加工能力；</p>
+<p style="text-indent:2em;">
+	2、工艺创新，开发低温钎焊、激光微纳加工等新工艺，减少热变形，适配更复杂的微型化结构；</p>
+<p style="text-indent:2em;">
+	3、智能化生产：通过数字孪生技术<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>加工过程，优化工艺参数，结合自动化上下料系统与智能检测设备，实现黑灯工厂生产，提升加工效率与一致性，单班产能可从800件提升至5200件，大幅降低人工成本。</p>
+<p style="text-indent:2em;">
+	滤波器腔体精密加工是融合材料科学、<a href="https://www.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>加工、电子技术的跨学科技术领域，其精度控制能力直接决定了高频电子系统的性能上限。未来，随着设备、工艺与材料的协同创新，滤波器腔体精密加工将实现从微米级向纳米级的跨越，为6G通信、卫星互联网等新兴领域提供核心技术支撑。</p>
+<p style="text-indent:2em;">
+	</p>]]></description></item><item>    <title><![CDATA[比亚迪首次超越特斯拉，全球纯电销量第一！]]></title>    <link>https://www.elecfans.com/d/7568989.html</link>    <guid>https://www.elecfans.com/d/7568989.html</guid>    <pubDate>2026-01-04 17:11:00</pubDate>    <description><![CDATA[<p>
+	据已公布的2025年销量数据，比亚迪纯电车型全年销售225万辆，超越<a href="https://www.elecfans.com/tags/特斯拉/" target="_blank"><u>特斯拉</u></a>的164万辆，成为全球第一。这也是比亚迪首次登顶全球纯电动汽车销量榜。</p>
+<p>
+	2024年，特斯拉以约2万辆的微弱优势领先于比亚迪，而2025年比亚迪销量大幅超越特斯拉。比亚迪此次超越特斯拉，意味着其有望凭借规模优势强化零部件采购能力，进一步提升价格竞争力。比亚迪2025年总体新车销量为460万辆，同比增长约8%，其中纯电动汽车销量225万辆，插电式混合动力汽车销量为228万辆。而特斯拉全年交付量则同比下降8.6%，第四季度下滑更为明显。</p>
+<p>
+	此次超越的背后，是两家企业截然不同的发展态势。<strong>比亚迪坚持“纯电+插混”双线布局，产品矩阵持续丰富；而特斯拉则面临车型更新缓慢、美国补贴政策调整等多重挑战。</strong></p>
+<p>
+	行业观察指出，比亚迪凭借规模优势，有望进一步强化供应链与成本控制，提升全球竞争力。这一销量排名的变化，不仅标志着中国<a href="https://m.elecfans.com/v/tag/293/" target="_blank"><u>新能源</u></a>汽车品牌的崛起，也预示着全球电动汽车市场格局正在进入新阶段。</p>
+<p>
+	<b>审核编辑 黄宇</b></p>]]></description></item><item>    <title><![CDATA[高精度散热片加工：精度即竞争力，以精密铸就可靠]]></title>    <link>https://www.elecfans.com/d/7515018.html</link>    <guid>https://www.elecfans.com/d/7515018.html</guid>    <pubDate>2026-01-04 17:12:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	在电子设备向高功率、小型化迭代的当下，散热效率成为制约性能突破的核心瓶颈。<a href="https://m.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>散热片作为热管理系统的关键组件，其加工精度直接决定了热量传导效率与设备运行稳定性。不同于传统散热片的粗放制造，高精度散热片加工以微米级尺寸控制、复杂结构成型和材料性能优化为核心，通过数字化技术与精密工艺的深度融合，为<a href="https://www.elecfans.com/v/tag/1225/" target="_blank"><u>5G</u></a><a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>、<a href="https://www.elecfans.com/v/tag/293/" target="_blank"><u>新能源</u></a>汽车、<a href="https://m.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>等高端领域提供高效散热解决方案。</p>
+<p style="text-indent:2em;">
+	一、高精度散热片加工的技术核心：数字化控制与材料适配原理</p>
+<p style="text-indent:2em;">
+	高精度散热片加工的核心在于“精准可控”，其技术基础建立在数字化<a href="https://bbs.elecfans.com/group_75" target="_blank"><u>编程</u></a>与材料特性的协同适配之上。目前主流采用CNC加工技术，通过CAD三维建模明确鳍片间距、基板厚度、微通道结构等关键参数，再经CAM系统转换为机床可识别的加工程序，实现刀具路径的最优规划。针对不同材料的加工特性，技术方案呈现差异化设计：</p>
+<p style="text-indent:2em;">
+	1、铝合金：利用其轻量化、易加工的优势，通过精密挤压+<a href="https://m.elecfans.com/v/tag/949/" target="_blank"><u>数控</u></a>铣削组合工艺，将鳍片截面公差控制在±0.012mm以内，导热率保持在201W以上；</p>
+<p style="text-indent:2em;">
+	2、铜及铜合金：针对高导热需求场景，采用分层铣削与去应力处理工艺，解决铜材硬度高、易变形的难题，实现0.3mm超薄基板加工，热导率可达401W；</p>
+<p style="text-indent:2em;">
+	3、复合材料：通过CNC镶嵌技术实现铜铝复合、石墨烯涂层等结构，打造“局部强化导热+整体轻量化”的混合结构，适配极端工况需求。</p>
+<p style="text-indent:2em;">
+	二、高精度散热片加工的核心工艺体系：从成型到表面处理的全流程精进</p>
+<p style="text-indent:2em;">
+	高精度散热片加工形成了“成型-精加工-表面处理”的完整工艺链，每个环节均建立严格的精度控制标准：</p>
+<p style="text-indent:2em;">
+	1、成型工艺：根据结构需求选择挤压、铣削或五轴联动加工，其中五轴联动技术可实现波浪形鳍片、螺旋流道等异形结构，鳍片间距最小可至0.5mm，高度差控制在0.02mm以内；</p>
+<p style="text-indent:2em;">
+	2、精加工环节：粗加工采用大直径铣刀快速去除余量，预留0.1-0.3mm精加工余量，再通过硬质合金涂层刀具实现低转速、高进给加工，表面粗糙度Ra≤1.6μm，配合面精度可达Ra≤0.8μm；</p>
+<p style="text-indent:2em;">
+	3、表面处理：通过阳极氧化、精密抛光、喷砂等工艺，进一步优化散热性能与使用寿命，部分高端产品还会采用化学蚀刻制造微纳结构，实现自清洁功能。</p>
+<p style="text-indent:2em;">
+	三、高精度散热片加工的质量控制标准：符合行业规范的精度验证体系</p>
+<p style="text-indent:2em;">
+	高精度散热片加工的质量控制贯穿全流程，严格遵循国内外行业标准，核心控制指标包括：</p>
+<p style="text-indent:2em;">
+	1、尺寸精度：基板平面度公差≤±0.02mm，鳍片间距偏差≤±0.015mm，安装孔位偏差≤0.01mm；</p>
+<p style="text-indent:2em;">
+	2、性能指标：热阻≤0.2℃/W，散热面积利用率≥95%，耐盐雾测试1000h无锈蚀，耐温范围覆盖-40℃~200℃；</p>
+<p style="text-indent:2em;">
+	3、检测手段：采用三坐标测量仪、激光扫描仪进行全尺寸验证，在线视觉检测系统实时监控加工偏差，泄漏率检测标准≤0.01L/h。</p>
+<p style="text-indent:2em;">
+	四、高精度散热片加工的技术应用突破：赋能多领域热管理升级</p>
+<p style="text-indent:2em;">
+	高精度散热片加工技术的演进，推动了各行业热管理系统的性能跃升：在新能源汽车领域，为激光雷达、车载计算平台提供定制化散热方案，解决高功率模块局部过热问题；在数据<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>，通过微通道结构设计，使<a href="https://m.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>/<a href="https://www.elecfans.com/tags/gpu/" target="_blank"><u>GPU</u></a>散热效率提升30%以上；在工业控制领域，适配<a href="https://www.hqchip.com/app/2048" target="_blank"><u>IGBT</u></a>功率单元、<a href="https://m.elecfans.com/v/tag/144/" target="_blank"><u>工业机器人</u></a><a href="https://m.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>，确保设备在高温环境下稳定运行。随着加工技术路径优化、工业互联网监控方向发展，高精度散热片正朝着“更高效率、更低成本、更优适配”的方向持续革新。</p>
+<p style="text-indent:2em;">
+	从微米级尺寸控制到全流程数字化管控，高精度散热片加工技术的突破不仅解决了高端设备的热管理痛点，更构建了“材料-工艺-性能-应用”的协同创新体系。随着5G基站、新能源储能、<a href="https://www.elecfans.com/v/tag/150/" target="_blank"><u>人工智能</u></a>芯片等领域对散热效率的要求持续升级，高精度散热片加工技术将进一步向“超精密化、绿色低碳化、定制化”迭代——驱动的智能加工路径规划将大幅提升生产效率，新型环保表面处理工艺将降低环境影响，一体化成型技术将实现更复杂的散热结构设计。</p>]]></description></item><item>    <title><![CDATA[深圳CNC加工异形散热器的工艺解析与质量保障]]></title>    <link>https://www.elecfans.com/d/7494031.html</link>    <guid>https://www.elecfans.com/d/7494031.html</guid>    <pubDate>2026-01-04 17:13:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	在深圳制造业中，CNC加工异形散热器凭借其<a href="https://m.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>与复杂结构适配能力，成为电子设备散热解决方案的关键环节。异形散热器通常指非标准几何形态、具备特定曲面或孔洞结构的散热组件，其加工需结合CNC<a href="https://m.elecfans.com/v/tag/949/" target="_blank"><u>数控</u></a>技术的精准控制与工艺经验积累。</p>
+<p style="text-indent:2em;">
+	CNC加工异形散热器的核心在于“设计-<a href="https://bbs.elecfans.com/group_75" target="_blank"><u>编程</u></a>-加工”的协同流程。设计阶段需根据散热需求确定散热片间距、曲面弧度及孔位布局，通过CAD软件构建三维模型，确保散热路径与空气流动的匹配性。编程环节则需将模型转化为机床可识别的G代码，需考虑刀具路径优化、切削参数匹配及加工顺序规划，避免因路径冲突导致过切或欠切。加工过程中，CNC机床通过多轴联动实现复杂曲面的精确成型，需严格控制切削速度、进给量及冷却液使用，以防止加工变形或表面粗糙度超标。</p>
+<p style="text-indent:2em;">
+	材料选择对散热性能与加工质量至关重要。深圳CNC加工企业常采用铝合金、铜合金等导热性能优异的金属材料，部分高要求场景会选用石墨烯复合材料。材料需经过热处理或表面处理，如阳极氧化、喷砂或电镀，以提升耐腐蚀性与散热效率。加工过程中，需对材料硬度、延展性进行适配调整，例如铝合金加工需采用硬质合金刀具并控制切削热，避免材料软化导致精度偏差。</p>
+<p style="text-indent:2em;">
+	质量控制贯穿加工全流程。首件检测需通过三坐标测量仪或<a href="https://www.elecfans.com/v/tag/4854/" target="_blank"><u>光学</u></a>投影仪验证尺寸精度，确保散热片厚度、孔位位置及曲面弧度符合设计公差。过程巡检则关注加工过程中的振动、温度变化及刀具磨损情况，及时调整参数或更换刀具。最终检验需综合外观检查、尺寸测量及散热性能测试，确保产品无裂纹、毛刺，且散热效率达到设计要求。</p>
+<p style="text-indent:2em;">
+	深圳CNC加工异形散热器的优势在于工艺经验与设备能力的结合。本地企业通过长期积累形成成熟的工艺数据库，能够快速响应不同客户的定制需求。同时，CNC设备的升级换代，如高精度五轴联动机床的普及，进一步提升了复杂结构的加工能力与表面质量。</p>
+<p style="text-indent:2em;">
+	然而，异形散热器的加工也面临挑战。复杂结构可能导致加工路径规划难度增加，需通过<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>软件预判潜在干涉或过切风险。此外，散热性能的验证需结合实际工况测试，如热成像仪检测温度分布，确保散热效果与设计目标一致。</p>
+<p style="text-indent:2em;">
+	深圳CNC加工异形散热器的发展，既依托于本地制造业的集群优势，也离不开工艺经验的传承与创新。通过严格的质量控制与持续的工艺优化，深圳企业能够在满足散热需求的同时，提升产品的可靠性与使用寿命，为电子设备的稳定运行提供坚实保障。</p>]]></description></item><item>    <title><![CDATA[数控机床与CNC加工：精密制造的核心技术解析]]></title>    <link>https://www.elecfans.com/d/7489197.html</link>    <guid>https://www.elecfans.com/d/7489197.html</guid>    <pubDate>2026-01-04 17:14:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	在<a href="https://www.elecfans.com/v/tag/1268/" target="_blank"><u>机械制造</u></a>领域，<a href="https://m.elecfans.com/v/tag/949/" target="_blank"><u>数控</u></a>机床与CNC（计算机数值控制）加工技术的结合，构成了现代精密加工的核心体系。这种技术体系通过数字化指令控制机床运动，实现对金属、塑料等材料的精准切削、钻孔、铣削等操作，广泛应用于航空航天、汽车制造、模具开发等<a href="https://m.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>需求行业。</p>
+<p style="text-indent:2em;">
+	数控机床的运作逻辑基于预先编写的程序指令。操作人员通过专业软件将设计图纸转化为机床可识别的G代码，这些代码精确规定了刀具的移动路径、切削速度、进给量等参数。相较于传统手工操作，CNC加工的最大优势在于其重复定位精度与加工一致性——同一程序可多次复现相同质量的零部件，有效避免人为误差。</p>
+<p style="text-indent:2em;">
+	在加工流程中，工艺规划是关键环节。<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>需根据材料特性、加工要求选择合适的刀具类型（如立铣刀、球头刀）和切削参数。例如，硬质合金刀具适合高速加工钢材，而陶瓷刀具则更适用于高温合金的切削。刀具路径的优化同样重要，合理的走刀策略可减少空行程、降低刀具磨损，同时提升表面光洁度。</p>
+<p style="text-indent:2em;">
+	精度控制贯穿整个加工过程。数控系统通过<a href="https://m.elecfans.com/v/tag/194/" target="_blank"><u>伺服电机</u></a>驱动各轴运动，配合光栅尺等反馈装置实现闭环控制，确保实际加工位置与程序指令的高度吻合。对于复杂曲面加工，五轴联动技术可通过刀具在三维空间内的多轴协同运动，完成传统三轴机床难以实现的复杂几何形状加工。</p>
+<p style="text-indent:2em;">
+	质量控制方面，除在线检测装置实时监控加工状态外，成品还需经过三坐标测量机等设备进行尺寸验证。这种全流程的质量管控体系，确保了从毛坯到成品的每个环节均符合设计公差要求。</p>
+<p style="text-indent:2em;">
+	材料适应性是CNC加工的另一显著特点。从铝合金、不锈钢到钛合金、高温合金，不同材料的切削特性差异显著。例如，钛合金因其低热导率特性，加工时易产生局部高温，需采用冷却液或低温气体冷却技术；而铝合金则因材质较软，需注意切削速度与进给量的匹配，避免产生粘刀现象。</p>
+<p style="text-indent:2em;">
+	在应用层面，CNC加工技术不仅支撑了批量生产的高效需求，更在单件小批量定制领域展现出独特价值。通过快速<a href="https://bbs.elecfans.com/group_75" target="_blank"><u>编程</u></a>与柔性制造系统，企业可灵活应对多品种、小批量的生产模式，缩短产品开发周期，降低生产成本。</p>
+<p style="text-indent:2em;">
+	随着技术演进，数控系统持续向高速化、智能化方向发展。但即便如此，其核心逻辑始终围绕“精准控制”与“高效加工”展开。从基础的二维轮廓加工到复杂的三维曲面成型，从标准刀具路径到定制化加工策略，CNC技术始终以提升加工精度与效率为目标，推动着制造业向更高水平迈进。</p>
+<p style="text-indent:2em;">
+	这种技术体系的存在，不仅改变了传统<a href="https://www.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>加工的生产模式，更在精度、效率、可靠性等维度重新定义了现代制造的标准。其发展历程印证了从“机械控制”到“数字控制”的技术变革，而这一变革的深层动力，始终源自对加工精度与生产效率的不懈追求。</p>
+<p style="text-indent:2em;">
+	</p>]]></description></item><item>    <title><![CDATA[TDK多层低通滤波器DEA162500LT - 1217A1：2400 - 2500MHz频段的理想之选]]></title>    <link>https://www.elecfans.com/d/7568997.html</link>    <guid>https://www.elecfans.com/d/7568997.html</guid>    <pubDate>2026-01-04 17:15:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_7568997" value="https://file1.elecfans.com/web3/M00/45/7E/wKgZPGlaLrGAMjrCAAGD2ASddyE841.pdf"/><h1><a href="https://www.elecfans.com/tags/tdk/" target="_blank"><u>TDK</u></a>多层低通<a href="https://www.elecfans.com/tags/滤波器/" target="_blank"><u>滤波器</u></a>DEA162500LT - 1217A1：2400 - 2500MHz频段的理想之选</h1>
+<p>在<a href="https://www.elecfans.com/v/tag/105/" target="_blank"><u>射频</u></a>（<a href="https://bbs.elecfans.com/group_65" target="_blank"><u>RF</u></a>）<a href="https://www.elecfans.com/v/tag/167/" target="_blank"><u>电路设计</u></a>中，滤波器的选择至关重要，它直接影响着<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>的质量和系统的性能。今天，我们就来深入了解一下TDK推出的一款多层低通滤波器——DEA162500LT - 1217A1，它专为2400 - 2500MHz频段设计，具有诸多出色的特性。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_7568997" target="_blank">DEA162500LT-1217A1.pdf</a></p>
+<h2>产品概述</h2>
+<p>DEA162500LT - 1217A1是TDK公司生产的多层低通滤波器，符合RoHS指令，尺寸为1.6x0.8mm（EIA 0603）。这种小型化的设计使其在空间有限的电路板上也能轻松布局，适用于各种对尺寸有严格要求的射频应用。</p>
+<h2>外形与尺寸</h2>
+<h3>外观视图</h3>
+<table>
+<thead>
+<tr>
+<th>该滤波器有清晰的顶部视图和底部视图，从视图中我们可以明确各个引脚的位置。其引脚功能明确，分别为：</th>
+<th>引脚编号</th>
+<th>功能</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>GND</td>
+</tr>
+<tr>
+<td>2</td>
+<td>IN</td>
+</tr>
+<tr>
+<td>3</td>
+<td>GND</td>
+</tr>
+<tr>
+<td>4</td>
+<td>GND</td>
+</tr>
+<tr>
+<td>5</td>
+<td>OUT</td>
+</tr>
+<tr>
+<td>6</td>
+<td>GND</td>
+</tr>
+</tbody>
+</table>
+<h3>推荐焊盘图案与评估板</h3>
+<p>文档中还给出了推荐的焊盘图案和评估板的尺寸图。合理的焊盘设计对于滤波器的性能至关重要，它能够确保良好的<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>连接和<a href="https://www.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>稳定性。评估板则为<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>在实际应用前进行性能测试提供了便利。</p>
+<h2>电气特性</h2>
+<h3>插入损耗</h3>
+<p>在2400 - 2500MHz频率范围内，典型插入损耗为0.35dB，最大为0.48dB。插入损耗越低，意味着信号在通过滤波器时的能量损失越小，这对于保持信号的强度和质量非常关键。</p>
+<h3>回波损耗</h3>
+<p>在相同频率范围内，最小回波损耗为14dB，典型值为17.5dB。回波损耗反映了滤波器<a href="https://m.hqchip.com/app/1808" target="_blank"><u>端口</u></a>的匹配程度，较高的回波损耗表示端口匹配良好，能够减少信号的反射，提高系统的效率。</p>
+<h3>衰减特性</h3>
+<p>在4800 - 5000MHz频率范围内，最小衰减为35dB，典型值为50.0dB；在7200 - 7500MHz频率范围内，最小衰减为25dB，典型值为32.0dB。良好的衰减特性可以有效地抑制高频干扰信号，保证低频信号的正常传输。</p>
+<h3>功率处理能力</h3>
+<p>在2400 - 2500MHz频率范围内，最大功率处理能力为1W。这意味着该滤波器能够承受一定的功率输入，适用于一些功率要求不太高的射频系统。</p>
+<h3>特性阻抗</h3>
+<p>特性阻抗标称值为50Ω，这是射频电路中常见的阻抗值，便于与其他射频器件进行匹配。</p>
+<h2>频率特性曲线</h2>
+<p>文档中提供了插入损耗、衰减和回波损耗的频率特性曲线。通过这些曲线，我们可以直观地了解滤波器在不同频率下的性能表现，从而更好地进行电路设计和优化。工程师们可以根据实际需求，参考这些曲线来选择合适的工作频率范围。</p>
+<h2>回流焊曲线</h2>
+<table>
+<thead>
+<tr>
+<th>对于滤波器的焊接工艺，文档给出了推荐的回流焊曲线。回流焊是表面贴装技术中常用的焊接方法，合理的回流焊曲线能够确保滤波器与电路板之间的良好焊接质量。推荐的回流焊参数如下：</th>
+<th>阶段</th>
+<th>温度范围</th>
+<th>时间范围</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>预热（T1 - T2）</td>
+<td>150℃ - 200℃</td>
+<td>60 - 120sec</td>
+</tr>
+<tr>
+<td>焊接（T3）</td>
+<td>217℃</td>
+<td>60 - 120sec</td>
+</tr>
+<tr>
+<td>峰值（T4）</td>
+<td>240 - 260℃</td>
+<td>30sec max</td>
+</tr>
+</tbody>
+</table>
+<p>需要注意的是，实际峰值温度±5℃范围内的时间为t3，且最大回流焊次数为3次。</p>
+<h2>使用提醒</h2>
+<h3>规格变更</h3>
+<p>所有规格可能会在没有事先通知的情况下进行变更，因此在使用这些产品之前，一定要向供应商索取最新的交付规格。</p>
+<h3>安全提醒</h3>
+<p>在使用这些产品时，要充分注意安全设计方面的警告。特别是在进行电路设计和组装时，要遵循相关的安全标准和操作规程。</p>
+<h3>适用范围</h3>
+<p>该产品适用于一般电子设备，如AV设备、电信设备、家用电器等在正常操作和使用条件下的应用。但不适用于对安全性或可靠性要求更为严格的应用，如航空航天设备、医疗设备、发电控制设备等。如果将产品用于这些不适用的应用场景，TDK公司不承担任何因使用不当而造成的损坏或责任。在将其应用于通用场景时，建议考虑增加<a href="https://www.elecfans.com/tags/保护电路/" target="_blank"><u>保护电路</u></a>或备份电路，以提高系统的安全性。</p>
+<p>综上所述，TDK的DEA162500LT - 1217A1多层低通滤波器在2400 - 2500MHz频段具有出色的电气性能和小型化的设计优势。但在使用过程中，工程师们需要密切关注其规格变化和适用范围，确保产品能够在实际应用中发挥最佳性能。大家在实际使用这款滤波器时，有没有遇到过什么问题或者有什么独特的使用经验呢？欢迎在评论区分享。 </p>]]></description></item><item>    <title><![CDATA[高精度散热片CNC加工：精密制造赋能热管理升级]]></title>    <link>https://www.elecfans.com/d/6970110.html</link>    <guid>https://www.elecfans.com/d/6970110.html</guid>    <pubDate>2026-01-04 17:15:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	在现代电子设备向高性能、小型化方向发展的趋势下，散热问题已成为制约技术突破的关键因素。<a href="https://m.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>散热片作为核心热管理组件，通过CNC（计算机<a href="https://m.elecfans.com/v/tag/949/" target="_blank"><u>数控</u></a>）加工技术实现微米级精度控制，能够精准匹配芯片发热特性，为<a href="https://www.elecfans.com/v/tag/1225/" target="_blank"><u>5G</u></a><a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>、<a href="https://www.elecfans.com/v/tag/293/" target="_blank"><u>新能源</u></a>汽车、<a href="https://m.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>等领域提供高效散热解决方案。</p>
+<p style="text-indent:2em;">
+	一、CNC加工：散热片精度的核心保障</p>
+<p style="text-indent:2em;">
+	传统散热片生产多采用冲压、挤压工艺，虽能实现批量制造，但在复杂结构加工和尺寸精度控制上存在局限。CNC加工通过数字化<a href="https://bbs.elecfans.com/group_75" target="_blank"><u>编程</u></a>控制刀具路径，可完成散热片基座平整度、鳍片间距、表面粗糙度等关键参数的精密控制。例如，针对高功率芯片局部热点集中的问题，CNC加工能在散热片基座上雕刻出渐变式微沟槽，通过优化流体动力学特性提升热传导效率；对于超薄鳍片（厚度可低至0.1mm），CNC铣削能确保每片鳍片高度差小于0.02mm，避免因形变导致风阻不均。</p>
+<p style="text-indent:2em;">
+	二、材料适配性：从铝铜到复合材料的突破</p>
+<p style="text-indent:2em;">
+	散热片性能与材料特性密切相关，CNC加工技术突破了传统工艺对材料的限制。铝合金因轻量化、易加工成为主流选择，通过CNC可实现6061、7075等高强度合金的复杂结构成型；铜材质散热片虽成本较高，但导热性能优异，CNC加工能精准控制其厚度（最低可达0.3mm），平衡导热与重量需求。此外，针对特殊工况需求，CNC加工还可实现铜铝复合、石墨烯涂层等新型材料的精密制造，例如在铝合金基体上CNC镶嵌铜导热柱，形成“局部强化导热+整体轻量化”的混合结构。</p>
+<p style="text-indent:2em;">
+	三、结构创新：从平面到三维的散热革命</p>
+<p style="text-indent:2em;">
+	传统散热片多为平行鳍片结构，CNC加工技术推动了散热片向三维立体化发展。通过五轴联动加工中心，可制造出波浪形鳍片、螺旋流道等异形结构：波浪鳍片能增加空气湍流度，提升对流换热系数；螺旋流道设计则可引导冷却液形成螺旋流动，延长热交换路径。针对<a href="https://bbs.elecfans.com/group_1121" target="_blank"><u>嵌入式</u></a>设备空间受限问题，CNC加工还能实现散热片与外壳的一体化设计，例如在<a href="https://www.elecfans.com/v/tag/107/" target="_blank"><u>手机</u></a>中框上直接雕刻出散热微结构，既节省空间又提升结构强度。</p>
+<p style="text-indent:2em;">
+	四、表面处理：功能与美观的双重提升</p>
+<p style="text-indent:2em;">
+	CNC加工后的散热片表面质量直接影响散热效率，通过精密抛光、阳极氧化、喷砂等工艺可进一步提升性能。精密抛光能将表面粗糙度控制在Ra0.2以下，减少热界面材料填充间隙；阳极氧化处理可形成致密氧化膜，既提升耐腐蚀性又降低接触热阻；喷砂工艺则能增加表面积，强化辐射散热效果。部分高端散热片还会采用CNC加工结合化学蚀刻技术，在表面制造出微纳结构，通过仿生学原理（如模仿荷叶表面）实现自清洁和减阻功能。</p>
+<p style="text-indent:2em;">
+	五、全流程管控：从设计到量产的精准复制</p>
+<p style="text-indent:2em;">
+	高精度散热片CNC加工依赖“设计-编程-加工-检测”的全流程数字化管控。设计阶段通过热<a href="https://bbs.elecfans.com/zhuti_proteus_1.html" target="_blank"><u>仿真</u></a>软件<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>散热片在不同结构下的温度场分布，优化鳍片数量、间距等参数；编程环节采用CAM软件将三维模型转化为刀具路径，确保每个加工动作精准可控；加工过程中通过在线测量系统实时监测关键尺寸，偏差超过0.01mm即自动调整；最终检测采用三坐标测量仪或激光扫描仪进行全尺寸验证，确保产品100%符合设计要求。这种闭环管控模式使得散热片从单件定制到批量生产都能保持一致的高精度。</p>
+<p style="text-indent:2em;">
+	随着电子设备功率密度持续提升，高精度散热片CNC加工技术正向更高效率、更低成本的方向演进。通过集成<a href="https://www.elecfans.com/v/tag/150/" target="_blank"><u>人工智能</u></a><a href="https://www.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>优化加工路径、采用新型刀具材料延长使用寿命、引入工业互联网实现远程监控，CNC加工正在重新定义散热片的制造边界，为下一代电子设备热管理提供更可靠的解决方案。</p>
+<p style="text-indent:2em;">
+	</p>]]></description></item><item>    <title><![CDATA[1608 2.4G&5GHz 双工器 DPX1608LL80R2455A 技术解析]]></title>    <link>https://www.elecfans.com/d/7568998.html</link>    <guid>https://www.elecfans.com/d/7568998.html</guid>    <pubDate>2026-01-04 17:15:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_7568998" value="https://file1.elecfans.com/web3/M00/45/7E/wKgZO2laLrGAc2CwAAdV0cXfhBg518.pdf"/><h1>1608 2.<a href="https://www.elecfans.com/v/tag/9979/" target="_blank"><u>4G</u></a>&amp;<a href="https://www.elecfans.com/v/tag/1225/" target="_blank"><u>5G</u></a>Hz 双工器 DPX1608LL80R2455A 技术解析</h1>
+<p>在<a href="https://www.elecfans.com/soft/data/43-45/" target="_blank"><u>无线通信</u></a>领域，双工器是实现不同频段<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>分离与传输的关键器件。今天我们就来详细解析一款 1608 2.4G&amp;5GHz 双工器——DPX1608LL80R2455A，看看它有哪些特点和优势，以及在实际应用中需要注意的地方。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_7568998" target="_blank">DPX1608LL80R2455A.pdf</a></p>
+<h2>产品概述</h2>
+<p>DPX1608LL80R2455A 是一款专为 WLAN 等应用设计的双工器，工作于 2.4G 和 5GHz 频段。它采用了紧凑的 1.6x0.8x0.6mm 封装设计，符合 RoHS 标准，适用于 ISM 频段，能很好地满足现代无线设备对小型化和环保的要求。</p>
+<h2>应用场景</h2>
+<p>该双工器适用于 WLAN 网络，如 802.11a/b/g/n 标准的无线设备。在这些应用中，它可以有效地将 2.4GHz 和 5GHz 频段的信号分离，确保不同频段的信号互不干扰，从而提高无线通信的质量和稳定性。此外，其在ISM 频段的适用性也使其在工业、科学和医疗等领域的无线设备中具有广泛的应用前景。</p>
+<h2><a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>特性</h2>
+<h3>工作频段</h3>
+<ul>
+<li><strong>低频段</strong>：2400 - 2500MHz</li>
+<li><strong>高频段</strong>：4900 - 6000MHz</li>
+</ul>
+<p>这种频段划分使得该双工器能够很好地适配常见的 2.4G 和 5G <a href="https://www.elecfans.com/tags/wi-fi/" target="_blank"><u>Wi-Fi</u></a> 信号，满足不同无线设备的工作需求。</p>
+<h3>插入损耗</h3>
+<ul>
+<li><strong>低频段</strong>：在 25°C 时最大为 0.7dB</li>
+<li><strong>高频段</strong>：在 25°C 时最大为 0.8dB</li>
+</ul>
+<p>插入损耗是衡量信号在通过双工器时能量损失的重要指标，较低的插入损耗意味着信号能够更有效地传输，减少了信号强度的衰减，保证了信号的质量。</p>
+<h3>衰减特性</h3>
+<p>该双工器在多个频段都有良好的衰减性能，例如在4.8 - 5GHz、7.2 - 7.5GHz、860 - 960MHz 等频段都有一定的最小衰减值要求。这有助于抑制不需要的频段信号，提高信号的选择性和抗干扰能力。</p>
+<h3>隔离度</h3>
+<p>中频段到高频段在 4.9 - 5.95GHz 时最小隔离度为 20dB。隔离度反映了不同频段之间信号的隔离程度，较高的隔离度可以有效避免频段之间的相互干扰，确保各个频段的信号独立传输。</p>
+<h3>工作温度范围</h3>
+<p>-40°C 至 85°C 的工作温度范围使得该双工器能够适应较为恶劣的环境条件，保证在不同的温度环境下都能稳定工作。</p>
+<h2><a href="https://www.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>尺寸与引脚定义</h2>
+<h3>尺寸规格</h3>
+<p>该双工器的外形尺寸为 1.6x0.8x0.6mm，并且每个尺寸都有一定的公差范围。这种紧凑的尺寸设计使其非常适合应用于对空间要求较高的小型无线设备中。</p>
+<h3>引脚功能</h3>
+<table>
+<thead>
+<tr>
+<th>引脚名称</th>
+<th>功能</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>P1</td>
+<td>低频段</td>
+</tr>
+<tr>
+<td>P2</td>
+<td>接地</td>
+</tr>
+<tr>
+<td>P3</td>
+<td>高频段</td>
+</tr>
+<tr>
+<td>P4</td>
+<td>接地</td>
+</tr>
+<tr>
+<td>P5</td>
+<td>公共端</td>
+</tr>
+<tr>
+<td>P6</td>
+<td>接地</td>
+</tr>
+</tbody>
+</table>
+<p>明确的引脚定义方便了<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>在设计电路时进行连接和布局，确保双工器能够正确地集成到整个系统中。</p>
+<h2>参考设计与电气性能图表</h2>
+<p>文档中还提供了参考设计的 EVB 图以及电气性能图表。参考设计图展示了双工器在实际电路中的连接方式和布局要求，例如焊盘、过孔直径以及线宽等设计要点，线宽需要根据 <a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a> 材料和厚度进行设计以匹配 50Ω 特性阻抗。电气性能图表则直观地展示了双工器的频率特性，通过网络分析仪测量得到的 S 参数（如 S22 为高低频段的回波损耗，S32 为低频段的插入损耗和衰减，S12 为高频段的插入损耗和衰减）可以帮助工程师更深入地了解双工器在不同频段的性能表现。</p>
+<h2>总结</h2>
+<p>DPX1608LL80R2455A 1608 2.4G&amp;5GHz 双工器以其紧凑的尺寸、良好的电气性能和广泛的应用场景，成为了无线通信领域中一款非常有竞争力的产品。对于<a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>来说，在设计无线设备时，该双工器是一个不错的选择。不过，在实际应用中，还需要根据具体的系统要求和设计目标，仔细考虑其电气特性和机械尺寸等因素，以确保整个系统的性能和稳定性。大家在使用这款双工器的过程中，有没有遇到过什么特别的问题或者有什么独特的设计经验呢？欢迎在评论区分享交流。 </p>]]></description></item><item>    <title><![CDATA[TSC103高压高端电流检测放大器的全面解析]]></title>    <link>https://www.elecfans.com/d/7568999.html</link>    <guid>https://www.elecfans.com/d/7568999.html</guid>    <pubDate>2026-01-04 17:15:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_7568999" value="https://file1.elecfans.com/web3/M00/45/7E/wKgZO2laLrGARvYoAA9KHFm0Q-E293.pdf"/><h1>TSC103<a href="https://www.elecfans.com/v/tag/873/" target="_blank"><u>高压</u></a>高端<a href="https://m.hqchip.com/app/1782" target="_blank"><u>电流检测</u></a><a href="https://www.elecfans.com/tags/放大器/" target="_blank"><u>放大器</u></a>的全面解析</h1>
+<p>在电子电路设计中，准确检测<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>是一项关键任务。TSC103作为一款高压高端电流检测放大器，因其出色的性能和广泛的应用场景，备受<a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>的关注。下面，我们就来深入了解一下TSC103这款产品。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_7568999" target="_blank">TSC103IPT.pdf</a></p>
+<h2>一、产品概述</h2>
+<p>TSC103能够测量高端分流<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>上的微小差分电压，并将其转换为以地为参考的输出电压。它具有独立的<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>和输入共模电压，共模工作范围广泛，在单电源配置下为2.9V至70V，在双电源配置下为 - 2.1V至65V，共模生存范围为 - 16V至75V，可应对反向电池和负载突降等情况。其增益可通过两个选择引脚在20V/V、25V/V、50V/V或100V/V四个不同值之间进行调整。</p>
+<h2>二、产品特性与优势</h2>
+<h3>（一）电源与共模电压特性</h3>
+<p>TSC103的输入共模和电源电压相互独立，这一特性使得它在不同的电源和共模电压条件下都能稳定工作。在单电源配置中，输入共模电压范围为2.9V至70V；在双电源配置下，可通过Vcc - 引脚施加的可调电压来偏移共模范围，例如当Vcc + = 5V，Vcc - = - 5V时，输入共模范围为 - 2.1V至65V。这种广泛的共模电压范围使得TSC103适用于各种不同的电压环境。</p>
+<h3>（二）低功耗特性</h3>
+<p>TSC103的电流消耗较低，最大ICC为360μA，并且在待机模式下输入泄漏电流几乎为零，这有助于降低应用中的功耗，延长电池寿命，对于一些对功耗要求较高的应用场景非常友好。</p>
+<h3>（三）增益可调特性</h3>
+<p>通过两个选择引脚，TSC103的增益可以在20V/V、25V/V、50V/V或100V/V四个值之间进行调整，为<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>在不同的应用中提供了灵活的选择，能够根据实际需求精确调整放大倍数。</p>
+<h3>（四）缓冲输出特性</h3>
+<p>缓冲输出能够提供稳定的输出<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>，减少输出阻抗的影响，提高信号的驱动能力，确保输出信号能够准确地传输到后续电路中。</p>
+<h2>三、应用领域</h2>
+<p>TSC103的特性使其在多个领域都有广泛的应用：</p>
+<ul>
+<li><strong>汽车领域</strong>：可用于汽车电流监测，如监测汽车电池充电电流、<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>电流等，确保汽车<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>系统的稳定运行。</li>
+<li><strong><a href="https://m.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>领域</strong>：在<a href="https://m.hqchip.com/app/1703" target="_blank"><u>DC</u></a><a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机控制</u></a>中，TSC103可以实时监测电机电流，实现对电机的精确控制；在光伏系统中，可用于监测光伏电池的输出电流，提高光伏系统的效率。</li>
+<li><strong><a href="https://www.hqchip.com/app/1731" target="_blank"><u>电源管理</u></a>领域</strong>：在电池充电器、精密<a href="https://m.hqchip.com/app/1725" target="_blank"><u>电流源</u></a>、不间断电源和高端电源等设备中，TSC103能够准确监测电流，保证电源的稳定输出和安全使用。</li>
+<li><strong><a href="https://www.elecfans.com/soft/data/39-96/" target="_blank"><u>消费电子</u></a>领域</strong>：可用于笔记本<a href="https://m.elecfans.com/v/tag/1247/" target="_blank"><u>电脑</u></a>的电流监测，以及其他对电流监测有需求的消费电子产品中。</li>
+</ul>
+<h2>四、电气特性分析</h2>
+<h3>（一）绝对最大额定值</h3>
+<p>了解TSC103的绝对最大额定值非常重要，它规定了器件在正常工作时所允许的最大参数范围。例如，输入引脚差分电压（Vp - Vm）的最大允许值为±20V，正电源电压（Vcc +）的范围为 - 0.3V至7V等。超出这些额定值可能会导致器件损坏或性能下降。</p>
+<h3>（二）工作条件</h3>
+<p>在单电源配置下，电源电压范围为2.7V至5.5V；在双电源配置下，负电源电压（Vcc -）在Vcc + = 5.5V max时为 - 8V至0V。工作温度范围为 - 40°C至125°C，在这个温度范围内，TSC103能够保持稳定的性能。</p>
+<h3>（三）电气参数</h3>
+<p>TSC103的电气参数包括共模抑制比（CMR）、电源电压抑制比（S<a href="https://m.elecfans.com/v/tag/3668/" target="_blank"><u>VR</u></a>）、增益（Av）、输入失调电压（Vos）等。这些参数直接影响着器件的性能和应用效果。例如，CMR衡量了放大器抑制共模信号的能力，SVR则反映了放大器对电源电压变化的抑制能力。</p>
+<h2>五、参数定义与计算</h2>
+<h3>（一）共模抑制比（CMR）</h3>
+<p>CMR用于衡量电流检测放大器抑制施加在两个输入引脚（Vp和Vm）上的任何直流电压的能力。其计算公式为 $CMR=-20 cdot log fr<a href="https://m.hqchip.com/app/1703" target="_blank"><u>ac</u></a>{Delta V<em>{out }}{Delta V</em>{icm } cdot Av}$，通过这个公式可以计算出放大器在不同共模电压下的抑制能力。</p>
+<h3>（二）电源电压抑制比（SVR）</h3>
+<p>SVR衡量了电流检测放大器抑制电源电压Vcc变化的能力，计算公式为 $SVR=-20 cdot log frac{Delta V<em>{out }}{Delta V</em>{CC} cdot Av}$。</p>
+<h3>（三）增益（Av）和输入失调电压（Vos）</h3>
+<p>增益（Av）可以通过两个选择引脚进行调整，而输入失调电压（Vos）是指Vout - Vsense曲线的线性回归与X轴的交点。可以通过公式 $V<em>{os }=V</em>{sense 1}-left(frac{V<em>{sense1 }-V</em>{sense2 }}{V<em>{out 1}-V</em>{out2 }} cdot V_{out 1}right)$ 来计算输入失调电压。</p>
+<h2>六、应用信息与设计要点</h2>
+<h3>（一）应用原理</h3>
+<p>在实际应用中，TSC103可以用于测量电流并将信息反馈给<a href="https://m.hqchip.com/app/1380" target="_blank"><u>微控制器</u></a>。电流从电源通过检测电阻<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>Rs</u></a>ense流向负载，在Rsense上产生电压降Vsense。放大器的输入电流可以忽略不计，通过调整流经Rg1的电流，使Rg1上的电压降与Vsense匹配，最终将电压信号通过电压缓冲器输出到Out引脚。</p>
+<h3>（二）设计要点</h3>
+<p>在设计电路时，需要根据实际应用需求选择合适的检测电阻Rsense和放大倍数Av。同时，要注意引脚的连接和电压范围，确保器件在正常的工作条件下运行。此外，对于双电源配置，要注意Vcc - 和Gnd的连接方式，以及Vcc - 和Vcc + 之间的电压差限制。</p>
+<h2>七、封装信息</h2>
+<p>TSC103提供<a href="https://www.hqchip.com/app/1593" target="_blank"><u>TSS</u></a>OP8和SO8两种塑料封装形式。TSSOP8封装尺寸较小，适用于对空间要求较高的应用；SO8封装则具有较好的散热性能。在选择封装时，需要根据实际应用场景和电路板布局来进行考虑。</p>
+<p>总之，TSC103是一款性能出色、应用广泛的高压高端电流检测放大器。电子工程师在设计电路时，可以根据其特性和应用要求，合理选择和使用该器件，以实现精确的电流检测和控制。大家在实际应用中遇到过哪些关于电流检测放大器的问题呢？欢迎在评论区留言讨论。 </p>]]></description></item><item>    <title><![CDATA[城市内涝积水监测设备：技术架构与实践应用]]></title>    <link>https://www.elecfans.com/d/7569026.html</link>    <guid>https://www.elecfans.com/d/7569026.html</guid>    <pubDate>2026-01-04 17:15:00</pubDate>    <description><![CDATA[<p/><img src="https://file1.elecfans.com/web3/M00/3B/9D/wKgZO2kUK8iANJTFAAmA88fqejk153.png" alt="wKgZO2kUK8iANJTFAAmA88fqejk153.png"/><p/><p><strong>一．引文</strong></p><p/><p>城市化进程的加速与极端气候的频发，使城市内涝成为威胁居民安全与城市运行的突出问题。硬质铺装面积的扩大降低了雨水下渗能力，短时强降雨常超出排水系统承载范围，导致低洼路段、隧道、地下空间等区域积水成灾。内涝积水监测设备凭借精准感知与智能预警能力，成为城市防涝体系的核心技术支撑。</p><p/><p><strong>二．技术原理</strong></p><p/><p>监测设备的技术原理围绕“感知-传输-分析”全链条构建，不同终端依据监测场景差异采用针对性技术路径。</p><p/><p>积水深度监测领域，地埋式设备集成超声波<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>与<a href="https://www.elecfans.com/tags/压力传感器/" target="_blank"><u>压力传感器</u></a>，超声波传感器通过液介式技术发射高频声波并接收水面反射回波，利用声波传输时间计算液位高度，压力传感器则通过感知水体静压变化修正测量数据，尤其适用于动态水流环境下的精度校准。</p><p/><p>立杆式电子水尺采用电极感应技术，分段式设计适配不同坡度路面，可实现毫米级水位监测。</p><p/><p>排水管网监测中，多普勒流量计通过测量水流中悬浮颗粒的反<a href="https://www.elecfans.com/v/tag/105/" target="_blank"><u>射频</u></a>移同步获取流速、流量与液位数据，压力式水位传感器通过水压换算液位高度，两类设备的数据交叉验证能精准定位管网堵塞、过载等异常。</p><p/><p>河道水位监测则采用调频连续波技术的雷达水位计，8°波束角有效过滤水面杂波，内置温度补偿模块保障复杂环境下的测量稳定性。</p><p/><p/><p><strong>三．技术参数</strong></p><p/><p>核心技术参数决定设备监测精度与环境适应性，不同应用场景的设备参数呈现差异化适配特征。水位测量方面，地埋式设备量程通常覆盖0-5米，最低监测水位可达0.005米，精度控制在±1mm以内；立杆式电子水尺测量量程0-3米，精度可达0.5%FS，分辨率维持在0.1mm级别。环境适应性参数上，设备普遍采用304不锈钢外壳，防护等级达IP68，可耐受-20℃至65℃极端温度与2.5MPa水压。供电系统采用双供电设计，内置大容量锂亚电池支持无积水状态下连续工作10年，部分设备搭配太阳能充电系统或30Ah工业<a href="https://www.elecfans.com/v/tag/2692/" target="_blank"><u>锂电池</u></a>，无光环境下续航可达3-6个月。<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>传输支持<a href="https://www.elecfans.com/tags/lora/" target="_blank"><u>LoRa</u></a>、<a href="https://www.elecfans.com/tags/nb-iot/" target="_blank"><u>NB-IoT</u></a>、<a href="https://m.elecfans.com/v/tag/9979/" target="_blank"><u>4G</u></a>全网通等多模协议，LoRa技术实现视距800m通信距离，NB-IoT的低功耗特性适配密集城区部署，<a href="https://m.elecfans.com/v/tag/12018/" target="_blank"><u>4G模块</u></a>则作为备用通道保障<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>稳定，所有设备均配备本地存储模块，断网状态下可缓存不少于3个月数据，待网络恢复后自动补发。</p><p/><img src="https://file1.elecfans.com/web3/M00/32/EE/wKgZO2jbetGAFKBnAAXXMs2JUP8392.png" alt="wKgZO2jbetGAFKBnAAXXMs2JUP8392.png"/><p/><p><strong>四．核心技术优势</strong></p><p/><p>设备的核心优势体现在监测精准性、环境适应性与智能联动性三个维度。多传感器融合技术使监测数据具备交叉验证能力，超声波与压力传感器的协同工作大幅提升动态环境下的测量精度，电导率传感器的集成则能同步监测积水导电性，为应急处置提供水质参考。结构设计上，地埋式设备采用一体化全金属机身，尺寸紧凑便于隐蔽安装，开挖直径120mm、深度140mm的基坑即可完成部署，顶部圆盘设计不影响路面通行与市容市貌。立杆式设备采用一杆式设计，安装过程无需大规模施工，有效降低部署成本。智能联动方面，设备可与城市管理平台、交通信号系统、地图应用等实现数据互通，当积水深度超过预设阈值时，系统自动向管理部门推送预警信息，同时联动路侧<a href="https://m.hqchip.com/app/1721" target="_blank"><u>LED</u></a>屏显示积水数据、调整交通信号灯时长，引导车辆行人绕行。低功耗设计与高防护等级使设备能在地下、隧道、偏远郊区等复杂环境长期运行，减少维护频次与运维成本。</p><p/><p><strong>五．应用场景</strong></p><p/><p>应用场景覆盖城市防涝全链条，形成多维度、立体化的监测网络。</p><p/><p><strong>1.城市道路领域</strong>，设备优先部署于立交桥下、低洼路段、隧道出入口等关键节点，实时监测积水深度与上涨速率，当水位以每分钟超过50mm的速率上涨时，系统立即判定为紧急状态并优先上传数据，为交通管制与排水调度提供依据。</p><p/><p><strong>2.地下空间防护中</strong>，住宅小区地下停车场、地铁站点等区域安装的设备集成漏电监测功能，实时感知积水路段<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>安全，一旦发现隐患立即报警，防止行人触电事故。</p><p/><p><strong>3.排水管网系统中</strong>，设备部署于管网关键节点与泵站周边，实时监测水流参数与液位变化，使管理部门能精准掌握管网运行状态，提前预判过载风险。</p><p/><p><strong>4.农业灌区与旅游景区</strong>通过部署监测设备，分别实现灌溉计划优化与游客安全保障。</p><p/><p><strong>5.在区域防涝指挥中</strong>，设备数据接入城市大脑平台，与气象预报、排水管网模型联动，通过多情景<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>生成积水范围与深度预测，为排水改造、应急预案制定提供量化依据。部分地区已将监测技术延伸至山洪防治领域，在山洪沟部署水位监测试验站，通过分钟级数据采集构建预警体系。</p><p/><p><strong>六．总结</strong></p><p/><p>城市内涝积水监测设备通过技术创新与场景适配，显著提升城市防涝的精准性与时效性。从多传感器融合的精准感知到多模通信的稳定传输，再到智能算法的实时分析，设备构建起全链条监测预警体系，为城市防涝提供了可靠的技术支撑。</p>]]></description></item><item>    <title><![CDATA[XL2477 WiFi 透传模组，让产品快速、低成本接入无线网络]]></title>    <link>https://www.elecfans.com/d/7569000.html</link>    <guid>https://www.elecfans.com/d/7569000.html</guid>    <pubDate>2026-01-04 17:15:00</pubDate>    <description><![CDATA[<p>
+	XL2477 WiFi 透传模组是一款基于 WiFi 技术的<a href="https://bbs.elecfans.com/group_57" target="_blank"><u>物联网</u></a>模块解决方案，通过AT指令实现串口（<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>）、SPI、<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a> 等有线接口与 WiFi 网络的透明数据转发，无需用户修改原有设备<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>逻辑即可实现无线联网。可以将来自设备主控制器（如<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>、<a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>）的串口（UART）数据，无损地转换为WiFi数据包，通过无线网络发送到远端服务器（或另一台设备）</p>
+<p>
+	XL2477 WiFi 透传模组采用模块化设计，支持 TCP/UDP/MQTT 等多种通信协议，具备低功耗运行、自动重连、参数灵活配置等特性，适用于需要无线数据传输的终端设备。可用于智能穿戴式设备，<a href="https://m.elecfans.com/v/tag/663/" target="_blank"><u>智能家居</u></a>，<a href="https://bbs.elecfans.com/group_78" target="_blank"><u>汽车电子</u></a>，休闲玩具，安防监控等多种应用场景。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/45/7E/wKgZO2laL66AWG9NAAUDFiZyrbQ614.jpg" alt="wKgZO2laL66AWG9NAAUDFiZyrbQ614.jpg"/></p>
+<p>
+	<strong>通信连接：</strong>硬件:<a href="https://www.hqchip.com/app/1515" target="_blank"><u>USB</u></a> 转TTL 和 WIFI 模块</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/45/7F/wKgZPGlaL6-AOyEQAAFPe3EKXa4865.jpg" alt="wKgZPGlaL6-AOyEQAAFPe3EKXa4865.jpg"/></p>
+<p>
+	<strong>引脚说明：</strong></p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/45/7E/wKgZO2laL6-ADI8oAAK7OH6uELE645.jpg" alt="wKgZO2laL6-ADI8oAAK7OH6uELE645.jpg"/><br/>
+	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[浮动板对板连接器破解ADAS系统升级中振动与温差难题的关键]]></title>    <link>https://www.elecfans.com/d/7534342.html</link>    <guid>https://www.elecfans.com/d/7534342.html</guid>    <pubDate>2026-01-04 17:16:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	浮动<a href="https://www.hqchip.com/app/1549" target="_blank"><u>板对板连接器</u></a>作为汽车<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>AS（高级驾驶辅助系统）的核心组件，正在重新定义车载电子设备的可靠性标准。随着<a href="https://www.elecfans.com/tags/自动驾驶/" target="_blank"><u>自动驾驶</u></a>技术向L3/L4级别迈进，ADAS系统对<a href="https://m.hqchip.com/app/1515" target="_blank"><u>连接器</u></a>的</p>
+<p style="text-indent:2em;">
+	抗振动、耐温差和<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>稳定性提出了近乎苛刻的要求。在复杂的行车环境中，传统刚性连接器因<a href="https://www.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>应力导致的接触失效可能引发安全隐患，而浮动板对板连接器通过独特的弹性结构和材料创新，为<a href="https://www.elecfans.com/v/tag/4084/" target="_blank"><u>毫米波雷达</u></a>、摄像头模组等关键<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>提供了高可靠互联方案。</p>
+<p style="text-indent:2em;">
+	浮动板对板连接器的核心优势在于其“动态补偿”能力。ADAS系统的毫米波雷达安装于车辆前保险杠或后视镜等位置，长期承受发动机振动、路面冲击及温度剧烈变化（-40℃至125℃）。浮动板对板连接器通过弹簧针或弹性胶体设计，允许±0.5mm的轴向偏移和±0.3mm的径向浮动，实测在20Hz-2000Hz随机振动下，接触<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>波动小于5mΩ，远超ISO 16750-3的汽车振动标准。这种特性可有效吸收<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>板的热膨胀差异和装配公差，避免焊点开裂或信号中断。</p>
+<p style="text-indent:2em;">
+	浮动板对板连接器的<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>性能直接影响ADAS系统的响应精度。在77GHz毫米波雷达的信号传输中，连接器需保障高达56Gbps的数据速率，同时抑制高频信号衰减。通过采用LCP（液晶聚合物）绝缘体和镀金铜合金触点，浮动板对板连接器在10GHz频段的插入损耗可控制在-0.8dB以内，误码率低于1×10⁻¹²。某德系车企测试表明，优化后的连接器使雷达目标检测距离误差从±0.5米缩减至±0.1米，显著提升了自动紧急制动（AEB）的可靠性。</p>
+<p style="text-indent:2em;">
+	浮动板对板连接器的微型化设计正在推动ADAS系统集成度升级。车载摄像头模组的PCB空间通常不足10mm²，连接器高度需压缩至1.2mm以下。浮动板对板连接器采用叠层接触片和超薄外壳，在0.4mm间距下实现30A载流能力，功率密度较传统型号提升3倍。例如，<a href="https://www.elecfans.com/tags/特斯拉/" target="_blank"><u>特斯拉</u></a>HW4.0平台的环视摄像头模组中，6组浮动连接器在5mm×5mm区域内完成多传感器数据汇总，布线复杂度降低40%，为域<a href="https://m.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>集中化架构铺平道路。</p>
+<p style="text-indent:2em;">
+	浮动板对板连接器的环境耐受性关乎ADAS系统的全天候稳定性。在极寒或高温工况下，连接器材料的热膨胀系数（C<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>TE</u></a>）差异可能导致接触失效。通过镍钛合金弹簧与PPS（聚苯硫醚）外壳的CTE匹配设计，浮动板对板连接器在-40℃至150℃范围内接触力波动小于10%，盐雾测试1000小时后绝缘电阻仍大于100MΩ。某国产ADAS方案商实测显示，采用此类连接器的前视摄像头在新疆吐鲁番70℃高温下连续工作500小时，未出现图像噪点或信号丢帧。</p>
+<p style="text-indent:2em;">
+	浮动板对板连接器的未来演进将聚焦智能化与高密度集成。随着<a href="https://www.elecfans.com/v/tag/1225/" target="_blank"><u>5G</u></a>-V2X和激光雷达的普及，ADAS系统需支持更多传感器融合。新一代浮动板对板连接器通过嵌入式<a href="https://www.elecfans.com/tags/滤波器/" target="_blank"><u>滤波器</u></a>和共模扼流圈，可抑制GHz频段的电磁干扰（EMI），同时集成电源与信号混合传输功能，减少线束数量。<a href="https://www.elecfans.com/tags/博世/" target="_blank"><u>博世</u></a>等厂商已推出支持48V直供的浮动连接器，单点传输功率提升至100W，为L4级自动驾驶的冗余供电系统提供底层支撑。</p>
+<p style="text-indent:2em;">
+	浮动板对板连接器的技术创新正在重塑<a href="https://bbs.elecfans.com/group_78" target="_blank"><u>汽车电子</u></a>供应链。2023年全球车用浮动连接器市场规模突破12亿美元，电装、安波福等企业通过专利壁垒抢占高端市场，而中国厂商凭借成本优势在ADAS普及车型中快速渗透。可以预见，随着自动驾驶等级提升，浮动板对板连接器将成为ADAS系统不可或缺的“神经关节”，在安全与性能的双重赛道上持续突破物理极限。                                  </p>]]></description></item><item>    <title><![CDATA[浮动板对板连接器开发难在哪？核心挑战解析]]></title>    <link>https://www.elecfans.com/d/7534370.html</link>    <guid>https://www.elecfans.com/d/7534370.html</guid>    <pubDate>2026-01-04 17:18:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
 	浮动<a href="https://www.hqchip.com/app/1549" target="_blank"><u>板对板连接器</u></a>因其独特的结构优势，成为高端电子设备中不可或缺的重要元件，但与此同时，浮动板对板<a href="https://m.hqchip.com/app/1515" target="_blank"><u>连接器</u></a>的开发难度也远高于传统连接器。主要原因在于其需要在微米级空间中实现<a href="https://m.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>浮动补偿，并确保<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>完整性和<a href="https://www.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>稳定性，这对设计、选材、工艺、测试每一个环节都提出了极高要求。</p>
 <p style="text-indent:2em;">
 	浮动板对板连接器的设计复杂度是开发难度的重要体现。为了实现X、Y轴方向上的浮动补偿，浮动板对板连接器内部必须采用特殊的弹性结构或滑动结构，同时在动态插拔过程中还要保持连接稳定。这不仅考验机械设计的精度，还对模具加工提出了极高要求，一旦设计或制造偏差过大，容易导致连接不稳或插拔寿命不足，从而影响整体产品可靠性。</p>
@@ -1518,1108 +3026,4 @@ GAPRole_SetParameter(GAPROLE_ADV_EVENT_TYPE, <span class="hljs-number">1</span>,
 <p style="text-indent:2em;">
 	量产商用广泛：依托创新产品与完善客户支持，汇顶已成为国内数字车钥匙解决方案的领先供应商，其方案已成功进入多家国内主流整车厂及Tier 1供应链并实现量产，覆盖十多款畅销车型。</p>
 <p style="text-indent:2em;">
-	面向汽车产业智能化、网联化的加速升级，汇顶将继续深耕无线连接技术，凭借差异化的创新方案，助力车企打造更便捷、更安全的智慧出行体验。</p>]]></description></item><item>    <title><![CDATA[AM26C32：高性能差分线接收器的详细解析]]></title>    <link>https://www.elecfans.com/d/7569057.html</link>    <guid>https://www.elecfans.com/d/7569057.html</guid>    <pubDate>2026-01-04 17:45:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_7569057" value="https://file1.elecfans.com/web3/M00/45/7F/wKgZO2laNc6AfHfyAB14DZ3KVek074.pdf"/><h1>AM26C32：高性能差分线接收器的详细解析</h1>
-<p>在<a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>的日常设计工作中，选择合适的差分线接收器至关重要，它直接影响到系统的性能和稳定性。今天，我们就来深入探讨一下<a href="https://www.elecfans.com/tags/德州仪器/" target="_blank"><u>德州仪器</u></a>（<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>TI</u></a>）的AM26C32系列产品，包括AM26C32、AM26C32C、AM26C32M和AM26C32I，了解它们的特点、应用场景以及设计要点。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_7569057" target="_blank">am26c32.pdf</a></p>
-<h2>产品概述</h2>
-<p>AM26C32是一款四路差分线接收器，适用于平衡或非平衡数字数据传输。它采用BiCMOS工艺制造，结合了双极型和CMOS<a href="https://www.hqchip.com/app/1555" target="_blank"><u>晶体管</u></a>的优点，在保持<a href="https://www.hqchip.com/app/1703" target="_blank"><u>AC</u></a>和<a href="https://m.hqchip.com/app/1703" target="_blank"><u>DC</u></a>性能的同时，将功耗降低到标准AM26LS32的约五分之一。该产品满足或超过了ANSI TIA/EIA - 422 - B、TIA/EIA - 423 - B以及ITU建议V.10和V.11的要求。</p>
-<h2>产品特性</h2>
-<h3><a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>性能优越</h3>
-<ul>
-<li><strong>低功耗</strong>：典型 $I_{CC}$ 仅为10 mA，有效降低了系统的整体功耗。</li>
-<li><strong>宽共模范围</strong>：具备 ±7 - V 的共模范围，灵敏度为 ±200 - mV，能够适应不同的<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>环境。</li>
-<li><strong>输入迟滞</strong>：典型值为60 mV，增强了系统的抗干扰能力。</li>
-<li><strong>快速传输</strong>：典型传播延迟时间 $t_{pd}$ 为17 ns，确保数据的快速准确传输。</li>
-</ul>
-<h3>功能设计出色</h3>
-<ul>
-<li><strong>单电源供电</strong>：仅需单一的5 - V<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>即可工作，简化了电源设计。</li>
-<li><strong>三态输出</strong>：输出为三态，可直接连接到总线系统，方便实现数据的共享和传输。</li>
-<li><strong>输入故障保护</strong>：输入开路时，输出始终为高电平，保证了系统的可靠性。</li>
-<li><strong>使能功能灵活</strong>：四个<a href="https://m.hqchip.com/app/1847" target="_blank"><u>接收器</u></a>共用一个使能功能，可选择高电平或低电平有效输入。</li>
-</ul>
-<h2>应用场景</h2>
-<p>AM26C32的高性能和可靠性使其在多个领域得到广泛应用：</p>
-<ul>
-<li><strong>汽车应用</strong>：适用于高可靠性的<a href="https://bbs.elecfans.com/group_78" target="_blank"><u>汽车电子</u></a>系统，如<a href="https://bbs.elecfans.com/group_346" target="_blank"><u>智能电网</u></a>、交流和<a href="https://m.elecfans.com/v/tag/194/" target="_blank"><u>伺服电机</u></a>驱动等。</li>
-<li><strong><a href="https://m.elecfans.com/v/tag/633/" target="_blank"><u>工业自动化</u></a></strong>：可用于工厂<a href="https://www.elecfans.com/v/tag/1687/" target="_blank"><u>自动化设备</u></a>，确保数据的稳定传输。</li>
-<li><strong>金融设备</strong>：在ATM和现金计数器等设备中发挥重要作用。</li>
-</ul>
-<h2>引脚配置与功能</h2>
-<p>AM26C32提供多种封装形式，如PDIP、SO、SOIC、SSOP、<a href="https://www.hqchip.com/app/1593" target="_blank"><u>TSS</u></a>OP、CDIP、CFP和LCCC等。不同封装的引脚配置有所不同，但主要功能一致。其引脚包括<a href="https://www.hqchip.com/app/1809" target="_blank"><u>RS422</u></a>/<a href="https://m.hqchip.com/app/1809" target="_blank"><u>RS485</u></a>差分输入、逻辑电平输出、使能输入、电源和地等。通过合理配置这些引脚，可以实现不同的功能和应用。</p>
-<h2>规格参数</h2>
-<h3>绝对最大额定值</h3>
-<p>了解产品的绝对最大额定值对于正确使用和保护设备至关重要。AM26C32的电源电压最大为7 V，输入电压范围为 - 11 V至14 V，输出<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>最大为 +25 mA等。在设计时，必须确保所有参数都在额定范围内，以避免设备损坏。</p>
-<h3><a href="https://www.hqchip.com/app/1587" target="_blank"><u>ESD</u></a> 评级</h3>
-<p>该产品的人体模型（HBM）静电放电（ESD）额定值为 +3000 V，充电设备模型（CDM）为 ±2000 V。在处理和安装过程中，应采取适当的静电防护措施，以防止ESD对设备造成损害。</p>
-<h3>推荐工作条件</h3>
-<p>为了保证产品的最佳性能，推荐工作条件包括电源电压为4.5 V至5.5 V，高电平输入电压为2 V至Vcc，低电平输入电压为0 V至0.8 V等。不同型号的工作温度范围也有所不同，如AM26C32C为0°C至70°C，AM26C32I为 - 40°C至85°C等。</p>
-<h3>热信息</h3>
-<p>热性能是影响电子设备稳定性和寿命的重要因素。文档中提供了不同封装形式的热阻参数，如结到环境热阻、结到壳热阻和结到板热阻等。在设计散热方案时，应根据实际情况选择合适的封装，并采取有效的散热措施。</p>
-<h3>电气特性和开关特性</h3>
-<p>电气特性和开关特性描述了产品在不同工作条件下的性能表现。例如，差分输入高<a href="https://www.elecfans.com/tags/阈值电压/" target="_blank"><u>阈值电压</u></a>、低阈值电压、滞后电压、输出高电平电压、输出低电平电压等。开关特性包括传播延迟时间、输出转换时间等。这些参数对于评估产品的性能和设计电路至关重要。</p>
-<h2>详细设计要点</h2>
-<h3>电缆终端</h3>
-<p>在设计使用<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a> - 422或RS - 485标准的系统时，正确的电缆终端设计对于减少传输线反射和提高系统可靠性至关重要。RS - 422通常只在电缆末端靠近最后一个接收器处进行终端匹配，而RS - 485则需要在电缆两端进行终端匹配。选择终端类型时，需要考虑应用的性能要求和成本因素。</p>
-<h3>电源供应</h3>
-<p>为了减少来自噪声或高阻抗电源的误差<a href="https://www.elecfans.com/tags/耦合/" target="_blank"><u>耦合</u></a>，应在电源引脚附近放置0.1 - μF的旁路<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>。这可以为<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>电路提供低阻抗的电源，降低噪声干扰。</p>
-<h3><a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>布局</h3>
-<p>良好的PCB布局对于设备的性能至关重要。以下是一些布局建议：</p>
-<ul>
-<li><strong>旁路电容</strong>：在每个电源引脚和地之间连接低ESR的0.1 - μF陶瓷旁路电容，并尽可能靠近设备放置。</li>
-<li><strong>接地分离</strong>：将模拟和数字部分的电路进行分离接地，以减少噪声干扰。多层PCB通常会专门设置接地层，以帮助散热和减少电磁干扰（EMI）。</li>
-<li><strong>走线分离</strong>：尽量将输入走线与电源或输出走线分开，避免平行走线。如果无法避免交叉，应使敏感走线与噪声走线垂直交叉。</li>
-<li><strong>外部组件</strong>：将外部组件尽可能靠近设备放置，以减少寄生电容的影响。</li>
-<li><strong>输入走线</strong>：保持输入走线的长度尽可能短，因为输入走线是电路中最敏感的部分。</li>
-<li><strong>保护环</strong>：可以考虑在关键走线周围设置驱动的低阻抗保护环，以减少附近不同电位走线的泄漏电流。</li>
-</ul>
-<h2>文档支持与注意事项</h2>
-<h3>文档更新通知</h3>
-<p>可以通过访问ti.com上的设备产品文件夹，点击“<a href="https://m.hqchip.com/app/1525" target="_blank"><u>Sub</u></a>scribe to updates”注册，以接收文档更新的每周摘要。查看修订历史记录可以了解文档的详细更改信息。</p>
-<h3>技术支持</h3>
-<p>TI E2E™支持<a href="https://www.elecfans.com/article/bbs/" target="_blank"><u>论坛</u></a>是工程师获取快速、可靠答案和设计帮助的重要资源。在这里，你可以搜索现有答案或提出自己的问题，获得专家的指导。</p>
-<h3>ESD注意事项</h3>
-<p>由于该<a href="https://www.elecfans.com/v/tag/123/" target="_blank"><u>集成电路</u></a>容易受到ESD损坏，在处理和安装过程中，必须采取适当的静电防护措施，以避免设备性能下降或完全失效。</p>
-<h3>其他版本</h3>
-<p>除了标准的AM26C32产品外，还有增强型产品AM26C32 - EP和军用版本AM26C32M可供选择，以满足不同的应用需求。</p>
-<p>综上所述，AM26C32系列产品凭借其出色的性能和灵活的设计，为电子工程师提供了一个可靠的差分线接收器解决方案。在实际设计中，我们需要根据具体的应用场景和要求，合理选择产品型号和封装形式，并严格遵循设计要点，以确保系统的性能和稳定性。希望这篇文章能对大家在使用AM26C32进行设计时有所帮助。如果你在设计过程中遇到任何问题，欢迎在评论区留言讨论。 </p>]]></description></item><item>    <title><![CDATA[AM26C31 四通道差分线路驱动器：特性、应用与设计指南]]></title>    <link>https://www.elecfans.com/d/7569058.html</link>    <guid>https://www.elecfans.com/d/7569058.html</guid>    <pubDate>2026-01-04 17:45:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_7569058" value="https://file1.elecfans.com/web3/M00/45/80/wKgZPGlaNc6AVf-eAB4uLEdC_OM350.pdf"/><h1>AM26C31 四通道差分线路<a href="https://m.hqchip.com/app/1847" target="_blank"><u>驱动器</u></a>：特性、应用与设计指南</h1>
-<p>在电子设计领域，差分线路驱动器是实现长距离、高速数据传输的关键组件。今天，我们将深入探讨<a href="https://www.elecfans.com/tags/德州仪器/" target="_blank"><u>德州仪器</u></a>（<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>TI</u></a>）的 AM26C31 四通道差分线路驱动器，它在满足行业标准的同时，具备低功耗、高速等出色特性，广泛应用于多个领域。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_7569058" target="_blank">am26c31.pdf</a></p>
-<h2>一、AM26C31 概述</h2>
-<p>AM26C31 是一款具有互补输出的四通道差分线路驱动器，它满足 TIA/EIA - 422 - B 和 ITU（原 CCITT）的要求，非常适合在嘈杂环境中通过较长线路进行<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>。该器件采用 BiCMOS 电路，在不牺牲速度的情况下降低了功耗。</p>
-<h3>1.1 不同型号的温度范围</h3>
-<ul>
-<li>AM26C31C：适用于 0°C 至 70°C 的工作环境。</li>
-<li>AM26C31I：可在 - 40°C 至 + 85°C 的温度范围内工作。</li>
-<li>AM26C31Q：满足汽车应用的温度范围，即 - 40°C 至 + 125°C。</li>
-<li>AM26C31M：适用于全军事温度范围 - 55°C 至 + 125°C。</li>
-</ul>
-<h2>二、特性亮点</h2>
-<h3>2.1 符合行业标准</h3>
-<p>AM26C31 满足或超越了 TIA/EIA - 422 - B 和 ITU 建议 V.11 的要求，确保了其在通信领域的兼容性和可靠性。</p>
-<h3>2.2 低功耗设计</h3>
-<p>典型静态<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a> $I_{CC}$ 仅为 100μA，且可由单一 5V <a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>供电，这不仅降低了功耗，还简化了电源设计。</p>
-<h3>2.3 高速性能</h3>
-<p>典型的传播延迟时间 $t<em>{PLH}=t</em>{PHL}=7ns$，脉冲失真小，典型 $t_{sk(p)}=0.5ns$，能够实现高速数据传输。</p>
-<h3>2.4 高输出阻抗</h3>
-<p>在断电条件下，输出具有高阻抗，避免了对线路的干扰。</p>
-<h3>2.5 替代升级</h3>
-<p>是 AM26LS31 器件的改进替代品，性能更优。</p>
-<h3>2.6 汽车级应用</h3>
-<p>AM26C31Q 适用于汽车应用，具备高可靠性、配置控制和打印支持，并符合汽车标准。</p>
-<h2>三、应用领域</h2>
-<p>AM26C31 的应用十分广泛，涵盖了多个行业：</p>
-<ul>
-<li><strong><a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>领域</strong>：如化学和气体传感器、<a href="https://www.elecfans.com/tags/温度传感器/" target="_blank"><u>温度传感器</u></a>和<a href="https://www.elecfans.com/tags/压力传感器/" target="_blank"><u>压力传感器</u></a>等现场<a href="https://www.elecfans.com/tags/变送器/" target="_blank"><u>变送器</u></a>。</li>
-<li><strong>军事领域</strong>：雷达、声纳以及军事和航空成像系统。</li>
-<li><strong><a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机控制</u></a></strong>：无刷直流和有刷直流<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>控制。</li>
-<li><strong><a href="https://www.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a></strong>：使用 Modbus 的温度传感器和<a href="https://www.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>。</li>
-</ul>
-<h2>四、引脚配置与功能</h2>
-<p>AM26C31 有多种封装形式，不同封装的引脚配置有所不同。常见的 16 引脚和 20 引脚封装，主要引脚功能如下：</p>
-<ul>
-<li><strong>输入引脚（如 1A、2A 等）</strong>：用于接收输入<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>。</li>
-<li><strong>输出引脚（如 1Y、1Z 等）</strong>：提供互补的差分输出。</li>
-<li><strong>使能引脚（G 和 $overline{G}$）</strong>：可选择高电平有效（G）或低电平有效（$overline{G}$）来使能驱动器。</li>
-<li><strong>电源引脚（CC）</strong>：连接 5V 电源。</li>
-<li><strong>接地引脚（GND）</strong>：提供接地参考。</li>
-</ul>
-<h2>五、规格参数</h2>
-<h3>5.1 绝对最大额定值</h3>
-<p>了解器件的绝对最大额定值对于确保其安全运行至关重要。例如，电源电压 $V<em>{CC}$ 的范围为 - 0.5V 至 7V，输入电压 $VI$ 为 - 0.5V 至 $V</em>{CC}+0.5V$ 等。超出这些额定值可能会导致器件永久性损坏。</p>
-<h3>5.2 <a href="https://www.hqchip.com/app/1587" target="_blank"><u>ESD</u></a> 额定值</h3>
-<p>人体模型（HBM）静电放电额定值为 ±2000V，带电设备模型（CDM）为 ±1000V。在<a href="https://www.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>件时，必须采取适当的静电防护措施，以避免 ESD 损坏。</p>
-<h3>5.3 推荐工作条件</h3>
-<p>推荐的电源电压 $V_{CC}$ 为 4.5V 至 5.5V，不同型号的工作温度范围也有所不同。在这些条件下工作，器件能够实现最佳性能。</p>
-<h3>5.4 热信息</h3>
-<p>不同封装的热阻参数不同，如结到环境的热阻 $R_{theta JA}$ 等。这些参数对于散热设计非常重要，以确保器件在工作时不会过热。</p>
-<h3>5.5 <a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>特性</h3>
-<p>包括高电平输出电压 $V<em>{OH}$、低电平输出电压 $V</em>{OL}$、输入电流 $II$ 等。不同型号（如 AM26C31C 和 AM26C31I、AM26C31Q 和 AM26C31M）的电气特性在某些参数上可能会有所差异。</p>
-<h3>5.6 开关特性</h3>
-<p>如传播延迟时间 $t<em>{PLH}$ 和 $t</em>{PHL}$、脉冲偏斜时间 $t_{sk(p)}$ 等。这些特性决定了器件的开关速度和信号质量。</p>
-<h2>六、详细设计与应用建议</h2>
-<h3>6.1 电缆终端</h3>
-<p>在设计使用符合 <a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a> - 422 标准的驱动器、<a href="https://m.hqchip.com/app/1847" target="_blank"><u>接收器</u></a>和<a href="https://www.hqchip.com/app/1809" target="_blank"><u>收发器</u></a>的系统时，正确的电缆终端对于减少传输线反射和提高可靠性至关重要。常见的终端技术包括未终端线路、并联终端、交流终端和多点终端。</p>
-<h3>6.2 典型应用设计</h3>
-<ul>
-<li><strong>设计要求</strong>：终端<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a> $R<em>{T}$ 必须在电缆特性阻抗 $Z</em>{0}$ 的 ±20% 范围内，通常为 80Ω 至 120Ω。</li>
-<li><strong>详细设计步骤</strong>：确保不超过绝对最大额定值，电源电压、输入高电平 $V<em>{IH}$ 和输入低电平 $V</em>{IL}$ 必须符合推荐工作条件。</li>
-</ul>
-<h3>6.3 电源供应建议</h3>
-<p>在电源引脚附近放置 0.1μF 的旁路<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>，以减少来自嘈杂或高阻抗电源的误差<a href="https://www.elecfans.com/tags/耦合/" target="_blank"><u>耦合</u></a>。</p>
-<h3>6.4 <a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a> 布局</h3>
-<ul>
-<li><strong>布局指南</strong>：采用良好的 PCB 布局实践，如在每个电源引脚和地之间连接低 ESR 的 0.1μF 陶瓷旁路电容，将<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>和数字部分的电路分开接地，避免输入走线与电源或输出走线靠近等。</li>
-<li><strong>布局示例</strong>：提供了不同封装的 PCB 布局示例，包括焊盘图案、阻焊层细节和模板设计等。</li>
-</ul>
-<h2>七、总结</h2>
-<p>AM26C31 四通道差分线路驱动器凭借其出色的性能、广泛的应用领域和多种封装选择，成为<a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>在设计长距离、高速数据传输系统时的理想选择。在使用过程中，我们需要充分了解其特性、规格参数和应用建议，以确保设计的可靠性和稳定性。同时，注意静电防护和正确的 PCB 布局，将有助于发挥器件的最佳性能。你在使用 AM26C31 或类似器件时遇到过哪些问题呢？欢迎在评论区分享你的经验和见解。 </p>]]></description></item><item>    <title><![CDATA[深入剖析AM26LS32Ax与AM26LS33Ax：高性能差分线接收器的卓越之选]]></title>    <link>https://www.elecfans.com/d/7569059.html</link>    <guid>https://www.elecfans.com/d/7569059.html</guid>    <pubDate>2026-01-04 17:45:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_7569059" value="https://file1.elecfans.com/web3/M00/44/D4/wKgZO2lTimuARctkAB-dzEyfjrs136.pdf"/><h1>深入剖析AM26LS32Ax与AM26LS33Ax：高性能差分线接收器的卓越之选</h1>
-<p>在电子设计的广阔领域中，数据传输的稳定性和可靠性始终是工程师们关注的核心。今天，我们将深入探讨<a href="https://www.elecfans.com/tags/德州仪器/" target="_blank"><u>德州仪器</u></a>（<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>TI</u></a>）的AM26LS32Ax和AM26LS33Ax系列产品，这两款器件作为四通道差分线接收器，在平衡和非平衡数字数据传输领域表现出色。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_7569059" target="_blank">am26ls33a.pdf</a></p>
-<h2>一、产品特性亮点</h2>
-<h3>1. 标准兼容性</h3>
-<p>AM26LS32A系列器件完全符合ANSI TIA/EIA - 422 - B、TIA/EIA - 423 - B以及ITU推荐的V.10和V.11标准，这意味着在不同的<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>协议环境下，它都能稳定工作，为设计带来了极大的便利。</p>
-<h3>2. 宽共模范围与高灵敏度</h3>
-<p>AM26LS32A具备±7 - V的共模范围，灵敏度达到±200 - mV；而AM26LS33A的共模范围更是扩展到±15 - V，灵敏度为±500 - mV。这种宽共模范围和高灵敏度的设计，使得器件能够在复杂的电磁环境中准确接收<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>，有效减少干扰对数据传输的影响。</p>
-<h3>3. 低功耗与高阻抗</h3>
-<p>器件采用低功耗<a href="https://m.hqchip.com/app/1558" target="_blank"><u>肖特基</u></a>电路，并且输入阻抗最小为12 kΩ。低功耗特性可以降低系统的整体能耗，延长设备的续航时间；高输入阻抗则减少了对总线的负载，提高了信号传输的质量。</p>
-<h3>4. 多功能输出设计</h3>
-<p>具有三态输出和互补输出使能输入。三态输出允许器件直接连接到总线系统，方便在多个设备共享总线时进行数据传输控制；互补输出使能输入则提供了灵活的逻辑配置方式，可根据实际需求选择高电平有效或低电平有效的使能方式。</p>
-<h3>5. 输入故障保护</h3>
-<p>当输入开路时，故障保护设计确保输出始终为高电平，这在实际应用中可以避免因输入异常导致的系统错误，提高了系统的可靠性。</p>
-<h2>二、广泛的应用场景</h2>
-<h3>1. <a href="https://bbs.elecfans.com/group_78" target="_blank"><u>汽车电子</u></a></h3>
-<p>在高可靠性的汽车应用中，如汽车的<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>数据传输、车辆<a href="https://www.elecfans.com/v/tag/8966/" target="_blank"><u>控制系统</u></a>等，AM26LS32Ax和AM26LS33Ax能够承受汽车复杂的<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>环境和温度变化，保证数据的准确传输，为汽车的安全和稳定运行提供保障。</p>
-<h3>2. <a href="https://m.elecfans.com/v/tag/633/" target="_blank"><u>工业自动化</u></a></h3>
-<p>在工厂自动化领域，设备之间的通信需要高度的可靠性和稳定性。这两款器件可以用于工业传感器与<a href="https://www.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>之间的数据传输，实现对生产过程的精确控制和监测。</p>
-<h3>3. 金融设备</h3>
-<p>在ATM和现金计数器等金融设备中，数据的准确传输至关重要。AM26LS32Ax和AM26LS33Ax的高性能特性可以确保设备在频繁操作和复杂电磁环境下的稳定运行，保障金融交易的安全和准确。</p>
-<h3>4. <a href="https://bbs.elecfans.com/group_346" target="_blank"><u>智能电网</u></a></h3>
-<p>在智能电网的建设中，需要实现大量电力设备之间的数据通信。这两款器件可以用于电力传感器与监控系统之间的数据传输，为电网的智能化管理提供支持。</p>
-<h3>5. <a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>驱动</h3>
-<p>在<a href="https://www.hqchip.com/app/1703" target="_blank"><u>AC</u></a>和<a href="https://m.elecfans.com/v/tag/194/" target="_blank"><u>伺服电机</u></a>驱动系统中，需要实时准确地传输控制信号和反馈数据。AM26LS32Ax和AM26LS33Ax能够满足高速数据传输的要求，保证电机的精确控制和稳定运行。</p>
-<h2>三、详细的产品描述</h2>
-<h3>1. 功能改进</h3>
-<p>与AM26LS32和AM26LS33相比，AM26LS32A和AM26LS33A增加了一级放大电路，提高了灵敏度。同时，输入阻抗的增加减少了对总线的负载，虽然增加了一定的传播延迟，但在大多数应用中并不影响其互换性。</p>
-<h3>2. 温度特性</h3>
-<p>不同型号的器件具有不同的温度适用范围。AM26LS32AC和AM26LS33AC适用于0°C至70°C的环境；AM26LS32<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>适用于 - 40°C至85°C的环境；而AM26LS32AM和AM26LS33AM则能在 - 55°C至125°C的全军事温度范围内正常工作，满足了不同应用场景对温度的要求。</p>
-<h3>3. 封装信息</h3>
-<p>器件提供多种封装形式，如PDIP、SOIC、SO、<a href="https://www.hqchip.com/app/1593" target="_blank"><u>TSS</u></a>OP、CDIP、LCCC等，不同的封装尺寸和引脚配置可以满足不同的设计需求。例如，PDIP封装适用于需要插件安装的场合；SOIC封装则具有较小的尺寸，适合高密度的电路板设计。</p>
-<h2>四、关键技术参数</h2>
-<h3>1. 绝对最大额定值</h3>
-<p>在使用过程中，需要注意器件的绝对最大额定值，如<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>电压VCC最大为7 V，输入电压VI最大为±25 V等。超过这些额定值可能会导致器件永久性损坏，因此在设计时必须严格遵守。</p>
-<h3>2. <a href="https://www.hqchip.com/app/1587" target="_blank"><u>ESD</u></a>额定值</h3>
-<p>该器件的人体模型（HBM）静电放电额定值为±500 V，带电设备模型（CDM）静电放电额定值为±2000 V。在生产和使用过程中，需要采取适当的静电防护措施，以避免静电对器件造成损坏。</p>
-<h3>3. 推荐工作条件</h3>
-<p>推荐的电源电压VCC为5 V，不同型号的器件在不同的温度范围内工作。例如，AM26LS32AC和AM26LS33AC的工作温度范围为0°C至70°C，在这个范围内，器件能够保证最佳的性能和可靠性。</p>
-<h3>4. 热性能参数</h3>
-<p>包括结到环境的热阻RθJA、结到外壳（顶部）的热阻RθJC(top)等。这些参数对于散热设计非常重要，合理的散热设计可以确保器件在工作过程中保持稳定的温度，提高其可靠性和寿命。</p>
-<h3>5. 电气特性</h3>
-<p>如输入<a href="https://www.elecfans.com/tags/阈值电压/" target="_blank"><u>阈值电压</u></a>、输出电压、输入<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>等。这些参数决定了器件的电气性能，在设计电路时需要根据实际需求进行合理的选择和配置。</p>
-<h3>6. 开关特性</h3>
-<p>包括传播延迟时间、输出使能时间、输出禁用时间等。这些参数对于高速数据传输的应用非常关键，需要根据系统的<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>频率和数据传输速率进行合理的设计。</p>
-<h3>7. 功耗额定值</h3>
-<p>不同封装的器件在不同温度下的功耗额定值不同。例如，FK封装在TA ≤ 25°C时的功率额定值为1375 mW，在TA = 70°C时为880 mW。在设计电源和散热系统时，需要考虑器件的功耗特性，以确保系统的稳定性。</p>
-<h2>五、应用与设计要点</h2>
-<h3>1. 典型应用电路</h3>
-<p>在典型应用中，AM26LS32A可以与AM26LS31AC配合使用，实现多个<a href="https://m.hqchip.com/app/1847" target="_blank"><u>接收器</u></a>的级联，增加输出数量。在无终端配置的情况下，即使在200 kbps的数据信号速率下，接收器输入存在反射，但<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a> - 422兼容的接收器仍能读取输入差分电压并产生干净的输出信号。</p>
-<h3>2. 设计要求与步骤</h3>
-<p>在设计电路时，需要注意以下几点：</p>
-<ul>
-<li><a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>和<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>（如果使用）的终端值应根据系统的实际情况进行选择，例如终端电阻RT应在电缆特性阻抗Z0的±20%范围内，通常在80 Ω至120 Ω之间。</li>
-<li>增加VCC旁路电容（0.1 µF或更大），以减少电源噪声对器件的影响。</li>
-<li>选择合适的使能输入，并将其连接到兼容的逻辑线路输出。如果接收器需要始终处于激活状态，则将两个使能输入都连接到电源轨，确保至少有一个处于激活状态。</li>
-<li>VCC必须为5 V，误差在±10%以内，逻辑输入应提供TTL兼容的电压电平。</li>
-<li>A和B输入可以连接到外部<a href="https://m.hqchip.com/app/1515" target="_blank"><u>连接器</u></a>，也可以不连接。电缆上的最后一个接收器需要进行终端处理，可以在板上实现或使用外部电阻。</li>
-<li>未使用的Y输出可以不连接。
-<h3>3. 电源与布局建议</h3></li>
-<li>电源方面，应在每个电源引脚和地之间连接低ESR、0.1 - µF的陶瓷旁路电容，并尽量靠近器件放置，以减少电源噪声的影响。</li>
-<li>布局方面，应采用良好的<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>布局实践，如分离<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>和<a href="https://m.elecfans.com/v/tag/8791/" target="_blank"><u>数字电路</u></a>的接地，减少寄生<a href="https://www.elecfans.com/tags/耦合/" target="_blank"><u>耦合</u></a>，缩短输入走线长度，考虑使用驱动的低阻抗保护环等。这些措施可以提高电路的抗干扰能力和性能稳定性。</li>
-</ul>
-<h2>六、总结与展望</h2>
-<p>AM26LS32Ax和AM26LS33Ax系列产品凭借其卓越的性能、广泛的应用场景和丰富的封装选择，为<a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>在数据传输设计中提供了可靠的解决方案。在实际应用中，<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>们需要根据具体的需求和系统要求，合理选择器件型号和封装形式，并严格按照设计要求进行<a href="https://bbs.elecfans.com/zhuti_dianlu_1.html" target="_blank"><u>电路设计</u></a>和布局，以充分发挥器件的性能优势。随着电子技术的不断发展，我们期待这些高性能的差分线接收器在更多领域得到应用，为电子设备的智能化和高性能化做出更大的贡献。</p>
-<p>作为电子工程师，你在使用这类差分线接收器时遇到过哪些挑战？又是如何解决的呢？欢迎在评论区分享你的经验和见解。 </p>]]></description></item><item>    <title><![CDATA[AM26LS32Ax与AM26LS33Ax：高性能差分线接收器的全面解析]]></title>    <link>https://www.elecfans.com/d/7569060.html</link>    <guid>https://www.elecfans.com/d/7569060.html</guid>    <pubDate>2026-01-04 17:45:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_7569060" value="https://file1.elecfans.com/web3/M00/44/D4/wKgZO2lTimuARctkAB-dzEyfjrs136.pdf"/><h1>AM26LS32Ax与AM26LS33Ax：高性能差分线接收器的全面解析</h1>
-<p>在电子工程的世界里，数据传输的可靠性和稳定性是永恒的追求。AM26LS32Ax和AM26LS33Ax系列差分线接收器，凭借其出色的性能和广泛的应用场景，成为了<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>们在设计中常用的选择。今天，我们就来深入探讨一下这两款产品。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_7569060" target="_blank">am26ls32ac.pdf</a></p>
-<h2>1. 产品概述</h2>
-<p>AM26LS32Ax和AM26LS33Ax是用于平衡和非平衡数字数据传输的四路差分线接收器。与前代产品相比，AM26LS32A和AM26LS33A增加了一级放大，提高了灵敏度，同时输入阻抗也有所增加，减少了总线负载。不过，额外的放大级也增加了传播延迟，但在大多数应用中并不影响互换性。</p>
-<h2>2. 产品特性</h2>
-<h3>2.1 标准兼容性</h3>
-<p>AM26LS32A系列满足或超过了ANSI <a href="https://bbs.elecfans.com/group_715" target="_blank"><u>TI</u></a>A/EIA - 422 - B、TIA/EIA - 423 - B以及ITU建议V.10和V.11的要求，这使得它在不同的<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>标准环境下都能稳定工作。</p>
-<h3>2.2 输入特性</h3>
-<ul>
-<li><strong>共模范围与灵敏度</strong>：AM26LS32A具有±7 - V的共模范围和±200 - mV的灵敏度；AM26LS33A则具有±15 - V的共模范围和±500 - mV的灵敏度，可适应不同的<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>环境。</li>
-<li><strong>输入滞后</strong>：典型的输入滞后为50 mV，有助于提高抗干扰能力。</li>
-<li><strong>输入阻抗</strong>：最小输入阻抗为12 kΩ，减少了对总线的负载。</li>
-<li><strong>开路输入故障保护</strong>：当输入开路时，故障保护设计确保输出始终为高，增强了系统的可靠性。
-<h3>2.3 <a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>与输出特性</h3></li>
-<li><strong>单电源供电</strong>：可从单一的5 - V电源供电，简化了电源设计。</li>
-<li><strong>低功耗<a href="https://m.hqchip.com/app/1558" target="_blank"><u>肖特基</u></a>电路</strong>：降低了功耗，适合对功耗有要求的应用。</li>
-<li><strong>三态输出</strong>：允许直接连接到总线系统，方便进行总线控制。</li>
-<li><strong>互补输出使能输入</strong>：提供了灵活的输出控制方式。</li>
-</ul>
-<h2>3. 应用场景</h2>
-<h3>3.1 高可靠性汽车应用</h3>
-<p>在<a href="https://bbs.elecfans.com/group_78" target="_blank"><u>汽车电子</u></a>中，对数据传输的可靠性要求极高。AM26LS32Ax和AM26LS33Ax的高抗干扰能力和稳定性，使其能够在汽车的复杂电磁环境中可靠工作，例如汽车的<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>数据传输等。</p>
-<h3>3.2 工厂自动化</h3>
-<p>工厂自动化系统中，需要大量的设备进行数据交互。这两款<a href="https://m.hqchip.com/app/1847" target="_blank"><u>接收器</u></a>可以用于连接各种传感器、执行器和<a href="https://www.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>，确保数据的准确传输，提高生产效率和质量。</p>
-<h3>3.3 ATM和现金计数器</h3>
-<p>在金融设备中，数据的准确性至关重要。它们可以用于ATM机和现金计数器的数据传输，保证交易的安全和准确。</p>
-<h3>3.4 <a href="https://bbs.elecfans.com/group_346" target="_blank"><u>智能电网</u></a></h3>
-<p>智能电网需要实时、准确地传输电力数据。AM26LS32Ax和AM26LS33Ax可以用于电力传感器与监控系统之间的数据传输，提高电网的智能化水平。</p>
-<h3>3.5 <a href="https://www.hqchip.com/app/1703" target="_blank"><u>AC</u></a>和<a href="https://m.elecfans.com/v/tag/194/" target="_blank"><u>伺服电机</u></a>驱动</h3>
-<p>在<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>驱动系统中，需要精确的控制信号传输。这两款接收器可以用于<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机控制</u></a>器与传感器之间的数据传输，确保电机的稳定运行。</p>
-<h2>4. 规格参数</h2>
-<h3>4.1 绝对最大额定值</h3>
-<p>了解绝对最大额定值对于正确使用器件至关重要。例如，电源电压VCC最大为7 V，输入电压VI在不同情况下有不同的限制，如任何差分输入为±25 V等。超过这些额定值可能会导致器件永久损坏。</p>
-<h3>4.2 <a href="https://www.hqchip.com/app/1587" target="_blank"><u>ESD</u></a>评级</h3>
-<p>人体模型（HBM）的ESD评级为±500 V，带电设备模型（CDM）为±2000 V。在使用和<a href="https://www.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>件时，需要采取适当的静电防护措施，以避免ESD对器件造成损坏。</p>
-<h3>4.3 推荐工作条件</h3>
-<p>不同型号的产品在推荐工作条件上有所差异。例如，AM26LS32AC、AM26LS32<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>、AM26LS33AC的电源电压VCC推荐范围为4.75 - 5.25 V，而AM26LS32AM、AM26LS33AM为4.5 - 5.5 V。同时，不同型号的工作温度范围也不同，如AM26LS32AC、AM26LS33AC为0°C - 70°C，AM26LS32AI为 - 40°C - 85°C，AM26LS32AM、AM26LS33AM为 - 55°C - 125°C。在设计时，需要根据实际应用环境选择合适的型号。</p>
-<h3>4.4 <a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>特性</h3>
-<p>详细的电气特性参数，如输入<a href="https://www.elecfans.com/tags/阈值电压/" target="_blank"><u>阈值电压</u></a>、输出电压、<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>等，为<a href="https://bbs.elecfans.com/zhuti_dianlu_1.html" target="_blank"><u>电路设计</u></a>提供了重要的依据。例如，正向输入阈值电压VIT + 对于AM26LS32A和AM26LS33A有不同的值，在设计时需要根据具体情况进行考虑。</p>
-<h3>4.5 开关特性</h3>
-<p>开关特性参数，如传播延迟时间、输出使能时间和禁用时间等，对于高速数据传输应用非常重要。例如，传播延迟时间tPLH典型值为20 ns，tPHL典型值为22 ns，在高速通信系统中需要考虑这些延迟对系统性能的影响。</p>
-<h3>4.6 耗散额定值</h3>
-<p>不同封装的耗散额定值不同，如FK和J封装在不同温度下的功率额定值和降额因子都有明确规定。在设计散热系统时，需要参考这些数据，确保器件在正常温度范围内工作。</p>
-<h2>5. 参数测量信息</h2>
-<p>文档中提供了详细的测试电路和电压波形图，用于测量各种参数。例如，通过特定的测试电路和测试方法，可以准确测量传播延迟时间、输出使能时间等参数。这些测量信息对于验证器件的性能和进行电路调试非常有帮助。</p>
-<h2>6. 详细描述</h2>
-<h3>6.1 功能框图与逻辑配置</h3>
-<p>通过G和G逻辑输入，可以对接收器输出进行配置。G引脚为高电平时，器件工作在高电平有效模式；G引脚为低电平时，器件工作在低电平有效模式。这种灵活的逻辑配置方式，可以方便地与接收或发送控制器或<a href="https://m.hqchip.com/app/1382" target="_blank"><u>微处理器</u></a>的逻辑相匹配。</p>
-<h3>6.2 设备功能模式</h3>
-<p>可以使用G和G逻辑引脚来启用或禁用接收器，用户可以根据需要忽略或过滤掉某些传输。通过功能表可以清晰地了解不同输入条件下接收器的输出状态，为设计提供了明确的指导。</p>
-<h2>7. 应用与实现</h2>
-<h3>7.1 应用信息</h3>
-<p>当使用AM26LS32A作为接收器时，配合AM26LS31AC可以增加输出数量，这为系统扩展提供了一种可行的方案。</p>
-<h3>7.2 典型应用</h3>
-<p>文档中给出了无终端配置的应用图，即使在无终端的数据信号速率为200 kbps时，接收器输入端存在反射，但<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a> - 422兼容的接收器仍能读取输入差分电压并在输出端产生干净的信号。同时，还给出了设计要求和详细的设计步骤，如添加VCC旁路<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>、正确连接使能输入、选择合适的终端<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>等，为实际应用提供了具体的指导。</p>
-<h3>7.3 电源供应建议</h3>
-<p>在电源引脚附近放置0.1 - µF的旁路电容，可以减少来自嘈杂或高阻抗电源的<a href="https://www.elecfans.com/tags/耦合/" target="_blank"><u>耦合</u></a>误差，提高电源的稳定性。</p>
-<h3>7.4 布局建议</h3>
-<p>良好的<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>布局对于提高器件性能和减少干扰非常重要。建议在每个电源引脚和地之间连接低ESR的0.1 - µF陶瓷旁路电容，并尽量靠近器件放置；将<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>和数字部分的电路分开接地，使用接地平面来分布热量和减少EMI噪声拾取；将输入走线与电源或输出走线尽量分开，避免平行走线；将外部组件尽量靠近器件放置，缩短输入走线长度；考虑在关键走线周围设置驱动的低阻抗保护环等。</p>
-<h2>8. 支持与文档</h2>
-<p>可以通过在ti.com上的设备产品文件夹中订阅更新，获取文档的最新信息。TI E2E™支持<a href="https://www.elecfans.com/article/bbs/" target="_blank"><u>论坛</u></a>为工程师提供了快速、可靠的答案和设计帮助。同时，需要注意静电放电问题，在处理<a href="https://www.elecfans.com/v/tag/123/" target="_blank"><u>集成电路</u></a>时要采取适当的预防措施，避免ESD对器件造成损坏。</p>
-<h2>9. <a href="https://www.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>、包装与订购信息</h2>
-<p>文档提供了详细的包装信息，包括不同型号的可用包装类型、尺寸、引脚数量、RoHS合规性、引脚镀层/球材料、湿度敏感度等级/峰值回流温度、工作温度范围和零件标记等。例如，AM26LS32AC有多种包装可选，如SOIC、PDIP、SOP、<a href="https://www.hqchip.com/app/1593" target="_blank"><u>TSS</u></a>OP等，每种包装都有其特点和适用场景。在订购时，需要根据实际需求选择合适的包装和型号。</p>
-<p>通过对AM26LS32Ax和AM26LS33Ax的详细了解，我们可以看到这两款产品在数字数据传输领域具有广泛的应用前景和出色的性能。在实际设计中，我们应根据具体的应用需求和系统要求，充分发挥它们的优势，同时注意各种设计细节和注意事项，以确保系统的可靠性和稳定性。你在使用这两款产品时遇到过哪些问题呢？欢迎在评论区分享你的经验和见解。 </p>]]></description></item><item>    <title><![CDATA[AM26LS31/AM26LS31M：高性能差分线路驱动器的设计与应用]]></title>    <link>https://www.elecfans.com/d/7569061.html</link>    <guid>https://www.elecfans.com/d/7569061.html</guid>    <pubDate>2026-01-04 17:45:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_7569061" value="https://file1.elecfans.com/web3/M00/45/7F/wKgZO2laNdqAOZo6ABxQJsy71tM771.pdf"/><h1>AM26LS31/AM26LS31M：高性能差分线路<a href="https://m.hqchip.com/app/1847" target="_blank"><u>驱动器</u></a>的设计与应用</h1>
-<p>在<a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>的日常设计工作中，选择合适的线路驱动器对于实现稳定、高效的数据传输至关重要。今天，我们就来深入探讨一下<a href="https://www.elecfans.com/tags/德州仪器/" target="_blank"><u>德州仪器</u></a>（<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>TI</u></a>）的AM26LS31和AM26LS31M这两款四通道差分线路驱动器。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_7569061" target="_blank">am26ls31.pdf</a></p>
-<h2>1. 产品概述</h2>
-<p>AM26LS31/AM26LS31M是专为满足ANSI TIA/EIA - 422 - B和ITU（原CCITT）<a href="https://www.elecfans.com/tags/recom/" target="_blank"><u>Recom</u></a>mendation V.11要求而设计的四通道互补输出线路驱动器。它们采用单5V<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>供电，具有TTL兼容性、互补输出、掉电时高输出阻抗等特点，适用于多种工业和军事应用场景。</p>
-<h3>1.1 主要特性</h3>
-<ul>
-<li><strong>标准兼容性</strong>：完全符合ANSI TIA/EIA - 422 - B和ITU标准，确保了与其他符合标准的设备的良好兼容性。</li>
-<li><strong>单电源供电</strong>：仅需一个5V电源即可工作，简化了电源设计，降低了系统成本。</li>
-<li><strong>TTL兼容</strong>：可以直接与TTL逻辑电路<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>，方便与其他<a href="https://m.elecfans.com/v/tag/8791/" target="_blank"><u>数字电路</u></a>集成。</li>
-<li><strong>互补输出</strong>：提供互补的输出<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>，增强了抗干扰能力，适用于长距离传输。</li>
-<li><strong>掉电高阻抗</strong>：在掉电状态下，输出处于高阻抗状态，避免对其他设备产生影响。</li>
-<li><strong>互补输出使能输入</strong>：提供了灵活的输出控制方式，可以通过高电平或低电平使能输出。</li>
-<li><strong>军品级选项</strong>：AM26LS31M提供了符合MIL - PRF - 38535标准的选项，适用于军事和航空航天等对可靠性要求极高的应用。</li>
-</ul>
-<h3>1.2 应用领域</h3>
-<ul>
-<li><strong><a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a><a href="https://www.elecfans.com/tags/编码器/" target="_blank"><u>编码器</u></a></strong>：为电机编码器提供稳定的信号传输，确保<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机控制</u></a>的精度。</li>
-<li><strong>现场<a href="https://www.elecfans.com/tags/变送器/" target="_blank"><u>变送器</u></a></strong>：如<a href="https://www.elecfans.com/tags/压力传感器/" target="_blank"><u>压力传感器</u></a>和<a href="https://www.elecfans.com/tags/温度传感器/" target="_blank"><u>温度传感器</u></a>，将<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>信号可靠地传输到<a href="https://www.elecfans.com/v/tag/8966/" target="_blank"><u>控制系统</u></a>。</li>
-<li><strong>军事和航空航天成像</strong>：在恶劣的环境下，保证图像数据的准确传输。</li>
-<li><strong>Modbus温度传感器或<a href="https://www.hqchip.com/app/1716" target="_blank"><u>控制器</u></a></strong>：实现基于Modbus协议的温度数据传输。</li>
-</ul>
-<h2>2. 产品规格</h2>
-<h3>2.1 绝对最大额定值</h3>
-<p>在使用AM26LS31/AM26LS31M时，必须严格遵守其绝对最大额定值，以避免对设备造成永久性损坏。例如，电源电压（VCC）的最大值为7V，输入电压（VI）的最大值也为7V，输出关态电压的最大值为5.5V等。具体的额定值如下表所示：</p>
-<table>
-<thead>
-<tr>
-<th>参数</th>
-<th>描述</th>
-<th>最小值</th>
-<th>最大值</th>
-<th>单位</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>VCC</td>
-<td>电源电压</td>
-<td>-</td>
-<td>7</td>
-<td>V</td>
-</tr>
-<tr>
-<td>VI</td>
-<td>输入电压</td>
-<td>-</td>
-<td>7</td>
-<td>V</td>
-</tr>
-<tr>
-<td>输出关态电压</td>
-<td>-</td>
-<td>-</td>
-<td>5.5</td>
-<td>V</td>
-</tr>
-<tr>
-<td>引脚温度（1.6mm处，10s）</td>
-<td>-</td>
-<td>-</td>
-<td>260</td>
-<td>°C</td>
-</tr>
-<tr>
-<td>引脚温度（1.6mm处，60s，J封装）</td>
-<td>-</td>
-<td>-</td>
-<td>300</td>
-<td>°C</td>
-</tr>
-<tr>
-<td>储存温度（Tstg）</td>
-<td>-</td>
-<td>-65</td>
-<td>150</td>
-<td>°C</td>
-</tr>
-</tbody>
-</table>
-<h3>2.2 <a href="https://www.hqchip.com/app/1587" target="_blank"><u>ESD</u></a>额定值</h3>
-<p>静电放电（ESD）是电子设备常见的故障原因之一。AM26LS31/AM26LS31M具有一定的ESD防护能力，人体模型（HBM）的ESD额定值为±2000V，带电设备模型（CDM）的ESD额定值为±1000V。在实际使用中，仍需采取适当的ESD防护措施，以确保设备的可靠性。</p>
-<h3>2.3 推荐工作条件</h3>
-<p>为了保证AM26LS31/AM26LS31M的正常工作，应在推荐的工作条件下使用。不同型号的推荐工作条件略有差异，例如AM26LS31C的电源电压推荐范围为4.75V - 5.25V，而AM26LS31M的电源电压推荐范围为4.5V - 5.5V。具体的推荐工作条件如下表所示：</p>
-<table>
-<thead>
-<tr>
-<th>参数</th>
-<th>描述</th>
-<th>最小值</th>
-<th>标称值</th>
-<th>最大值</th>
-<th>单位</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>VCC</td>
-<td>电源电压（AM26LS31C）</td>
-<td>4.75</td>
-<td>5</td>
-<td>5.25</td>
-<td>V</td>
-</tr>
-<tr>
-<td>VCC</td>
-<td>电源电压（AM26LS31M）</td>
-<td>4.5</td>
-<td>5</td>
-<td>5.5</td>
-<td>V</td>
-</tr>
-<tr>
-<td>VIH</td>
-<td>高电平输入电压</td>
-<td>2</td>
-<td>-</td>
-<td>-</td>
-<td>V</td>
-</tr>
-<tr>
-<td>VIL</td>
-<td>低电平输入电压</td>
-<td>-</td>
-<td>-</td>
-<td>0.8</td>
-<td>V</td>
-</tr>
-<tr>
-<td>IOH</td>
-<td>高电平输出<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a></td>
-<td>-</td>
-<td>-</td>
-<td>-20</td>
-<td>mA</td>
-</tr>
-<tr>
-<td>IOL</td>
-<td>低电平输出电流</td>
-<td>-</td>
-<td>-</td>
-<td>20</td>
-<td>mA</td>
-</tr>
-<tr>
-<td>TA</td>
-<td>工作环境温度（AM26LS31C）</td>
-<td>0</td>
-<td>-</td>
-<td>70</td>
-<td>°C</td>
-</tr>
-<tr>
-<td>TA</td>
-<td>工作环境温度（AM26LS31I）</td>
-<td>-40</td>
-<td>-</td>
-<td>85</td>
-<td>°C</td>
-</tr>
-<tr>
-<td>TA</td>
-<td>工作环境温度（AM26LS31M）</td>
-<td>-55</td>
-<td>-</td>
-<td>125</td>
-<td>°C</td>
-</tr>
-</tbody>
-</table>
-<h3>2.4 <a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>特性</h3>
-<p>AM26LS31/AM26LS31M的电气特性包括输入钳位电压、高电平输出电压、低电平输出电压等。这些特性在不同的工作条件下会有所变化，设计时需要根据实际需求进行选择。例如，在电源电压为最小值，高电平输出电流为 - 20mA时，高电平输出电压的最小值为2.5V。具体的电气特性如下表所示：</p>
-<table>
-<thead>
-<tr>
-<th>参数</th>
-<th>描述</th>
-<th>测试条件</th>
-<th>最小值</th>
-<th>典型值</th>
-<th>最大值</th>
-<th>单位</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>VIK</td>
-<td>输入钳位电压</td>
-<td>VCC = MIN，II = - 18mA</td>
-<td>-</td>
-<td>-</td>
-<td>-1.5</td>
-<td>V</td>
-</tr>
-<tr>
-<td>VOH</td>
-<td>高电平输出电压</td>
-<td>VCC = MIN，IOH = - 20mA</td>
-<td>2.5</td>
-<td>-</td>
-<td>-</td>
-<td>V</td>
-</tr>
-<tr>
-<td>VOL</td>
-<td>低电平输出电压</td>
-<td>VCC = MIN，IOL = 20mA</td>
-<td>-</td>
-<td>-</td>
-<td>0.5</td>
-<td>V</td>
-</tr>
-<tr>
-<td>IOZ</td>
-<td>关态（高阻抗态）输出电流</td>
-<td>VCC = MIN，VO = 0.5V</td>
-<td>-</td>
-<td>-</td>
-<td>-20</td>
-<td>μA</td>
-</tr>
-<tr>
-<td>IOZ</td>
-<td>关态（高阻抗态）输出电流</td>
-<td>VCC = MIN，VO = 2.5V</td>
-<td>-</td>
-<td>-</td>
-<td>20</td>
-<td>μA</td>
-</tr>
-<tr>
-<td>II</td>
-<td>最大输入电压下的输入电流</td>
-<td>VCC = MAX，VI = 7V</td>
-<td>-</td>
-<td>-</td>
-<td>0.1</td>
-<td>mA</td>
-</tr>
-<tr>
-<td>IIH</td>
-<td>高电平输入电流</td>
-<td>VCC = MAX，VI = 2.7V</td>
-<td>-</td>
-<td>-</td>
-<td>20</td>
-<td>μA</td>
-</tr>
-<tr>
-<td>IIL</td>
-<td>低电平输入电流</td>
-<td>VCC = MAX，VI = 0.4V</td>
-<td>-</td>
-<td>-</td>
-<td>-0.36</td>
-<td>mA</td>
-</tr>
-<tr>
-<td><a href="https://www.elecfans.com/tags/ios/" target="_blank"><u>IOS</u></a></td>
-<td>短路输出电流</td>
-<td>VCC = MAX</td>
-<td>-30</td>
-<td>-</td>
-<td>-150</td>
-<td>mA</td>
-</tr>
-<tr>
-<td>ICC</td>
-<td>电源电流</td>
-<td>VCC = MAX，所有输出禁用</td>
-<td>-</td>
-<td>32</td>
-<td>80</td>
-<td>mA</td>
-</tr>
-</tbody>
-</table>
-<h3>2.5 开关特性</h3>
-<p>开关特性对于高速数据传输至关重要。AM26LS31和AM26LS31M的开关特性在不同的型号和测试条件下有所不同。例如，在TA = 25°C，VCC = 5V，CL = 30pF，S1和S2打开的条件下，AM26LS31的低到高电平传播延迟时间（tPLH）的典型值为20ns，而AM26LS31M的tPLH典型值为30ns。具体的开关特性如下表所示：</p>
-<table>
-<thead>
-<tr>
-<th>参数</th>
-<th>描述</th>
-<th>测试条件</th>
-<th>最小值</th>
-<th>典型值</th>
-<th>最大值</th>
-<th>单位</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>tPLH</td>
-<td>低到高电平传播延迟时间（AM26LS31）</td>
-<td>TA = 25°C，VCC = 5V，CL = 30pF，S1和S2打开</td>
-<td>14</td>
-<td>20</td>
-<td>-</td>
-<td>ns</td>
-</tr>
-<tr>
-<td>tPLH</td>
-<td>低到高电平传播延迟时间（AM26LS31M）</td>
-<td>TA = 25°C，VCC = 5V，CL = 30pF，S1和S2打开</td>
-<td>-</td>
-<td>30</td>
-<td>-</td>
-<td>ns</td>
-</tr>
-<tr>
-<td>tPHL</td>
-<td>高到低电平传播延迟时间（AM26LS31）</td>
-<td>TA = 25°C，VCC = 5V，CL = 30pF，S1和S2打开</td>
-<td>14</td>
-<td>20</td>
-<td>-</td>
-<td>ns</td>
-</tr>
-<tr>
-<td>tPHL</td>
-<td>高到低电平传播延迟时间（AM26LS31M）</td>
-<td>TA = 25°C，VCC = 5V，CL = 30pF，S1和S2打开</td>
-<td>-</td>
-<td>30</td>
-<td>-</td>
-<td>ns</td>
-</tr>
-<tr>
-<td>tPZH</td>
-<td>输出使能到高电平时间（AM26LS31）</td>
-<td>CL = 30pF，RL = 75Ω</td>
-<td>-</td>
-<td>25</td>
-<td>40</td>
-<td>ns</td>
-</tr>
-<tr>
-<td>tPZH</td>
-<td>输出使能到高电平时间（AM26LS31M）</td>
-<td>CL = 30pF，RL = 75Ω</td>
-<td>-</td>
-<td>-</td>
-<td>60</td>
-<td>ns</td>
-</tr>
-<tr>
-<td>tPZL</td>
-<td>输出使能到低电平时间（AM26LS31）</td>
-<td>RL = 180Ω</td>
-<td>-</td>
-<td>37</td>
-<td>45</td>
-<td>ns</td>
-</tr>
-<tr>
-<td>tPZL</td>
-<td>输出使能到低电平时间（AM26LS31M）</td>
-<td>RL = 180Ω</td>
-<td>-</td>
-<td>-</td>
-<td>68</td>
-<td>ns</td>
-</tr>
-<tr>
-<td>tPHZ</td>
-<td>输出禁用从高电平时间（AM26LS31）</td>
-<td>CL = 10pF，S1和S2关闭</td>
-<td>-</td>
-<td>21</td>
-<td>30</td>
-<td>ns</td>
-</tr>
-<tr>
-<td>tPHZ</td>
-<td>输出禁用从高电平时间（AM26LS31M）</td>
-<td>CL = 10pF，S1和S2关闭</td>
-<td>-</td>
-<td>-</td>
-<td>45</td>
-<td>ns</td>
-</tr>
-<tr>
-<td>tPLZ</td>
-<td>输出禁用从低电平时间（AM26LS31）</td>
-<td>-</td>
-<td>23</td>
-<td>35</td>
-<td>ns</td>
-</tr>
-<tr>
-<td>tPLZ</td>
-<td>输出禁用从低电平时间（AM26LS31M）</td>
-<td>-</td>
-<td>-</td>
-<td>53</td>
-<td>ns</td>
-</tr>
-<tr>
-<td>tSKEW</td>
-<td>输出到输出偏斜（AM26LS31）</td>
-<td>CL = 30pF，S1和S2打开</td>
-<td>-</td>
-<td>1</td>
-<td>6</td>
-<td>ns</td>
-</tr>
-<tr>
-<td>tSKEW</td>
-<td>输出到输出偏斜（AM26LS31M）</td>
-<td>CL = 30pF，S1和S2打开</td>
-<td>-</td>
-<td>-</td>
-<td>9</td>
-<td>ns</td>
-</tr>
-</tbody>
-</table>
-<h2>3. 引脚配置与功能</h2>
-<p>AM26LS31/AM26LS31M有多种封装形式，不同封装的引脚配置和功能基本相同。以常见的D（SOIC）、DB（SSOP）、N（PDIP）、NS（SO）、J（CDIP）、W（CFP）和FK（LCCC）封装为例，其引脚功能如下表所示：</p>
-<table>
-<thead>
-<tr>
-<th>引脚名称</th>
-<th>引脚编号</th>
-<th>I/O</th>
-<th>描述</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>1A</td>
-<td>1</td>
-<td>I</td>
-<td><a href="https://www.hqchip.com/app/1809" target="_blank"><u>RS422</u></a>驱动器1的逻辑数据输入</td>
-</tr>
-<tr>
-<td>1Y</td>
-<td>2</td>
-<td>O</td>
-<td><a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a> - 422数据线（驱动器1）</td>
-</tr>
-<tr>
-<td>1Z</td>
-<td>3</td>
-<td>O</td>
-<td>RS - 422数据线（驱动器1）</td>
-</tr>
-<tr>
-<td>G</td>
-<td>4</td>
-<td>I</td>
-<td>驱动器使能（高电平有效）</td>
-</tr>
-<tr>
-<td>G</td>
-<td>12</td>
-<td>I</td>
-<td>驱动器使能（低电平有效）</td>
-</tr>
-<tr>
-<td>2A</td>
-<td>7</td>
-<td>I</td>
-<td>RS422驱动器2的逻辑数据输入</td>
-</tr>
-<tr>
-<td>2Y</td>
-<td>6</td>
-<td>O</td>
-<td>RS - 422数据线（驱动器2）</td>
-</tr>
-<tr>
-<td>2Z</td>
-<td>5</td>
-<td>O</td>
-<td>RS - 422数据线（驱动器2）</td>
-</tr>
-<tr>
-<td>3A</td>
-<td>9</td>
-<td>I</td>
-<td>RS422驱动器3的逻辑数据输入</td>
-</tr>
-<tr>
-<td>3Y</td>
-<td>10</td>
-<td>O</td>
-<td>RS - 422数据线（驱动器3）</td>
-</tr>
-<tr>
-<td>3Z</td>
-<td>11</td>
-<td>O</td>
-<td>RS - 422数据线（驱动器3）</td>
-</tr>
-<tr>
-<td>4A</td>
-<td>15</td>
-<td>I</td>
-<td>RS422驱动器4的逻辑数据输入</td>
-</tr>
-<tr>
-<td>4Y</td>
-<td>14</td>
-<td>O</td>
-<td>RS - 422数据线（驱动器4）</td>
-</tr>
-<tr>
-<td>4Z</td>
-<td>13</td>
-<td>O</td>
-<td>RS - 422数据线（驱动器4）</td>
-</tr>
-<tr>
-<td>VCC</td>
-<td>16（D、DB、N、NS、J、W封装）/ 8（FK封装）</td>
-<td>-</td>
-<td>电源输入，连接到5V电源</td>
-</tr>
-<tr>
-<td>GND</td>
-<td>8（D、DB、N、NS、J、W封装）/ 16（FK封装）</td>
-<td>-</td>
-<td>设备接地引脚</td>
-</tr>
-</tbody>
-</table>
-<h2>4. 应用与实现</h2>
-<h3>4.1 应用信息</h3>
-<p>在设计使用RS - 422或RS - 485驱动器、<a href="https://m.hqchip.com/app/1847" target="_blank"><u>接收器</u></a>和<a href="https://www.hqchip.com/app/1809" target="_blank"><u>收发器</u></a>的系统时，正确的电缆端接对于减少传输线上的反射，提高系统的可靠性至关重要。RS - 422只允许总线上有一个驱动器，端接电阻通常只放置在电缆末端靠近最后一个接收器的位置；而RS - 485通常需要在电缆两端都进行端接。常见的端接技术包括未端接线路、并联端接、交流端接和多点端接等。设计时需要根据应用的性能要求和成本因素进行选择。</p>
-<h3>4.2 典型应用</h3>
-<p>以编码器应用为例，AM26LS31可以与AM26LS32配合使用，将编码器的信号可靠地传输到伺服驱动运动控制器。具体的应用电路如下所示：</p>
-<p><img src="编码器应用.png" alt="编码器应用"/></p>
-<p>在这个应用中，需要注意以下几点：</p>
-<ul>
-<li><strong>电源要求</strong>：使用5V电源供电。</li>
-<li><strong>总线速率</strong>：RS - 485总线的工作速率应在10Mbps或以下。</li>
-<li><strong><a href="https://m.hqchip.com/app/1515" target="_blank"><u>连接器</u></a>极性</strong>：确保连接器的极性正确，以避免信号传输错误。</li>
-</ul>
-<h3>4.3 电源供应建议</h3>
-<p>为了减少来自嘈杂或高阻抗电源的误差<a href="https://www.elecfans.com/tags/耦合/" target="_blank"><u>耦合</u></a>，应在电源引脚附近放置一个0.1μF的旁路<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>。这样可以为电路提供稳定的电源，提高系统的抗干扰能力。</p>
-<h3>4.4 <a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>布局</h3>
-<p>良好的PCB布局对于AM26LS31/AM26LS31M的性能至关重要。以下是一些布局建议：</p>
-<ul>
-<li><strong>旁路电容</strong>：在每个电源引脚和地之间连接低ESR的0.1μF陶瓷旁路电容，并尽量靠近设备放置。</li>
-<li><strong>接地分离</strong>：将<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>和数字部分的电路进行单独接地，避免相互干扰。多层PCB通常会有专门的接地层，有助于散热和减少EMI噪声。</li>
-<li><strong>输入输出分离</strong>：尽量将输入走线与电源或输出走线分开，避免寄生耦合。如果无法分开，应使敏感走线与嘈杂走线垂直交叉。</li>
-<li><strong>外部组件放置</strong>：将外部组件尽量靠近设备放置，以减少寄生电容的影响。</li>
-<li><strong>输入走线长度</strong>：尽量缩短输入走线的长度，因为输入走线是电路中最敏感的部分。</li>
-</ul>
-<h2>5. 总结</h2>
-<p>AM26LS31/AM26LS31M是一款性能优异的四通道差分线路驱动器，具有丰富的特性和广泛的应用场景。在设计过程中，需要根据具体的应用需求，合理选择封装形式、工作条件和端接方式，并注意PCB布局和电源供应等方面的问题。通过正确的设计和使用，可以充分发挥AM26LS31/AM26LS31M的优势，实现稳定、高效的数据传输。</p>
-<p>你在使用AM26LS31/AM26LS31M的过程中遇到过哪些问题？或者你对这款驱动器有什么独特的应用经验？欢迎在评论区分享交流。 </p>]]></description></item><item>    <title><![CDATA[尺寸65mm*70mm*45.5mm，组合导航为什么能做到这么小？]]></title>    <link>https://www.elecfans.com/d/7568943.html</link>    <guid>https://www.elecfans.com/d/7568943.html</guid>    <pubDate>2026-01-04 16:51:00</pubDate>    <description><![CDATA[<p>
-	<br/>
-	传统组合导航不仅有着十几、几十厘米的尺寸，更有几公斤到几十公斤的超“重”重量，是名副其实的大块头，这是其技术路径和设计目标的必然结果，但这也同样决定了它很难集成于现代小型设备，且会造成性能的冗余。因此，一款被需求催生出的现代化小型组合导航诞生了。以ER-GNSS/MINS-01为例，它的尺寸只有65mm*70mm*45.5mm，今天，让我们深入解读它为什么能这么小。<br/>
-	</p>
-<p>
-	基于<a href="https://m.elecfans.com/v/tag/7888/" target="_blank"><u>MEMS</u></a>技术的微型化<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a><br/>
-	传感器是组合导航采集数据的基础，其尺寸缩小是系统小型化的关键。早期<a href="https://www.elecfans.com/tags/陀螺仪/" target="_blank"><u>陀螺仪</u></a>和加速度计基于<a href="https://www.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>转子或<a href="https://m.elecfans.com/v/tag/4854/" target="_blank"><u>光学</u></a>（光纤、激光）原理，体积大、重量重。ER-GNSS/MINS-01，基于MEMS<a href="https://www.elecfans.com/v/tag/10980/" target="_blank"><u>微机</u></a>电技术，将MEMS陀螺仪与MEMS加速度计集成在毫米甚至微米级芯片上，这是实现组合导航体重、数量缩小几个数量级的核心关键。<br/>
-	</p>
-<p>
-	核心大脑—<a href="https://m.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>与算力的进化<br/>
-	这是实现“小体积、高性能”的灵魂。没有强大的算法，MEMS传感器自身的低精度根本无法用于导航。ER-GNSS/MINS-01采用卡尔曼滤波传感器融合算法，它能最优地结合MEMS惯性传感器的短期高频<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>动态响应和GNSS的长期稳定绝对位置，并抑制各自的噪声和漂移。算法的不断优化使得在有限的硬件资源下实现足够好的性能。<br/>
-	</p>
-<p>
-	高度的系统封装与集成<br/>
-	新型封装和硬件堆叠技术将体积压缩到极致。ER-GNSS/MINS-01将MEMS传感器芯片、<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>（<a href="https://m.hqchip.com/app/1730" target="_blank"><u>控制芯片</u></a>）等，通过先进技术堆叠在一个微小模块内，进一步节省空间。<br/>
-	</p>
-<p>
-	卫星导航接收机的芯片化与微型化<br/>
-	早期卫星导航接收机，模块较大，<a href="https://bbs.elecfans.com/group_1219" target="_blank"><u>天线</u></a>分离且处理能力有限。ER-GNSS/MINS-01内置全频点全系统双天线定位定向GNSS模块，支持BDS/GPS/GLO<a href="https://www.elecfans.com/tags/nas/" target="_blank"><u>NAS</u></a>S/Galileo/QZSS，多功能集成，替代传统多颗分散芯片，这是实现ER-GNSS/MINS-01小尺寸核心之一。<br/>
-	</p>
-<p>
-	ER-GNSS/MINS-01小尺寸化的集成，不仅仅依赖单一技术支撑，它是多方面优化改进的共同结果，但是别看它尺寸小，本事可不小，感兴趣的快来联系我们！<br/><br/>
-	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[“市场化分时”取代“行政化分时”，多地取消行政峰谷分时电价]]></title>    <link>https://www.elecfans.com/d/7568952.html</link>    <guid>https://www.elecfans.com/d/7568952.html</guid>    <pubDate>2026-01-04 16:55:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	最近国家发改委、能源局发布了《发改运行[2025]1502号》文件，为各省市的“固定分时电价”之争，基本确定了方向。</p>
-<p style="text-indent:2em;">
-	原则上直接参与市场用户不再执行政府规定的分时电价，鼓励中长期合同双方签订随市场供需、发电成本变化的灵活价格机制。</p>
-<p align="center">
-	<img src="https://file1.elecfans.com/web3/M00/45/7D/wKgZO2laKqeATMB-AAKX96USU-k877.png" alt="wKgZO2laKqeATMB-AAKX96USU-k877.png"/></p>
-<p style="text-indent:2em;">
-	这个文件的核心意思是：原则上取消了零售合同中的“政府规定的固定分时电价”，以后在电力交易结构中占据70～80%的中长期交易电量，无论是零售端还是批发端，都有相当大的比例执行“灵活分时电价”。</p>
-<p style="text-indent:2em;">
-	1、这是一个正式通知文件，而不是类似四川出台的“征求意见稿”，一锤定音了。</p>
-<p style="text-indent:2em;">
-	2、核心变革：彻底取消政府定价模式‌</p>
-<p style="text-indent:2em;">
-	·‌取消固定分时电价‌：退出政府统一设定的峰谷时段划分及电价浮动比例（如高峰上浮50%、低谷下浮50%）。</p>
-<p style="text-indent:2em;">
-	·‌取消尖峰平谷固定时段‌：不再强制执行统一时段划分，由市场主体自主协商。</p>
-<p style="text-indent:2em;">
-	·‌取消时段固定浮动比例‌：电价波动幅度不再受政府限制，完全由市场供需决定。</p>
-<p style="text-indent:2em;">
-	3、市场化机制设计‌</p>
-<p style="text-indent:2em;">
-	·‌零售端“一企一价”‌：售电公司与用户可单独约定时段、价格，或采用“批零联动”模式（即零售电价按批发侧价格+固定比例浮动）。</p>
-<p style="text-indent:2em;">
-	·‌批零电价挂钩‌：零售电价直接反映批发市场波动，价格弹性显著增强。</p>
-<p style="text-indent:2em;">
-	4、它同时取消了两个内容，一是固定的尖峰平谷时段，二是每个时段的交易上下浮固定比例（也就是分时价格）。这是电力市场化在零售端的重大突破，使得零售电价市场化。</p>
-<p style="text-indent:2em;">
-	5、对售电公司的挑战：从“躺赚”到“精算生存”‌</p>
-<p style="text-indent:2em;">
-	·‌原模式‌：售电公司签订固定零售合同，通过规模效应倒逼发电企业降价，赚取固定差价，风险较低。</p>
-<p style="text-indent:2em;">
-	·‌新风险‌：</p>
-<p style="text-indent:2em;">
-	·‌价格波动传导‌：批零联动下，零售电价波动性增强，售电公司需承担批发侧价格跳涨风险。</p>
-<p style="text-indent:2em;">
-	·‌仓位管理压力‌：多用户、多合约、多时段价格叠加，若仓位控制不当（如过度集中低价时段），可能面临巨额亏损。</p>
-<p style="text-indent:2em;">
-	·‌利润不确定性‌：复杂的交易组合可能导致全年利润难以预测，需依赖动态套期保值、风险对冲工具。</p>
-<p style="text-indent:2em;">
-	·‌模式转型‌：售电公司需从“中间商”转型为“风险管理者”，通过数据分析、<a href="https://m.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>交易提升竞争力。</p>
-<p style="text-indent:2em;">
-	6、对光伏与储能投资商的颠覆：从静态测算到动态博弈‌</p>
-<p style="text-indent:2em;">
-	·‌原模式‌：投资决策基于固定时段电价曲线，收益测算相对简单。</p>
-<p style="text-indent:2em;">
-	·‌新范式‌：</p>
-<p style="text-indent:2em;">
-	·‌时段与价格动态化‌：用户合同可能每年调整（如更换售电公司），导致项目收益模型需实时更新。</p>
-<p style="text-indent:2em;">
-	·‌资源优化导向‌：价格波动将引导投资向高价值场景倾斜（如光储一体化、需求响应），淘汰低效资产。</p>
-<p style="text-indent:2em;">
-	·‌技术升级需求‌：投资商需引入<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>预测、实时市场分析工具，以应对“一企一价”的复杂性。</p>
-<p style="text-indent:2em;">
-	7、对分布式光伏的影响：收益模型颠覆与风险暴露‌</p>
-<p style="text-indent:2em;">
-	·‌原模式‌：固定分时电价下，光伏大发时段（如中午）对应低谷电价，收益稳定但偏低。</p>
-<p style="text-indent:2em;">
-	·‌新挑战‌：</p>
-<p style="text-indent:2em;">
-	·‌价格波动风险‌：光伏大发时段批发侧电价可能跌至极低水平（甚至负电价），而其他时段因需求波动或系统故障可能飙升，导致收益大幅波动。</p>
-<p style="text-indent:2em;">
-	·‌投资决策困难‌：传统收益测算依赖固定时段与价格，新模式下需动态<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>市场供需、用户合同结构及天气因素，模型复杂度指数级上升。</p>
-<p style="text-indent:2em;">
-	·‌市场化初衷‌：通过价格<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>引导光伏投资向高价值时段（如傍晚需求高峰）或储能配套方向转移，优化资源配置。</p>
-<p style="text-indent:2em;">
-	在能源管理日益精细化的今天，分时计费电表和碳计量电表正逐渐成为<a href="https://m.elecfans.com/v/tag/4675/" target="_blank"><u>电力系统</u></a>的重要组成部分。这些智能电表不仅改变了传统的用电计量方式，更在资源优化、成本控制和环境保护方面展现出显著优势。</p>
-<p style="text-indent:2em;">
-	分时计费电表，也称为多费率表或复费率表，能够根据预定的尖峰、峰、谷、平等不同时段，分别计量用电量，并对应不同的电价。这种设计充分发挥了电价的调节作用，鼓励用户调整用电负荷，实现移峰填谷。对于大型用电企业而言，分时计费电表不仅从宏观上展示了用电数据，还帮助它们更合理地使用电力资源，从而降低用电成本。同时，这种电表有助于充分挖掘发电、供电和用电设备的潜力，对电网的整体调控起到积极作用。</p>
-<p align="center">
-	<img src="https://file1.elecfans.com/web3/M00/45/7D/wKgZO2laKsyAI3MqAAHTBEIGAGY538.png" alt="wKgZO2laKsyAI3MqAAHTBEIGAGY538.png"/></p>
-<p style="text-indent:2em;">
-	与传统电表相比，分时计费电表在技术上也有显著提升。以 <a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>L400/FC 分时段计费电表为例，这款导轨式多功能电能表具有精度高、体积小、安装方便等优点。它不仅集成常见电力参数测量和<a href="https://www.hqchip.com/app/1709" target="_blank"><u>电能计量</u></a>功能，还能提供长达 48 个月的各类电能数据统计，并具备 2~31 次分次谐波与总谐波含量检测能力。这些功能为用户提供了更全面、更细致的用电管理支持。</p>
-<p style="text-indent:2em;">
-	碳计量电表的出现，则进一步拓展了智能电表的功能边界。它不仅计量用电量，还能关联碳排放数据，帮助用户更直观地了解用电行为对环境的影响。对于企业和机构来说，碳计量电表是实现碳足迹管理和节能减排目标的重要工具。通过实时监测和数据分析，用户能够优化用电策略，减少不必要的能源浪费，从而降低碳排放。</p>
-<p style="text-indent:2em;">
-	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[AGV通道：智能物流运输的“隐形高速公路”]]></title>    <link>https://www.elecfans.com/d/7568954.html</link>    <guid>https://www.elecfans.com/d/7568954.html</guid>    <pubDate>2026-01-04 16:59:00</pubDate>    <description><![CDATA[<p>
-	<br/>
-	AGV</p>
-<p>
-	在智能制造浪潮席卷全球的今天，AGV（自动导引运输车）已成为现代工厂不可或缺的“智能搬运工”。而AGV通道，作为这些“搬运工”高效运行的“隐形高速公路”，正悄然重塑着制造业的生产格局。</p>
-<p>
-	<img src="https://file1.elecfans.com//web3/M00/45/7E/wKgZO2laK9-AGwl_AARjOs_bdYA81.jpeg" alt="wKgZO2laK9-AGwl_AARjOs_bdYA81.jpeg"/>AGV智能立库</p>
-<p>
-	<strong>AGV通道是什么？为什么重要？</strong></p>
-<p>
-	AGV通道是专为AGV设计的运行路径，通常通过地面标记、磁条或二维码等方式进行导航。这些通道如同工厂中的“交通网络”，确保AGV能够安全、高效地在不同工作站之间穿梭，实现物料、半成品或成品的自动运输。</p>
-<p>
-	AGV通道的重要性不言而喻。它不仅是AGV高效运行的基础，更是企业实现智能化升级的关键。通过AGV通道，企业能够减少人工干预，降低物流成本，提高生产效率，同时减少因人为操作失误导致的物料损坏或生产延误。</p>
-<p>
-	<br/>
-	AGV地面搬运车</p>
-<p>
-	<strong>AGV通道的常见类型与特点</strong></p>
-<p>
-	<strong>1. 磁导航AGV通道</strong></p>
-<p>
-	磁导航AGV通道通过在地面铺设磁条或磁钉来引导AGV运行。这种导航方式成本较低，技术成熟，适用于对精度要求不高的场景。然而，磁导航AGV通道的灵活性相对较差，一旦磁条损坏或位置变化，AGV可能无法正常运行。</p>
-<p>
-	<strong>2. 二维码导航AGV通道</strong></p>
-<p>
-	二维码导航AGV通道通过在AGV运行路径上粘贴二维码<a href="https://m.hqchip.com/tags" target="_blank"><u>标签</u></a>，AGV通过扫描二维码来获取位置信息。这种导航方式精度高，灵活性好，适用于对精度要求较高的场景。但二维码标签容易受到污染或损坏，需要定期维护和更换。</p>
-<p>
-	<strong>3. 激光导航AGV通道</strong></p>
-<p>
-	激光导航AGV通道利用激光雷达扫描周围环境，通过SLAM（同步定位与地图构建）技术实现导航。这种导航方式无需铺设任何标记，灵活性极高，适用于复杂的生产环境。</p>
-<p>
-	<img src="https://file1.elecfans.com//web3/M00/45/7E/wKgZO2laK-CAYgHWAANpCT7bNko26.jpeg" alt="wKgZO2laK-CAYgHWAANpCT7bNko26.jpeg"/>AGV智能叉车</p>
-<p>
-	随着技术的不断进步，AGV通道也在不断升级和完善。未来，AGV通道将更加智能化、柔性化和集成化。通过引入<a href="https://www.elecfans.com/v/tag/150/" target="_blank"><u>人工智能</u></a>、<a href="https://bbs.elecfans.com/group_57" target="_blank"><u>物联网</u></a>等先进技术，AGV通道将能够实现更加精准的导航和调度，适应更加复杂的生产环境。同时，AGV通道将与MES（制造执行系统）、WMS（仓库管理系统）等系统实现深度融合，为企业提供更加全面的智能化解决方案。</p>
-<p>
-	<img src="https://file1.elecfans.com//web3/M00/45/7E/wKgZPGlaK-GAB3urAAF_kf-f0ZE99.jpeg" alt="wKgZPGlaK-GAB3urAAF_kf-f0ZE99.jpeg"/>无人叉车AGV</p>
-<p>
-	AGV通道作为制造业的“隐形高速公路”，正以其独特的优势助力企业实现降本增效与智能化升级。随着技术的不断进步和应用场景的不断拓展，AGV通道将在未来发挥更加重要的作用，为企业创造更大的价值。<br/><br/>
-	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[变频红外对射+双防区4G无线通讯模块在入侵报警系统的应用]]></title>    <link>https://www.elecfans.com/d/7568965.html</link>    <guid>https://www.elecfans.com/d/7568965.html</guid>    <pubDate>2026-01-04 17:01:00</pubDate>    <description><![CDATA[<p>
-	在周界入侵报警系统中，前端探测的精准性、通讯传输的稳定性与场景适配性是决定安防效果的关键。针对性推出“第五代变频<a href="https://www.elecfans.com/tags/红外/" target="_blank"><u>红外</u></a>对射<a href="https://m.hqchip.com/app/1831" target="_blank"><u>探测器</u></a>+AL-806-<a href="https://m.elecfans.com/v/tag/9979/" target="_blank"><u>4G</u></a>01双防区4G无线通讯模块+WS-268Y声光报警器”的组合系统，凭借各部件的技术优势与高效协同能力，完美破解传统有线报警系统布线繁琐、通讯距离受限、抗干扰性差等痛点，已广泛应用于偏远矿区、大型园区、野外电站、长距离管廊等多类复杂场景，为入侵报警系统提供“精准探测、无线联动、高效预警”的全链路解决方案。</p>
-<p>
-	<img src="https://file1.elecfans.com//web3/M00/45/7E/wKgZO2laLEyAa-u3AAe9foRL2xk59.jpeg" alt="wKgZO2laLEyAa-u3AAe9foRL2xk59.jpeg"/></p>
-<p>
-	整套系统以第五代变频红外对射为前端探测核心，以双防区4G无线通讯模块为传输纽带，搭配WS-268Y声光报警器实现即时预警，辅以配套配件形成完整安防闭环，各组件优势互补，共同构筑起稳定可靠的周界防护体系。</p>
-<p>
-	<strong>一、核心部件技术解析，筑牢系统基础</strong></p>
-<p>
-	<strong>（一）第五代变频红外对射探测器：精准探测，抗扰性拉满</strong></p>
-<p>
-	作为前端探测的核心设备，第五代变频红外对射探测器凭借10大核心技术优势，为系统提供高精准的入侵探测保障。其搭载12段精准数字变频技术，用户可根据现场环境灵活选择适配频率，有效规避周边电磁设备、其他安防探测器等产生的交叉干扰，适用性与性价比大幅提升；采用微功耗高效能<a href="https://bbs.elecfans.com/zhuti_dianlu_1.html" target="_blank"><u>电路设计</u></a>，且正常工作状态下<a href="https://m.hqchip.com/app/1721" target="_blank"><u>LED</u></a><a href="https://m.elecfans.com/v/tag/1221/" target="_blank"><u>数码</u></a>屏自动休眠，实现二次节能，更契合长期户外运行的节能需求。</p>
-<p>
-	在户外适配性上，该探测器表现尤为突出：接收机配备两位蓝色<a href="https://m.hqchip.com/app/1639" target="_blank"><u>LED数码管</u></a>，即便在户外强烈阳光下，<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>强度数值仍清晰可见，搭配高亮度彩色电源和信号指示灯，设备工作状态一目了然，大幅简化调试流程；搭载二次强光过滤技术，能有效抵御打雷闪电、强光直射等恶劣环境干扰，从根源上杜绝误报；外围五金件采用全不锈钢制作，外罩选用进口PC原料精制而成，抗外力破坏能力强，且能适应高低温环境不变形，确保长期户外使用稳定耐用。此外，产品已通过公安部型式检测及相关<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>，叠加“三年换板五年保修”的超长质保政策，为项目招投标与长期使用提供双重保障。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/45/7E/wKgZPGlaLAmAB_krAAKx04XQt8A591.png" alt="wKgZPGlaLAmAB_krAAKx04XQt8A591.png"/></p>
-<p>
-	<strong>（二）AL-806-4G01双防区4G无线通讯模块：无线联动，突破距离限制</strong></p>
-<p>
-	AL-806-4G01双防区4G无线通讯模块作为整套系统的“传输中枢”，彻底打破了传统有线传输的距离束缚。模块采用4G<a href="https://bbs.elecfans.com/group_57" target="_blank"><u>物联网</u></a>架构设计，需两个模块配对使用，具备开关量/4G、4G/开关量互换功能——任一模块可将输入端的开关量变化（如红外对射探测到入侵后的信号变化）转换成4G信号，远程传输给另一模块，另一模块再将其还原为开关量，可直接接入联动<a href="https://www.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>、报警控制模块等设备，实现探测器与后端<a href="https://www.elecfans.com/v/tag/8966/" target="_blank"><u>控制系统</u></a>的无线联动。</p>
-<p>
-	其技术参数完美适配复杂场景需求：通讯方式采用4G全网络覆盖，只要有4G信号即可实现无限制距离通讯，即便探测器与控制<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>相隔数十公里，也能稳定传输信号；支持2个防区接入，可同时对接两组红外对射探测器，提升单模块的防护覆盖效率；采用<a href="https://m.hqchip.com/app/1703" target="_blank"><u>DC</u></a>12V供电，工作<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>仅100mA，功耗较低，可适配户外太阳能供电或常规市电供电；使用温度范围覆盖-20℃~+55℃，能适应多数极端气候环境，确保通讯链路稳定不中断。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/45/7E/wKgZPGlaK_eAL5PNAAIEKxnuths043.png" alt="wKgZPGlaK_eAL5PNAAIEKxnuths043.png"/></p>
-<p>
-	<strong>（三）WS-268Y声光报警器：即时预警，威慑警示兼具</strong></p>
-<p>
-	WS-268Y声光报警器作为系统的“预警终端”，能在探测到入侵后快速响应，实现视觉与听觉双重预警。产品采用旋转带声设计，LED灯闪动次数达90次/分钟，红色灯光穿透力强，搭配10W功率的有声报警，能快速吸引安保人员注意，同时对入侵者形成强烈威慑；转灯传动部分采用国际先进的涡轮结构，低噪音且无死点，转灯部件转速稳定在80-140次/分钟，经久耐用。</p>
-<p>
-	在适配性上，该报警器具备高度灵活性：电压支持24V/220V定制，颜色可根据场景需求定做黄绿蓝橙等多种颜色；外形尺寸仅为高160mm、直径98mm，安装便捷，不占用过多空间；已获得IP65防护等级认证，能有效抵御灰尘与雨水侵袭，适配户外多环境安装使用。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/45/7E/wKgZO2laK8eACRFjAAI8mkhTTjE051.png" alt="wKgZO2laK8eACRFjAAI8mkhTTjE051.png"/></p>
-<p>
-	<strong>二、系统协同优势，适配多场景应用</strong></p>
-<p>
-	整套系统的核心竞争力在于各部件的高效协同，其在入侵报警系统中的应用优势主要体现在三个维度。一是“精准探测+抗扰联动”，第五代变频红外对射精准捕捉入侵信号后，通过开关量传递给4G通讯模块，模块快速将信号转化为4G信号传输至后端，全程无信号干扰，确保报警信息精准无误；二是“无线部署+成本优化”，无需铺设冗长的通讯电缆，尤其适合长距离周界、偏远无电网区域，大幅降低施工成本与周期，且<a href="https://m.elecfans.com/v/tag/12018/" target="_blank"><u>4G模块</u></a>支持无限制距离通讯，适配跨区域安防管控；三是“强环境适配+稳定运行”，从红外对射的高低温适应、抗暴力破坏，到4G模块的宽温工作范围，再到声光报警器的IP65防护，整套系统能抵御户外复杂环境的考验，实现7×24小时稳定运行。</p>
-<p>
-	<strong>三、典型应用场景，赋能多元安防需求</strong></p>
-<p>
-	该组合系统凭借突出的技术优势，已在多类场景中实现成熟应用：在野外电站周界，红外对射负责探测非法闯入，4G模块解决电站与控制中心距离远、布线难的问题，声光报警器快速预警，守护电站设备安全；在城市地下综合管廊，沿管廊部署的红外对射通过4G模块将信号传输至远端监控中心，无需在管廊内铺设通讯线路，降低施工难度与维护成本；在大型工业园区，2个防区的4G模块可对接多组红外对射，实现多区域同步防护，报警信息实时联动园区安保系统；在边境线或长距离防护带，4G模块的无距离限制通讯的优势凸显，搭配红外对射的精准探测，构建起大范围无人值守的防护体系。</p>
-<p>
-	广州艾礼富电子这套“变频红外对射+双防区4G无线通讯模块”的组合系统，精准抓住了复杂场景下入侵报警系统的核心需求，通过各部件的技术互补与协同联动，实现了“探测精准化、传输无线化、预警即时化、部署便捷化”的安防目标。未来，随着安防需求的不断升级，该系统将继续在更多领域发挥核心作用，为各类入侵报警系统提供更可靠、更高效的技术支撑<br/><br/>
-	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[大模型辅助的无人机硬件性能仿真与研发优化系统平台]]></title>    <link>https://www.elecfans.com/d/7568979.html</link>    <guid>https://www.elecfans.com/d/7568979.html</guid>    <pubDate>2026-01-04 17:06:00</pubDate>    <description><![CDATA[<p>
-	  大模型辅助<a href="https://www.elecfans.com/v/tag/12732/" target="_blank"><u>无人机</u></a>硬件性能<a href="https://bbs.elecfans.com/zhuti_proteus_1.html" target="_blank"><u>仿真</u></a>与研发优化系统<br/>
-	 大模型辅助无人机硬件性能仿真与研发优化系统该系统通过<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>大模型与<a href="https://www.elecfans.com/soft/data/27-29/" target="_blank"><u>仿真技术</u></a>的深度融合，构建了无人机硬件研发全周期解决方案，可实现性能高效验证、缺陷提前预判及研发流程智能优化。以下从核心功能、技术实现、应用优势及发展趋势四大维度展开解析。<br/>
-	 系统软件供应可以来这里，这个首肌开始是幺伍扒，中间是幺幺叁叁，最后一个是泗柒泗泗，按照数字顺序组合就可以找到。<br/>
-	 应用案例<br/>
-	 目前，已有多个大模型辅助无人机硬件性能仿真与研发优化系统在实际应用中取得了显著成效。例如，北京华盛恒辉和北京五木恒润大模型辅助无人机硬件性能仿真与研发优化系统。这些成功案例为大模型辅助无人机硬件性能仿真与研发优化系统的推广和应用提供了有力支持。"<br/>
-	 一、核心功能：覆盖硬件研发全流程<br/>
-	 三维建模与可视化：支持无人机部件三维数字化建模，借助<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>渲染生成逼真虚拟模型，直观呈现硬件结构、材料特性及装配关系。<br/>
-	 力学与气动性能分析：集成多物理场<a href="https://www.elecfans.com/tags/耦合/" target="_blank"><u>耦合</u></a>分析模块，精准<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>飞行过程中无人机的受力、振动、热力学特性及气动表现。<br/>
-	 故障模拟与诊断：注入<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>故障、<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>中断等异常场景，验证硬件在复杂环境下的容错能力与稳定性。<br/>
-	 数据驱动研发优化：AI大模型学习历史仿真数据，自动输出硬件设计优化建议，助力精准迭代。<br/>
-	 二、技术实现：AI与仿真的深度协同<br/>
-	 （一）大模型赋能仿真自动化<br/>
-	 自然语言交互：<a href="https://bbs.elecfans.com/group_1231" target="_blank"><u>开发者</u></a>通过自然语言描述需求，系统自动生成仿真参数与模型框架，降低技术门槛。<br/>
-	 代码自动生成：依托InsCodeAIIDE等工具及DeepSeekR1等大模型A<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>，快速生成飞控<a href="https://m.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>代码，大幅减少手动<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a>工作量。<br/>
-	 智能调试优化：AI分析仿真结果，定位<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>功率不足、传感器延迟过高等性能瓶颈，同步提供针对性改进方案。<br/>
-	 （二）高精度仿真环境构建<br/>
-	 多学科耦合仿真：整合<a href="https://www.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>、电子、材料等多学科模型，还原硬件在真实环境中的综合运行状态。<br/>
-	 虚实结合测试：支持硬件在环（HIL）仿真，连接真实飞控计算机与虚拟传感器、执行器，验证软硬件协同性能。<br/>
-	 三、应用优势：提效、降本、提质<br/>
-	 缩短研发周期，降低成本：虚拟验证替代部分物理测试，减少样机制作与试验次数；仿真可覆盖80%以上设计问题，减少材料浪费与制造成本，同时提前规避结构共振、电磁干扰等缺陷，避免后期返工损失。<br/>
-	 提升产品性能与可靠性：通过遗传算法等多目标优化算法，自动调整机翼弧度、电机转速等参数，实现性能最优；模拟极端天气、复杂地形等场景，强化硬件环境适应性。<br/>
-	 四、发展趋势：智能化、集成化、生态化<br/>
-	 智能化升级：AI大模型驱动仿真全流程自动化，无需人工干预；结合数字孪生技术，实时监测硬件状态，实现故障预测性维护。<br/>
-	 集成化发展：整合CAD、CAE、<a href="https://m.elecfans.com/v/tag/1053/" target="_blank"><u>EDA</u></a>等工具，实现从结构设计到电子电路仿真的无缝衔接；依托<a href="https://m.elecfans.com/v/tag/475/" target="_blank"><u>云计算</u></a>构建分布式仿真平台，支持多用户、多部门协同开发。<br/>
-	 生态化扩展：开放API与插件市场，满足个性化需求；搭建开发者社区，共享仿真模型、算法库及案例，加速技术迭代。<br/><br/>
-	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[A-68 语音处理模组 —— 波束成型 + 双麦降噪，全场景音频交互升级方案]]></title>    <link>https://www.elecfans.com/d/7569078.html</link>    <guid>https://www.elecfans.com/d/7569078.html</guid>    <pubDate>2026-01-04 17:25:00</pubDate>    <description><![CDATA[<h2>一、核心技术参数：硬核性能支撑全场景需求</h2><p>A-68 的性能优势源于精准的硬件设计与<a href="https://m.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>优化，关键参数直击行业痛点：</p><ul><li>声学处理能力：85dB 回音消除（AEC），支持 100ms 空间延迟补偿，彻底解决喇叭与麦克风近距离摆放的回音问题；45dB-90dB 环境降噪（ENC），可压制稳态噪音（风扇、空调）与非稳态噪音（脚步声、杂谈），双麦波束成型模式下降噪能力达 90dB。</li><li>拾音与输出：拾音距离覆盖 10cm-500cm，远场模式支持 3-5 米清晰拾音，搭配高灵敏度麦克风可进一步延伸；同时输出双路<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a><a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>与 I2S <a href="https://www.hqchip.com/app/1381" target="_blank"><u>数字信号</u></a>（16K 采样率、16bit 位深），数字输出可完全规避<a href="https://www.elecfans.com/v/tag/105/" target="_blank"><u>射频</u></a>干扰。</li><li>硬件与可靠性：体积仅 23.5mm×19mm，半孔焊盘设计支持 SMT 焊接或转接板快速集成；宽电压供电（4V-6.5V），工作<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>低至 25mA，工业级温度范围（-45℃~85℃），适配恶劣环境。</li><li>声道与阻抗：左右声道分离度 105dB，<a href="https://www.elecfans.com/tags/dac/" target="_blank"><u>DAC</u></a> 输出阻抗 10KΩ，<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a> 输入阻抗 47KΩ，保证高保真<a href="https://m.hqchip.com/app/1537" target="_blank"><u>音频</u></a>传输。</li></ul><h2>二、核心功能：灵活适配多场景使用需求</h2><p>A-68 的核心竞争力在于 “全模式覆盖 + 高灵活性”，可根据产品需求快速切换工作状态：</p><h3>1. 三大工作模式，适配不同场景</h3><ul><li>纯降噪模式：支持单 / 双麦克风输入，单麦针对稳态噪音压制，双麦开启波束成型后可屏蔽非稳态噪音，输出单声道音频，适用于录音笔、监控拾音设备。</li><li>消回音 + 降噪模式：在降噪基础上增加回音消除，通过 LINE IN <a href="https://www.hqchip.com/app/1808" target="_blank"><u>端口</u></a>接入功放参考信号，适配免提通话场景（如车载<a href="https://www.elecfans.com/tags/蓝牙/" target="_blank"><u>蓝牙</u></a>、会议设备），全双工通话流畅无卡顿。</li><li>立体声降噪模式：双麦克风独立输出左右声道，保留两路独立降噪音频，适用于监狱探视、银行窗口通话等需要双路录音的场景。</li></ul><h3>2. 多维度适配能力，降低开发成本</h3><ul><li>麦克风兼容：支持模拟硅麦、数字麦（PDM 格式）、驻极体<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>麦（需外接偏置<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>），单 / 双麦均可配置，无需重构硬件。</li><li>抗干扰设计：模拟信号与 I2S 数字信号同时输出，射频干扰严重的场景（如车载、工业设备）可选用数字输出，彻底避免底噪问题。</li><li>波束成型双模式：反馈式双麦降噪（主副麦差异化摆位，适合近距离设备如对讲机）、夹角拾音束降噪（双麦同向摆放，3cm-18cm 间距，拾音角度 0°-180° 可调，适配车间、车站等远场嘈杂环境）。</li></ul><h2>三、典型应用场景：覆盖 10 + 行业，落地性极强</h2><p>A-68 的灵活适配性使其能快速融入各类音频设备，核心应用场景包括：</p><h3>1. 智能楼宇与安防</h3><ul><li>智能小区 / 别墅门禁对讲：降噪消回音技术保证开门通话清晰，支持远场拾音（无需贴近麦克风），适应门口风噪、环境杂音。</li><li>电梯 / 车间广播对讲：工业级温度耐受（-45℃~85℃），波束成型屏蔽车间机器噪音，双麦设计确保多人通话时人声清晰。</li></ul><p/><h3>2. 车载与<a href="https://www.elecfans.com/soft/data/39-96/" target="_blank"><u>消费电子</u></a></h3><ul><li>车载蓝牙通话系统：低功耗（25mA）适配汽车供电，回音消除解决车载喇叭与麦克风的近距离回音，降噪功能压制发动机、风噪。</li><li>笔记本 / 平板<a href="https://m.elecfans.com/v/tag/1247/" target="_blank"><u>电脑</u></a>：I2S 数字输出避免射频干扰，双麦波束成型提升视频会议拾音范围，适配多人办公场景。</li></ul><p/><h3>3. 远程<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>与教育</h3><ul><li>远程会议设备：远场拾音（3-5 米）+ 降噪，即使会议室有空调噪音、人员走动，也能精准拾取发言人声音。</li><li>智能教育通话设备：消回音技术保证师生双向通话无延迟，立体声模式可记录多路音频，适配线上实训场景。</li></ul><p/><h3>4. 监护与公共服务</h3><ul><li>老人 / 儿童 / 宠物监护仪：低功耗设计支持电池供电，远场拾音可捕捉远距离微弱声音，降噪功能过滤环境杂音，确保报警信号清晰。</li><li>银行客服 / 监狱呼叫系统：双声道立体声降噪模式支持双路独立录音，回音消除避免客服耳机与麦克风的回音干扰，提升沟通效率。</li></ul><p/><h2>四、<a href="https://bbs.elecfans.com/group_1231" target="_blank"><u>开发者</u></a>友好：简化集成，加速产品落地</h2><p>对于开发者而言，A-68 的设计细节充分降低了开发门槛：</p><ul><li>集成便捷：半孔焊盘（2.54mm 间距）支持直接焊接在主板或转接板快速接入，体积小巧（23.5mm×19mm）适配空间受限设备。</li><li>供电灵活：支持 5V（4V-6.5V 宽范围）或 3.3V 供电，19 脚可输出 3.3V 电压（100mA 负载），可为外部麦克风供电。</li><li>兼容扩展：支持驻极体电容麦（需外接偏置电阻）、模拟硅麦、数字麦，无需额外适配芯片，可直接复用现有麦克风硬件。</li></ul><h2>总结</h2><p>A-68 语音处理模组以 “波束成型 + 双麦降噪 + 灵活适配” 为核心，既满足消费电子的低功耗、小体积需求，又具备工业设备的高可靠性，完美覆盖从近距离通话到远场拾音、从稳态噪音到非稳态噪音的全场景声学处理需求。无论是智能设备开发者、工业通信方案商，还是消费电子厂商，都能通过 A-68 快速升级产品的音频交互体验，缩短开发周期、降低技术门槛。</p><p>如果你的项目正面临噪音、回音、拾音范围等声学难题，不妨尝试 A-68 模组 —— 专业 <a href="https://m.hqchip.com/app/1378" target="_blank"><u>DSP</u></a> 算法 + 多模式适配，让语音交互更清晰、更稳定。</p>]]></description></item><item>    <title><![CDATA[智能养宠新时代：如何用雷达“黑科技”破解宠物饮水机感应难题]]></title>    <link>https://www.elecfans.com/d/7569086.html</link>    <guid>https://www.elecfans.com/d/7569086.html</guid>    <pubDate>2026-01-04 17:33:00</pubDate>    <description><![CDATA[<p style="margin-left:0px;text-align:justify;">当代“铲屎官”<span style="color:rgba(0,0,0,0.9);">对宠物的爱，早已不止于简单喂养。在福州一家宠物科技企业的产品实验室里，一台看似普通的</span><span style="color:rgb(61,205,88);"><strong>宠物饮水机</strong></span><span style="color:rgba(0,0,0,0.9);">正悄然酝酿着一场技术革新</span>——<span style="color:rgb(61,205,88);"><strong>当宠物靠近时自动出水，离开后自动停止。</strong></span>这个听起来简单的功能背后，却是一场与<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>技术的"较量"。</p><p style="margin-left:0px;text-align:justify;"/><p style="margin-left:0px;text-align:justify;"><span style="color:rgba(0,0,0,0.9);">在这场智能化浪潮中，这家企</span>业瞄准了一个看似细微却至关重要的痛点：如何让饮水机“看见”宠物?</p><p style="margin-left:0px;text-align:justify;"><span style="color:rgba(0,0,0,0.9);">数据显示，中国宠物市场规模已突破</span><span style="background-color:rgb(255,255,255);color:rgba(0,0,0,0.9);">3000</span><span style="color:rgba(0,0,0,0.9);">亿元，<strong>宠物用品智能化成为行业新风口</strong></span></p><p style="margin-left:0px;text-align:justify;"><span style="color:rgba(0,0,0,0.9);">从传统的“一盆水管一天”到如今的<strong>智能感应出水、水质监测、定时提醒</strong>，宠物饮水机的进化折射出宠物主人对科学养宠的极致追求</span></p><p style="margin-left:0px;text-align:justify;"><span style="background-color:rgb(255,255,255);color:rgba(0,0,0,0.9);"><strong>宠物经济的蓬勃发展催生了智能化需求的井喷</strong></span></p><p style="margin-left:0px;text-align:justify;"><br/></p><p style="margin-left:0px;text-align:center;"><strong>01</strong></p><p style="margin-left:0px;text-align:center;"><strong>宠物饮水机</strong></p><p style="margin-left:0px;text-align:center;"><strong>技术选型的"三重困境"</strong></p><p style="margin-left:0px;text-align:justify;"><span style="background-color:transparent;color:rgba(0,0,0,0.9);">“</span>最初我们认为<a href="https://www.elecfans.com/tags/红外/" target="_blank"><u>红外</u></a>测距就能解决问题。” 福州这家宠物用品科技企业的产品负责人回忆道。团队最初锁定了唯创知音<span style="color:rgba(0,0,0,0.9);">WT4001A-C01</span>低功耗红外测距模块，这款模块在智能马桶、智能门锁等领域表现出色，12μA的超低待机功耗和1-100cm的宽泛检测范围看似完美契合需求。</p><p style="margin-left:0px;text-align:justify;"/><p style="margin-left:0px;text-align:justify;">然而，宠物饮水机复杂的内部结构很快给团队泼了一盆冷水——模块尺寸无法适配产品的紧凑空间设计。</p><p style="margin-left:0px;text-align:justify;"/><p style="margin-left:0px;text-align:justify;">尺寸问题只是开始。当团队转向其他红外模块样品时，<span style="color:rgb(61,205,88);"><i><strong>更大的挑战浮出水面：宠物饮水机的使用环境远比想象中复杂。阳光直射、室内光线变化、水汽氤氲，这些因素都会对红外传感器的稳定性造成干扰。</strong></i></span>更关键的是，宠物饮水机内部的结构遮挡、水箱反射等因素，让红外<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>在<span style="background-color:transparent;color:rgba(0,0,0,0.9);">10-20cm</span>的近距离检测中频繁“失灵”。</p><p style="margin-left:0px;text-align:center;"/><p style="margin-left:0px;text-align:justify;"><span style="background-color:transparent;color:rgba(0,0,0,0.9);">从红外到雷达，这不是简单的技术替换，而是一次感应原理的根本性转变。</span></p><p style="margin-left:0px;text-align:justify;"><br/></p><p style="margin-left:0px;text-align:center;"><strong>02</strong></p><p style="margin-left:0px;text-align:center;"><strong><a href="https://bbs.elecfans.com/zhuti_rf_1.html" target="_blank"><u>微波</u></a><a href="https://bbs.elecfans.com/zhuti_rf_1.html" target="_blank"><u>雷达技术</u></a></strong></p><p style="margin-left:0px;text-align:center;"><strong>穿透"迷雾"的"第三只眼"</strong></p><p><span style="color:rgba(0,0,0,0.9);">唯创知音推荐的WTL580-C01微波雷达感应模块，为客户打开了新思路。与红外技术依赖光线反射不同，微波雷达通过发射电磁波并接收回波来探测目标，这意味着它能够穿透塑料外壳、不受光线影响、无惧水汽干扰——这些特性恰好击中了宠物饮水机应用场景的所有“软肋”。</span></p><p style="margin-left:0px;text-align:justify;"><span style="color:rgb(61,205,88);"><strong>WTL580-C01的技术优势在应用中逐渐显现：</strong></span></p><p style="margin-left:0px;text-align:justify;"><br/></p><p style="margin-left:0px;text-align:justify;"><span style="color:rgba(0,0,0,0.9);">50cm的近距离侦测能力，让饮水机可以提前预判宠物的靠近；</span></p><p style="margin-left:0px;text-align:justify;"><br/></p><p style="margin-left:0px;text-align:justify;"><span style="color:rgba(0,0,0,0.9);">18μA以下的超低工作<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>，确保长期运行不会显著增加功耗；</span></p><p style="margin-left:0px;text-align:justify;"><br/></p><p style="margin-left:0px;text-align:justify;"><span style="background-color:rgb(255,255,255);color:rgba(0,0,0,0.9);">更重要的是，雷达信号可以隐藏在外壳内部工作，无需在产品表面开孔，极大提升了产品的美观性和一体化设计水平。</span></p><p style="margin-left:0px;text-align:justify;"><br/></p><p><span style="background-color:transparent;">“</span>雷达模块最吸引我们的，是它对距离检测的敏感度。”产品团队注意到一个细节，猫咪只要一走进饮水机就能被敏锐地感应到，而传统的运动感应容易延迟和漏检，而微波雷达能够捕捉到细微的距离变化，实现真正的“在场感知 ”。</p><p style="margin-left:0px;text-align:center;"/><p style="margin-left:0px;text-align:center;"><strong>03</strong></p><p style="margin-left:0px;text-align:center;"><strong>从实验室到量产</strong></p><p style="margin-left:0px;text-align:center;"><strong>技术落地的"最后一公里"</strong></p><p style="margin-left:0px;text-align:justify;">技术方案的确定并非终点。在实际测试中，雷达模块出现了感应不稳定的情况——这是典型的“最后一公里”难题。针对这一问题，唯创知音的技术团队提出了系统性的优化方案——</p><p style="margin-left:0px;text-align:center;"><strong>1</strong></p><p style="margin-left:0px;text-align:justify;"><span style="background-color:rgb(255,255,255);color:rgba(0,0,0,0.9);">首先是</span><span style="background-color:rgb(255,255,255);color:rgb(61,205,88);"><strong>安装位置的精细化调整</strong>。</span><span style="background-color:rgb(255,255,255);color:rgba(0,0,0,0.9);">通过与客户的结构<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>深度协作，技术团队重新规划了模块在饮水机内部的安装位置，避免水泵、电路板等金属部件对雷达信号的遮挡，确保信号传播路径畅通无阻。</span></p><p style="margin-left:0px;text-align:center;"><strong>2</strong></p><p style="margin-left:0px;text-align:justify;"><span style="color:rgba(0,0,0,0.9);">其次是</span><span style="color:rgb(61,205,88);"><strong>参数的定制化微调。</strong></span><span style="background-color:rgb(255,255,255);color:rgba(0,0,0,0.9);">WTL580-C01</span><span style="color:rgba(0,0,0,0.9);">支持发射功率(-20dBm至1dBm)和灵敏度的<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a>调整，针对宠物饮水机1米内的有效感应需求，技术团队将检测距离精准控制在合理范围，既避免了误触发，又确保了响应的及时性。</span></p><p style="margin-left:0px;text-align:center;"><strong>3</strong></p><p style="margin-left:0px;text-align:justify;"><span style="background-color:rgb(255,255,255);color:rgba(0,0,0,0.9);">此外，增</span><span style="background-color:rgb(255,255,255);color:rgb(61,205,88);"><strong>加信号反馈装置成为提升产品可靠性的关键一环。</strong></span><span style="background-color:rgb(255,255,255);color:rgba(0,0,0,0.9);">通过实时监测模块工作状态，一旦出现感应异常，系统能够迅速定位问题所在，为后续的批量生产和售后服务提供了有力保障。</span></p><p style="margin-left:0px;text-align:justify;"><br/></p><p style="margin-left:0px;text-align:center;"><img src="http://images.elecfans.net/uploads/20260104/6fbfcb4c-e950-11f0-8ce9-92fbcf53809c.png" alt="6fbfcb4c-e950-11f0-8ce9-92fbcf53809c.png"/></p><p style="margin-left:0px;text-align:center;"><br/></p><p style="margin-left:0px;text-align:center;"><span style="color:rgb(61,205,88);"><strong>应用原理图</strong></span></p><p style="margin-left:0px;text-align:center;"><strong>04</strong></p><p style="margin-left:0px;text-align:center;"><strong>技术溢出效应</strong></p><p style="margin-left:0px;text-align:center;"><strong>从宠物饮水机到覆盖更广泛场景</strong></p><p><span style="color:rgba(0,0,0,0.9);">虽然项目目前处于优化调整阶段，但客户与唯创知音的合作已经勾勒出智能宠物用品的未来轮廓。当微波雷达技术成熟应用于宠物饮水机后，其技术溢出效应将覆盖更广泛的场景：智能猫砂盆可以感知宠物如厕行为并自动清理;智能喂食器能够识别不同宠物并定制化投喂;宠物活动监测设备可以追踪宠物的运动轨迹和行为习惯……</span></p><p/><p/><p><span style="color:rgba(0,0,0,0.9);">从红外到雷达，从被动响应到主动感知，技术探索映射出整个宠物用品行业的智能化进程。在这场以科技宠爱生命的征程中，每一次传感器的升级、每一个参数的优化，都是对"精细化养宠"理念的具体实践。</span></p><p/><p/><p><span style="color:rgba(0,0,0,0.9);">当技术的温度遇见对宠物的温情，智能养宠的新时代已悄然开启。</span></p><p style="margin-left:0px;text-align:center;"/>]]></description></item><item>    <title><![CDATA[匠芯创ArtInChip 2025年12月资讯]]></title>    <link>https://www.elecfans.com/d/7569095.html</link>    <guid>https://www.elecfans.com/d/7569095.html</guid>    <pubDate>2026-01-04 17:36:00</pubDate>    <description><![CDATA[<p/><p style="text-align:center;"><i><strong>匠芯创宣传简报</strong></i></p><p style="text-align:center;"><strong>2025年12月刊</strong></p><p style="margin-left:20px;">欢迎来到匠芯创资讯播报栏目。在这里，我们将为您梳理过去一月内匠芯创新闻事件，帮助您快速了解匠芯创动态。</p><p/><p style="text-align:center;"><i><strong>01</strong></i></p><p style="text-align:center;"><i><strong>企业新闻</strong></i></p><p style="margin-left:10px;text-align:center;"><i><strong>01</strong></i></p><p style="margin-left:-20px;"><i><strong>以自主创新助力“湾区智造” | 匠芯创全系列芯片亮相<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>E博览会</strong></i></p><p style="margin-left:30px;">12月4日至6日，由中国电子商会主办的首届全球智能机械与电子产品博览会（AIE博览会）在澳门与珠海双城同步举行。本届博览会以“湾区智造，全球共享”为主题，创新采用“一会双城”新模式，汇聚产业链上下游众多企业，共同展示智能制造领域的创新成果。</p><p style="margin-left:30px;text-align:center;">匠芯创携全系列芯片产品亮相展会，集中展示了公司在人机交互、<a href="https://www.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>、<a href="https://bbs.elecfans.com/group_78" target="_blank"><u>汽车电子</u></a>、高性能计算等领域的核心技术与创新成果。<img src="http://images.elecfans.net/uploads/20260104/d61a94b2-e950-11f0-8ce9-92fbcf53809c.png" alt="d61a94b2-e950-11f0-8ce9-92fbcf53809c.png"/>阅读原文</p><p style="margin-left:10px;text-align:center;"><i><strong>02</strong></i></p><p style="margin-left:-20px;"><i><strong>再获殊荣！匠芯创M7000系列入选“广东省名优高新技术产品”</strong></i></p><p style="margin-left:30px;">近日，广东省高新技术企业协会正式公布2025年第二批“广东省名优高新技术产品”名单。匠芯创自主研发的工业级高性能<a href="https://m.hqchip.com/app/1378" target="_blank"><u>DSP</u></a>实时<a href="https://www.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>M7000系列，凭借卓越的技术实力与广泛的市场应用表现，成功入选！这是匠芯创产品第三次获得此项省级权威认定，充分体现了其在核心技术领域的持续积累与产品化能力。</p><img src="http://images.elecfans.net/uploads/20260104/d648b6bc-e950-11f0-8ce9-92fbcf53809c.png" alt="d648b6bc-e950-11f0-8ce9-92fbcf53809c.png"/><p style="margin-left:30px;text-align:center;">阅读原文</p><p style="margin-left:10px;text-align:center;"><i><strong>03</strong></i></p><p style="margin-left:-20px;"><i><strong>斩获双奖 | 匠芯创M7000系列引领<a href="https://bbs.elecfans.com/zhuti_riscvmcu_1.html" target="_blank"><u>RISC-V</u></a>工控芯片规模化落地</strong></i></p><p style="margin-left:30px;">大会上，匠芯创一举斩获两项行业重量级荣誉：“CMCD 2025年度运动控制领域最具投资价值企业”与“CMCD 2025年度运动控制领域创新产品（M7000系列）”。这不仅是对匠芯创技术实力与市场前景的高度认可，也标志着国产<a href="https://bbs.elecfans.com/zhuti_riscvmcu_1.html" target="_blank"><u>RISC</u></a>-V高端工控芯片在运动控制与<a href="https://m.elecfans.com/v/tag/633/" target="_blank"><u>工业自动化</u></a>领域正稳步走向成熟与规模化落地。</p><p style="margin-left:30px;text-align:center;"><img src="http://images.elecfans.net/uploads/20260104/d666f2ee-e950-11f0-8ce9-92fbcf53809c.png" alt="d666f2ee-e950-11f0-8ce9-92fbcf53809c.png"/>阅读原文</p><p style="margin-left:10px;text-align:center;"><i><strong>04</strong></i></p><p style="margin-left:-20px;"><i><strong>自主可靠 量产无忧 | 匠芯创离线烧录器实现量产应用</strong></i></p><p style="margin-left:30px;">近日，匠芯创自主研发的离线烧录器已实现批量生产，并在多家客户的量产项目中稳定应用，其出色的可靠性与易用性赢得客户的高度认可。该烧录器从核心主控芯片、硬件<a href="https://bbs.elecfans.com/zhuti_dianlu_1.html" target="_blank"><u>电路设计</u></a>，到<a href="https://m.elecfans.com/v/tag/3653/" target="_blank"><u>嵌入式软件</u></a>与<a href="https://bbs.elecfans.com/zhuti_1184_1.html" target="_blank"><u>上位机</u></a>工具，均由匠芯创团队独立研发完成，实现了从硬件到软件的全链路自主可控，为量产安全和可靠性奠定了坚实基础。</p><p style="margin-left:30px;text-align:center;">烧录器支持匠芯创M76H00、M76P00、M73P00、M7600、M7300、M76E00、M73E00、M6800、D21、D13、D12等全系列芯片，提供<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>、<a href="https://www.hqchip.com/app/1515" target="_blank"><u>USB</u></a>、JTAG三种烧录方式（JTAG通过OTA更新支持），并具备OTA在线升级功能，可持续迭代优化，满足客户在离线量产场景下的多样化需求。<img src="http://images.elecfans.net/uploads/20260104/d68d5d8a-e950-11f0-8ce9-92fbcf53809c.png" alt="d68d5d8a-e950-11f0-8ce9-92fbcf53809c.png"/>阅读原文</p><p style="margin-left:10px;text-align:center;"><i><strong>05</strong></i></p><p style="margin-left:-20px;"><i><strong>电子商会秘书处走访会员企业——匠芯创科技</strong></i></p><p style="margin-left:30px;">12月5日，电子商会常务副会长徐慧英一行走访会员单位、广东省专精特新企业——匠芯创科技，与公司董事长原顺进行交流。电子商会副秘书长朱宏凯陪同走访。</p><p style="margin-left:30px;text-align:center;"><img src="http://images.elecfans.net/uploads/20260104/d6adeb4a-e950-11f0-8ce9-92fbcf53809c.png" alt="d6adeb4a-e950-11f0-8ce9-92fbcf53809c.png"/></p><p style="text-align:center;"><i><strong>02</strong></i></p><p style="text-align:center;"><i><strong>市场活动</strong></i></p><p style="margin-left:30px;text-align:center;"><img src="http://images.elecfans.net/uploads/20260104/d6124d20-e950-11f0-8ce9-92fbcf53809c.gif" alt="d6124d20-e950-11f0-8ce9-92fbcf53809c.gif"/></p><p><br/></p><p style="margin-left:10px;"><i><strong>引领落地：匠芯创RISC-V实时处理器的工业应用与生态</strong></i></p><p style="margin-left:30px;text-align:center;"><span style="color:rgb(0,0,0);"><strong>12月18日，以“智链未来、韧启新程”为主题的“CIAA25 中国运动控制/直驱产业发展高峰<a href="https://www.elecfans.com/article/bbs/" target="_blank"><u>论坛</u></a>暨颁奖盛典”在深圳隆重举行。</strong></span><span style="background-color:rgb(255,255,255);color:rgb(0,0,0);"><strong>匠芯创市场总监徐勇受邀出席会议，并发表题为《引领落地：匠芯创RISC-V实时处理器的工业应用与生态》的主题演讲，详细分享了公司在RISC-V架构芯片与工业控制融合方面的前沿成果与生态布局。</strong></span></p><p/>]]></description></item><item>    <title><![CDATA[兆芯亮相DDUC 2025深度开发者与用户大会]]></title>    <link>https://www.elecfans.com/d/7569076.html</link>    <guid>https://www.elecfans.com/d/7569076.html</guid>    <pubDate>2026-01-04 17:43:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	日前，deepin（深度）社区的年度核心活动--第十五届深度<a href="https://bbs.elecfans.com/group_1231" target="_blank"><u>开发者</u></a>与用户大会（DDUC 2025）在武汉成功举办。兆芯在本届大会期间，向社区生态伙伴、开发者及用户代表等与会嘉宾，分享了兆芯自主<a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>核心技术及产品创新等最新进展，展示了多款运行deepin OS、统信UOS的兆芯平台笔记本、工作站等计算平台，并被授予2025年度合作伙伴核心项目协作奖。</p>
-<p style="text-indent:2em;">
-	本次大会汇聚了来自全国各地的开发者、贡献者、合作伙伴与社区用户，共同回顾deepin社区在2025年的成长轨迹，探讨技术演进路径并展望开源生态的未来趋势。兆芯公司技术总监蒋绳奋在大会技术专场的主题演讲中表示，兆芯专注于自主通用CPU的技术创新与应用发展，公司全面掌握<a href="https://www.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>研发设计核心技术，技术能力完整覆盖指令集、微架构、互连、IO及其实现技术等关键领域，已成功构建起“自主可控、持续兼容、面向新应用”的自主ZX86指令集知识产权体系，为兆芯自主CPU的持续迭代升级与行业核心应用的安全与创新发展构筑了坚实的技术支撑。</p>
-<p style="text-indent:2em;">
-	在产品创新方面，兆芯拥有以开胜KH-50000新一代服务器处理器、开先KX-7000桌面/<a href="https://bbs.elecfans.com/group_1121" target="_blank"><u>嵌入式</u></a>处理器等为代表的两大系列自主CPU产品，凭借卓越的产品性能、杰出的兼容性、优异的安全性及可靠性等优势，全面支持云、边、端全栈计算需求。其中，面向高端服务器应用的开胜KH-50000处理器，单颗集成96个高性能计算核心，支持<a href="https://www.hqchip.com/app/1729" target="_blank"><u>DDR</u></a>5、PCIe5等国际主流高速IO，支持多路系统部署，能为<a href="https://m.elecfans.com/v/tag/475/" target="_blank"><u>云计算</u></a>、大数据、<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>训推等高密度算力场景提供充沛性能与可靠支撑；开先KX-7000系列处理器采用自主内核微架构和先进Chiplet互连架构，性能较上一代实现翻倍跃升，已成为信创AIPC、高性能终端等设备的核心算力支撑。</p>
-<p style="text-indent:2em;">
-	<a href="https://m.elecfans.com/v/tag/527/" target="_blank"><u>操作系统</u></a>是CPU芯片和上层软件应用实现交互的桥梁，是信息产业的魂之所在。兆芯自加入deepin社区以来，始终将自身定位为深度参与内核优化、驱动适配与标准共建的“生态合伙人”，是社区Kernel SIG的重要一员，致力推动deepin开源操作系统及其商业发行版统信UOS的持续完善，协力打造满足行业数智创新升级的基础底座。目前，双方深度协同的方案已经广泛应用在政务、金融、教育、能源、<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>等关键基础行业实现规模化应用。大会现场同步展示的多款运行deepin OS、统信UOS的兆芯平台笔记本、工作站等计算平台，凭借丰富的应用和稳定流畅的体验，进一步展现了自主CPU和OS深度契合的卓越表现。</p>
-<p style="text-indent:2em;">
-	一直以来，兆芯持续携手社区生态伙伴及开发者，协同开展deepin OS内核在兆芯CPU平台上的测试验证、功能完善、性能提升；有序导入兆芯新品CPU对操作系统内核的支持，助力提升平台的兼容性、可靠性、稳定性；同时积极跟进<a href="https://www.elecfans.com/v/tag/150/" target="_blank"><u>人工智能</u></a>等前沿应用发展趋势，合作推进底层优化，以不断满足更多应用场景需求，并提供优越的用户体验。正是凭借这份付出与努力，兆芯在大会期间被授予2025年度年度合作伙伴核心项目协作奖，激励兆芯在技术合作、产品创新、社区建设等工作上再接再厉，再攀高峰。</p>
-<p style="text-indent:2em;">
-	兆芯将继续积极参与deepin社区建设，从内核优化到前沿应用，与社区生态伙伴、开发者们一道，将社区 “沃土” 耕耘得更加肥沃。在开放、协作的社区精神引领下，兆芯自主CPU与deepin OS的深度融合，将为各行各业的数字化转型与智能化升级，催生更坚实、更可靠的 “中国方案”。</p>
-<p style="text-indent:2em;">
-	关于兆芯</p>
-<p style="text-indent:2em;">
-	兆芯坚持自主创新、生态完善、好用不贵的发展理念，掌握自主通用处理器及其系统平台芯片研发设计的核心技术，全面覆盖其微架构与实现技术等关键领域，构建了健全的知识产权体系，致力于为用户提供高效、兼容、安全的自主通用处理器和芯片组等产品，构建从云到边再到端等各种应用场景下的计算解决方案，助力政务、金融、教育、<a href="https://m.elecfans.com/v/tag/13320/" target="_blank"><u>网络通信</u></a>、能源、交通、医疗、工业制造等行业应用的平滑迁移、节约用户迁移成本、支撑国家产业信息安全和国家数字经济实现高质量发展。</p>]]></description></item><item>    <title><![CDATA[电力智能安全警示器如何把工人从危险边缘“硬拉回来”]]></title>    <link>https://www.elecfans.com/d/7569069.html</link>    <guid>https://www.elecfans.com/d/7569069.html</guid>    <pubDate>2026-01-04 17:54:00</pubDate>    <description><![CDATA[<p>
-	在电力行业的浩瀚图景中，特<a href="https://m.elecfans.com/v/tag/873/" target="_blank"><u>高压</u></a>线路如同动脉般横跨山川，变电站不仅是能量的枢纽，更是高危作业的“雷区”。对于常年行走在几万伏高压下的电力运检人员来说，生命往往悬于一线。在这里，任何一次由于疲劳、疏忽或盲目自信导致的误操作，都可能引发不可挽回的悲剧。</p>
-<p>
-	传统的“人盯人”监护模式正在失效，而技术的介入成为了必然。<strong>电力智能安全警示器</strong>，这个看似不起眼的小型设备，正在从单纯的“报警喇叭”进化为电力工人的数字化“护身符”。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/45/80/wKgZPGlaOE6ALrJpAAQrGlkcFSw168.png" alt="wKgZPGlaOE6ALrJpAAQrGlkcFSw168.png"/></p>
-<p>
-	一、 看不见的红线与“习惯性违章”</p>
-<p>
-	电力作业最大的敌人并非技术难题，而是“习惯性违章”和“感知的局限”。</p>
-<p>
-	在高压电场中，危险是静默的。<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>没有气味，高压电场在击穿空气前往往也是无声的。当一个老练的工人在炎热的夏天，顶着40度的高温连续作业几小时后，他的空间感知能力会下降，警惕性会因极度疲劳而迟钝。此时，他可能下意识地向带电间隔迈出一步——这在平时是不可能的错误，但在那一刻却致命。</p>
-<p>
-	传统的安全围栏和悬挂标示牌是静态的，它们无法在危急时刻大声呼喊。而早期的安全警示器功能单一，往往只是基于简单的感应原理，误报率极高。风吹草动都会引发蜂鸣，导致工人在实际作业中嫌其吵闹，甚至偷偷关掉<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>。</p>
-<p>
-	这正是新一代<strong>电力智能安全警示器</strong>诞生的背景：我们需要一个既懂电场环境，又懂工人行为，且能在生死攸关的0.1秒内发出“尖叫”的智能伙伴。</p>
-<p>
-	二、 从“感应”到“感知”：技术内核的跃迁</p>
-<p>
-	现在的智能安全警示器，早已脱离了单纯的近电报警范畴，它更像是一个微型的边缘计算终端。</p>
-<p>
-	<strong>1. 多维度的近电预警</strong> 核心技术依然是对高压电场的捕捉。但不同于以往的粗糙感应，现代警示器采用了非接触式高压感应技术，能够根据电压等级（10kV, 35kV, 110kV等）自动调整灵敏度。当人体与带电体的距离突破安全规程设定的“红线”时，设备会立即启动。</p>
-<p>
-	更有趣的是<strong>方向性<a href="https://m.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a></strong>的应用。以前的报警器分不清你是“路过”还是“靠近”。现在的智能警示器通过内置的加速度计和<a href="https://www.elecfans.com/tags/陀螺仪/" target="_blank"><u>陀螺仪</u></a>，结合电场强度变化率，能判断工人的运动矢量。如果你只是在安全距离外平行移动，它保持沉默；一旦检测到你不仅靠近且速度不减，它会通过高分贝语音（“高压危险，请勿靠近”）和强光频闪进行双重阻断。</p>
-<p>
-	<strong>2. 电子围栏与UWB定位的结合</strong> 在复杂的变电站检修现场，经常出现“走错间隔”的事故。检修这台变压器，却误登了旁边那台带电的变压器。 智能警示器现在常与UWB（超宽带）<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>定位技术结合。在作业前，现场指挥会将虚拟的“电子围栏”写入设备。警示器变成了一个移动的坐标点，一旦工人的位置坐标漂移出了安全作业区，或者误入了临近的带电区域，警示器不仅自身报警，还会触发后台监控系统的联动，现场的大喇叭和指挥<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>的屏幕会同时亮起红灯。</p>
-<p>
-	三、 视觉<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>的介入：给警示器装上“眼睛”</p>
-<p>
-	纯粹的佩戴式警示器仍有局限，于是，**“视频+警示”**的一体化装置开始流行。</p>
-<p>
-	这类设备通常被设计成三脚架形式，放置在作业现场边缘。它不仅仅是发出警示，更是现场的“AI监工”。内置的AI视觉算法模型经过了百万级电力场景图片的训练。</p>
-<p>
-	<strong>着装规范检测：</strong> 工人进场时，如果未戴安全帽、未穿反光背心，警示器会直接语音提示纠正。</p>
-<p>
-	<strong>行为分析：</strong> 在登高作业时，AI不仅看人，还看“扣”。如果检测到安全带的挂钩处于悬空状态，或者工人长时间处于某种异常体态（可能晕厥），它会立即向远端发送求救<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>。</p>
-<p>
-	这种将<strong><a href="https://www.elecfans.com/tags/机器视觉/" target="_blank"><u>机器视觉</u></a></strong>与<strong>声光警示</strong>结合的模式，彻底改变了安全监督的滞后性。以前是出了事再查监控，现在是隐患刚露头就被机器喝止。</p>
-<p>
-	四、 互联与数据：安全管理的“黑匣子”</p>
-<p>
-	现在的电力智能警示器，不再是信息孤岛。</p>
-<p>
-	依托<a href="https://www.elecfans.com/tags/nb-iot/" target="_blank"><u>NB-IoT</u></a>或<a href="https://m.elecfans.com/v/tag/9979/" target="_blank"><u>4G</u></a>/<a href="https://m.elecfans.com/v/tag/1225/" target="_blank"><u>5G</u></a>专网，每一个警示器都是<a href="https://bbs.elecfans.com/group_57" target="_blank"><u>物联网</u></a>的一个节点。这带来了一个全新的价值——<strong>安全画像</strong>。</p>
-<p>
-	设备会记录每一位工人的作业数据：他今天触发了几次近电报警？他在高风险区域停留了多久？他的违章频次是否在增加？这些数据汇聚到云端，管理者可以清晰地看到哪些班组、哪些个人的安全意识薄弱，从而进行针对性的培训，而不是搞“一刀切”的说教。</p>
-<p>
-	此外，在发生事故或未遂事故（Near Miss）后，智能警示器内部存储的数据（如同飞机的黑匣子）能还原事发前几分钟的电场环境变化和人员轨迹，为事故分析提供客观铁证。</p>
-<p>
-	电力行业的特殊性在于，它的容错率为零。一次触电，对于电网来说可能只是一次跳闸，但对于一个家庭来说就是天塌地陷。电力智能安全警示器的进化史，本质上是人类对生命尊重的体现。从早期的被动防护，到如今的主动预警、全景监控，我们正在用算法和芯片构筑一道看不见的“防电墙”。</p>
-<p>
-	当然，无论设备多么智能，它永远只是辅助。真正的安全，依然源自每一位电力人内心对规章的敬畏。但至少现在，当疲惫袭来、当注意力涣散的那一瞬间，有一个不知疲倦的智能伙伴，会用最刺耳的声音，把你从死神的手里硬生生地拉回来。<br/><br/>
-	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[三防漆防水吗？]]></title>    <link>https://www.elecfans.com/d/7569096.html</link>    <guid>https://www.elecfans.com/d/7569096.html</guid>    <pubDate>2026-01-04 17:55:00</pubDate>    <description><![CDATA[<p>现代电子设备内部精密电路常面临潮气、凝露、液体溅洒及空气中盐雾、化学微粒的侵蚀，可能导致电路腐蚀、短路或失效。三防漆作为一种经典防护涂层，通过喷涂、浸涂等工艺，在元件表面形成致密的高分子保护膜。它不仅能阻隔液态水，更能有效延缓水蒸气渗透，从源头预防因潮湿引发的电路问题，是提升电子产品耐用性的关键手段。</p><img src="https://file1.elecfans.com/web3/M00/45/80/wKgZPGlaOK-AVA_8AACWtbEIcXg996.png" alt="wKgZPGlaOK-AVA_8AACWtbEIcXg996.png"/>三防漆防水吗？<p>在实际应用中，三防漆的价值广泛体现于<a href="https://bbs.elecfans.com/group_78" target="_blank"><u>汽车电子</u></a>、户外设备及<a href="https://www.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>等领域。无论是引擎控制单元面对的高温高湿环境，还是<a href="https://www.elecfans.com/v/tag/12732/" target="_blank"><u>无人机</u></a>所需的防雨防潮能力，或是工业控制板卡长期所处的复杂工况，三防漆都能在不改变元件外观的前提下，显著提升设备在恶劣环境下的适应能力与使用寿命。</p><img src="https://file1.elecfans.com/web3/M00/45/80/wKgZO2laOK-AYz95AACJLshveME524.png" alt="wKgZO2laOK-AYz95AACJLshveME524.png"/>三防漆防水吗？<p>实现有效防护需要科学选型与严谨工艺。丙烯酸、聚氨酯、有机硅等不同类型的三防漆在柔韧性、耐温性及施工特性上各有优势，用户需结合具体应用环境、<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>要求及生产条件进行选择。同时，基材清洁、膜厚控制与充分固化等工艺环节也至关重要，任何疏漏都可能影响最终防护效果。</p><img src="https://file1.elecfans.com/web3/M00/45/80/wKgZO2laOK-AKkwaAACExYLjCpQ868.png" alt="wKgZO2laOK-AKkwaAACExYLjCpQ868.png"/>三防漆防水吗？<p>三防漆是一项成熟可靠的防护技术。面对电子产品日益广泛的应用场景，只有根据实际需求合理选型，并严格执行工艺规范，才能充分发挥其防护价值，为电子设备的稳定运行提供坚实保障，这既是产品可靠性的基础，也是对用户负责的体现。</p><p/>]]></description></item><item>    <title><![CDATA[云里物里MTB11环境光补能资产标签荣获2025物联网可持续及能源效率奖]]></title>    <link>https://www.elecfans.com/d/7569077.html</link>    <guid>https://www.elecfans.com/d/7569077.html</guid>    <pubDate>2026-01-04 17:57:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	近日，云里物里的创新产品——MTB11环境光补能资产<a href="https://m.hqchip.com/tags" target="_blank"><u>标签</u></a>，凭借在低碳安全领域的突破性创新，成功斩获由loThinkTank颁发的“2025<a href="https://bbs.elecfans.com/group_57" target="_blank"><u>物联网</u></a>可持续及能源效率奖”。该奖项旨在表彰在节能环保与效率提升方面表现卓越的物联网解决方案。</p>
-<p style="text-indent:2em;">
-	作为全球首款量产的无电池、免维护的环境光采集<a href="https://www.elecfans.com/tags/蓝牙/" target="_blank"><u>蓝牙</u></a>标签，MTB11可将日常光线转化为电能，实现超长续航，显著减少电池更换与维护需求。其低功耗设计与精准定位功能，为智慧仓储、资产管理等场景提供了高效、低碳的解决方案。</p>
-<p style="text-indent:2em;">
-	此次MTB11获奖，核心意义在于其通过技术创新打破了物联网大规模部署困境——以 “环境光补能” 替代传统电池，实现稳定且免维护的长周期运营，使用寿命长达十年。这不仅符合全球 “双碳” 目标下物联网行业的绿色发展需求，更为制造业、医疗、仓储等对资产管控连续性要求高的领域，提供了更环保、更低成本的解决方案。</p>
-<p style="text-indent:2em;">
-	“可持续物联网需要既能减少浪费又能提升性能的方案。MTB11正是范例，它通过精心的工程设计，创造了长期价值，并减轻了运营负担。”loThinkTank机构成员乔丹·海耶斯（Jordan Hayes）对于 MTB11 的获奖给予了高度评价。</p>
-<p style="text-indent:2em;">
-	云里物里相关负责人表示：“获得此项国际殊荣，我们倍感荣幸。MTB11的研发初衷，正是为了破解物联网设备规模化部署后面临的能源消耗与维护难题。未来，云里物里将继续深化在绿色能源、超低功耗设计等领域的研发投入，推出更多符合可持续发展理念的物联网产品与解决方案，与全球合作伙伴一同，赋能千行百业智能化、绿色化转型。”</p>
-<p style="text-indent:2em;">
-	关于云里物里</p>
-<p style="text-indent:2em;">
-	深圳云里物里科技股份有限公司（股票代码：920374）是一家专注于物联网领域的高科技企业，致力于提供包括环境<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>、定位标签、人员/资产管理标签、中继器、防丢器、电子价签、物联网模组、物联网网关等<a href="https://bbs.elecfans.com/group_640" target="_blank"><u>智能硬件</u></a>产品。公司始终以创新为驱动，致力于通过先进的物联网技术，为客户和社会创造可持续的价值。</p>]]></description></item><item>    <title><![CDATA[九联科技入选首批惠州知名品牌企业名单]]></title>    <link>https://www.elecfans.com/d/7569087.html</link>    <guid>https://www.elecfans.com/d/7569087.html</guid>    <pubDate>2026-01-04 17:58:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	<span style="text-indent:2em;">近日，2025惠州市<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>行业创新发展大会隆重举行，惠州市认证行业协会正式发布首批"惠州<a href="https://www.hqchip.com/gongsi.html" target="_blank"><u>知名</u></a>品牌"企业名单。广东九联科技股份有限公司凭借卓越的品牌影响力、领先的技术实力和突出的行业贡献，成功入选这一重磅榜单。这不仅是对九联科技品牌价值的高度认可，更是其深耕惠州、赋能产业的又一重要里程碑。</span></p>
-<p style="text-indent:2em;">
-	作为惠州市本土成长起来的国家高新技术企业，九联科技自2001年成立以来，始终坚持以“畅联，推动高效和美好世界”为品牌核心，致力成为数字生活及智慧互联领先企业。在智能终端和<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>模块领域持续深耕，逐步成长为行业领军企业。此次荣获"惠州知名品牌"的殊荣，是对九联科技多年来品牌建设成果的集中体现，更是对产品品质、技术创新和服务能力的全方位肯定。</p>
-<p style="text-indent:2em;">
-	品牌的背后，是硬核实力的支撑。在此次入选"惠州知名品牌"之前，九联科技已收获多项重量级荣誉。荣获惠州市第一届政府质量奖，彰显九联科技在质量管理方面的卓越水平。入选广东省制造业单项冠军企业，凭借超高清智能网络（OTT TV）机顶盒领域的领先优势，成为全省制造业细分领域的标杆。这些荣誉的加成，不仅为九联科技的品牌注入了强大的公信力，更以品牌力量为产品赋能，推动企业在市场竞争中持续领跑。</p>
-<p style="text-indent:2em;">
-	在产品研发与创新方面，九联科技以品牌为引领，不断突破技术瓶颈，为用户提供高品质的产品和服务。凭借深厚的技术积淀，九联科技的产品在国内运营商市场占有率、OTT智能终端市场销量等多个维度均位居行业前列。已为上亿数字家庭用户提供数字终端设备，产品及售后服务已覆盖全国20多个省级行政区，全球20多个国家和地区。</p>
-<p style="text-indent:2em;">
-	九联科技将以此次获评"惠州知名品牌"为新起点，持续以品牌赋能产品，以创新驱动发展，在巩固行业领先地位的同时，充分发挥品牌引领作用，带动产业链上下游企业协同发展，为惠州市系统性推进品牌建设、提升区域产业竞争力做出更大贡献。</p>]]></description></item>  </channel></rss>
+	面向汽车产业智能化、网联化的加速升级，汇顶将继续深耕无线连接技术，凭借差异化的创新方案，助力车企打造更便捷、更安全的智慧出行体验。</p>]]></description></item>  </channel></rss>
