@@ -1,4 +1,499 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[LLM 量化技术概述及 AWQ 和 GPTQ 介绍 地平线智驾开发者 ]]></title>    <link>https://segmentfault.com/a/1190000047522881</link>    <guid>https://segmentfault.com/a/1190000047522881</guid>    <pubDate>2026-01-05 22:03:02</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>一、前言</h2><p>近期在学习 Qwen3 的模型结构时，看到了 Qwen 使用了 GPTQ 与 AWQ 量化方案，于是便萌生了介绍 LLM 量化技术的想法，笔者将用 2-3 篇文章，给读者们介绍大模型量化的技术。</p><p>量化是指将高精度计算的浮点型数据近似为低比特位数据（如 int16、int8、int4 等）的过程，此过程需在不显著损耗精度的同时，提升模型推理效率并降低内存占用。特别是在当前主流大语言模型（LLM）的参数量轻松突破万亿规模的情况下，量化技术对于高效低成本部署 LLM 尤为重要。而且由于 LLM 的参数量巨大，当前主流的模型都采用 PTQ 后量化技术，从而降低量化过程带来的成本。</p><p>在正式开始这篇文章之前，我们首先来了解一下 LLM 量化的相关概念。</p><h2>二、LLM 量化相关概念</h2><h3>2.1 LLM 量化常用的数值格式</h3><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047522883" alt="image.png" title="image.png"/></p><h3>2.2 LLM 量化对象</h3><p>在部署推理时，LLM 的量化对象与传统的 CNN 有所不同，除了权重与激活以外，还增加了 LLM 特有的 KV Cache。所以，LLM 的量化对象主要是权重、激活和 KV Cache。</p><ul><li><strong>​权重量化：​</strong>仅对 LLM 中的权重进行量化，常见的方法有 GPTQ （W4A16，权重量化为 INT4，激活保持 FP16/BF16）、AWQ（W4A16/W8A16）等；</li><li><strong>​激活量化：​</strong>对 LLM 中的激活进行量化，常见的方法有 SmoothQuant （W8A8）、LLM.int8（）等，由于激活分布范围大且动态变化，相比权重量化更具挑战；</li><li><strong>​KV​​ Cache 量化：</strong>在 LLM 推理中，为避免重复计算，会缓存 Attention 中的 Key/Value 向量（KV Cache）。<strong>​ ​</strong> KV Cache 的大小与 上下文长度线性相关，是长文本推理时的主要显存瓶颈。常见的方法有 KV Cache INT8/INT4 量化。</li></ul><p>LLM 的实际部署过程中，常见的量化方案包括：</p><ul><li>​<strong>W4A16</strong>​（GPTQ、AWQ） ：权重量化为 INT4，激活保持 FP16/BF16。</li><li><strong>W8A16</strong> ： 权重量化为 INT8，激活保持 FP16/BF16。</li><li>​<strong>W8A8</strong>​（SmoothQuant）： 权重和激活均量化为 INT8。</li><li><strong>KV​ Cache INT8</strong> ：缓解长上下文显存开销。</li></ul><p>下面，我们将对具体的量化方法进行介绍。</p><h2>三、主流 LLM 量化方法介绍</h2><p>Qwen 系列模型使用了 AWQ、GPTQ 和 llama.cpp 中的量化技术，且推荐使用 &lt;u&gt;<a href="https://link.segmentfault.com/?enc=8DJ5TZHSwDCTIH73t%2B2Niw%3D%3D.fbLVIYIWnbodwp3YCMW98WPm4WUSBgx61IBaDj%2BzD3XV1rNUxEk9aZr058dsEWck" rel="nofollow" target="_blank">AWQ</a>&lt;/u&gt; 结合 &lt;u&gt;<a href="https://link.segmentfault.com/?enc=XVIdwgDiybWZsOS2Y%2Bp0kQ%3D%3D.hadx1N9jExzpsq5SfS47Rhcb1OdGa2uO63qC8MX57Wo5HVEgfChKEVEfor5dTgtl" rel="nofollow" target="_blank">AutoAWQ</a>&lt;/u&gt;&lt;u&gt;，&lt;/u&gt;所以本节我们先介绍此方法。</p><h3>3.1&lt;u&gt; &lt;/u&gt;&lt;u&gt;<a href="https://link.segmentfault.com/?enc=8MiDzbOXcyZOhApcHW8TCw%3D%3D.SWX4Eyb6cN4n%2F58mgwMs5ItxIIMJVt7%2FD08F7KCpkyVyV9O1EQj%2BBPYC3le2ji%2BB" rel="nofollow" target="_blank">AWQ</a>&lt;/u&gt; 结合 &lt;u&gt;<a href="https://link.segmentfault.com/?enc=i%2B06%2BCnQVxPwyAn9R9htQw%3D%3D.lDnIPu7tEp1TpiCpQO3dWe75AlOsEwnGt40UutJ7zPDXiy%2FrTJE6DZonPxnl3JcD" rel="nofollow" target="_blank">AutoAWQ </a>&lt;/u&gt;量化方法介绍及使用示例</h3><p>&lt;u&gt;<a href="https://link.segmentfault.com/?enc=GDfihSl8dwBui2auZIluQw%3D%3D.oeuqy4TbuQ7BybmvcKoMLzgqZHgNMWl2w%2BKHDQ%2Bckcvwcd46s5KUpFjAaTUNQDob" rel="nofollow" target="_blank">AWQ</a>&lt;/u&gt; 全称为 ACTIVATION-AWARE WEIGHT QUANTIZATION，即<strong>​激活感知的权重量化，​</strong>是一种针对 LLM 的低比特权重量化的硬件友好方法。AWQ 在业界广泛应用，除了官方的支持&lt;u&gt;<a href="https://link.segmentfault.com/?enc=7sP1fAXYLnqW4jPgPZHBGw%3D%3D.VqKHLBpZIaBNKDbJW5F4s%2BCzOyDNi1ITyGFARlTtQb9wmkYka3Dwm2sRP1XlDuR8tMvl2qTTsabvJIxYlhFEQ%2FEGOgptji91to8ZWUyGDrs%3D" rel="nofollow" target="_blank"> llm-awq </a>&lt;/u&gt;外，&lt;u&gt;<a href="https://link.segmentfault.com/?enc=qvcwCbsJOi9rdOLCXNiEbg%3D%3D.U%2FskeQiU2%2B2Ikm0dcINXEGCqf40orudU2SFhGCOY1FmMXeIjj1uxm0ZB1F8eNN30sigpfvHOQHRIHWk%2BiMkq%2FxfUIte5YC5xNjN2dENtfo4%3D" rel="nofollow" target="_blank">AutoAWQ</a>&lt;/u&gt;、&lt;u&gt;<a href="https://link.segmentfault.com/?enc=QMn35M3%2FCdfjlo0RrH3UaQ%3D%3D.ptwp1axommyKV9iLKbS3PAu1ZquzFIzhaelNGxgy4XgiEBy%2F6pOi0fJjcwWaQnvVRB0XEpLeF8Y3u2e3Vzr1YLpYEJUNpFdRxfiGXULmf%2FCebM%2BCefPmlk9E5xdaDRRgnLIMXAsAe1tibvoUL17vzDRHV3SxIblMWzeZeTkQvfg%3D" rel="nofollow" target="_blank">vLLM</a>&lt;/u&gt;、 &lt;u&gt;<a href="https://link.segmentfault.com/?enc=ORIPuJ4WV%2F%2B9CKnde8Yapg%3D%3D.QM756mv2SydUqDabn86HQnUStg3UEPitxPWLNQzVYPwt8Cl6TmGLBfSGwaE%2Be9Evr2LrxJJ9Nbc1n51reTHgrLj4znaU442PK%2BgSEWjQPMo3zLNRFgMwmNhuMMOe0c5vbX1KcyXebH6a8kmbEDaTbg%3D%3D" rel="nofollow" target="_blank">HuggingFace </a>&lt;/u&gt;NVIDIA &lt;u&gt;<a href="https://link.segmentfault.com/?enc=KQkdccYxHS3pBsY6leD0UQ%3D%3D.eLg8motucPModyR26dA8B3vm6HRvAEBfG8kCxFmqn8eOArjQjKd%2B3wApllovD7BLuJMeyFKLFpw9GXd5zu6tbWOVbVOPJ65LD%2FGS4nRTTts%3D" rel="nofollow" target="_blank">TensorRT-LLM</a>&lt;/u&gt;、&lt;u&gt;<a href="https://link.segmentfault.com/?enc=aXC%2B3fpve3FMx8E7jD8pZQ%3D%3D.6GDNWvveF5eGenODXuqFqIui7F%2FPJIaQXnPRW%2F37IYaIWRflo0zG7mknUlwAYG5SQm9YoYAiqHUd%2FnT6fBARkiQCv967dUCcIBry2wtC6tXjPpF9b%2BuOnFMQNTEjJw3U" rel="nofollow" target="_blank">FastChat</a>&lt;/u&gt; 等主流模型或框架也提供了对 AWQ 的支持。</p><h4>3.1.1&lt;u&gt; &lt;/u&gt;&lt;u&gt;<a href="https://link.segmentfault.com/?enc=86yxSlSnCSyV8vDJJip7wA%3D%3D.XnZvhe7ok%2BWxRvBBt6tOsSAcFBNE1%2Behud8KsqvVPopnMuWcPIoY0kWSlXSwPyXN" rel="nofollow" target="_blank">AWQ</a>&lt;/u&gt; 量化技术原理</h4><p>&lt;u&gt;<a href="https://link.segmentfault.com/?enc=mQWBh8UlEHPfOYdU2aED%2Bg%3D%3D.k9jNo8K8y6jSM2pIMhK3crsS17VstDi%2BQERI8Htvud4pGmjIc8KTiki97dYF%2BfEb" rel="nofollow" target="_blank">AWQ</a>&lt;/u&gt; 作者认为：</p><ol><li>权重对于大语言模型的性能并不同样重要， 有一小部分（0.1%-1%）对模型精度影响较大的关键权重；跳过这些关键权重的量化将显著减少量化精度损失。</li><li>而且，关键权重对应于较大激活幅度的权重通道更加显着，因为它们处理更重要的特征，从而根据这个现象寻找关键权重。尽管将 0.1% 的权重保留为 FP16 可以在不明显增加模型大小的情况下提高量化性能，但这种混合精度数据类型会给系统实现带来困难（硬件效率低下）。</li><li>设计了一种 per-channel 缩放方法来自动搜索最佳缩放，从而减少显著权重的量化误差，这种方法不存在硬件效率低下的问题。</li></ol><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047522884" alt="" title="" loading="lazy"/></p><blockquote>PPL：即困惑度 Perplexity，是语言模型预测序列的平均不确定性度量。PPL 越小，表示模型越“自信”且预测越接近真实分布；PPL 越大，说明预测分布和真实分布偏差更大。</blockquote><p>上图是作者的实验，可以看出：</p><ul><li>左图：所有的权重都从 FP16 量化到 INT3，PPL 为 43.2；</li><li>中图：基于激活分布找到了 1% 的关键权重，将关键权重保持 FP16 精度，其余权重量化到 INT3，PPL 由 43.2 大幅下降至 13.0，但这种混合精度格式在硬件上运行并不高效；</li><li>右图： AWQ 执行 per-channel 缩放以保护关键权重从而减少量化误差，这里可以看到缩放 weight 后再做量化的 PPL 为 13.0，缩放本身未对精度产生影响。</li></ul><p>权重的缩放因子 s 为超参数，作者在<strong>​ OPT-6.7B ​</strong>模型上做了对比实验，发现当 s 比较大比如等于 4 时，非关键通道的相对误差将会增加（非显著通道的误差将被放大）。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047522885" alt="" title="" loading="lazy"/></p><p>为了同时考虑关键权重和非关键权重，AWQ 选择<strong>自动搜索最佳（每个输入通道）缩放因​</strong>子，使某一层量化后的输出差最小。这就把量化问题建模为如下的最优化问题：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047522886" alt="" title="" loading="lazy"/></p><p>为提升该过程的稳定性，我们通过分析影响缩放因子（scaling factor）选择的相关因素，为最优缩放比例（optimal scale）定义了一个搜索空间（search space）。如前一部分所述，权重通道（weight channels）的显著性实际上由激活值缩放比例（activation scale）决定（即 “激活感知性”，activation-awareness）。因此，AWQ 采用了一个极为简洁的搜索空间，具体如下：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047522887" alt="" title="" loading="lazy"/></p><p>其中 <em>α</em> 是用于平衡对关键 channel 与非关键 channel 的保护力度。通过在区间 [0， 1] 内执行快速网格搜索（grid search），可确定最优的 <em>α</em> 值（其中 ​<em>α</em>​=0 代表不进行缩放；​<em>α</em>​=1 代表在我们的搜索空间内采用最激进的缩放策略）。此外，论文中还引入了权重裁剪（weight clipping）操作，以最小化量化过程中的均方误差（MSE）。</p><h4>3.1.2 &lt;u&gt;<a href="https://link.segmentfault.com/?enc=EOmx0oCOYXXdXcA%2B4ivRYQ%3D%3D.cq2ynyqwQE0q8PhY0%2F3zvaFZk1a2NkUcCVbAVe2ZcnuhstnGh9SsDbQaqJOmfHC3" rel="nofollow" target="_blank">AWQ</a>&lt;/u&gt; 量化模型示例</h4><p>&lt;u&gt;<strong><a href="https://link.segmentfault.com/?enc=sba8sLrKQNS0zQCTRjQyGQ%3D%3D.2Wf4T00zDTfkRYygXxUznAm%2BeEh36ik1FbJWHwRb18sKZTSlCdx8vE59HKMgAb2Z" rel="nofollow" target="_blank">AWQ</a></strong>&lt;/u&gt;​<strong>​ 与 HuggingFace Transformers 无缝兼容</strong>​，加载模型后可以直接 <code>.quantize()</code> 做量化，相关使用流程如下。</p><h6>安装依赖</h6><pre><code class="Plain">pip3 install transformers accelerate autoawq</code></pre><h6>量化模型</h6><pre><code class="Plain">from awq import AutoAWQForCausalLM
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[Python可口可乐股票交易数据分析：KMeans-RF-LSTM多模型融合聚类、随机森林回归价格预]]></title>    <link>https://segmentfault.com/a/1190000047522953</link>    <guid>https://segmentfault.com/a/1190000047522953</guid>    <pubDate>2026-01-05 23:02:40</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>全文链接：<a href="https://link.segmentfault.com/?enc=nwhXLAiaA0RahvGsnQhReA%3D%3D.SRO4EfmLdRDHyndkpPJxzlVrxXdoxXQqEAbD88eRUIs%3D" rel="nofollow" title="https://tecdat.cn/?p=44707" target="_blank">https://tecdat.cn/?p=44707</a>  <br/>原文出处：拓端数据部落公众号  <br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047522955" alt="封面" title="封面"/></p><h3><a name="t1" target="_blank"/>关于分析师</h3><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047522956" alt="" title="" loading="lazy"/>  <br/>在此对Yichen Tang对本文所作的贡献表示诚挚感谢，他完成了数据科学与大数据技术专业的硕士学位，专注数据科学与大数据技术领域。擅长Python、C、SQL、机器学习、数据库、数据分析。  <br/>Yichen Tang曾参与多个数据分析与机器学习相关项目，在股票数据挖掘、金融时间序列分析、多模型融合建模等场景有丰富的实践经验，擅长将技术方法与业务需求结合，提供精准的数据分析解决方案。</p><h3><a name="t2" target="_blank"/>专题名称：金融时间序列分析与股票智能决策支持专题</h3><h3><a name="t3" target="_blank"/>引言</h3><p>从数据科学视角来看，金融市场的运行轨迹始终伴随着海量数据的产生，股票交易数据作为其中的核心载体，蕴含着市场供需关系、投资者情绪及企业价值的关键信号。在数字化转型浪潮下，如何通过数据挖掘与机器学习技术从历史交易数据中提取有效信息，为投资决策提供科学支撑，已成为金融领域的重要研究方向。可口可乐作为全球软饮料行业的龙头企业，其股票交易数据具有时间跨度长、市场覆盖广、数据质量高的特点，是开展金融时间序列分析的优质样本。  <br/>本文内容改编自过往客户咨询项目的技术沉淀并且已通过实际业务校验，该项目完整代码与数据已分享至交流社群。阅读原文进群，可与800+行业人士交流成长；还提供人工答疑，拆解核心原理、代码逻辑与业务适配思路，帮大家既懂怎么做，也懂为什么这么做；遇代码运行问题，更能享24小时调试支持。  <br/>本专题围绕可口可乐股票交易数据展开系统分析，核心目标是通过多维度数据挖掘与多模型建模，揭示股票价格波动规律、识别交易模式、量化特征影响权重并实现精准的短期价格预测。文章首先梳理了股票分析的业务背景与技术发展脉络，阐明多模型融合分析在金融决策中的必要性；随后依次展开数据获取与预处理、统计特征分析、可视化呈现、多模型建模与对比验证等工作；最终形成兼具理论参考与实践价值的分析结论，为投资者决策、风险管理及投资组合优化提供技术支撑。</p><h3><a name="t5" target="_blank"/>项目文件目录截图</h3><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047522957" alt="" title="" loading="lazy"/></p><h3><a name="t7" target="_blank"/>一、数据概述与预处理</h3><h4><a name="t8" target="_blank"/>1.1 数据获取</h4><p>在金融数据分析实践中，数据的可靠性直接决定分析结果的价值。本项目采用专业金融数据获取方式，从权威公开数据源采集可口可乐1962年至2025年的股票交易数据，该数据源经过严格的数据校验与整理，能确保数据的准确性与完整性。选取该数据源的核心原因在于其覆盖时间跨度长，可完整反映不同经济周期下股票的表现特征，为长期趋势分析与模式识别提供充足的数据支撑。  <br/>关键源码（变量名与语法优化后）：  <br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047522958" alt="" title="" loading="lazy"/>  <br/>数据介绍：</p><ul><li>数据规模：时间跨度从1962年至2025年，按日采集交易数据，包含数千条记录，可完整覆盖多个经济周期。</li><li>核心字段：包含日期（date）、开盘价（open）、最高价（high）、最低价（low）、收盘价（close）、调整后收盘价（adj_close）、交易量（volume）7个关键维度，全面涵盖股票交易的核心信息。</li><li>数据质量：初步核查显示无缺失值与重复值，数据完整性与一致性良好，为后续分析奠定了可靠基础。</li></ul><h4><a name="t9" target="_blank"/>1.2 相关Python包及说明</h4><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047522959" alt="" title="" loading="lazy"/></p><ul><li>pandas：用于数据读取、清洗、转换等处理操作，是数据分析的核心工具。</li><li>numpy：提供数值计算支持，高效处理数组、矩阵等数据结构。</li><li>scipy.stats.pearsonr：计算皮尔逊相关系数，量化变量间线性关联程度。</li><li>matplotlib.pyplot：基础可视化工具，绘制折线图、散点图等图表。</li><li>seaborn：基于matplotlib的高级可视化库，生成更美观的热力图等可视化结果。</li><li>sklearn.preprocessing：提供归一化（MinMaxScaler）、标准化（StandardScaler）等数据预处理功能。</li><li>sklearn.cluster.KMeans：无监督聚类算法，用于交易模式分类。</li><li>tensorflow/keras：深度学习框架，构建LSTM神经网络模型。</li><li>sklearn.model_selection.train_test_split：划分训练集与测试集，支持模型验证。</li><li>sklearn.metrics：提供均方误差（mean_squared_error）等模型评估指标。</li><li>sklearn.ensemble：包含随机森林回归（RandomForestRegressor）、梯度提升回归（GradientBoostingRegressor）等集成学习模型。</li><li>其他回归模型：LinearRegression（线性回归）、DecisionTreeRegressor（决策树回归）、KNeighborsRegressor（最近邻回归）、SVR（支持向量回归），用于多模型对比验证。</li></ul><h4><a name="t10" target="_blank"/>1.3 数据预处理</h4><p>数据预处理是保障建模效果的关键环节，本项目针对股票数据的特性，开展了三步核心预处理工作：</p><h5>1.3.1 缺失值检查</h5><p>目标：确认数据集中是否存在缺失值，避免缺失数据对分析结果产生偏差。  <br/>关键源码（变量名与语法优化后）：  <br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047522960" alt="" title="" loading="lazy"/>  <br/>预处理结果：数据集的每一列均没有缺失值，无需进行缺失值填充处理。</p><h5>1.3.2 重复值检查</h5><p>目标：剔除重复数据，保证数据的唯一性与准确性。  <br/>关键源码（变量名与语法优化后）：</p><pre><code># 检查数据集重复行数量duplicate_count = stock_data.duplicated().sum()print(f"重复行数量：{duplicate_count}")</code></pre><p>预处理结果：发现整个数据集均没有重复的行，无需进行重复值删除处理。</p><h5>1.3.3 归一化处理</h5><p>目标：将数据压缩至0-1区间，消除不同字段量级差异，适配机器学习模型的训练需求。  <br/>关键源码（变量名与语法优化后）：  <br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047522961" alt="" title="" loading="lazy"/>  <br/>预处理结果：每列数据的分布范围被压缩到0和1之间，并保留了数据的原始分布特征，可直接用于后续建模。</p><h3><a name="t11" target="_blank"/>二、统计分析与可视化</h3><h4><a name="t12" target="_blank"/>2.1 相关性分析（皮尔逊系数）</h4><p>分析目标：探究收盘价（close）与交易量（volume）之间的线性关联程度，为理解价格与交易活跃度的关系提供依据。  <br/>关键源码（变量名与语法优化后）：</p><pre><code># 导入相关性分析库from scipy.stats import pearsonr# 计算收盘价与交易量的皮尔逊相关系数及P值corr_coef, p_val = pearsonr(stock_data['close'], stock_data['volume'])print(f'皮尔逊相关系数：{corr_coef}')print(f'P值：{p_val}')</code></pre><p>分析结论：皮尔逊相关系数为0.47，介于0-0.5之间，表明收盘价与交易量存在中等强度的正线性相关关系；P值趋近于0，远小于0.05的显著性水平，说明该相关关系在统计上具有高度显著性，并非偶然形成。这一结果符合金融市场基本规律——价格波动往往伴随交易活跃度的变化。</p><h4><a name="t13" target="_blank"/>2.2 月度交易活跃度分析</h4><p>分析目标：统计1962年到2025年每个月份的平均单日交易股数，挖掘交易活跃度的季节性特征。  <br/>关键源码（变量名与语法优化后）：  <br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047522962" alt="" title="" loading="lazy"/>  <br/>分析结论：3月和9月的平均单日交易股数最高，显著高于其他月份，表明这两个月份市场交易最为活跃，可能与季度末业绩总结、市场促销活动或特定行业周期因素有关；8月的平均单日交易股数最低，可能受暑期假期、市场流动性下降或季节性需求疲软等因素影响；多数月份的平均单日交易股数集中在880万至980万之间，显示全年大部分时间交易活跃度相对稳定。</p><h4><a name="t14" target="_blank"/>2.3 年度成交量与价格趋势分析</h4><h5>2.3.1 年度成交量总和分析</h5><p>分析目标：统计1962年到2025年按年份的成交量总和，观察长期成交量变化趋势。  <br/>关键源码（变量名与语法优化后）：  <br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047522963" alt="" title="" loading="lazy"/>  <br/>分析结论：不同年份之间的成交量有较大的波动，早期1962-1966年成交量相对较低且数值接近；2021-2024年成交量明显较高，可能与市场发展、投资者关注度变化、宏观经济环境等因素相关；2025年成交量相比前几年有明显下降，或许暗示市场出现了不利于交易的因素。</p><h5>2.3.2 年度价格指标分析</h5><p>分析目标：按年份统计开盘价、最高价、最低价和收盘价的平均值，观察长期价格变化趋势。  <br/>关键源码（变量名与语法优化后）：</p><pre><code># 按年份计算价格指标平均值yearly_price = stock_data.groupby('year')[['open', 'high', 'low', 'close']].mean().reset_index()print(yearly_price.head())</code></pre><p>分析结论：随着年份的推移，可口可乐股票的开盘价、最高价、最低价和收盘价整体呈现上升趋势，反映出可口可乐公司长期经营向好，市场价值不断增长，公司盈利能力、市场地位等方面可能持续提升。</p><h4><a name="t15" target="_blank"/>2.4 数据可视化展示</h4><h5>2.4.1 月度交易股数折线图</h5><p>可视化目标：直观展示平均单日交易股数按月分布的波动特征。  <br/>关键源码（变量名与语法优化后）：</p><pre><code># 设置中文字体plt.rcParams['font.sans-serif'] = ['SimHei']plt.rcParams['axes.unicode_minus'] = False# 绘制折线图plt.plot(monthly_avg_volume['month'], monthly_avg_volume['按月平均单日交易股数'], color='deepskyblue')plt.xlabel('月份')plt.ylabel('平均交易股数', rotation=0, labelpad=30)plt.title('按月平均单日交易股数')plt.show()</code></pre><p>可视化展示：  <br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047522964" alt="" title="" loading="lazy"/>  <br/>分析结论：除3月、9月的高峰和8月的低谷外，其他月份的平均交易股数呈现一定波动。1月至2月呈上升趋势，3月后逐渐下降，4月至6月持续走低，7月进一步下降，8月触底后9月大幅回升，随后再次波动变化。这表明市场活跃度受多种因素影响呈现周期性波动。</p><h5>2.4.2 特征相关性热力图</h5><p>可视化目标：展示各特征间的相关系数，明确价格指标与交易量的关联强度。  <br/>关键源码（变量名与语法优化后）：</p><pre><code># 计算数值字段相关性矩阵corr_matrix = stock_data.drop(['date', 'month', 'year', 'day'], axis=1).corr()# 绘制热力图sns.heatmap(corr_matrix, annot=True, fmt=".2f", cmap='coolwarm', cbar_kws={'label': '相关系数'})plt.yticks(rotation=0)plt.title('数据特征相关性热力图')plt.xlabel('特征')plt.ylabel('特征', rotation=0)plt.show()</code></pre><p>可视化展示：  <br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047522965" alt="" title="" loading="lazy"/>  <br/>分析结论：价格指标间强正相关——开盘价、最高价、最低价、收盘价彼此间相关系数均为1.00，调整后收盘价与它们的相关系数为0.97，反映交易中价格体系的紧密联动性；交易量与各价格指标的相关系数介于0.44-0.48之间，属于弱相关，说明价格变化对交易量的直接影响不显著，二者关联不紧密。</p><h5>2.4.3 年度价格趋势图</h5><p>可视化目标：展示1962年至2025年可口可乐股票价格的长期变化趋势。  <br/>关键源码（变量名与语法优化后）：  <br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047522966" alt="" title="" loading="lazy"/>  <br/>可视化展示：  <br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047522967" alt="" title="" loading="lazy"/>  <br/>分析结论：1960-2020年左右股价整体呈上升趋势，1990年前增长平缓，之后快速攀升；开盘价与收盘价走势相近，股价波动相对稳定；在价格上升尤其是快速上升阶段，最高价与最低价差距增大，股价波动加剧。</p><h5>2.4.4 年度成交量总和柱状图</h5><p>可视化目标：展示1962年至2025年可口可乐股票成交量的长期变化趋势。  <br/>关键源码（变量名与语法优化后）：  <br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047522968" alt="" title="" loading="lazy"/>  <br/>可视化展示：  <br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047522969" alt="" title="" loading="lazy"/>  <br/>分析结论：从1960年到2025年左右，成交量总体呈上升趋势，早期年份成交量较低且增长缓慢，中间部分年份开始逐步攀升并出现明显增长态势，部分年份达到较高峰值，反映市场对可口可乐股票的关注度和交易活跃度不断提升；2025年成交量相较之前有明显回落，或暗示市场情况有所变化。</p><hr/><p><strong>相关文章</strong><img referrerpolicy="no-referrer" src="/img/remote/1460000047522970" alt="" title="" loading="lazy"/></p><h3><a name="t16" target="_blank"/>Python电力负荷预测：LSTM、GRU、DeepAR、XGBoost、Stacking、ARIMA结合多源数据融合与SHAP可解释性的研究</h3><p>原文链接：<a href="https://link.segmentfault.com/?enc=1YXqehQbQ8vZByLxYbqkbw%3D%3D.4axs6Ueb2MVcJKamgT8x6o5QrzwXtPX8s%2FUF7vvw0eY%3D" rel="nofollow" title="https://tecdat.cn/?p=44127" target="_blank">https://tecdat.cn/?p=44127</a></p><hr/><h3><a name="t17" target="_blank"/>三、多模型建模与分析</h3><h4><a name="t18" target="_blank"/>3.1 交易模式识别（KMeans聚类）</h4><p>建模目标：基于交易量和价格波动范围（最高价-最低价）对可口可乐股票的交易模式进行分类，探索数据中潜在的交易模式类别，理解市场交易行为的多样性。  <br/>关键源码（变量名与语法优化后，省略部分重复逻辑代码）：</p><p>可视化展示：  <br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047522971" alt="" title="" loading="lazy"/>  <br/>建模结论：将交易模式分为三类：低交易量/低价格波动类（集中在低交易量、低价格波动范围区域，反映交易不活跃且价格稳定的模式）、中等综合特征类（交易量与波动分布分散，反映多样化市场状态）、相对高波动/中等或偏高交易量类（分布在中等或较高价格波动范围及不同交易量区间，体现多样化的交易活跃程度与价格波动组合模式）。该模型为理解交易行为提供了有价值的视角，具体经济含义需结合更多市场背景信息分析。</p><h4><a name="t19" target="_blank"/>3.2 交易模式识别（层次聚类+高斯混合模型）</h4><p>建模目标：基于交易量和开盘价，利用层次聚类算法和高斯混合模型对交易模式进行分类，从不同角度挖掘市场交易特征。  <br/>关键源码（变量名与语法优化后）：  <br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047522972" alt="" title="" loading="lazy"/>  <br/>建模结论：</p><h5>样本数量分布：</h5><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047522973" alt="" title="" loading="lazy"/></p><h5>层次聚类散点图：</h5><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047522974" alt="" title="" loading="lazy"/>  <br/>蓝色点（agg_cluster为0）和绿色点（agg_cluster为1）在开盘价维度上分区明显：蓝色点集中在开盘价相对较高区域，绿色点集中在开盘价相对较低区域；成交量方面，蓝色点在整个成交量范围都有分布，且中高成交量区域更集中，绿色点主要集中在低成交量区域。这表明高开盘价时市场活跃度更高、交易更频繁，低开盘价时市场活跃度相对较低，两类交易情况存在显著差异，为研究股票交易行为和市场趋势提供数据支撑。</p><h5>高斯混合模型散点图：</h5><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047522975" alt="" title="" loading="lazy"/>  <br/>绿色点（gmm_cluster为1）占据大部分区域，蓝色点（gmm_cluster为0）仅在低开盘价区域少量分布，两类样本数量差异较大。蓝色聚类集中在低开盘价、低成交量区域且分布集中；绿色聚类覆盖宽开盘价范围，成交量在不同水平都有分布。该模型强调一种主要交易特征模式（绿色聚类），与层次聚类对数据结构的理解不同，提示需结合多种模型结论综合分析，更全面把握股票交易规律。</p><h4><a name="t20" target="_blank"/>3.3 特征重要性量化（随机森林回归）</h4><p>建模目标：用随机森林模型量化各特征对可口可乐股票收盘价的影响程度，明确不同特征在预测收盘价过程中的作用大小，为投资者和分析师提供精准决策依据。  <br/>关键源码（变量名与语法优化后）：  <br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047522976" alt="" title="" loading="lazy"/>  <br/>建模结论：模型均方根误差（RMSE）为0.153，预测误差较小，在预测收盘价任务上表现较好；特征重要性方面，高价（high）和低价（low）的重要性分别为0.5197和0.4655，是影响收盘价预测的核心因素，贡献最大；开盘价（open）重要性为0.0148，对模型有一定影响但远低于高、低价；成交量（volume）、年（year）、月（month）、日（day）的重要性趋近于0，对预测收盘价的贡献微乎其微，可在后续模型优化中简化或剔除这些特征。随机森林模型能较好地预测可口可乐收盘价，且高价与低价是主导预测的关键特征。</p><h4><a name="t21" target="_blank"/>3.4 短期价格预测（LSTM模型）</h4><p>建模目标：利用过去30天的开盘价、最高价、最低价、收盘价数据，构建LSTM模型预测未来1天的收盘价，挖掘价格序列的时间依赖关系，实现收盘价的定量预测。  <br/>关键源码（变量名与语法优化后，省略部分训练细节代码）：  <br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047522977" alt="" title="" loading="lazy"/>  <br/>可视化展示（预测结果）：  <br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047522978" alt="" title="" loading="lazy"/>  <br/>建模结论：训练过程中，验证集损失（val_loss）呈现波动变化，最终测试集均方根误差（RMSE）为0.0118，决定系数（R²）高达0.9909，表明模型对测试集数据的预测值与真实值高度契合，能精准捕捉价格序列的内在规律，具备出色的拟合能力与预测有效性，训练过程未出现明显过拟合或欠拟合问题。RMSE较小且R²趋近于1，反映模型预测误差极低、对数据的解释能力极强，可为投资者提供有参考价值的预测结果。但需明确，股票市场受宏观经济、政策导向、突发事件等多重复杂因素影响，该模型仅基于历史价格数据建模，实际应用中需融合更多元信息综合研判。</p><h4><a name="t22" target="_blank"/>3.5 多模型性能对比</h4><p>建模目标：通过计算RMSE和R²，对比线性回归、决策树回归、随机森林回归、梯度提升回归、最近邻回归、支持向量回归等模型对股票收盘价的预测准确性，筛选最适合的预测模型。  <br/>关键源码（变量名与语法优化后）：  <br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047522979" alt="" title="" loading="lazy"/>  <br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047522980" alt="" title="" loading="lazy"/>  <br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047522981" alt="" title="" loading="lazy"/>  <br/>建模结论：线性回归表现尚可（RMSE=0.0117，R²=0.9909），预测偏差极小、解释能力强，但未显式利用时间序列特性，需谨慎评估；LSTM模型作为时间序列模型，擅长处理时间依赖关系，契合股票数据特性，表现出色；决策树回归（RMSE=0.1637，R²=-0.7546）、随机森林回归（RMSE=0.1533，R²=-0.5384）、梯度提升回归（RMSE=0.1547，R²=-0.5675）的R²为负，预测效果不如“用均值预测”的基线模型，无法捕捉股票数据规律；最近邻回归（RMSE=0.1765，R²=-1.0397）和部分支持向量回归（如R²=-49.4584）的RMSE极大、R²极低，严重欠拟合或受异常值影响，无法提供有效预测。实际应用中，LSTM模型可作为优先选择，但需结合市场宏观因素、行业动态等外部信息综合判断股票走势。</p><h3><a name="t23" target="_blank"/>四、结论与应用方向</h3><h4><a name="t24" target="_blank"/>4.1 核心结论</h4><ol><li>交易模式特征：通过KMeans聚类、层次聚类、高斯混合模型三种算法从不同维度识别交易模式，KMeans将交易分为低交易量-低波动、中等综合特征、高波动-中等/偏高交易量三类；层次聚类基于开盘价和成交量划分高/低开盘价两类模式；高斯混合模型识别出以“高开盘价+全成交量范围”为主的核心模式，多模型互补验证了市场交易的多样性。</li><li>特征影响规律：随机森林模型证实，最高价和最低价是影响收盘价的核心因素，合计贡献超过98%，开盘价影响微弱，交易量和日期信息对收盘价的贡献可忽略，为模型优化提供了明确的特征筛选依据。</li><li>预测模型优势：LSTM模型在短期价格预测任务中表现最优，测试集RMSE仅为0.0118，R²达0.9909，远优于传统回归模型，能精准捕捉价格序列的时间依赖关系，具备实用的短期预测价值。</li></ol><h4><a name="t25" target="_blank"/>4.2 应用方向</h4><ol><li>投资决策辅助：投资者可结合LSTM模型的短期价格预测结果与多聚类算法识别的交易模式，制定差异化买卖策略。例如，在高波动-高交易量模式下，参考预测结果把握短期买卖时机；在低波动模式下，采取长期持有策略。</li><li>风险管理：利用价格波动预测与交易模式分析，设置合理的止损止盈点。针对高波动交易模式，提高风险警惕性，缩小仓位规模；针对低波动模式，可适当放宽风险阈值，提升资金使用效率。</li><li>投资组合优化：将可口可乐股票的分析结论纳入投资组合管理，结合其价格稳定性、预测趋势等特征，与高风险资产进行搭配，优化组合风险收益比，实现资产的多元化配置。</li><li>金融研究拓展：为金融领域的时间序列预测、市场微观结构研究提供实践案例，推动LSTM、多聚类算法等方法在股票市场分析中的应用深度与广度，助力探索更复杂的市场行为与规律。</li></ol><h3><a name="t26" target="_blank"/>五、问题与解决方法</h3><h4><a name="t27" target="_blank"/>5.1 日期数据格式不统一</h4><p>问题：原始日期字段存在字符串格式不规范（如不同年份表示方式、月份/日期补零问题），导致无法直接用于时间序列分析。  <br/>解决方法：使用pandas.to_datetime()函数统一转换日期格式，确保日期字段为datetime类型，并提取年份、月份、日等时间特征，便于后续统计分析和模型输入。</p><h4><a name="t28" target="_blank"/>5.2 模型过拟合风险</h4><p>问题：在构建LSTM模型时，训练集损失持续下降但验证集损失波动，可能出现过拟合。  <br/>解决方法：引入Dropout层（dropout_rate=0.2-0.3）抑制过拟合，同时采用早停机制（EarlyStopping）监控验证集损失，当损失连续10个epoch无改善时停止训练并恢复最优权重，有效保障模型的泛化能力。</p><h4><a name="t29" target="_blank"/>5.3 特征冗余与重要性筛选</h4><p>问题：初始特征包含开盘价、最高价、最低价、交易量、日期等，需确定哪些特征对收盘价预测贡献显著。  <br/>解决方法：通过随机森林模型量化特征重要性，筛选出最高价、最低价两个核心特征，剔除交易量、日期等冗余特征，优化模型输入维度，提升预测效率与准确性。</p><h4><a name="t30" target="_blank"/>5.4 时间序列数据建模复杂性</h4><p>问题：LSTM模型需要将历史数据转换为特定的时间步长格式（如过去30天数据预测未来1天），数据预处理逻辑较复杂。  <br/>解决方法：定义create_dataset函数，将归一化后的价格数据按时间步长分割为输入序列（X）和目标值（Y），确保输入数据维度符合LSTM模型要求（[样本数，时间步长，特征数]），并通过train_test_split按时间顺序划分数据集（不打乱顺序），保留时间序列的时序性。</p><h4><a name="t31" target="_blank"/>5.5 可视化结果解读偏差</h4><p>问题：相关性热力图中价格指标间强相关（相关系数≥0.97），但交易量与价格指标弱相关，需验证是否存在数据清洗不彻底或特征工程疏漏。  <br/>解决方法：重新检查数据预处理步骤，确认无缺失值、重复值，且归一化方法（MinMaxScaler）未破坏数据分布；结合金融理论分析，交易量与价格的弱相关性符合市场实际（价格波动可能由供需以外的因素驱动），最终确认可视化结果合理。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047522955" alt="封面" title="封面" loading="lazy"/></p>]]></description></item><item>    <title><![CDATA[【TVM教程】TVM 运行时系统 超神经HyperAI ]]></title>    <link>https://segmentfault.com/a/1190000047523011</link>    <guid>https://segmentfault.com/a/1190000047523011</guid>    <pubDate>2026-01-05 23:02:08</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>TVM 现已更新到 0.21.0 版本，<a href="https://link.segmentfault.com/?enc=q1YOstl8pnZkC0019%2BCsVg%3D%3D.aLUDlAmEScaBADcr%2Bi8a1hjhlKiAqahR6m2S4x0HcttRD6t8uhwkk8uH2IgjiQkk3K7kTasQOcnc3jnxwzi%2FQg%3D%3D" rel="nofollow" target="_blank">TVM 中文文档</a>已经和新版本对齐。</p><p>Apache TVM 是一个深度的深度学习编译框架，适用于 CPU、GPU 和各种机器学习加速芯片。更多 TVM 中文文档可访问 →<a href="https://link.segmentfault.com/?enc=7KxG8j97eUTNSOp9wwvEBw%3D%3D.kSAOmcyKjWt05GMBg9NAKj2h0W4yeOw2ER86FehXrELlc3fw7FUNiTsXT%2F2k0uLpGfy%2FggmeL5dch7aap9RS%2BA%3D%3D" rel="nofollow" target="_blank">Apache TVM</a></p><p>TVM 支持多种编程语言用于编译器栈的开发和部署。在本说明中，我们将解释 TVM 运行时的关键组成部分。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047523013" alt="" title=""/></p><p>VM 的运行时系统需要满足多种看似相互矛盾但又非常关键的需求：</p><ul><li>部署（Deployment）：能够在 Python / JavaScript / C++ 等语言中调用已编译的函数。</li><li>调试（Debug）：允许用户在 Python 中定义函数，并从已编译的代码中反向调用。</li><li>链接（Linking）：需要编写驱动端代码来调用设备端实现（如 CUDA kernel），并且运行时需要能从主机端代码中调用它们。</li><li>原型开发（Prototyping）：支持在 Python 中创建 IR Pass，并能从 C++ 后端调用。</li><li>接口暴露（Frontend Exposure）：编译器的核心逻辑由 C++ 实现，但必须便捷地暴露给 Python 等前端语言。</li><li>实验与部署（Experiment &amp; Deployment）：能够将编译好的函数直接传输并运行在嵌入式设备上。</li></ul><p>我们希望能够在任何语言中定义函数并在另一种语言中调用。我们还希望运行时核心尽可能小，以便部署到嵌入式设备上。</p><h2>PackedFunc<a href="https://link.segmentfault.com/?enc=1%2B8uQMvYpYn5FD9LEn1sjg%3D%3D.87OI80R6BlLGYRdNs7pg%2BDgb2NPkpbF%2BDyyJxcqa3DUG0lqvT%2ByMSe4kMHYDpqjVMF1MgUKbsYkzr5SMw72KaLlRbZtMUq1Anl%2BmcUMAJmx%2BvU0dmH2mUAUCEQ5nk3syJ0SpjdgHKqNNwAcQEhRhf%2BYHkvklWfEqWhs8fka9lH8%3D" rel="nofollow" target="_blank">​</a></h2><p><a href="https://link.segmentfault.com/?enc=WT%2BMU8ODu0nMBIck%2B4n7ng%3D%3D.8KYoBnhfTtLqX0g3gF7KGrb0S8nmgWkdUfCE1Ls520aOzwKbmDHI2ADfmKqP0OPkcIiQdkvOY1u8nrVV7VigXDnPxsyGiYK8qrlsg4IJj22RNipQyDZgVkN9Gdk%2FhDUasq77YuoPUs8u5Er4NBrdyA%3D%3D" rel="nofollow" target="_blank">PackedFunc</a>是我们找到的一个简单但优雅的解决方案来解决列出的挑战。 一个 <code>PackedFunc</code> 对象就表示一次函数调用，而调用方和被调用方可以处于不同的语言环境中。</p><p>下面的代码块提供了一个 C++ 示例</p><pre><code>#include &lt;tvm/ffi/function.h&gt;
+
+void MyAdd(ffi::PackedArgs args, ffi::Any* rv) {
+  // automatically convert arguments to desired type.
+  int a = args[0].cast&lt;int&gt;();
+  int b = args[1].cast&lt;int&gt;();
+  // automatically assign value return to rv
+  *rv = a + b;
+}
+
+void CallPacked() {
+  PackedFunc myadd = PackedFunc(MyAdd);
+  // get back 3
+  int c = myadd(1, 2);
+}
+</code></pre><p>在上面的代码块中，我们定义了一个 PackedFunc MyAdd。它接受两个参数：<code>args</code> 表示输入参数，<code>rv</code> 表示返回值。该函数是类型擦除的，这意味着函数签名不会限制传入或返回值的类型。在底层，当我们调用一个 PackedFunc 时，它会将输入参数打包成 ffi::PackedArgs 放在栈上，并通过 ffi::Any 获取返回结果。</p><p>得益于 C++ 中的模板机制，我们可以像调用普通函数一样调用 PackedFunc。由于其类型擦除的特性，我们可以在诸如 Python 这样的动态语言中调用 PackedFunc，而不需要为每一种新函数类型额外编写 glue 代码。下面的例子展示了如何在 C++ 中注册一个 PackedFunc，并在 Python 中调用它。</p><pre><code>// register a global packed function in c++
+TVM_FFI_STATIC_INIT_BLOCK() {
+  namespace refl = tvm::ffi::reflection;
+  refl::GlobalDef().def_packed("myadd", MyAdd);
+}
+</code></pre><p>&lt;!----&gt;</p><pre><code>import tvm
+
+myadd = tvm.get_global_func("myadd")
+# prints 3
+print(myadd(1, 2))
+</code></pre><p>PackedFunc 的大部分「魔力」来自 <code>ffi::PackedArgs</code> 和 <code>ffi::Any</code> 这两个结构。我们对可传递的类型做了限制，常见的类型包括：</p><ul><li>int、float 和 string</li><li>PackedFunc 本身</li><li>Module，用于表示已编译模块</li><li>DLTensor*，用于张量对象交换</li><li>TVM Object，用于表示 IR 中的任意对象</li></ul><p>这种限制使得实现变得简单，无需序列化。即使实现精简，PackedFunc 在深度学习部署的场景中依然绰绰有余，因为大多数函数只需要处理 DLTensor 或数字。</p><p>由于一个 PackedFunc 可以将另一个 PackedFunc 作为参数传递，因此我们可以将 Python 中的函数（转换为 PackedFunc）传递给 C++。</p><pre><code>TVM_FFI_STATIC_INIT_BLOCK() {
+  namespace refl = tvm::ffi::reflection;
+  refl::GlobalDef().def_packed("callhello", [](ffi::PackedArgs args, ffi::Any* rv) {
+    ffi::Function f = args[0].cast&lt;ffi::Function&gt;();
+    f("hello world");
+  });
+}
+</code></pre><p>&lt;!----&gt;</p><pre><code>import tvm
+
+def callback(msg):
+  print(msg)
+
+# convert to PackedFunc
+f = tvm.convert(callback)
+callhello = tvm.get_global_func("callhello")
+# prints hello world
+callhello(f)
+</code></pre><p>TVM 提供了一个最小化的 C API <a href="https://link.segmentfault.com/?enc=RDbWfrwMAGAB4PnSK%2BLHqw%3D%3D.9pVTVNjYBib6MLRRWp5cF7Z%2BLY2kw6DLCbj4lVlTxNtEORaksEgOSkUPIJTf5VVfFVuut4PWmgwgMXBRYQmwy7L3fsqlXEOurVeNgLT2O5d7HGoQlWl3JQgBLdVqviZqZOPq3GHu6iHjP3exChSesg%3D%3D" rel="nofollow" target="_blank">minimum C API</a>，它允许我们将 PackedFunc 嵌入到任意语言中。除了 Python 以外，目前还支持 <a href="https://link.segmentfault.com/?enc=48K1fBGz8StIpZm9fN4TRg%3D%3D.YvnnKZl5zLx7LJ8cSZzp%2FQOkqnodnMHfxLIST7SDdNuaNrKOiY6V4t2EnQyxhIAW4dG8BAXnVjF3ohdlv5JUlaI27LnDrXhutvzy2gz%2FE5A%3D" rel="nofollow" target="_blank">java</a> 和 <a href="https://link.segmentfault.com/?enc=o0vdIVl5Pp5683A9lAKZnQ%3D%3D.8Cpe%2F%2FKoXE1w8ifueKPVPgxQZ7y0TtTDecNgshu3vVwGbyluvNv28uOWa2eyaFL8HfQgy86rdGpUkbAKcRR3PwsZ2k%2Fn2cEcBDK6Vi51h9Q%3D" rel="nofollow" target="_blank">javascript</a>。这种嵌入式 API 的设计理念与 Lua 很相似，只不过我们并没有创造一门新的语言，而是直接使用了 C++。</p><p>关于 PackedFunc 有一个有趣的事实：我们在编译器栈和部署栈中都使用它。</p><ul><li>TVM 中所有编译器 Pass 函数都以 PackedFunc 的形式暴露给前端</li><li>已编译模块同样以 PackedFunc 的形式返回已生成的函数</li></ul><p>为了保持运行时尽可能精简，我们将 IR Object 支持从部署运行时中分离开来。最终生成的运行时大小大约为 200K - 600K，具体取决于包含的运行时驱动模块数量（例如 CUDA）。</p><p>调用 PackedFunc 相比普通函数的开销很小，只多做了一些栈上值保存。因此，只要不频繁包装非常小的函数，这样的开销是可以接受的。总的来说，PackedFunc 是 TVM 的通用“胶水层”，我们在编译和部署模块中都大量依赖它。</p><h2>组件<a href="https://link.segmentfault.com/?enc=I5H5sY4%2FyIaLOOOX%2BhUwlQ%3D%3D.EOfRVyf250XCiyY6%2F17oqYd3iTwk1B0iXvTXPIBc0PTzjLiUNA68Za0dkaLX6WG%2Bbgs53t87dPHEvg1x6WgxQkZwYnhurYK8cuveDBWY%2FSDjqFic7%2BlUeYQiDy3%2BFyfKBXIOoyJ2k5w4Fe%2Bh82SMO%2B6v%2BiZ0yq06DjZa%2BZeLKC%2FaN%2B1h1Tzn6SYPILfKPSEa" rel="nofollow" target="_blank">​</a></h2><p>由于 TVM 支持多种不同类型的硬件设备，我们也需要支持对应的不同驱动程序。我们必须使用这些驱动 API 来加载内核、以打包形式设置参数并启动内核执行。同时，我们还需要对驱动 API 进行封装，以确保暴露给用户的接口是线程安全的。因此，我们通常会在 C++ 中编写这些驱动层 Glue 代码，并通过 PackedFunc 将其暴露给用户。显然，我们不可能为每类函数都单独编写接口，因此 PackedFunc 再次成为解决方案。</p><p>TVM 将编译结果抽象为一个 <a href="https://link.segmentfault.com/?enc=6ETUY3OXmJ0ivWf%2BuSsQgw%3D%3D.Vr%2Bn7LhEu89Vhj5%2BeCLKVI2kZbCEehoF0hgk3KEJsld9fLIVAHhBV6NNA5SAy2wOKNil%2Fm8J8ibYnkdK2uTJf01zSmrRrvueDnQDzjdDuBAeOaskcsd%2FzgfjewYEFrH3yHoQ8ghS3jMUpAViqNvPLQ%3D%3D" rel="nofollow" target="_blank">Module</a>。</p><p>用户可以从 Module 中以 PackedFunc 的形式获取已编译函数。生成的代码在运行时可以动态地从 Module 中获取目标函数，并在第一次调用时缓存句柄，后续复用。这使得我们可以在生成代码中链接设备端函数，并调用任意 PackedFunc（例如 Python 回调）。</p><p>ModuleNode 是一个抽象类，不同设备类型可以各自实现。例如，我们已支持 CUDA、Metal、OpenCL 以及动态库（Shared Library）。这种抽象设计使得引入新设备变得简单，而无需重新生成每种设备的主机端代码。</p><h2>远程部署<a href="https://link.segmentfault.com/?enc=QI0yIjatdNgvYKSNgkkNFw%3D%3D.cdVqSG0UBWaHqlINkbMLDDFRskZgisQOWyjFeaVQ07rgIundtmMENJmX%2FQJTQ4sR1tBFvCLIUyQfXsSDVZtrduT00BoZdNSbaYIonxxotUwKas%2Fg7C3vpRX3NGfN2JalH3m%2FOl8MU2GAF%2Fb9NVXAnm3avu%2Bz2sORsJvbtIzpmnXquTF%2FDfhDezjKjo8mMsO8c2wxfCJ75%2FgofERUotzX4sKF08PSj0SYHoaFONyt%2FNk%3D" rel="nofollow" target="_blank">​</a></h2><p>PackedFunc 和 Module 系统也使得我们可以将函数直接部署到远程设备上。在底层，我们提供了一个 RPCModule，它负责序列化参数、进行数据传输，并在远程设备上启动计算。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047523014" alt="" title="" loading="lazy"/></p><p>RPC 服务器本身非常精简，可以直接与运行时一起打包。我们可以在 iPhone、Android、树莓派甚至浏览器中启动一个最小化的 TVM RPC 服务器。交叉编译、模块打包与测试都可以在同一个脚本中完成。更多细节可参考 <code>tutorial-cross-compilation-and-rpc</code>。</p><p>这种即时反馈带来了显著优势。例如，当我们希望验证生成的代码在 iPhone 上的正确性时，不再需要手动用 Swift/Objective-C 重写测试样例——我们可以直接使用 RPC 在 iPhone 上执行代码，将结果复制回主机，并使用 numpy 进行验证。同样，我们也可以使用同一个脚本进行性能分析。</p><h2>TVM 对象与编译器栈<a href="https://link.segmentfault.com/?enc=vI6Yv5uyw%2FTgVWws5EdA5A%3D%3D.I6U%2FpDBNa%2BLEZjT9Pp8SF2jKoK2s6FKYNe5wDv3u0xl6vQDDgNCTP4L32YXsdMRsG7PTX6A9uC7jwJW7%2Fu8kcKy3tTBq%2Bwf183yuxG2HQYUhRp2F1I8OGwfu%2FdWxdNsaH5ehEoyV%2BCJh7BpPtLeg8B0T2rkZaJcR7kyCQErPsIOHVVEs%2B39lVM6Gh3%2FLs3oXdNAu6Q7fU8zSsb4XSYeiMd7jkHeWtlM89Qy%2Bb%2Bz1HsWXg8ktN11fW38bi4T8%2FDjI%2FKN9xvN9ylfULRHI7rkMPZ4Ll%2B80aIycfsZq0gs7QIc%3D" rel="nofollow" target="_blank">​</a></h2><p>如前所述，我们在 PackedFunc 运行时系统之上构建了编译器栈的 API。由于研究需求，编译器 API 经常需要不断变化。当我们想要测试新的语言原语时，就需要引入新的语言对象或 IR 节点。但是我们又不希望频繁修改 API。此外，我们还希望：</p><ul><li>能够序列化任意语言对象和 IR；</li><li>能够在前端语言中探索、打印和操作 IR 对象，以便进行快速原型开发。</li></ul><p>为了解决这些问题，我们引入了一个基类<a href="https://link.segmentfault.com/?enc=EOvnoNFwTReA0T5NpPy5Gw%3D%3D.78E7yCXUZkbiwQefZ0Lz6tcZ9qUYP4toZgYKP9MuJQZpT%2BSbWozyMA9ubaRbCanlXLBrTFb%2F7z7MSnP5JYY6hWiZB9krsKQicgmwRut32Kf7qeF9JXQfbjjc7622WFYL%2FMLUzZeljepFp3YMK3mo6A%3D%3D" rel="nofollow" target="_blank">Object</a>。 编译器栈中的所有语言对象都是 <code>Object</code> 的子类。每个对象都包含一个字符串 type\_key，用于唯一标识对象类型。我们选择字符串而不是整数作为类型键的原因是：这样可以以去中心化方式添加新的 <code>Object</code> 类，而无需往中心仓库中添加代码。为了加速调度，我们会在运行时为每个 type\_key 分配一个整数 type\_index。</p><p>由于一个 <code>Object</code> 通常会在语言中被多个地方引用，我们使用 shared\_ptr 来管理对象引用。<code>ObjectRef</code> 类用于表示对 <code>Object</code> 的引用，可以将其视为指向<code>Object</code>容器的 shared\_ptr。我们也可以定义 <code>ObjectRef</code> 的子类来对应不同的 <code>Object</code>子类型。每个 <code>Object</code> 子类都需要实现 RegisterReflection 函数。</p><p>每个<code>Object</code>子类会重写该函数来注册其成员。下面是 IntImmNode 的示例实现：</p><pre><code>class IntImmNode : public PrimExprNode {
+public:
+  /*! \brief the Internal value. */
+  int64_t value;
+
+  static void RegisterReflection() {
+    namespace refl = tvm::ffi::reflection;
+    refl::ObjectDef&lt;IntImmNode&gt;().def_ro("value", &amp;IntImmNode::value);
+  }
+  TVM_FFI_DECLARE_OBJECT_INFO_FINAL("ir.IntImm", IntImmNode, PrimExprNode);
+};
+// in cc file
+TVM_FFI_STATIC_INIT_BLOCK() { IntImmNode::RegisterReflection(); }
+ </code></pre><p><code>RegisterReflection</code>为我们提供了一个反射接口，用于注册对象的成员。我们可以利用这个函数递归地访问并序列化任何语言对象。同时，它也使我们可以在前端语言中轻松访问对象的字段。例如：</p><pre><code>import tvm
+
+x = tvm.tir.IntImm("int32", 1)
+# access the value field of IntImmNode
+print(x.value)
+</code></pre><p>新的 <code>Object</code> 可以仅在 C++ 中添加而无需修改前端运行时，从而方便扩展编译器栈。需要注意的是，这种机制不是访问成员的最高性能方式，但它是最简单的方法之一。我们发现这种方式非常适合我们的目的：用 Python 进行测试和原型开发，而真正的计算和重工作交由 C++ 完成。</p><h2>实现细节<a href="https://link.segmentfault.com/?enc=sDk%2BGBvzRMKMNHbvpBKbSw%3D%3D.jJPgqRHc%2BLiYvG8H5wsS%2BdCxUCfBqceX0YiJLOoNt%2FXzrAy1iupUzWIM2f%2B72jEp1gNjpwIbF7QtWkfHDLDm9tmtRdlEFdlrNciGpxK8cZ6KFvq%2BRy%2B%2B7GQKTcDKMnVVjv3om3P%2F0NvzeRFBlAahLqn6Fyrav6lXqfIMhEWmb7IwjCnnMdjLHomHY25aXZyp4BH0KSm9ssMH2DKvcnsaDCI4h6mRTkfBq5P0hOiHrSY%3D" rel="nofollow" target="_blank">​</a></h2><p>PackedFunc 中的每个参数由一个联合体 <a href="https://link.segmentfault.com/?enc=z%2BumvbC%2FxbVW5kEBLRTJNQ%3D%3D.4HBHuXlNvGcasOxFCL74cMDjegKc12fOnmXnHYxKbKm6JQaJppfdCeayquq2rpaVDDbRttUixNJ%2BA%2BE5rauAWg%2BqMgsIxGvB%2BPEJ1PbSpWCQgS1Jih138fNkLoc4o6Ru6QalF5WgJ%2FkKVySa9%2BLriw%3D%3D" rel="nofollow" target="_blank">TVMValue</a> 和一个类型码组成。这样的设计使得动态类型语言可以直接转换到对应类型，而静态类型语言则可以在转换过程中执行运行时类型检查。</p><p>相关文件包括：</p><ul><li><a href="https://link.segmentfault.com/?enc=A7LCBKKXkQaCnXout1AqQQ%3D%3D.CxpHfTy6Rty94NAKNmPTyud4WyUeaWNf4xQgk%2Bvy53AObVFCIb6Wx3WqWYzf9GxmnA3Gip66a8TOhSs9N34xDPDGfPxfmlMQkuaZTVo9ZlpVCDMuW65dEpcWMoubMzCe4UHtMoeNCEK7Sq%2F453i0lw%3D%3D" rel="nofollow" target="_blank">packed\_func.h</a> —— C++ API</li><li><a href="https://link.segmentfault.com/?enc=6DPMS4MZg8pKn1c7sWVySA%3D%3D.ks7Ax7YwTM7YJNycFXp7K20jGIyvMBY5qyuC48zxpnR0wfU8o7%2FjFzc3qe%2FoW%2Fw%2FJ7bWAcjoW77idSkeaB2zr2PUwGHP%2BdFSvhJJ%2BqygQR%2BIfYQy84FnUXIo0lHTKZ8x2f6VCd19m%2FQjBV6tGkLMBQ%3D%3D" rel="nofollow" target="_blank">c\_runtime\_api.cc</a> —— C API 以及如何提供回调支持</li></ul><p>为了支持扩展类型，我们使用了一个注册表系统来注册类型相关信息，例如允许 C++ 中对 <code>any</code>的支持。更多详情可参考：<a href="https://link.segmentfault.com/?enc=%2FxtMBQ4a2Xx8So3VHV4nkw%3D%3D.FLqWL1dZmZuQBttang4jRpuFL3YuPjvGNdmwQax7E1tiHkKJNOp9SQM9FTUwxDpH5bP04wBI6MltRaC9sZondDQpY1QJ94XLx2tYEwRvz%2FvwoFuiN%2FTKyiG%2BMbFtjmih" rel="nofollow" target="_blank">Extension types</a>。</p><h2>与运行时相关的信息</h2><ul><li>Vulkan Runtime</li></ul>]]></description></item><item>    <title><![CDATA[Cursor AI Skills 实战：自动生成 Flutter 页面、代码与文档 独立开发者_猫哥]]></title>    <link>https://segmentfault.com/a/1190000047523016</link>    <guid>https://segmentfault.com/a/1190000047523016</guid>    <pubDate>2026-01-05 23:01:27</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>Cursor AI Skills 实战：自动生成 Flutter 页面、代码与文档</h2><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047523018" alt="flutter skills" title="flutter skills"/></p><h3>视频</h3><p><a href="https://link.segmentfault.com/?enc=sino%2B5ikxN1IXReESKTB7Q%3D%3D.ifUbiVlyXY0oZokmJs9kT%2FmeHKKTpOOGL4CDyIPNa0U%3D" rel="nofollow" target="_blank">https://youtu.be/UeJYlTpm4ek</a></p><p><a href="https://www.bilibili.com/video/BV1xpipBYE24/" target="_blank">https://www.bilibili.com/video/BV1xpipBYE24/</a></p><h3>前言</h3><p>本文系统介绍如何使用 Cursor AI Skills 自动生成 Flutter 页面、初始化项目结构，并持续维护项目技术文档。适合 Flutter 开发者与 AI 编程实践者，快速构建高效、可复用的 Flutter 开发工作流。</p><blockquote>原文 <a href="https://link.segmentfault.com/?enc=OdkpjiFTEYGUpUbiwgZ%2BQw%3D%3D.eThjUBJ1ldH8yGTNV3ppffnevAwYwTpL0l5hNBfFdL1%2F4i06K%2FnaVDx0bO6%2Fa71zANmCL7MhPuFYB8IdBuLj4g%3D%3D" rel="nofollow" target="_blank">使用 Cursor AI Skills 实现 Flutter 自动化开发（完整指南）</a></blockquote><p>分类: Cursor AI / Cursor AI Skills、Flutter / Flutter AI、AI 编程 / AI 代码生成</p><h3>参考</h3><ul><li><a href="https://link.segmentfault.com/?enc=Plg5AwjpbgztBH4l%2F8TNsQ%3D%3D.ImSnxPxm8zzkaTri%2BrANnY5IaR3Sx64tyjL6M%2FCXQliEn3InmQhbu%2Fr%2F24uoyo7i" rel="nofollow" target="_blank">Cursor Agent Skills</a></li><li><a href="https://link.segmentfault.com/?enc=TjRSFuqzNi6tVLweNFZBzg%3D%3D.FnIPBB5pH7RZSEoF3eGcoWho2q4pJs3zsN9B%2FVsmpWPpnUqE8D2ro%2Fs%2BQ%2BeIhRdE" rel="nofollow" target="_blank">Claude Agent Skills</a></li></ul><h3>正文</h3><h4>配置 Cursor 支持 Skills</h4><p>进入 Cursor Setting -&gt; Beta , Update Access 选择 Nightly，升级后重启。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047523019" alt="Update Access 选择 Nightly" title="Update Access 选择 Nightly" loading="lazy"/></p><p>在 Rules, Subagents，Commands 面板下，开启 Import Agent Skills 重启。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047523020" alt="开启 Import Agent Skills" title="开启 Import Agent Skills" loading="lazy"/></p><blockquote>重启后 claude 、codex 的 skills 就会全局可用。</blockquote><h4>例子 1： Flutter创建页面组手（全局）</h4><p>编写文件 .codex/skills/Flutter创建页面组手/SKILL.md</p><pre><code class="markdown">---
+name: "Flutter创建页面组手"
+description: "Flutter 项目中创建页面"
+---
+
+# Flutter创建页面组手
+
+按规则生成空页面脚手架代码。
+
+## 读取变量
+
+- 读取 [保存目录]
+- 读取 [业务名称]
+- 通过 [业务名称] 生成 [业务代码] (我的页面 -&gt; my_page)
+- [业务代码] 使用规则举例如下:
+  - 文件名 my_page
+  - 类名 MyPage
+  - 变量名 myPage
+  - 接口名 IMyPage
+
+## 约束规则
+
+页面必须包含在 lib/pages 目录下面
+
+## 页面目录
+
+如果 [业务代码] 时 my_page，目录结构如下:
+
+- [保存目录]
+  - my_page             // 业务目录
+    - widget            // 业务组建
+    - view.dart         // 视图代码
+    - controller.dart   // 控制器代码
+    - index.dart        // index 导包代码
+
+## 页面代码
+
+如果 [业务代码] 时 my_page，代码如下:
+
+- index.dart        // index 导包代码
+
+```dart
+library;
+
+export './controller.dart';
+export './view.dart';
+```
+
+- controller.dart   // 控制器代码
+
+```dart
+import 'package:get/get.dart';
+
+class MyPageController extends GetxController {
+  MyPageController();
+
+  _initData() {
+    update(["my_page"]);
+  }
+
+  void onTap() {}
+
+  // @override
+  // void onInit() {
+  //   super.onInit();
+  // }
+
+  @override
+  void onReady() {
+    super.onReady();
+    _initData();
+  }
+
+  // @override
+  // void onClose() {
+  //   super.onClose();
+  // }
+}
+```
+
+- view.dart         // 视图代码
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+
+import 'index.dart';
+
+class MyPagePage extends GetView&lt;MyPageController&gt; {
+  const MyPagePage({super.key});
+
+  // 主视图
+  Widget _buildView() {
+    return const Center(
+      child: Text("MyPagePage"),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GetBuilder&lt;MyPageController&gt;(
+      init: MyPageController(),
+      id: "my_page",
+      builder: (_) {
+        return Scaffold(
+          appBar: AppBar(title: const Text("my_page")),
+          body: SafeArea(
+            child: _buildView(),
+          ),
+        );
+      },
+    );
+  }
+}
+```
+
+## 保存总导包 index
+
+文件 lib/pages/index.dart
+
+追加在这个文件中即可
+</code></pre><p>提示词</p><pre><code>用 skill 在 lib/pages/cart 中创建页面 业务 购物历史，业务代码 cart_history</code></pre><p>输出</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047523021" alt="cursor skills 新建页面" title="cursor skills 新建页面" loading="lazy"/></p><h4>例子 2：Flutter项目初始化（全局）</h4><p>编写文件 .codex/skills/Flutter项目初始化/SKILL.md</p><pre><code class="markdown">---
+name: Flutter项目初始化
+description: 用猫哥的 ducafe_ui_core + getx 初始化一个规范的 flutter 项目。
+---
+
+# Flutter项目初始化
+
+## 安装依赖包
+
+```shell
+flutter pub add get
+flutter pub add ducafe_ui_core
+```
+
+## 1 创建业务 index 页面
+
+- 使用 skill 在 lib/pages 目录下创建业务 首页，业务代码 index。
+
+- 没有 lib/pages 目录自动创建。
+
+## 2 创建全局 Global 模块
+
+文件位置 lib/global.dart
+
+```dart
+import 'package:flutter/material.dart';
+
+class Global {
+  static Future&lt;void&gt; init() async {
+    // 插件初始化
+    // WidgetsFlutterBinding.ensureInitialized();
+
+    // // 工具类
+    // await Storage().init();
+
+    // // 提示框
+    // Loading();
+
+    // // 加载服务
+    // Get.put&lt;ConfigService&gt;(ConfigService()); // 配置
+    // Get.put&lt;WPHttpService&gt;(WPHttpService()); // 网络请求
+    // Get.put&lt;UserService&gt;(UserService()); // 用户
+    // Get.put&lt;CartService&gt;(CartService()); // 购物车
+
+    // // 初始化配置
+    // await ConfigService.to.init();
+  }
+}
+```
+
+## 3 创建 common 通用模块
+
+文件位置 lib/common/
+
+### 目录结构
+
+```text
+lib/common/
+├── api/              # API 接口
+│   └── index.dart
+├── components/       # 通用组件
+│   └── index.dart
+├── extension/        # 扩展方法
+│   └── index.dart
+├── i18n/             # 国际化
+│   └── index.dart
+├── models/           # 数据模型
+│   └── index.dart
+├── routers/          # 路由配置
+│   ├── index.dart
+│   ├── names.dart
+│   └── pages.dart
+├── services/         # 服务层
+│   └── index.dart
+├── style/            # 样式
+│   └── index.dart
+├── utils/            # 工具类
+│   └── index.dart
+├── values/           # 常量值
+│   ├── index.dart
+│   ├── constants.dart
+│   ├── images.dart
+│   └── svgs.dart
+├── widgets/          # 通用小部件
+│   └── index.dart
+└── index.dart        # 统一导出
+```
+
+### 文件规则
+
+#### lib/common/index.dart
+
+```dart
+library;
+
+export 'api/index.dart';
+export 'components/index.dart';
+export 'extension/index.dart';
+export 'i18n/index.dart';
+export 'models/index.dart';
+export 'routers/index.dart';
+export 'services/index.dart';
+export 'style/index.dart';
+export 'utils/index.dart';
+export 'values/index.dart';
+export 'widgets/index.dart';
+```
+
+#### lib/common/routers/names.dart
+
+```dart
+class RouteNames {
+  static const main = '/';
+}
+```
+
+#### lib/common/routers/pages.dart
+
+```dart
+class RoutePages {
+  // 列表
+  // static List&lt;GetPage&gt; list = [];
+}
+```
+
+#### lib/common/routers/index.dart
+
+```dart
+library;
+
+export 'names.dart';
+export 'pages.dart';
+```
+
+#### lib/common/values/constants.dart
+
+```dart
+/// 常量
+class Constants {
+  // 服务 api
+  static const apiUrl = 'https://api.example.com';
+}
+```
+
+#### lib/common/values/images.dart
+
+```dart
+/// 图片 assets
+class AssetsImages {
+}
+```
+
+#### lib/common/values/svgs.dart
+
+```dart
+/// svgs assets
+class AssetsSvgs {
+}
+```
+
+#### lib/common/values/index.dart
+
+```dart
+library;
+
+export 'constants.dart';
+export 'images.dart';
+export 'svgs.dart';
+```
+
+#### 其他模块 index.dart 模板
+
+- api
+- components
+- extension
+- i18n/
+- models
+- services
+- style
+- utils
+- widgets
+
+这些目录下的 index.dart 统一使用：
+
+```dart
+library;
+
+// export './xxxx.dart';
+```
+
+## 重写 main.dart
+
+lib/main.dart
+
+```dart
+import 'package:ducafe_ui_core/ducafe_ui_core.dart';
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+
+import 'pages/index.dart';
+import 'global.dart';
+
+void main() async {
+  await Global.init();
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ScreenUtilInit(
+      designSize: const Size(414, 896), // 设计稿中设备的尺寸(单位随意,建议dp,但在使用过程中必须保持一致)
+      // splitScreenMode: false, // 支持分屏尺寸
+      // minTextAdapt: false, // 是否根据宽度/高度中的最小值适配文字
+      builder: (context, child) {
+        return GetMaterialApp(
+          title: 'Flutter Demo',
+          theme: ThemeData(primarySwatch: Colors.blue),
+          home: const IndexPage(),
+        );
+      },
+    );
+  }
+}
+```
+</code></pre><p>提示词</p><pre><code>使用 skill 初始化当前 flutter 项目</code></pre><p>输出</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047523022" alt="skill 初始化 flutter 项目" title="skill 初始化 flutter 项目" loading="lazy"/></p><h4>例子 3：编写技术说明（项目）</h4><p>编写 .cursor/skills/编写技术说明/SKILL.md</p><pre><code class="markdown">---
+name: 编写技术说明
+description:  对当前项目进行技术整理并保存到文档中。
+---
+
+# 项目技术说明
+
+你是一名资深 Flutter 架构师和技术文档专家。
+
+我将持续向你提供一个 Flutter 项目的代码结构、关键文件、以及最近一次“改动内容”。
+
+你的任务是：
+1️⃣ 对当前 Flutter 项目进行技术架构分析  
+2️⃣ 在“已有技术文档”的基础上 **增量更新**，而不是全部重写  
+3️⃣ 明确标注「本次新增 / 修改 / 废弃」的技术点  
+4️⃣ 输出一份结构化、可长期维护的技术说明文档  
+
+请始终假设：
+
+- 该项目是一个**长期维护的真实业务项目**
+- 文档读者是：中高级 Flutter 开发者
+- 目标是：**可读、可持续演进**
+
+---
+
+## 文档保存位置
+
+docs/技术说明.md
+
+## 📌 项目信息（如有）
+
+- 项目名称：
+- Flutter 版本：
+- 状态管理方案（如 Riverpod / Bloc / GetX 等）：
+- 架构风格（如 Clean Architecture / Feature First 等）：
+
+## 📌 已有技术文档（如存在）
+
+【我会粘贴当前版本的技术文档】
+
+## 📌 本次改动内容
+
+【我会描述或粘贴本次代码变更 / 新增模块 / 重构点】
+
+---
+
+## 🎯 输出要求
+
+### 一、项目整体架构（如无重大变化，简要说明）
+
+- 架构分层
+- 模块职责
+- 关键设计原则
+
+### 二、本次迭代技术变更（重点）
+
+- 🆕 新增内容
+- 🔄 修改内容
+- 🗑️ 废弃或替代方案
+- 变更动机 &amp; 技术取舍说明
+
+### 三、关键代码设计解读
+
+- 重要类 / 模块职责
+- 状态流转说明
+- 数据流 &amp; 依赖方向
+
+### 四、对项目长期维护的影响
+
+- 可扩展性
+- 可测试性
+- 潜在风险 &amp; 建议
+
+### 五、文档版本记录（必须输出）
+
+- 文档版本号（如 v1.2.0）
+- 更新时间
+- 本次更新摘要（3～5 条）
+
+---
+
+## ✍️ 写作风格要求
+
+- 使用 **工程师视角**，避免空话
+- 关键地方可用「为什么这样设计」
+- 允许适度口语化，但保持专业
+- 使用 Markdown 输出，方便直接入库或发布
+</code></pre><p>提示词</p><pre><code>使用 skill 编写技术说明</code></pre><p>输出</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047523023" alt="使用 skill 编写技术说明" title="使用 skill 编写技术说明" loading="lazy"/></p><h3>总结要点</h3><p>通过 Cursor AI Skills，Flutter 开发者可以将页面创建、项目初始化以及技术文档维护等重复性工作交给 AI 自动完成。本文结合实际示例，系统讲解了如何构建全局与项目级别的 Cursor Skills，实现高效、可持续的 Flutter 自动化开发流程。这种 AI 辅助编程方式，正在成为 Flutter 项目提效的新标准。</p><p>感谢阅读本文</p><p>如果有什么建议，请在评论中让我知道。我很乐意改进。</p><hr/><h3>猫哥 APP</h3><ul><li><a href="https://link.segmentfault.com/?enc=KCyM3%2Ft6n0TMzsGLGl5FQw%3D%3D.KgnFZz03CUtSQlTe9x6XF7%2FMH6qBZJSXcbTJJNdcTRA%3D" rel="nofollow" target="_blank">SaaS Fast</a></li><li><a href="https://link.segmentfault.com/?enc=RnezK%2BFAfui8AzJhxs6f1Q%3D%3D.%2BDEOB70bx2CC1VFuntzAc3Mg5hFcE5f3%2Bm5CwbNARSKPBJlzf6fjfsFFDPeFvp0eYncQgsHuLZ3ax4MSZvv5%2BmT%2BQl7lZv%2BA%2Bc3N2kY%2B598%3D" rel="nofollow" target="_blank">Flutter GetX Generator</a></li></ul><h3>flutter 学习路径</h3><ul><li><a href="https://link.segmentfault.com/?enc=ptr1Tc37M5%2BZjm%2B4I0BtYQ%3D%3D.ICLfPGbUh%2FLGvYyuhiO7aIVHqymb6HF7Ji3Jeq9CyQs%3D" rel="nofollow" target="_blank">Flutter 优秀插件推荐</a></li><li><a href="https://link.segmentfault.com/?enc=Pg27wAcQRRR6ekTmibFLpA%3D%3D.%2FQNjGrjOpwND1pRq8TKmGj5qqdnh27mOF8If0YrqQuLKdmc3slTVhKC6pdbeCyXO" rel="nofollow" target="_blank">Flutter 基础篇1 - Dart 语言学习</a></li><li><a href="https://link.segmentfault.com/?enc=U0VEJh0sHCLckjb4yYw2Zg%3D%3D.GVFHjBJ0oin9np2G0VXNsFn5SMMtuF3IyXfaBjWom8yg1%2FVGuGatpp2DrbZBOg%2FqXm8QAHX6%2FepmRv4SqCKwNA%3D%3D" rel="nofollow" target="_blank">Flutter 基础篇2 - 快速上手</a></li><li><a href="https://link.segmentfault.com/?enc=ZmYm26F1j4jJih2TU8KlPA%3D%3D.WrbguVvCBo4ZjxjYuZV06zwixB%2BaRclHtFO8Q4Z32ekMhLBNObpLXZjXd7LTvaTc" rel="nofollow" target="_blank">Flutter 实战1 - Getx Woo 电商APP</a></li><li><a href="https://link.segmentfault.com/?enc=LTFM2LlpPv%2FGdmRBLLDbFg%3D%3D.v4C%2BFp5%2BrkeiqydEqC%2F2dkZaWFm3cZyHD8Hu0PTI824HzBNMRjSGQndZSTsOZZY6GhAnK3%2Fqnrk8nSesfQ9rRg%3D%3D" rel="nofollow" target="_blank">Flutter 实战2 - 上架指南 Apple Store、Google Play</a></li><li><a href="https://link.segmentfault.com/?enc=Q9flrWXMTt7b9maHSBpJYA%3D%3D.04hkTb1BlT5ui1Ox46FgiOw769eI4SeHen2qUtHq2w8Iebz47OteoK4PObTi%2B7cD" rel="nofollow" target="_blank">Flutter 基础篇3 - 仿微信朋友圈</a></li><li><a href="https://link.segmentfault.com/?enc=2UqGdRpJ9rA3dEhE06QpAw%3D%3D.xDlbzPfcqtCh9%2FlmRhrY7JKfdnJvzPjFjZTIfryRb3cl9Gota%2FxJaiP9DAfmuV3r" rel="nofollow" target="_blank">Flutter 实战3 - 腾讯即时通讯 第一篇</a></li><li><a href="https://link.segmentfault.com/?enc=0%2BL78vgzHGjr76Sd2MMMnQ%3D%3D.BBOYA2J632voWgb7xQNLmwtgICfq8iTAeTiyjt2zV39GgtlLWl3Wrht6hWPenkzY" rel="nofollow" target="_blank">Flutter 实战4 - 腾讯即时通讯 第二篇</a></li></ul><hr/><p>© 猫哥<br/>ducafecat.com</p><p>end</p>]]></description></item><item>    <title><![CDATA[LLM 量化技术概述及 AWQ 和 GPTQ 介绍 地平线智驾开发者 ]]></title>    <link>https://segmentfault.com/a/1190000047522881</link>    <guid>https://segmentfault.com/a/1190000047522881</guid>    <pubDate>2026-01-05 22:03:02</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>一、前言</h2><p>近期在学习 Qwen3 的模型结构时，看到了 Qwen 使用了 GPTQ 与 AWQ 量化方案，于是便萌生了介绍 LLM 量化技术的想法，笔者将用 2-3 篇文章，给读者们介绍大模型量化的技术。</p><p>量化是指将高精度计算的浮点型数据近似为低比特位数据（如 int16、int8、int4 等）的过程，此过程需在不显著损耗精度的同时，提升模型推理效率并降低内存占用。特别是在当前主流大语言模型（LLM）的参数量轻松突破万亿规模的情况下，量化技术对于高效低成本部署 LLM 尤为重要。而且由于 LLM 的参数量巨大，当前主流的模型都采用 PTQ 后量化技术，从而降低量化过程带来的成本。</p><p>在正式开始这篇文章之前，我们首先来了解一下 LLM 量化的相关概念。</p><h2>二、LLM 量化相关概念</h2><h3>2.1 LLM 量化常用的数值格式</h3><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047522883" alt="image.png" title="image.png"/></p><h3>2.2 LLM 量化对象</h3><p>在部署推理时，LLM 的量化对象与传统的 CNN 有所不同，除了权重与激活以外，还增加了 LLM 特有的 KV Cache。所以，LLM 的量化对象主要是权重、激活和 KV Cache。</p><ul><li><strong>​权重量化：​</strong>仅对 LLM 中的权重进行量化，常见的方法有 GPTQ （W4A16，权重量化为 INT4，激活保持 FP16/BF16）、AWQ（W4A16/W8A16）等；</li><li><strong>​激活量化：​</strong>对 LLM 中的激活进行量化，常见的方法有 SmoothQuant （W8A8）、LLM.int8（）等，由于激活分布范围大且动态变化，相比权重量化更具挑战；</li><li><strong>​KV​​ Cache 量化：</strong>在 LLM 推理中，为避免重复计算，会缓存 Attention 中的 Key/Value 向量（KV Cache）。<strong>​ ​</strong> KV Cache 的大小与 上下文长度线性相关，是长文本推理时的主要显存瓶颈。常见的方法有 KV Cache INT8/INT4 量化。</li></ul><p>LLM 的实际部署过程中，常见的量化方案包括：</p><ul><li>​<strong>W4A16</strong>​（GPTQ、AWQ） ：权重量化为 INT4，激活保持 FP16/BF16。</li><li><strong>W8A16</strong> ： 权重量化为 INT8，激活保持 FP16/BF16。</li><li>​<strong>W8A8</strong>​（SmoothQuant）： 权重和激活均量化为 INT8。</li><li><strong>KV​ Cache INT8</strong> ：缓解长上下文显存开销。</li></ul><p>下面，我们将对具体的量化方法进行介绍。</p><h2>三、主流 LLM 量化方法介绍</h2><p>Qwen 系列模型使用了 AWQ、GPTQ 和 llama.cpp 中的量化技术，且推荐使用 &lt;u&gt;<a href="https://link.segmentfault.com/?enc=8DJ5TZHSwDCTIH73t%2B2Niw%3D%3D.fbLVIYIWnbodwp3YCMW98WPm4WUSBgx61IBaDj%2BzD3XV1rNUxEk9aZr058dsEWck" rel="nofollow" target="_blank">AWQ</a>&lt;/u&gt; 结合 &lt;u&gt;<a href="https://link.segmentfault.com/?enc=XVIdwgDiybWZsOS2Y%2Bp0kQ%3D%3D.hadx1N9jExzpsq5SfS47Rhcb1OdGa2uO63qC8MX57Wo5HVEgfChKEVEfor5dTgtl" rel="nofollow" target="_blank">AutoAWQ</a>&lt;/u&gt;&lt;u&gt;，&lt;/u&gt;所以本节我们先介绍此方法。</p><h3>3.1&lt;u&gt; &lt;/u&gt;&lt;u&gt;<a href="https://link.segmentfault.com/?enc=8MiDzbOXcyZOhApcHW8TCw%3D%3D.SWX4Eyb6cN4n%2F58mgwMs5ItxIIMJVt7%2FD08F7KCpkyVyV9O1EQj%2BBPYC3le2ji%2BB" rel="nofollow" target="_blank">AWQ</a>&lt;/u&gt; 结合 &lt;u&gt;<a href="https://link.segmentfault.com/?enc=i%2B06%2BCnQVxPwyAn9R9htQw%3D%3D.lDnIPu7tEp1TpiCpQO3dWe75AlOsEwnGt40UutJ7zPDXiy%2FrTJE6DZonPxnl3JcD" rel="nofollow" target="_blank">AutoAWQ </a>&lt;/u&gt;量化方法介绍及使用示例</h3><p>&lt;u&gt;<a href="https://link.segmentfault.com/?enc=GDfihSl8dwBui2auZIluQw%3D%3D.oeuqy4TbuQ7BybmvcKoMLzgqZHgNMWl2w%2BKHDQ%2Bckcvwcd46s5KUpFjAaTUNQDob" rel="nofollow" target="_blank">AWQ</a>&lt;/u&gt; 全称为 ACTIVATION-AWARE WEIGHT QUANTIZATION，即<strong>​激活感知的权重量化，​</strong>是一种针对 LLM 的低比特权重量化的硬件友好方法。AWQ 在业界广泛应用，除了官方的支持&lt;u&gt;<a href="https://link.segmentfault.com/?enc=7sP1fAXYLnqW4jPgPZHBGw%3D%3D.VqKHLBpZIaBNKDbJW5F4s%2BCzOyDNi1ITyGFARlTtQb9wmkYka3Dwm2sRP1XlDuR8tMvl2qTTsabvJIxYlhFEQ%2FEGOgptji91to8ZWUyGDrs%3D" rel="nofollow" target="_blank"> llm-awq </a>&lt;/u&gt;外，&lt;u&gt;<a href="https://link.segmentfault.com/?enc=qvcwCbsJOi9rdOLCXNiEbg%3D%3D.U%2FskeQiU2%2B2Ikm0dcINXEGCqf40orudU2SFhGCOY1FmMXeIjj1uxm0ZB1F8eNN30sigpfvHOQHRIHWk%2BiMkq%2FxfUIte5YC5xNjN2dENtfo4%3D" rel="nofollow" target="_blank">AutoAWQ</a>&lt;/u&gt;、&lt;u&gt;<a href="https://link.segmentfault.com/?enc=QMn35M3%2FCdfjlo0RrH3UaQ%3D%3D.ptwp1axommyKV9iLKbS3PAu1ZquzFIzhaelNGxgy4XgiEBy%2F6pOi0fJjcwWaQnvVRB0XEpLeF8Y3u2e3Vzr1YLpYEJUNpFdRxfiGXULmf%2FCebM%2BCefPmlk9E5xdaDRRgnLIMXAsAe1tibvoUL17vzDRHV3SxIblMWzeZeTkQvfg%3D" rel="nofollow" target="_blank">vLLM</a>&lt;/u&gt;、 &lt;u&gt;<a href="https://link.segmentfault.com/?enc=ORIPuJ4WV%2F%2B9CKnde8Yapg%3D%3D.QM756mv2SydUqDabn86HQnUStg3UEPitxPWLNQzVYPwt8Cl6TmGLBfSGwaE%2Be9Evr2LrxJJ9Nbc1n51reTHgrLj4znaU442PK%2BgSEWjQPMo3zLNRFgMwmNhuMMOe0c5vbX1KcyXebH6a8kmbEDaTbg%3D%3D" rel="nofollow" target="_blank">HuggingFace </a>&lt;/u&gt;NVIDIA &lt;u&gt;<a href="https://link.segmentfault.com/?enc=KQkdccYxHS3pBsY6leD0UQ%3D%3D.eLg8motucPModyR26dA8B3vm6HRvAEBfG8kCxFmqn8eOArjQjKd%2B3wApllovD7BLuJMeyFKLFpw9GXd5zu6tbWOVbVOPJ65LD%2FGS4nRTTts%3D" rel="nofollow" target="_blank">TensorRT-LLM</a>&lt;/u&gt;、&lt;u&gt;<a href="https://link.segmentfault.com/?enc=aXC%2B3fpve3FMx8E7jD8pZQ%3D%3D.6GDNWvveF5eGenODXuqFqIui7F%2FPJIaQXnPRW%2F37IYaIWRflo0zG7mknUlwAYG5SQm9YoYAiqHUd%2FnT6fBARkiQCv967dUCcIBry2wtC6tXjPpF9b%2BuOnFMQNTEjJw3U" rel="nofollow" target="_blank">FastChat</a>&lt;/u&gt; 等主流模型或框架也提供了对 AWQ 的支持。</p><h4>3.1.1&lt;u&gt; &lt;/u&gt;&lt;u&gt;<a href="https://link.segmentfault.com/?enc=86yxSlSnCSyV8vDJJip7wA%3D%3D.XnZvhe7ok%2BWxRvBBt6tOsSAcFBNE1%2Behud8KsqvVPopnMuWcPIoY0kWSlXSwPyXN" rel="nofollow" target="_blank">AWQ</a>&lt;/u&gt; 量化技术原理</h4><p>&lt;u&gt;<a href="https://link.segmentfault.com/?enc=mQWBh8UlEHPfOYdU2aED%2Bg%3D%3D.k9jNo8K8y6jSM2pIMhK3crsS17VstDi%2BQERI8Htvud4pGmjIc8KTiki97dYF%2BfEb" rel="nofollow" target="_blank">AWQ</a>&lt;/u&gt; 作者认为：</p><ol><li>权重对于大语言模型的性能并不同样重要， 有一小部分（0.1%-1%）对模型精度影响较大的关键权重；跳过这些关键权重的量化将显著减少量化精度损失。</li><li>而且，关键权重对应于较大激活幅度的权重通道更加显着，因为它们处理更重要的特征，从而根据这个现象寻找关键权重。尽管将 0.1% 的权重保留为 FP16 可以在不明显增加模型大小的情况下提高量化性能，但这种混合精度数据类型会给系统实现带来困难（硬件效率低下）。</li><li>设计了一种 per-channel 缩放方法来自动搜索最佳缩放，从而减少显著权重的量化误差，这种方法不存在硬件效率低下的问题。</li></ol><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047522884" alt="" title="" loading="lazy"/></p><blockquote>PPL：即困惑度 Perplexity，是语言模型预测序列的平均不确定性度量。PPL 越小，表示模型越“自信”且预测越接近真实分布；PPL 越大，说明预测分布和真实分布偏差更大。</blockquote><p>上图是作者的实验，可以看出：</p><ul><li>左图：所有的权重都从 FP16 量化到 INT3，PPL 为 43.2；</li><li>中图：基于激活分布找到了 1% 的关键权重，将关键权重保持 FP16 精度，其余权重量化到 INT3，PPL 由 43.2 大幅下降至 13.0，但这种混合精度格式在硬件上运行并不高效；</li><li>右图： AWQ 执行 per-channel 缩放以保护关键权重从而减少量化误差，这里可以看到缩放 weight 后再做量化的 PPL 为 13.0，缩放本身未对精度产生影响。</li></ul><p>权重的缩放因子 s 为超参数，作者在<strong>​ OPT-6.7B ​</strong>模型上做了对比实验，发现当 s 比较大比如等于 4 时，非关键通道的相对误差将会增加（非显著通道的误差将被放大）。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047522885" alt="" title="" loading="lazy"/></p><p>为了同时考虑关键权重和非关键权重，AWQ 选择<strong>自动搜索最佳（每个输入通道）缩放因​</strong>子，使某一层量化后的输出差最小。这就把量化问题建模为如下的最优化问题：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047522886" alt="" title="" loading="lazy"/></p><p>为提升该过程的稳定性，我们通过分析影响缩放因子（scaling factor）选择的相关因素，为最优缩放比例（optimal scale）定义了一个搜索空间（search space）。如前一部分所述，权重通道（weight channels）的显著性实际上由激活值缩放比例（activation scale）决定（即 “激活感知性”，activation-awareness）。因此，AWQ 采用了一个极为简洁的搜索空间，具体如下：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047522887" alt="" title="" loading="lazy"/></p><p>其中 <em>α</em> 是用于平衡对关键 channel 与非关键 channel 的保护力度。通过在区间 [0， 1] 内执行快速网格搜索（grid search），可确定最优的 <em>α</em> 值（其中 ​<em>α</em>​=0 代表不进行缩放；​<em>α</em>​=1 代表在我们的搜索空间内采用最激进的缩放策略）。此外，论文中还引入了权重裁剪（weight clipping）操作，以最小化量化过程中的均方误差（MSE）。</p><h4>3.1.2 &lt;u&gt;<a href="https://link.segmentfault.com/?enc=EOmx0oCOYXXdXcA%2B4ivRYQ%3D%3D.cq2ynyqwQE0q8PhY0%2F3zvaFZk1a2NkUcCVbAVe2ZcnuhstnGh9SsDbQaqJOmfHC3" rel="nofollow" target="_blank">AWQ</a>&lt;/u&gt; 量化模型示例</h4><p>&lt;u&gt;<strong><a href="https://link.segmentfault.com/?enc=sba8sLrKQNS0zQCTRjQyGQ%3D%3D.2Wf4T00zDTfkRYygXxUznAm%2BeEh36ik1FbJWHwRb18sKZTSlCdx8vE59HKMgAb2Z" rel="nofollow" target="_blank">AWQ</a></strong>&lt;/u&gt;​<strong>​ 与 HuggingFace Transformers 无缝兼容</strong>​，加载模型后可以直接 <code>.quantize()</code> 做量化，相关使用流程如下。</p><h6>安装依赖</h6><pre><code class="Plain">pip3 install transformers accelerate autoawq</code></pre><h6>量化模型</h6><pre><code class="Plain">from awq import AutoAWQForCausalLM
 from transformers import AutoTokenizer
 from transformers import AwqConfig
 
@@ -1100,4 +1595,4 @@ print(ret)
 #     "output":{
 #         "total_doc_count":0
 #     }
-# }</code></pre>]]></description></item><item>    <title><![CDATA[短说社区V5.3.1正式版发布|修复测试版的已知问题 想天浏览器 ]]></title>    <link>https://segmentfault.com/a/1190000047522240</link>    <guid>https://segmentfault.com/a/1190000047522240</guid>    <pubDate>2026-01-05 14:03:03</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>Hi大家好，我是给你们带来惊喜的运营小番茄。本期更新为短说V5.3.1正式版。本次V5.3版本新增了大量功能，主要是在PC用户端新增了模块：活动模块、话题模块、认证模块、榜单模块、版主管理面板、用户小名片等功能；管理后台新增更多数据统计功能（版块数据统计、话题数据统计），新增操作日志（内容操作日志、用户行为日志、管理员操作日志）等，用户端新增了内容浏览记录，并做了大量新增和优化。具体可点击查看下方链接查看详情：短说社区V5.3.0测试版发布|PC端发布大量更新。功能新增<br/>【PC】新增用户注销功能；【PC&amp;移动端】认证模块，新增认证协议；<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047522242" alt="图片" title="图片"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047522243" alt="图片" title="图片" loading="lazy"/><br/>3.【PC】底部菜单新增用户协议和隐私协议入口。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047522244" alt="图片" title="图片" loading="lazy"/><br/>BUG修复和优化<br/>1.【PC】修复了帖子编辑封面无法更新的问题；2.【通用】修复了后台取消版块内标题置顶后仍然置顶且清除缓存无效的问题；3.【小程序】修复了小程序端，上传视频，进度条图标在外面了的问题；4.【移动端】修复了活动详情页生成海报，太阳码需要是指向活动详情页的问题；5.【PC】修复了问卷的筛选必须根据问卷的状态来筛选的问题；6.【PC】修复了版主管理按钮点击没有反应的问题；7.【通用】修复了知识付费栏目管理，目前只显示了开启的栏目的问题；8.【PC】修复了发布动态，只上传一张图片情况下，点击预览，图片不会显示的问题；9.【App】修复了首页禁言样式异常，App里点击没有反应的问题；10.【通用】修复了频道内容审核计数没有判断频道状态的问题；11.【PC】修复了用户登录/注册后，没有请求正确接口，导致头像信息获取不到的问题；12.【PC】修复了版块帖子列表页有做缓存，但是重新请求帖子列表接口后，没有更新掉缓存的问题；13.【移动端】修复了在版块里面点击发帖，跳转到发布页面后，版块的logo丢失的问题；14.【移动端】优化了注册时的逻辑，先判断是否勾选用户信息再获取验证码。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047522245" alt="图片" title="图片" loading="lazy"/><br/> TIPS 所谓产品共创，短说社区一直秉持“需求来自用户”的原则，倾听用户声音，主打一个“听劝”。短说社区的长期更新，离不开大家的支持与帮助，番茄在此代表短说团队向我们的用户表示感谢~感谢客户的需求和使用建议，未来我们会推更多更好用的功能，帮助大家在社区项目上更好地变现~</p>]]></description></item><item>    <title><![CDATA[为什么谷歌账号开启两步验证了，上传chrome 插件还是提示要开启两步验证 rabbitcoder ]]></title>    <link>https://segmentfault.com/a/1190000047522250</link>    <guid>https://segmentfault.com/a/1190000047522250</guid>    <pubDate>2026-01-05 14:02:19</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p><img width="723" height="401" referrerpolicy="no-referrer" src="/img/bVdnyRO" alt="图片.png" title="图片.png"/></p><p><img width="723" height="440" referrerpolicy="no-referrer" src="/img/bVdnyRS" alt="图片.png" title="图片.png" loading="lazy"/></p><p>原来是添加了 2FA 之后，还要点击下面的「开启两步验证」</p>]]></description></item><item>    <title><![CDATA[若了解 AI 大力的乌龙茶 ]]></title>    <link>https://segmentfault.com/a/1190000047522254</link>    <guid>https://segmentfault.com/a/1190000047522254</guid>    <pubDate>2026-01-05 14:01:24</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>这里是 「RTE 开发者日报」，每天和大家一起看新闻、聊八卦。我们的社区编辑团队会整理分享 RTE（Real-Time Engagement） 领域内「有话题的技术」、「有亮点的产品」、「有思考的文章」、「有态度的观点」、「有看点的活动」，但内容仅代表编辑的个人观点，欢迎大家留言、跟帖、讨论。</p><p>本期编辑：@瓒an、@鲍勃</p><p>01 有话题的技术<br/>1、亚马逊公布新款自研 AI 芯片 Trainium 3</p><p>日前，亚马逊云科技 CEO Matt Garman 在 re:Invent 2025 活动上，正式公布了亚马逊自研 AI 芯片 Trainium 系列的最新进展。</p><p>会上，Amazon Trainium 3 UltraServers 正式发布。</p><p>据介绍，这是亚马逊云科技首款搭载 3 纳米工艺 AI 芯片的服务器，相较 Amazon Trainium 2，不仅计算能力提升 4.4 倍、内存带宽提升 3.9 倍，每兆瓦算力可处理的 AI token 数量更实现了 5 倍增长。</p><p>服务器最高配置 144 个芯片，提供惊人的 362 petaflops FP8 计算能力。在运行 OpenAI 的 GPT-OSS-120B 模型时，每兆瓦输出 token 数是 Amazon Trainium 2 的 5 倍以上，实现超高能耗比。</p><p>同时，Matt Garman 还首次披露了 Amazon Trainium 4 芯片，并承诺将实现较 Amazon Trainium 3 六倍的 FP4 计算性能、四倍内存带宽和两倍高内存容量。</p><p>据悉，亚马逊云科技目前已完成超 100 万个 Trainium 2 芯片的规模化部署，为 Amazon Bedrock 中大部分推理工作提供核心算力支持，包括 Claude 最新一代模型的高效运行。</p><p>( @APPSO)</p><p>2、Meta Reality Labs 挖角苹果交互设计负责人 Alan Dye</p><p>今天凌晨，彭博社记者 Mark Gurman 发文透露，苹果人机交互设计副总裁 Alan Dye 被 Meta 挖角。</p><p>据悉，Dye 自 2015 年以来，一直担任苹果的用户界面设计团队的负责人。 而本次被挖角后，苹果将用长期设计师 Stephen Lemay 顶替 Dye 的岗位。</p><p>值得一提的是，Dye 曾负责监督 iOS 26、液态玻璃界面、Vision Pro 界面、watchOS，以及各种系统交互层面内容（如空间计算交互、灵动岛）。</p><p>报道指出，Dye 在乔布斯离开后，一直担任着重要角色：帮助公司定义了最新操作系统、App 以及设备的外观。另外，Dye 在苹果的团队也帮助开发一系列新的智能家居设备。</p><p>Meta 方面，随着 Dye 加入，该公司正在创立一个新的设计工作室，并且有 Dye 负责硬件、软件和 AI 集成方面的界面设计。</p><p>Dye 将向负责现实实验室的首席技术官 Andrew Bosworth 汇报工作，而现实实验室负责开发可穿戴设备，如智能眼镜和虚拟现实头戴式设备。Gurman 透露，Dye 将于 12 月 31 日正式开始担任团队首席设计官。</p><p>而且 Dye 还不是一个人走的，他还带走了苹果设计部门的高级总监 Billy Sorrentino。后者从 2016 年起就在苹果，主要负责 VisionOS 的用户界面设计。</p><p>( @APPSO)</p><p>3、小米卢伟冰：AI 与物理世界的深度结合是智能科技的下一站</p><p>12 月 3 日，@卢伟冰 在社媒发布卢伟冰答网友问第十二期，在回答「罗福莉加入了小米，未来在 AI 上会有什么新的战略」时表示：</p><p>其实我们在前几个季度就已经开始了在 AI 上的压强式投入，虽然不能透露太多，我们在 AI 大模型和应用方面的进展远超预期，我们认为 AI 与物理世界的深度结合是智能科技的下一站，小米也非常渴望人才尊重人才，也希望能够给优秀的人才提供好的发展平台。</p><p>95 后罗福莉出生于四川，父亲是一名电工，母亲是教师。她本人曾就读于四川宜宾市第一中学校 「清北班」，并以优异成绩考入北京师范大学，后被保送至北京大学深造。</p><p>在北大读硕士期间，她于 2019 年在人工智能领域顶级国际会议 ACL 上发表了 8 篇论文，其中 2 篇为第一作者。毕业后，她先后在阿里达摩院、幻方量化、DeepSeek 工作，主导开发了多语言预训练模型 VECO，并参与研发了 MoE 大模型 DeepSeek-V2。</p><p>11 月 12 日，罗福莉在朋友圈发文，正式宣布自己已经加入小米。</p><p>11 月 19 日消息，小米公司今日官宣，12 月 17 日，小米将在北京·国家会议中心举办「人车家全生态」合作伙伴大会。主论坛时间为上午 10:00-12:15，全程开放线上直播。</p><p>作为小米 MiMo 大模型负责人，罗福莉将在主论坛发表题为《Xiaomi MiMo：小米基座大模型》 的主题演讲，这是她自 11 月 12 日加入小米后的首次公开亮相。</p><p>（@荆楚网）</p><p>02 有亮点的产品<br/>1、Peopleboxai 推出 Nova：首款「人性化」AI 面试官，优化招聘流程</p><p>Peopleboxai 发布了其 AI 产品「Nova」，号称是「人性化」的 AI 面试官。Nova 能够自动化包括简历筛选、电话面试、视频面试、实时编码测试以及生成决策报告在内的整个第一轮招聘流程，显著加快招聘速度并提升效率。</p><p>全流程自动化： Nova 能够处理从简历筛选、联系候选人（通过 InMail、邮件、电话）到进行全面的语音/视频面试，甚至执行高级编码测试，直至提供详细的、可直接用于决策的报告。<br/>高度「人性化」体验： Nova 被设计成「最佳招聘官和面试官的数字孪生」，能够模拟自然的暂停、语气和「嗯」等语用标记，提供友好的、类似真人的互动体验，候选人对其评价很高。<br/>定制化与智能化： 用户可以根据自己的需求定制 Nova 的面试风格，包括技能深度、难度、面试类型、语调和结构。Nova 还能从公司过往的招聘数据（职位描述、面试记录、ATS 笔记等）中学习，提升其判断能力。<br/>显著提升效率： Nova 帮助客户将第一轮面试报告的完成时间从 4-5 周缩短到 48 小时以内，为招聘团队节省了大量时间，使其能专注于更具战略意义的工作。<br/>覆盖多渠道招聘： Nova 不仅处理入站（inbound）和内推（referral）的候选人，还能主动进行外呼（outbound）候选人搜寻和联系。<br/>Nova 产品已上线，用户可通过 Peopleboxai 官网了解更多信息并申请试用。</p><p>(@Y Combinator Launches)</p><p>2、理想汽车发布首款 AI 眼镜 Livis：标配蔡司镜片 补贴后售价 1699 元起</p><p>12 月 3 日，理想汽车举办线上发布会，正式推出其首款 AI 智能眼镜 Livis。售价 1999 元起，12 月 31 日前下订可享受 15% 政府补贴，补贴后价格仅为 1699 元起。</p><p>「一款以钢铁侠 AI 管家「贾维斯」为灵感命名的智能眼镜，试图将「理想同学」的 AI 能力从驾驶空间延伸至用户日常生活的每个角落。」</p><p>Livis 名称源于理想汽车与钢铁侠 AI 管家「Jarvis」的组合。</p><p>整机重量控制在 36 克，提供经典黑、科技灰和橄榄绿三种颜色，并可选亮光或磨砂材质。</p><p>Livis 全系产品标配蔡司镜片，涵盖近视镜片、光致变色镜片与墨镜片等多种类型，满足用户在不同场景下的视觉需求。</p><p>理想宣称 Livis 在研发过程中实现了五项关键突破，构成了产品核心竞争力的重要组成部分。</p><p>典型续航时间达 18.8 小时。Livis 标配类似 AirPods 的无线充电盒，便于随身携带和补能。同时，眼镜支持与理想汽车的车机系统无线快充，上车后放置在专属充电位进行充电。</p><p>在硬件配置上，Livis 搭载恒玄 BES2800 主控芯片和独立的 ISP 成像芯片，采用 SONY IMX681 摄像头，拥有 1200 万像素、支持 4K 照片以及电子防抖拍摄。</p><p>汽车联动场景是 Livis 最独特的卖点。通过蓝牙和 5G 网络，眼镜可无缝连接车辆，实现语音远程控车。用户可在百米范围内，通过语音指令操控电动侧滑门启闭、提前开启空调及座椅加热，甚至检查车辆续航和充电状态。</p><p>（@极客公园、@快科技）</p><p>3、豆包手机助手无法登录微信，双方回应</p><p>日前，字节跳动豆包团队与中兴合作发布了豆包手机助手技术预览版后，有试用 Nubia M153 工程样机的用户反馈，出现无法正常登陆微信的情况。</p><p>对于相关情况，豆包团队方面昨晚发文并做出回应。</p><p>豆包方面表示，其后续已下线了手机助手操作微信的能力。 目前，nubia M153 上被禁止登录的微信账号正陆续解封。</p><p>而微信相关人士也通过澎湃新闻回应，豆包手机助手无法正常登陆微信的微信并没有什么特别动作，「可能是中了本来就有的安全风控措施。」</p><p>针对此前曾有科技公司爆料「豆包手机助手存在侵犯用户隐私」的问题，团队方面强调，豆包手机助手不存在任何黑客行为。</p><p>据悉，此前上述公司曾表示豆包手机助手在努比亚手机上拥有 INJECT\_EVENTS 权限，该权限在安卓权限定义中属于操作系统高危权限，并且拿到该权限，要面临刑事责任。</p><p>豆包方面表示，INJECT\_EVENTS 确实是系统级权限，但拥有了该权限许可，相关产品才能跨屏、跨应用来模拟点击事件，完成用户操作手机的任务需求。</p><p>团队还强调，豆包手机助手需要用户主动授权，才可以调用该权限，使用操作手机功能。该权限的使用，豆包方面也在权限清单中进行了明确的披露。据了解，目前行业的 AI 助手，均需要使用该权限（或与其类似的无障碍权限）才能提供操作手机的服务。</p><p>豆包方面强烈表示，豆包手机助手也不会代替用户进行相关授权和敏感操作。</p><p>同时，豆包方面也对读取屏幕的隐私问题进行了回应。其表示，助手操作手机时需要读取屏幕（否则无法完成任务），但屏幕和操作过程都不会在服务器端留下存储，且所有的相关内容也都不会进入模型训练，确保用户隐私安全。</p><p>( @APPSO)</p><p>4、健康追踪应用 Healthify Ria 升级 AI 助手：支持实时语音与摄像头交互</p><p>健康追踪初创公司 Healthify 推出了其 AI 助手 Ria 的新版本，该版本支持通过语音和摄像头进行实时对话，并能理解超过 50 种语言（包括 14 种印度语言）以及混合语言输入。此举旨在通过更自然的交互方式，提升用户健康习惯养成的效率和用户粘性。</p><p>实时对话与多模态输入： Ria 现在支持通过语音进行实时对话，用户还可以通过摄像头扫描食物获取营养信息并进行记录，大幅简化了数据录入流程。<br/>多语言与混合语言支持： Ria 能够理解超过 50 种语言，并支持 Hinglish、Spanglish 等混合语言输入，服务全球用户。<br/>整合多源健康数据： Ria 可以整合来自健身追踪器、睡眠追踪器、血糖监测仪等设备的数据，为用户提供运动、睡眠、身体准备度和血糖波动等方面的洞察，并给出建议。<br/>增强记忆与个性化： Healthify 正在为 Ria 构建一个更持久的记忆层，使其能够记住用户的偏好和健康变化，提供更个性化的建议。<br/>教练与营养师辅助： Ria 将被整合到用户与教练、营养师的沟通中，协助双方快速调取数据、回答问题，并可转录通话内容，提取关键信息。<br/>(@TechCrunch)</p><p>03 有态度的观点<br/>1、《阿凡达》导演：对 AI 没意见，但要尊敬演员们</p><p>近日，导演詹姆斯·卡梅隆在《阿凡达 3》世界首映礼上称该片没有使用 AI 生成，随后他对 ComicBookcom 发表了自己对于生成式 AI 的应用看法。</p><p>卡梅隆表示，自己对生成式 AI 没有意见，但他强调：「我们拍《阿凡达》电影不使用它，我们尊敬并赞颂演员们，我们不用 AI 代替演员。」</p><p>同时，卡梅隆也表示，「这件事（生成式 AI）自会有方向，我想好莱坞会进行自我监管，但我们作为艺术家要找到出路，前提是我们得能存在。所以，比起别的东西，来自『大 AI』的生存威胁是最让我担忧的。」</p><p>值得一提的是，卡梅隆所提到的「大 AI」，是指人类利用 AI 的状况和其产生的问题，对应的「小 AI」是指更细节、技术性的层面，比如用 AI 生成内容。</p><p>在卡梅隆看来，AI 和人类未来有深切的担忧和存在危机，他认为「小 AI」各行业会找到应对和利用之法，但「大 AI」问题就不好说了。</p><p>卡梅隆还提到，若了解 AI，就会知道「校准」是个重大问题。「AI 必须被训练、教导，必须被约束去只做对人类好的事情。」其强调，「只有我们人类达成了共识，你才能对 AI 进行校准。」<a style="color: white;" target="_blank">实打weibo.com/ttarticle/p/show?id=2309405251155105284134 weibo.com/ttarticle/p/show?id=2309405251155482772151 weibo.com/ttarticle/p/show?id=2309405251155839549562 weibo.com/ttarticle/p/show?id=2309405251156212842515 weibo.com/ttarticle/p/show?id=2309405251156581941276 weibo.com/ttarticle/p/show?id=2309405251157089189996 weibo.com/ttarticle/p/show?id=2309405251157454356496 weibo.com/ttarticle/p/show?id=2309405251157844426764 weibo.com/ttarticle/p/show?id=2309405251158238691795 实</a></p>]]></description></item>  </channel></rss>
+# }</code></pre>]]></description></item>  </channel></rss>
