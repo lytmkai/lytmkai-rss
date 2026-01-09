@@ -1,4 +1,146 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[rabbitmq 同一个队列可以绑定多个相同的交换机和路由键吗？ rabbitcoder ]]></title>    <link>https://segmentfault.com/a/1190000047531327</link>    <guid>https://segmentfault.com/a/1190000047531327</guid>    <pubDate>2026-01-09 00:02:12</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>ceo 优化：</p><ul><li>rabbitmq 明明绑定的交换机和路由键没问题但是没有消息任务进入队列怎么回事</li><li>rabbitmq 消息进不到队列，收不到消息的可能原因</li><li>nameko</li></ul><p><img width="723" height="301" referrerpolicy="no-referrer" src="/img/bVdnBej" alt="图片.png" title="图片.png"/></p><p>看上图的，居然出现了一样的交换机和路由键，怎么回事？</p><p>rabbitmq 是不允许出现这种情况，答案在不可见字符</p><pre><code class="json">[
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[拒绝卡顿！小程序图片本地“极速”旋转与格式转换：OffscreenCanvas 性能调优实战 帮小忙]]></title>    <link>https://segmentfault.com/a/1190000047530812</link>    <guid>https://segmentfault.com/a/1190000047530812</guid>    <pubDate>2026-01-09 09:03:36</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>在开发小程序图片工具时，我们经常面临“两难”境地：</p><ol><li><strong>用户上传原图</strong>：现代手机拍摄的照片动辄 4000x3000 分辨率，在 iOS 设备上 DPR（设备像素比）通常为 3。</li><li><strong>内存爆炸</strong>：如果直接按原图渲染，画布像素高达 <code>(4000*3) * (3000*3) ≈ 1亿像素</code>！这远超小程序的 Canvas 内存限制，导致<strong>微信客户端直接闪退</strong>。</li><li><strong>传统方案弊端</strong>：上传服务器处理费流量且慢；普通 Canvas 渲染又卡顿界面。</li></ol><p>为了解决这个问题，我们打磨出了一套基于 <code>OffscreenCanvas</code> 的高性能本地处理方案，核心在于“<strong>智能计算，动态降级</strong>”。</p><h2>2. 核心思路：离屏渲染 + 智能防爆</h2><p>我们的方案包含两个关键技术点：</p><ol><li><strong>OffscreenCanvas（2D 离屏画布）</strong>：<br/>相比传统 Canvas，它在内存中渲染，不占用 DOM，没有任何 UI 开销，绘图指令执行极快。</li><li><p><strong>智能 DPR 限制（核心黑科技）</strong>：<br/>这是防止闪退的关键。我们在绘制前计算“目标画布尺寸”。</p><ul><li><strong>判断</strong>：如果 <code>逻辑尺寸 * 系统DPR</code> 超过了安全阈值（如 4096px）。</li><li><strong>降级</strong>：强制降低使用的 DPR 值，确保最终纹理尺寸在安全范围内。</li><li><strong>结果</strong>：牺牲肉眼难以察觉的极微小清晰度，换取 <strong>100% 不闪退</strong> 的稳定性。</li></ul></li></ol><h2>3. 硬核代码实现</h2><p>以下是<code>帮小忙工具箱</code>小程序封装好的 <code>imageUtils.js</code> 核心源代码，包含<strong>格式转换</strong>和<strong>带防爆逻辑的旋转</strong>功能。</p><pre><code class="javascript">// utils/imageUtils.js
+
+// 1. 获取系统基础信息
+const wxt = {
+  dpr: wx.getSystemInfoSync().pixelRatio || 2
+};
+
+// 2. 图片对象缓存池（避免重复加载同一张图）
+const cacheCanvasImageMap = new Map();
+
+/**
+ * 内部方法：获取/创建 Canvas Image 对象
+ */
+async function getCanvasImage(canvas, imageUrl) {
+  if (cacheCanvasImageMap.has(imageUrl)) {
+    return cacheCanvasImageMap.get(imageUrl);
+  }
+  
+  // 兼容 Promise.withResolvers 或使用 new Promise
+  const { promise, resolve, reject } = Promise.withResolvers();
+  const image = canvas.createImage();
+  image.onload = () =&gt; {
+    cacheCanvasImageMap.set(imageUrl, image);
+    resolve(image);
+  };
+  image.onerror = (e) =&gt; reject(new Error(`图片加载失败: ${e.errMsg}`));
+  image.src = imageUrl;
+  await promise;
+  return image;
+}
+
+/**
+ * 功能一：离屏 Canvas 转换图片格式 (PNG/HEIC -&gt; JPG)
+ * @param {string} imageUrl 图片路径
+ * @param {string} destFileType 目标类型 'jpg' | 'png'
+ * @param {number} quality 质量 0-1
+ */
+export async function convertImageType(imageUrl, destFileType = 'jpg', quality = 1) {
+  const offscreenCanvas = wx.createOffscreenCanvas({ type: '2d' });
+  const image = await getCanvasImage(offscreenCanvas, imageUrl);
+  const { width, height } = image;
+
+  // 基础转换：直接使用系统 DPR 保证高清
+  offscreenCanvas.width = width * wxt.dpr;
+  offscreenCanvas.height = height * wxt.dpr;
+
+  const ctx = offscreenCanvas.getContext('2d');
+  ctx.scale(wxt.dpr, wxt.dpr);
+  ctx.drawImage(image, 0, 0, width, height);
+
+  const res = await wx.canvasToTempFilePath({
+    canvas: offscreenCanvas,
+    fileType: destFileType,
+    quality: quality,
+  });
+  return res.tempFilePath;
+}
+
+/**
+ * 功能二：极速旋转图片 (含内存保护)
+ * @param {string} imageUrl 图片路径
+ * @param {number} degree 旋转角度 (90, 180, 270...)
+ */
+export async function rotateImage(imageUrl, degree = 90, destFileType = 'jpg', quality = 1) {
+  const offscreenCanvas = wx.createOffscreenCanvas({ type: '2d' });
+  const image = await getCanvasImage(offscreenCanvas, imageUrl);
+  const { width, height } = image;
+
+  const radian = (degree * Math.PI) / 180;
+  
+  // 1. 计算旋转后的逻辑包围盒宽高
+  const newWidth = Math.abs(width * Math.cos(radian)) + Math.abs(height * Math.sin(radian));
+  const newHeight = Math.abs(width * Math.sin(radian)) + Math.abs(height * Math.cos(radian));
+
+  // --- ⚡️ 性能优化核心 Start ---
+  
+  // 2. 智能计算 DPR：避免画布过大炸内存
+  // 设定安全纹理阈值，4096px 是大多数移动端 GPU 的安全线
+  const LIMIT_SIZE = 4096; 
+  let useDpr = wxt.dpr;
+
+  // 核心判断：如果 (逻辑边长 * dpr) 超过限制，自动计算最大允许的 dpr
+  if (Math.max(newWidth, newHeight) * useDpr &gt; LIMIT_SIZE) {
+    useDpr = LIMIT_SIZE / Math.max(newWidth, newHeight);
+    console.warn(`[ImageRotate] 图片过大，触发自动降级，DPR调整为: ${useDpr.toFixed(2)}`);
+  }
+
+  // 3. 设置物理画布尺寸 (使用计算后的安全 DPR)
+  offscreenCanvas.width = newWidth * useDpr;
+  offscreenCanvas.height = newHeight * useDpr;
+
+  const ctx = offscreenCanvas.getContext('2d');
+  ctx.scale(useDpr, useDpr); 
+  
+  // --- 性能优化核心 End ---
+
+  // 4. 绘图逻辑：平移 -&gt; 旋转 -&gt; 绘制
+  ctx.translate(newWidth / 2, newHeight / 2);
+  ctx.rotate(radian);
+  ctx.drawImage(image, -width / 2, -height / 2, width, height);
+
+  // 5. 导出文件 
+  const res = await wx.canvasToTempFilePath({
+    canvas: offscreenCanvas,
+    fileType: destFileType,
+    quality: quality,
+  });
+
+  return res.tempFilePath;
+}</code></pre><h2>4. 避坑与实战经验</h2><ol><li><strong>图片转pdf场景经验</strong><br/>图片转成pdf，在使用<code>pdf-lib</code>插入图片时，只支持jpg、png在插入前先判断一下是否符合，用户可能上传webp等图片（有些人觉得限制上传类型，但图片后缀有可能被篡改过），就需要先转换；另外如果要保证pdf是纵向的，使用canvas提前确保图片为纵向的，就简单很多，无需在<code>pdf-lib</code>做坐标变换</li><li><strong>DPR 的取舍艺术</strong>：<br/>很多开发者喜欢写死 <code>offscreenCanvas.width = width</code>，这样导出的图是模糊的。也有人写死 <code>width * systemDpr</code>，这会导致大图闪退。<br/><strong>最佳实践</strong>就是代码中的 <code>Math.min</code> 逻辑：<strong>在安全范围内，尽可能高清</strong>。</li><li><p><strong>兼容性提示</strong>：<br/>代码中使用了 <code>Promise.withResolvers()</code>，这是 ES2024 新特性。我全局内置兼容代码。</p><pre><code class="js">/**
+ * 创建withResolvers函数
+ */
+Promise.withResolvers =
+Promise.withResolvers ||
+function () {
+    let resolve, reject;
+    const promise = new Promise((res, rej) =&gt; {
+        resolve = res;
+        reject = rej;
+    });
+    return {
+        promise,
+        resolve,
+        reject,
+    };
+};</code></pre></li></ol><h2>写在最后</h2><p>通过这一套组合拳，我们成功在小程序中实现了稳定、高效的本地图片处理。无论用户使用几年前的安卓机还是最新的 iPhone，都能流畅地完成图片旋转与转换，再也不用担心内存溢出带来的闪退噩梦了！</p><p>希望这篇实战分享能帮你解决 Canvas 开发中的性能难题！</p>]]></description></item><item>    <title><![CDATA[【论文精读】当代软件现代化：战略、动力与研究机遇 Matrix工作室 ]]></title>    <link>https://segmentfault.com/a/1190000047531387</link>    <guid>https://segmentfault.com/a/1190000047531387</guid>    <pubDate>2026-01-09 09:02:52</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <blockquote><p>在当今的商业环境中，几乎每家公司都依赖于软件系统。然而，许多系统并非新兴的、时髦的技术，而是我们常说的“遗留系统”或“祖传代码”。这些系统虽然承载着多年的业务知识和核心价值，但其维护成本却高得惊人。</p><p>为了揭示软件现代化的真实面貌，我们进行了一项系统性的研究，全面综述了过去十年间发表的 126 篇相关学术论文。这项分析的目的，是拨开行业流行语的迷雾，找到那些被实践和数据反复验证的真知灼见。</p><p>Wesley K. G. Assunção, Luciano Marchezan, Lawrence Arkoh, Alexander Egyed, and Rudolf Ramler. 2025. Contemporary Software Modernization: Strategies, Driving Forces, and Research Opportunities. ACM Trans. Softw. Eng. Methodol. 34, 5, Article 142 (June 2025), 35 pages. <a href="https://link.segmentfault.com/?enc=R1qMA4WZnyRPLvyedi6QBQ%3D%3D.dy5oBLfNtYqhdzxLK%2FtbmPgTJJ07GVN5wUZGhWMMQ1A%3D" rel="nofollow" target="_blank">https://doi.org/10.1145/3708527</a></p></blockquote><h2>背景</h2><p>一个普遍的误区是，只要是遗留系统，就必须进行现代化改造。但研究结果明确指出：现代化并非总是正确的选择。</p><p>在现有文献中，我们可以看到将传统系统向现代系统转型的三种方式：</p><ol><li>“大爆炸式”改革，即直接用现代系统替换传统系统；</li><li>渐进式现代化，逐步用现代组件替换传统系统的部分模块；</li><li>共存模式，让传统与现代组件在同一系统中共存运作。</li></ol><p>为了做出明智决策，研究人员在现有经典模型的基础上，提出了一个扩展版的“投资组合分析象限”（Portfolio Analysis Quadrant）决策框架。该框架建议根据系统的​<strong>技术质量 (Technical Quality)</strong>​、<strong>商业价值 (Business Value)</strong> 以及新增的<strong>创新潜力 (Innovation)</strong> 这三个维度，来决定其未来走向，如图1所示。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047531390" alt="image.png" title="image.png"/></p><p>这会产生五种可能的结果：</p><ol><li>​<strong>替换</strong>​：对于商业价值和技术质量都低的系统，最明智的选择是放弃，并用现成的商业解决方案取而代之。</li><li>​<strong>维护</strong>​：对于技术质量高但商业价值低的系统，推荐的策略是进行常规维护，保持其正常运行即可。投入巨资进行现代化改造很可能得不偿失。</li><li>​<strong>演进</strong>​：对于技术质量和商业价值双高的系统，应通过常规的软件演进（如添加新功能）来持续提升其价值。</li><li>​<strong>重构</strong>​：对于商业价值高但技术质量差（即技术债严重）的系统，应进行重构，以改善其内部质量，同时保留其核心商业价值。</li><li>​<strong>迁移</strong>​：当一个具有高商业价值的系统需要与新兴技术结合以驱动创新时（例如，数字化转型），无论其技术质量如何，都应考虑进行迁移。</li></ol><p>这一发现的核心在于​<strong>战略定力</strong>​。在砸钱启动现代化项目之前，企业必须冷静评估系统的真实成色。对于那些运转良好但已非业务核心的系统，“什么都不做”可能反而是避免资源浪费的最佳策略。</p><h2>结果与分析</h2><p>表 2 列举了研究中归纳出的 8 种现代化策略，这些策略已被应用于软件工程的多个领域，例如系统云迁移、架构优化、编程语言转型、复用优化、新型硬件集成、自动化应用、数据库升级以及数字化转型。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047531391" alt="image.png" title="image.png" loading="lazy"/></p><p>人们通常认为，软件现代化的主要目的是为了偿还“技术债”，修复过时的代码。然而，对 126 项研究中提及的 14 个驱动力的分析显示，这一假设并不完全正确。关于驱动因素（详见表 3），研究人员将这些驱动力归纳为三大类：​运营 (Operational)​、技术 (Technical)和 ​组织 (Organizational)​。令人惊讶的是，最主要的驱动力来自运营层面，而非技术层面。被提及次数最多的驱动力（在 62 项研究中出现）是​降低运营成本 (reducing operational costs)*。这意味着，大多数现代化项目的根本动机是财务上的。企业希望通过现代化来减少昂贵的维护费用、硬件成本和专业人才招聘的困难。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047531392" alt="image.png" title="image.png" loading="lazy"/></p><p>既然现代化的首要驱动力是商业和财务目标，那么阻碍企业实现这些目标的最大技术障碍又是什么呢？出人意料的是，研究表明问题并不在于代码本身。表 4 则呈现了本次分析的研究样本中所发现的 16 项挑战。在所有被提及的挑战中，最普遍的一个是​缺乏工具支持 (lack of tooling support)​，在 126 项研究中有 45 篇论文都提到了这一点。这表明，行业中存在一个根本性的差距：工程师们迫切需要更先进、更自动化的工具来辅助代码分析、迁移和重构工作，但现实中这类工具却严重不足。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047531393" alt="image.png" title="image.png" loading="lazy"/></p><p>接下来，我们将详细拆解这 8 种策略，探讨它们背后的动因、面临的挑战以及未来的研究机遇。</p><h3>云端化 (Cloudification)</h3><p>云端化是目前应用最广泛的系统现代化策略，相关研究多达 41 项。这一结果其实在意料之中，毕竟当下各类云服务提供商的普及度本就很高。</p><p>基于该策略下的大量原始研究资料，我们将其划分为三个细分方向：</p><ol><li>无特定架构约束的系统上云迁移：不依托任何既定的架构风格，直接完成系统向云端的迁移部署；</li><li>遗留系统向面向服务架构（SOA）的转型：把传统老旧系统重构为符合 SOA 架构理念的系统；</li><li>单体系统向微服务架构的迁移：将庞大的单体系统拆解为轻量、独立的微服务模块。</li></ol><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047531394" alt="Gemini_Generated_Image_g9kfsug9kfsug9kf.png" title="Gemini_Generated_Image_g9kfsug9kfsug9kf.png" loading="lazy"/></p><h4>无特定架构约束的系统上云迁移</h4><p>这一策略主要指将本地运行的遗留系统整体“搬家”到云基础设施。过程包括迁移应用程序、数据和安全组件。其特点是​<strong>不动架构</strong>​，单体系统上云后依然是单体。</p><h5>驱动因素</h5><p>最直接的动力是解决<strong>可扩展性</strong>问题。例如，有研究提到一个实时地理社交应用，因为数据量激增和搜索变复杂，本地撑不住了，必须上云。另一大动力是​<strong>成本</strong>​。本地机房维护贵、人手重，而云服务按需付费，管理省心。此外，迁移到 FaaS（功能即服务）模式还能降低系统复杂度，提升可测试性。</p><h5>研究机遇</h5><ul><li>​<strong>新旧系统共存</strong>​：目前研究多关注“大爆炸”或“渐进式”替换，很少讨论如何构建一个“混合环境”，让新旧系统在很长一段时间内协同工作，特别是解决功能缺失和数据不兼容的问题。</li><li>​<strong>迁移流程标准化</strong>​：如何选择云平台？如何评估迁移后的成本与质量？业界需要更通用的决策模型。</li><li>​<strong>性能预测</strong>​：在 FaaS 场景下，如何通过预测函数调用来预热容器，解决“冷启动”卡顿，是一个热门方向。</li><li>​<strong>工具链缺失</strong>​：目前缺乏能够生成架构视图、追踪决策流程的云迁移规划工具。</li></ul><h4>遗留系统向面向服务架构（SOA）的转型</h4><p>核心目标是把“铁板一块”的系统拆成模块化、松耦合的服务。</p><h5>驱动因素</h5><p>很多用 COBOL 写的老系统面临三大难：运行贵、招人难、工具少。转向 SOA 不仅能降低维护成本，还能让架构更易懂，甚至挖掘出新的商业机会（服务对外开放）。</p><h5>研究机遇</h5><ul><li>​<strong>服务识别难题</strong>​：在代码耦合严重的“面条代码”中，现有的聚类算法往往很难精准切分出独立服务。我们需要更智能的服务识别技术。</li><li>​<strong>反模式检测</strong>​：为了求快，很多自动生成接口的工具会引入“代码怪味”或反模式（如数据模型封闭）。我们需要工具来自动检测和修正这些问题。</li></ul><h4>单体系统向微服务架构的迁移</h4><p>这是 SOA 的进阶版，将系统拆得更细、更独立。</p><h5>驱动因素</h5><p>两大核心动力：一是​<strong>解决扩展瓶颈</strong>​，二是<strong>配合 DevOps</strong> 实现快速发布。微服务允许对特定模块进行独立扩容，能显著提升业务敏捷性。</p><h5>研究机遇</h5><ul><li>​<strong>拆分技术升级</strong>​：怎么把单体拆成微服务？这是最难的。除了静态分析，现在有研究开始尝试用机器学习、图神经网络来辅助识别微服务边界。</li><li>​<strong>评估指标</strong>​：我们需要新的指标来量化拆分的效果（比如复用度如何？），以便在动手前做好规划。</li><li>​<strong>可视化与重配置</strong>​：技术和业务人员之间往往存在沟通壁垒，需要开发能直观展示微服务架构、并支持动态调整配置的工具。</li></ul><h3>架构重构</h3><p>软件用了几十年，功能不断堆叠，架构往往已经变得难以理解。对于高商业价值的系统，通过重构来改善内部质量是必经之路。</p><p>例如，系统通常在空间维度上不断扩展功能，在时间维度上持续更新功能，这使得对其理解变得困难。针对这种情况，采用重构策略是提升遗留系统内部质量以应对现代化改造的有效方法。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047531395" alt="Gemini_Generated_Image_k08b5xk08b5xk08b.png" title="Gemini_Generated_Image_k08b5xk08b5xk08b.png" loading="lazy"/></p><h4>驱动因素</h4><p>重构通常是为了解决具体痛点：数据结构混乱导致的不一致、业务逻辑重复导致难以维护、模块耦合过重导致无法复用。此外，引入多租户模式（SaaS 化）或改为反应式编程以提升性能，也是重构的重要动因。</p><h4>研究方向</h4><ul><li>​<strong>架构恢复技术</strong>​：先得搞清楚现在的架构长什么样。未来可以探索利用无监督学习或扎根理论，从复杂的遗留代码中“考古”还原出架构图。</li><li>​<strong>正确性验证</strong>​：重构不能把系统改坏了。如何自动生成单元测试来验证重构后的代码，以及确保重构不降低性能，是关键问题。</li><li>​<strong>大模型辅助</strong>​：利用 LLM（大语言模型）来理解代码、检测代码异味（Code Smell）并辅助重构，是极具潜力的前沿方向。</li></ul><h3>编程语言转型</h3><p>简单说，就是把代码从“死语言”翻译成“活语言”。比如从 COBOL 转到 Java/C#，或者 VB 转 Python。</p><h4>驱动因素</h4><p>最根本的原因是​<strong>人才断层</strong>​（没人会写 COBOL 了）和​<strong>技术生态</strong>​（旧语言缺乏新库支持）。例如，AI 时代，金融业纷纷把 Visual Basic 转成 Python。这不仅是为了好维护，更是为了能用上新的技术栈。</p><h4>研究方向</h4><ul><li>​<strong>性能评估</strong>​：翻译后的代码跑得快吗？有案例显示重构后性能反而下降。未来需要更多针对特定框架（如 Angular）迁移后的性能评估研究。</li><li>​<strong>成本效益分析</strong>​：别拍脑袋决定。需要模型来量化分析，转语言到底划不划算？要把数据库依赖等复杂因素考虑进去。</li><li>​<strong>AI 翻译工具</strong>​：现在的工具很多只做语法翻译。未来需要能微调的大模型，它不仅能翻译代码，还能理解业务规格，并自动生成测试用例。</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047531396" alt="Gemini_Generated_Image_547l1k547l1k547l.png" title="Gemini_Generated_Image_547l1k547l1k547l.png" loading="lazy"/></p><h3>复用优化</h3><p>这一策略主要关注<strong>软件产品线 (SPL)</strong> 工程。简单说，就是别再到处“复制粘贴”代码了，而是建立一套通用的“底座”或工厂模式，系统地生产软件。</p><h4>驱动因素</h4><p>“复制粘贴”式开发虽然初期快，但后期维护是噩梦——改一个 Bug 要改十个地方。引入 SPL 旨在提取通用功能（如安全模块），减少重复开发，缩短上市时间。</p><h4>研究方向</h4><ul><li>​<strong>经济账怎么算</strong>​：搞产品线工程，初期投入很大。需要建立模型来预测收益，告诉老板这笔钱花得值不值。</li><li>​<strong>业务驱动</strong>​：如何确保提取的通用模块真的符合市场需求？需要将业务约束纳入建模。</li><li>​<strong>特征提取工具</strong>​：目前缺乏好用的工具来从现有代码中自动提取“产品线特征”，这导致很多依赖关系理不清楚。</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047531397" alt="Gemini_Generated_Image_wssng6wssng6wssn.png" title="Gemini_Generated_Image_wssng6wssng6wssn.png" loading="lazy"/></p><h3>新型硬件集成适配</h3><p>硬件在变（多核 CPU、AI 芯片、非易失性存储），软件得跟上。</p><h4>驱动因素</h4><p>为了突破“内存墙”瓶颈，计算内存架构 (CIM) 等新技术应运而生。遗留系统必须重写或调整，才能利用这些新硬件的性能。</p><h4>研究方向</h4><ul><li>​<strong>权衡分析</strong>​：针对新硬件优化往往是牵一发而动全身。需要程序化的验证方法，确保为了并行化而修改代码后，逻辑依然正确。</li><li>​<strong>编译器与转换工具</strong>​：新硬件（如 CIM）的编程范式很复杂（涉及矩阵运算等）。我们需要能自动将老代码转换为适配新硬件格式的编译器，减少人工重写的痛苦。</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047531398" alt="image.jpg" title="image.jpg" loading="lazy"/></p><h3>自动化应用</h3><p>引入 DevOps 和自动化脚本，把人工运维变成自动化流程。</p><h4>驱动因素</h4><p>核心就是<strong>快</strong>和​<strong>稳</strong>​。自动化能显著缩短发布周期，降低运营成本。</p><h4>研究方向</h4><ul><li>​<strong>自主计算</strong>​：让软件具备“自我管理”和“自愈”能力。</li><li>​<strong>重构自动化</strong>​：开发能集成在 CI/CD 流水线中的重构工具，让代码质量管理常态化。</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047531399" alt="40eee640-da4b-40e0-b6fb-74d1d9b8d649.png" title="40eee640-da4b-40e0-b6fb-74d1d9b8d649.png" loading="lazy"/></p><h3>数据库现代化</h3><p>从关系型数据库转 NoSQL，或者整合多个数据源。这对确保业务运营高效持续至关重要，尤其在企业合并或收购时。</p><h4>驱动因素</h4><p>主要是为了解决<strong>数据孤岛</strong>问题，特别是在企业并购时，系统间的数据互通至关重要。</p><h4>研究方向</h4><h5>数据库间数据迁移</h5><ul><li>​<strong>跨库迁移</strong>​：从 SQL 到 NoSQL 的数据迁移不仅仅是导数据，还涉及数据模型的转换。需要更安全、高效的迁移方案。</li><li>​<strong>互操作性平台</strong>​：在工业 4.0 时代，建立一个能让所有系统无缝交换数据的底层数据库设施是当务之急。</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047531400" alt="1767891074863-y3v52b0kwdr.png" title="1767891074863-y3v52b0kwdr.png" loading="lazy"/></p><h3>数字化转型</h3><p>这是一个宏大的命题，通常指利用数字技术彻底重塑业务流程，比如工业 4.0。</p><h4>驱动因素</h4><p>为了在万物互联的时代保持竞争力。比如让老旧的工厂设备也能联网，实现数据采集和互操作。</p><h4>研究方向</h4><ul><li>​<strong>数字孪生</strong>​：利用数字孪生技术，先在虚拟世界里模拟老系统的现代化改造，测好了再动手。</li><li>​<strong>自组织系统</strong>​：开发能让工厂设备自动感知变更并重新配置的工具，实现真正的智能制造。</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047531401" alt="Please_draw_a_202601090110.jpeg" title="Please_draw_a_202601090110.jpeg" loading="lazy"/></p><h2>讨论</h2><p>下图系统梳理了驱动力与现代化战略、现代化战略与挑战之间的关联关系，同时揭示了不同现代化战略共有的驱动力与挑战特征。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047531402" alt="image.png" title="image.png" loading="lazy"/></p><p><strong>RQ1: 我们有哪些现代化手段？</strong>我们总结了 8 大策略。其中<strong>云化转型</strong>是一骑绝尘的热门选择（41 项研究），其次是架构重构和编程语言转型。</p><p><strong>RQ2: 到底是什么在驱动企业做现代化？</strong>我们识别了 14 种驱动力。​<strong>“钱”是最关键的因素​</strong>​。降低运营成本、提升性能/可扩展性、以及系统互操作性是最常见的三大动力。这说明，技术情怀往往要让位于商业现实。</p><p><strong>RQ3: 最大的拦路虎是什么？</strong>我们归纳了 16 个挑战。​<strong>工具匮乏是最大的痛点</strong>​。无论是云迁移、微服务拆分还是语言转换，工程师们都缺乏高效的自动化工具支持。此外，如何定义标准的现代化流程、如何建立科学的评估指标（KPI），也是未来亟待解决的研究方向。</p><hr/><p>通过对过去十年 126 篇学术论文的深度复盘，我们得以一窥软件现代化的真实图景。它远非一个单纯的代码修改问题，而是一场涉及商业目标、财务预算、工具基建和长远战略的复杂战役。对于企业而言，认清形势、选对策略、配好工具，方能在现代化的浪潮中立于不败之地。</p>]]></description></item><item>    <title><![CDATA[2026-01-09 GitHub 热点项目精选 程序员锋仔 ]]></title>    <link>https://segmentfault.com/a/1190000047531504</link>    <guid>https://segmentfault.com/a/1190000047531504</guid>    <pubDate>2026-01-09 09:02:04</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>🌟 2026-01-09 GitHub Python 热点项目精选(17个)</h2><blockquote>每日同步 GitHub Trending 趋势，筛选优质 Python 项目，助力开发者快速把握技术风向标～</blockquote><hr/><h3>📋 项目列表（按 Star 数排序）</h3><h4>1. <a href="https://link.segmentfault.com/?enc=bgV47Ja8JYz5F7mDlvhxqA%3D%3D.o7vjMiCnOry8F%2Fsx1S%2FYkZeR5Pk6ni1GakdG%2Fe6T6q0qAJa85dGH0XT7B6fqMUm9" rel="nofollow" target="_blank">MiroMindAI/MiroThinker</a></h4><blockquote>MiroThinker 是一个由 MiroMindAI 团队开发的项目，可能与人工智能的思考、推理或某种智能决策相关。从名字来看，它或许会涉及到一些创新的思维模型或算法，用于解决复杂的智能任务，不过具体细节需要进一步查看项目文档和代码来确定。</blockquote><table><thead><tr><th>指标</th><th>详情</th></tr></thead><tbody><tr><td>Star 数</td><td>🌟 3377（今日+799）</td></tr><tr><td>Fork 数</td><td>🔄 219</td></tr><tr><td>开发语言</td><td>🐍 Python</td></tr><tr><td>项目地址</td><td><a href="https://link.segmentfault.com/?enc=AWhR%2BY0tWzwnMLkob%2B23%2FQ%3D%3D.28tEMwiiOfzX2F4zfFJm3D6OcAdWF3seeOsBIFOe0UiKS5wqKvxHe8MHJTW5FM5h" rel="nofollow" target="_blank">https://github.com/MiroMindAI/MiroThinker</a></td></tr></tbody></table><hr/><h4>2. <a href="https://link.segmentfault.com/?enc=SGiZ5Va6A1g%2BEfE7FkkqPw%3D%3D.6nb6HSgxBZFVMOn5zoYx37ZyhGV0PZWVB8mYMM6kdybdiIrULfq87kGJI9zlr439" rel="nofollow" target="_blank">NVlabs/alpasim</a></h4><blockquote>NVlabs 是英伟达旗下的实验室，alpasim 很可能是一个与模拟、仿真相关的项目。考虑到英伟达在图形处理和计算领域的强大实力，该项目可能涉及到高性能计算、图形渲染的模拟，或者是某种新型硬件架构的仿真，用于优化芯片设计或提升计算效率等。</blockquote><table><thead><tr><th>指标</th><th>详情</th></tr></thead><tbody><tr><td>Star 数</td><td>🌟 516（今日+65）</td></tr><tr><td>Fork 数</td><td>🔄 43</td></tr><tr><td>开发语言</td><td>🐍 Python</td></tr><tr><td>项目地址</td><td><a href="https://link.segmentfault.com/?enc=hv4zBBtHyVoBzPilCmbSdA%3D%3D.DZhVOP0fx7N36kFZ%2FllvA%2F3EyLWB7gqHpKCT3XFwDKxkAzAWy%2BXGBkXEBA%2B8o8OU" rel="nofollow" target="_blank">https://github.com/NVlabs/alpasim</a></td></tr></tbody></table><hr/><h4>3. <a href="https://link.segmentfault.com/?enc=43RFt1tZXkiG02XAWIGOgA%3D%3D.woQdfGmuuXUATzK8yUNMwRkQOYnaXFRurjSqWHZEBojKkQ7zm4nJLg4Vb99Kjroy" rel="nofollow" target="_blank">Lightricks/ComfyUI-LTXVideo</a></h4><blockquote>Lightricks 是一家在图像和视频处理领域很有名的公司，ComfyUI-LTXVideo 项目可能是一个与用户界面和视频处理相结合的工具。它或许提供了一种舒适、便捷的用户交互方式，用于对视频进行各种特效处理、编辑或优化，让视频创作更加简单高效。</blockquote><table><thead><tr><th>指标</th><th>详情</th></tr></thead><tbody><tr><td>Star 数</td><td>🌟 2636（今日+44）</td></tr><tr><td>Fork 数</td><td>🔄 264</td></tr><tr><td>开发语言</td><td>🐍 Python</td></tr><tr><td>项目地址</td><td><a href="https://link.segmentfault.com/?enc=zzKsVm3CBc1B4P4bgOFGgQ%3D%3D.R0uETg9EU4%2F%2F5ylJmcMc%2BXUjuoXncYOJp3S9IWe2XpM%2FTSGsdo5fwfR2XJf2wDrd" rel="nofollow" target="_blank">https://github.com/Lightricks/ComfyUI-LTXVideo</a></td></tr></tbody></table><hr/><h4>4. <a href="https://link.segmentfault.com/?enc=wD5PV6Fof0WMORfd21FfcQ%3D%3D.WunXzSuCLpaM0ZHL7HnP8x6pzon0S%2BCw0RUCHTgm31ozhf4%2FqgKK%2BV%2BJM%2FeHGX%2BB" rel="nofollow" target="_blank">NevaMind-AI/memU</a></h4><blockquote>NevaMind-AI 团队开发的 memU 项目，从名字来看，“mem”可能与“memory”（记忆）有关。它可能是一个用于增强记忆、优化数据存储或处理记忆相关任务的人工智能项目，比如帮助用户更好地记忆信息，或者在机器学习中优化模型的记忆机制。</blockquote><table><thead><tr><th>指标</th><th>详情</th></tr></thead><tbody><tr><td>Star 数</td><td>🌟 3751（今日+97）</td></tr><tr><td>Fork 数</td><td>🔄 250</td></tr><tr><td>开发语言</td><td>🐍 Python</td></tr><tr><td>项目地址</td><td><a href="https://link.segmentfault.com/?enc=OD1EUx%2BUwhM%2FJ2mhvG7iWg%3D%3D.1mTGB0g50jsyR8rwq3%2BXhsjicJ0pCT4pyhzQcostPTL0cieTeYUpdVfADQOCVISd" rel="nofollow" target="_blank">https://github.com/NevaMind-AI/memU</a></td></tr></tbody></table><hr/><h4>5. <a href="https://link.segmentfault.com/?enc=ncfjHezOKmYwOH0j8w%2F5mQ%3D%3D.JuAWOlkWoYYEtStfrj%2BdbUkOyhuuthCSu07BUctvsNavqnZ58VCygGZBkQPPCSOQ" rel="nofollow" target="_blank">HKUDS/VideoRAG</a></h4><blockquote>由香港大学数据科学团队（HKUDS）开发的 VideoRAG 项目，很可能是与视频处理和检索相关的研究项目。它可能结合了视频分析、检索算法和人工智能技术，用于从大量视频数据中快速准确地找到用户需要的内容，提升视频数据的利用效率。</blockquote><table><thead><tr><th>指标</th><th>详情</th></tr></thead><tbody><tr><td>Star 数</td><td>🌟 2009（今日+120）</td></tr><tr><td>Fork 数</td><td>🔄 286</td></tr><tr><td>开发语言</td><td>🐍 Python</td></tr><tr><td>项目地址</td><td><a href="https://link.segmentfault.com/?enc=GkHYIh3VA3sQD%2BxzKLyGng%3D%3D.mIxU19xxL8ygJxauBlGi4LGWVnfkJAjxUAaVkVosMJ30TAXZJDI8SjC6EyaRIAbw" rel="nofollow" target="_blank">https://github.com/HKUDS/VideoRAG</a></td></tr></tbody></table><hr/><h4>6. <a href="https://link.segmentfault.com/?enc=TSq%2FQS5YNP0shGUF6rlVGw%3D%3D.DOvkn4Dx%2FdrgSXfYr0Zj3JKWcp7Hn4frTHjrQRLBeH8%3D" rel="nofollow" target="_blank">mem0ai/mem0</a></h4><blockquote>mem0ai 团队的 mem0 项目，从名字推测，“mem0”可能与“memory”（记忆）有关。它可能是一个专注于记忆相关的人工智能应用，比如帮助用户记忆信息、优化学习计划，或者在机器学习中处理与记忆相关的任务，比如模型的长期记忆机制等。</blockquote><table><thead><tr><th>指标</th><th>详情</th></tr></thead><tbody><tr><td>Star 数</td><td>🌟 45234（今日+84）</td></tr><tr><td>Fork 数</td><td>🔄 4932</td></tr><tr><td>开发语言</td><td>🐍 Python</td></tr><tr><td>项目地址</td><td><a href="https://link.segmentfault.com/?enc=xW%2FP7LLFgwaI%2F7Ih1QPmbA%3D%3D.DPZeB92g6wmU%2BHgh5jp%2BIZXr8aJ35jodtTpZSXZ0who%3D" rel="nofollow" target="_blank">https://github.com/mem0ai/mem0</a></td></tr></tbody></table><hr/><h4>7. <a href="https://link.segmentfault.com/?enc=Wv7OZBTzvdYv1pnEwSxS6w%3D%3D.LJ93MsBuqY%2BWam1rUkc%2BqH8QtcuUMoplAz56y9pGVNJdqw0uHq9Gt686drqYvszi" rel="nofollow" target="_blank">crewAIInc/crewAI</a></h4><blockquote>crewAIInc 团队开发的 crewAI 项目，从名字来看，可能与团队协作（crew）和人工智能（AI）相结合。它可能是一个为团队工作设计的人工智能助手，用于提高团队效率，比如任务分配、进度跟踪、智能会议记录等功能，帮助团队更好地协同工作。</blockquote><table><thead><tr><th>指标</th><th>详情</th></tr></thead><tbody><tr><td>Star 数</td><td>🌟 42422（今日+57）</td></tr><tr><td>Fork 数</td><td>🔄 5689</td></tr><tr><td>开发语言</td><td>🐍 Python</td></tr><tr><td>项目地址</td><td><a href="https://link.segmentfault.com/?enc=C9%2FwdKz5Jk6wenwWa%2FY67w%3D%3D.%2FRq%2BkjzIoTdxfuDCoG3mekb5m%2B8%2BlEXQiJEjL%2B8zHZ%2Bd0Y2rv%2Fn%2FoYwZ3DsXbEIq" rel="nofollow" target="_blank">https://github.com/crewAIInc/crewAI</a></td></tr></tbody></table><hr/><h4>8. <a href="https://link.segmentfault.com/?enc=QuihqHtGy8wwpb%2B7VwFrbA%3D%3D.y21eb9PX0%2FEyiQ0EfEMj3TgCnJ2B%2Bx9%2FQmNXl3gP2og4%2BZyQmmjajEGkmZ2liCUr" rel="nofollow" target="_blank">public-apis/public-apis</a></h4><blockquote>public-apis 项目是一个汇集了大量公共 API 的资源库。它为开发者提供了一个方便的平台，可以快速查找和使用各种免费的 API 接口，涵盖从天气、新闻、金融到社交媒体等多个领域，极大地简化了开发过程，帮助开发者快速构建功能丰富的应用程序。</blockquote><table><thead><tr><th>指标</th><th>详情</th></tr></thead><tbody><tr><td>Star 数</td><td>🌟 390235（今日+211）</td></tr><tr><td>Fork 数</td><td>🔄 41709</td></tr><tr><td>开发语言</td><td>🐍 Python</td></tr><tr><td>项目地址</td><td><a href="https://link.segmentfault.com/?enc=aK5Udmhetp2xZ8fMyZ32EQ%3D%3D.FQBHHMPinn0fgxbrKBbBi6D1WjGsWee3rjea%2FkTkcDJJh0HLaGj4SqFTdRwWig%2FX" rel="nofollow" target="_blank">https://github.com/public-apis/public-apis</a></td></tr></tbody></table><hr/><h4>9. <a href="https://link.segmentfault.com/?enc=%2F0IpKSfZVDmFu88tlEoIYg%3D%3D.KY12GcEOnKk7CJwulAlehwpshhY5kvYvehxil%2Bks5aVMFxWxnxuYgZtJ1liGWC%2F%2F" rel="nofollow" target="_blank">browser-use/browser-use</a></h4><blockquote>browser-use 项目可能是一个与浏览器使用相关的工具或库。它可能提供了浏览器自动化操作的功能，比如自动打开网页、填写表单、模拟用户行为等，帮助开发者进行网页爬取、自动化测试或开发一些基于浏览器的自动化脚本。</blockquote><table><thead><tr><th>指标</th><th>详情</th></tr></thead><tbody><tr><td>Star 数</td><td>🌟 74990（今日+171）</td></tr><tr><td>Fork 数</td><td>🔄 8958</td></tr><tr><td>开发语言</td><td>🐍 Python</td></tr><tr><td>项目地址</td><td><a href="https://link.segmentfault.com/?enc=hOqqkiuG2o%2F%2Fh5%2Fy3Ih%2Bug%3D%3D.X8%2FTCctJaaLrrL9r%2FOfNuTaBGEhncWP%2F6NwkfC1dTduAKRmJm7KBQ7jF62lYtMJw" rel="nofollow" target="_blank">https://github.com/browser-use/browser-use</a></td></tr></tbody></table><hr/><h4>10. <a href="https://link.segmentfault.com/?enc=CkQSlPcIlcoblxsaepy05A%3D%3D.3NUMgNiJZuPH9MV8xGEFdR%2F7VNzDEJrMc7kKE3QZR6dhNy1pVninmc9MsyRxzATB" rel="nofollow" target="_blank">hiyouga/LlamaFactory</a></h4><blockquote>LlamaFactory 项目由 hiyouga 开发，从名字来看，“Llama”可能与某种模型或架构有关，而“Factory”则暗示了它可能是一个用于生成、管理和优化这些模型的工具或框架。它可能涉及到机器学习模型的快速构建和部署，帮助开发者更高效地开发和应用人工智能模型。</blockquote><table><thead><tr><th>指标</th><th>详情</th></tr></thead><tbody><tr><td>Star 数</td><td>🌟 65244（今日+123）</td></tr><tr><td>Fork 数</td><td>🔄 7930</td></tr><tr><td>开发语言</td><td>🐍 Python</td></tr><tr><td>项目地址</td><td><a href="https://link.segmentfault.com/?enc=%2B%2FgkJUtCjSeHdV5DpvfvfA%3D%3D.i6w8bWKG72cBVhgrMT7%2Fft%2FS%2FPrmfowbDgl55mVVWwdL381%2BGBhrbdXZc3rbu1xF" rel="nofollow" target="_blank">https://github.com/hiyouga/LlamaFactory</a></td></tr></tbody></table><hr/><h4>11. <a href="https://link.segmentfault.com/?enc=yYrRI4GjBqx21HjBnyJBqA%3D%3D.8aEU9PyUu%2FqZr6L%2Fn46dNiaegHxpC1p07esbyisNi44Q7GcSFbcDPDjoeG12uxe2" rel="nofollow" target="_blank">pytorch/pytorch</a></h4><blockquote>PyTorch 是一个非常著名的开源机器学习框架，由 Facebook 的人工智能研究团队开发。它提供了强大的张量计算功能和自动求导机制，广泛用于深度学习研究和开发。PyTorch 的灵活性和易用性使其成为许多研究人员和开发者的首选工具，支持动态计算图，方便进行模型的构建、训练和部署。</blockquote><table><thead><tr><th>指标</th><th>详情</th></tr></thead><tbody><tr><td>Star 数</td><td>🌟 96448（今日+36）</td></tr><tr><td>Fork 数</td><td>🔄 26456</td></tr><tr><td>开发语言</td><td>🐍 Python</td></tr><tr><td>项目地址</td><td><a href="https://link.segmentfault.com/?enc=EsMmXwJcmekyoVX%2FKOXqCw%3D%3D.VL3HwkQSM12MsioBvfgwhGMumsLhB%2BpFDd3MiizG6rc46momtfKCGQfanKS0l9Ed" rel="nofollow" target="_blank">https://github.com/pytorch/pytorch</a></td></tr></tbody></table><hr/><h4>12. <a href="https://link.segmentfault.com/?enc=CSnucaCePiCJAiUhIka7eQ%3D%3D.4lVE%2BKgqRHmZsgqLQdRSB7ehcy%2Fm9Ky2jXOsrcNpoeyoebqmGLcEe5e6EB6vK8C%2B" rel="nofollow" target="_blank">MiroMindAI/MiroFlow</a></h4><blockquote>MiroFlow 项目由 MiroMindAI 团队开发，从名字来看，“Flow”可能与流程、数据流或某种工作流相关。它可能是一个用于优化人工智能工作流程的工具，比如自动化数据预处理、模型训练和部署的流程，提高开发效率，或者用于设计和管理复杂的数据处理流程。</blockquote><table><thead><tr><th>指标</th><th>详情</th></tr></thead><tbody><tr><td>Star 数</td><td>🌟 1942（今日+75）</td></tr><tr><td>Fork 数</td><td>🔄 201</td></tr><tr><td>开发语言</td><td>🐍 Python</td></tr><tr><td>项目地址</td><td><a href="https://link.segmentfault.com/?enc=A2mYjdPK5bdNBkkoYKKj5A%3D%3D.eF9Vkm6euORwzn3BKuqhG9B4Lxi6hcEGg%2FRWZc%2BBbmJHthJy%2BYVLC5rzi0tSgFfe" rel="nofollow" target="_blank">https://github.com/MiroMindAI/MiroFlow</a></td></tr></tbody></table><hr/><h4>13. <a href="https://link.segmentfault.com/?enc=A3nY6%2BJgCaZFGi%2FOctpPSg%3D%3D.cQCGzX63BjFGAisFEdV9Hk%2BSujvkckKmMNS1tHmKGlZIN80zqpyecORysIG0l8yL" rel="nofollow" target="_blank">microsoft/agent-framework</a></h4><blockquote>由微软开发的 agent-framework 项目，很可能是与智能代理（agent）相关的框架。它可能用于构建各种智能代理，比如聊天机器人、自动化任务代理等，提供了一套完整的工具和接口，帮助开发者快速开发和部署智能代理应用，提升交互式应用的开发效率。</blockquote><table><thead><tr><th>指标</th><th>详情</th></tr></thead><tbody><tr><td>Star 数</td><td>🌟 6407（今日+27）</td></tr><tr><td>Fork 数</td><td>🔄 1000</td></tr><tr><td>开发语言</td><td>🐍 Python</td></tr><tr><td>项目地址</td><td><a href="https://link.segmentfault.com/?enc=L%2FtDhccR8F2GQ2n2JdGYBA%3D%3D.37pVQwNgjVZ%2FWu8xPbRoIssQvioOaaRmDCfr%2Ft3Lmlj3hsuOHagEwPLCxUwpQh4T" rel="nofollow" target="_blank">https://github.com/microsoft/agent-framework</a></td></tr></tbody></table><hr/><h4>14. <a href="https://link.segmentfault.com/?enc=i4niXJAZbJGJ3TERF7E%2Ftg%3D%3D.STw4yivy3FoxzPct%2Bxh%2BeFg8JXbo6PiEzkhPfLM%2FeijR6DnDrhnFj7qi8rFxtjwN" rel="nofollow" target="_blank">datawhalechina/all-in-rag</a></h4><blockquote>DatawhaleChina 团队的 all-in-rag 项目，从名字来看，“RAG”可能指的是某种特定的技术或模型，比如 Retrieval-Augmented Generation（检索增强生成）。该项目可能是一个结合了检索技术和生成模型的项目，用于提升信息检索和内容生成的效果，比如在问答系统、文本生成等领域有很好的应用前景。</blockquote><table><thead><tr><th>指标</th><th>详情</th></tr></thead><tbody><tr><td>Star 数</td><td>🌟 2894（今日+55）</td></tr><tr><td>Fork 数</td><td>🔄 1321</td></tr><tr><td>开发语言</td><td>🐍 Python</td></tr><tr><td>项目地址</td><td><a href="https://link.segmentfault.com/?enc=%2ByR7hRE0ofwthChn0tvflQ%3D%3D.3ZKMujI%2FNoUa%2BUBxZ4Ek6Sa3O6VVRKbpoxSCGxBsnhEZ9UJYcVr0FvF%2Bnhfbbayb" rel="nofollow" target="_blank">https://github.com/datawhalechina/all-in-rag</a></td></tr></tbody></table><hr/><h4>15. <a href="https://link.segmentfault.com/?enc=LS4foFcY6hTCZGyhA%2FLgPw%3D%3D.NuyQl6IR5jD%2BYJf%2BwqYcmkIZ7ggFHgk0sAeYwVV8C3XCMIh9Jz60GTHv%2F1T2Bfxu" rel="nofollow" target="_blank">langchain-ai/langchain</a></h4><blockquote>langchain-ai 团队的 langchain 项目，从名字来看，可能与语言链（langchain）相关，涉及到语言模型的构建、优化或某种语言相关的应用。它可能是一个用于处理自然语言处理任务的工具或框架，比如文本生成、语言翻译、语义理解等，帮助开发者更好地开发语言相关的智能应用。</blockquote><table><thead><tr><th>指标</th><th>详情</th></tr></thead><tbody><tr><td>Star 数</td><td>🌟 123751（今日+112）</td></tr><tr><td>Fork 数</td><td>🔄 20386</td></tr><tr><td>开发语言</td><td>🐍 Python</td></tr><tr><td>项目地址</td><td><a href="https://link.segmentfault.com/?enc=UggIFyA1CmBdMSTI9fey0w%3D%3D.XjHxYu645X4bnkJJ7Tbh1pv%2Bd6KWREsyNLeXcK3LhJy2Gcm6mpC1tsrxS6qHw%2BRt" rel="nofollow" target="_blank">https://github.com/langchain-ai/langchain</a></td></tr></tbody></table><hr/><h4>16. <a href="https://link.segmentfault.com/?enc=8TiGsw2OqQtea5Sf5f1Aqw%3D%3D.ZYQwbSFADvx7Di4Ss3ReV1GCM61d9Nyjx%2B6slt3SA9am0k%2Fcf171d93jLUMqppTdDfg9rFlzJmnLGMU45Tc25g%3D%3D" rel="nofollow" target="_blank">LuckyOne7777/ChatGPT-Micro-Cap-Experiment</a></h4><blockquote>ChatGPT-Micro-Cap-Experiment 项目由 LuckyOne7777 开发，从名字来看，它可能是一个与 ChatGPT 相关的实验项目，专注于微小规模（Micro-Cap）的应用或优化。它可能是在探索如何在资源受限的环境中高效地使用 ChatGPT 技术，或者开发一些小型的、特定场景下的 ChatGPT 应用。</blockquote><table><thead><tr><th>指标</th><th>详情</th></tr></thead><tbody><tr><td>Star 数</td><td>🌟 7224（今日+43）</td></tr><tr><td>Fork 数</td><td>🔄 1545</td></tr><tr><td>开发语言</td><td>🐍 Python</td></tr><tr><td>项目地址</td><td><a href="https://link.segmentfault.com/?enc=dzbxsFGZ%2BmRNYctmas7IoA%3D%3D.kCYpcMDUxq4FS4Yv5JgBsQ8dYr%2F6LNvtnkh%2BgfkUVyNn%2FL8%2BziO%2B7PTqTcqJlNsSNl1XUmtijH962KmCmydujQ%3D%3D" rel="nofollow" target="_blank">https://github.com/LuckyOne7777/ChatGPT-Micro-Cap-Experiment</a></td></tr></tbody></table><hr/><h4>17. <a href="https://link.segmentfault.com/?enc=%2FSWf7GOYxOOl18zcJ6BSSQ%3D%3D.c4ysoQcd5fvc%2FgY0jNK%2BxI18JfEHEqcCw8YCtCaR9gjh9%2FAJ99G66vz4yE%2FklvGY2FRy1O8mKW9V1jjMaszNyg%3D%3D" rel="nofollow" target="_blank">DrewThomasson/ebook2audiobook</a></h4><blockquote>ebook2audiobook 项目由 DrewThomasson 开发，从名字就可以直观地看出，这是一个将电子书（ebook）转换为有声书（audiobook）的工具。它可能提供了一种简单便捷的方式，让用户可以将自己的电子书内容转换为音频格式，方便在开车、运动等场景下收听，拓展了电子书的使用方式。</blockquote><table><thead><tr><th>指标</th><th>详情</th></tr></thead><tbody><tr><td>Star 数</td><td>🌟 16850（今日+317）</td></tr><tr><td>Fork 数</td><td>🔄 1356</td></tr><tr><td>开发语言</td><td>🐍 Python</td></tr><tr><td>项目地址</td><td><a href="https://link.segmentfault.com/?enc=KkkzjaQT9lYAYNmLKfF8HQ%3D%3D.kqw9inKrv5Btuk1bbhhJkkoMAyih4RvoaMeB9ucSwcSss%2FuZuDZXVnBShc4PXJxfcLRGjlqJu7uC7Rxp%2BUloMw%3D%3D" rel="nofollow" target="_blank">https://github.com/DrewThomasson/ebook2audiobook</a></td></tr></tbody></table><hr/><h3>📝 说明</h3><ul><li>数据来源：GitHub Trending（2026-01-09 每日榜单）</li><li>筛选条件：Python 语言 + 当日热门项目</li><li>自动更新：每日同步最新趋势，建议收藏本文持续关注～</li></ul><h3>⭐ 推荐理由</h3><ol><li>热门项目代表当前技术趋势，学习价值高</li><li>优质项目代码规范，可作为学习参考</li><li>部分项目可直接用于实际开发，提高效率</li></ol>]]></description></item><item>    <title><![CDATA[数据结构-图 SevenCoding ]]></title>    <link>https://segmentfault.com/a/1190000047518843</link>    <guid>https://segmentfault.com/a/1190000047518843</guid>    <pubDate>2026-01-09 09:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>概述</h2><p>图是一种较为复杂的非线性结构。 <strong>为啥说其较为复杂呢？</strong></p><p>根据前面的内容，我们知道：</p><ul><li>线性数据结构的元素满足唯一的线性关系，每个元素(除第一个和最后一个外)只有一个直接前趋和一个直接后继。</li><li>树形数据结构的元素之间有着明显的层次关系。</li></ul><p>但是，图形结构的元素之间的关系是任意的。</p><p><strong>何为图呢？</strong> 简单来说，图就是由顶点的有穷非空集合和顶点之间的边组成的集合。通常表示为：<strong>G(V,E)</strong>，其中，G 表示一个图，V 表示顶点的集合，E 表示边的集合。</p><p>下图所展示的就是图这种数据结构</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047518845" alt="" title=""/></p><p>同时图⼜分为有向图与⽆向图，上⾯的是⽆向图，因为边没有指明⽅向，只是表示两者关联关系，⽽有向图则是这样：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047518846" alt="" title="" loading="lazy"/></p><p>图在我们日常生活中的例子很多！比如我们在社交软件上好友关系就可以用图来表示。</p><h2>图的基本概念</h2><h3>顶点</h3><p>图中的数据元素，我们称之为顶点，图至少有一个顶点（非空有穷集合）</p><p>对应到好友关系图，每一个用户就代表一个顶点。</p><h3>边</h3><p>顶点之间的关系用边表示。</p><p>对应到好友关系图，两个用户是好友的话，那两者之间就存在一条边。</p><h3>度</h3><p>度表示一个顶点包含多少条边，在有向图中，还分为出度和入度，出度表示从该顶点出去的边的条数，入度表示进入该顶点的边的条数。</p><p>对应到好友关系图，度就代表了某个人的好友数量。</p><h3>无向图和有向图</h3><p>边表示的是顶点之间的关系，有的关系是双向的，比如同学关系，A 是 B 的同学，那么 B 也肯定是 A 的同学，那么在表示 A 和 B 的关系时，就不用关注方向，用不带箭头的边表示，这样的图就是无向图。</p><p>有的关系是有方向的，比如父子关系，师生关系，微博的关注关系，A 是 B 的爸爸，但 B 肯定不是 A 的爸爸，A 关注 B，B 不一定关注 A。在这种情况下，我们就用带箭头的边表示二者的关系，这样的图就是有向图。</p><h3>无权图和带权图</h3><p>对于一个关系，如果我们只关心关系的有无，而不关心关系有多强，那么就可以用无权图表示二者的关系。</p><p>对于一个关系，如果我们既关心关系的有无，也关心关系的强度，比如描述地图上两个城市的关系，需要用到距离，那么就用带权图来表示，带权图中的每一条边一个数值表示权值，代表关系的强度。</p><p>下图就是一个带权有向图。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047518847" alt="" title="" loading="lazy"/></p><h2>图的存储</h2><h3>邻接矩阵存储</h3><p>邻接矩阵将图用二维矩阵存储，是一种较为直观的表示方式。</p><p>如果第 i 个顶点和第 j 个顶点之间有关系，且关系权值为 n，则 <code>A[i][j]=n</code> 。</p><p>在无向图中，我们只关心关系的有无，所以当顶点 i 和顶点 j 有关系时，<code>A[i][j]</code>=1，当顶点 i 和顶点 j 没有关系时，<code>A[i][j]</code>=0。如下图所示：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047518848" alt="" title="" loading="lazy"/></p><p>值得注意的是：<strong>无向图的邻接矩阵是一个对称矩阵，因为在无向图中，顶点 i 和顶点 j 有关系，则顶点 j 和顶点 i 必有关系。</strong></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047518849" alt="" title="" loading="lazy"/></p><p>邻接矩阵存储的方式优点是简单直接（直接使用一个二维数组即可），并且，在获取两个定点之间的关系的时候也非常高效（直接获取指定位置的数组元素的值即可）。但是，这种存储方式的缺点也比较明显，那就是比较浪费空间，</p><h3>邻接表存储</h3><p>针对上面邻接矩阵比较浪费内存空间的问题，诞生了图的另外一种存储方法—<strong>邻接表</strong> 。</p><p>邻接链表使用一个链表来存储某个顶点的所有后继相邻顶点。对于图中每个顶点 Vi，把所有邻接于 Vi 的顶点 Vj 链成一个单链表，这个单链表称为顶点 Vi 的 <strong>邻接表</strong>。如下图所示：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047518850" alt="" title="" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047518851" alt="" title="" loading="lazy"/></p><p>大家可以数一数邻接表中所存储的元素的个数以及图中边的条数，你会发现：</p><ul><li>在无向图中，邻接表元素个数等于边的条数的两倍，如左图所示的无向图中，边的条数为 7，邻接表存储的元素个数为 14。</li><li>在有向图中，邻接表元素个数等于边的条数，如右图所示的有向图中，边的条数为 8，邻接表存储的元素个数为 8。</li></ul><h2>图的搜索</h2><p>图⾥⾯遍历⼀般分为⼴度优先遍历和深度优先遍历，⼴度优先遍历是指优先遍历与当前顶点直接相关的顶点，⼀般借助队列实现。⽽深度优先遍历则是往⼀个⽅向⼀直⾛到不能再⾛，有点不撞南墙不回头的意思，⼀般使⽤递归实现。</p><h3>广度优先搜索</h3><p>广度优先搜索就像水面上的波纹一样一层一层向外扩展，如下图所示：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047518852" alt="" title="" loading="lazy"/></p><p><strong>广度优先搜索的具体实现方式用到了之前所学过的线性数据结构——队列</strong> 。具体过程如下图所示：</p><p><strong>第 1 步：</strong></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047518853" alt="" title="" loading="lazy"/></p><p><strong>第 2 步：</strong></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047518854" alt="" title="" loading="lazy"/></p><p><strong>第 3 步：</strong></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047518855" alt="" title="" loading="lazy"/></p><p><strong>第 4 步：</strong></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047518856" alt="" title="" loading="lazy"/></p><p><strong>第 5 步：</strong></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047518857" alt="" title="" loading="lazy"/></p><p><strong>第 6 步：</strong></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047518858" alt="" title="" loading="lazy"/></p><h3>深度优先搜索</h3><p>深度优先搜索就是“一条路走到黑”，从源顶点开始，一直走到没有后继节点，才回溯到上一顶点，然后继续“一条路走到黑”，如下图所示：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047518859" alt="" title="" loading="lazy"/></p><p><strong>和广度优先搜索类似，深度优先搜索的具体实现用到了另一种线性数据结构——栈</strong> 。具体过程如下图所示：</p><p><strong>第 1 步：</strong></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047518860" alt="" title="" loading="lazy"/></p><p><strong>第 2 步：</strong></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047518861" alt="" title="" loading="lazy"/></p><p><strong>第 3 步：</strong></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047518862" alt="" title="" loading="lazy"/></p><p><strong>第 4 步：</strong></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047518863" alt="" title="" loading="lazy"/></p><p><strong>第 5 步：</strong></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047518864" alt="" title="" loading="lazy"/></p><p><strong>第 6 步：</strong></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047518865" alt="" title="" loading="lazy"/></p><p>算法框架如下：</p><pre><code class="java">// 记录被遍历过的节点
+boolean[] visited;
+// 记录从起点到当前节点的路径
+boolean[] onPath;
+
+/* 图遍历框架 */
+void traverse(Graph graph, int s) {
+    if (visited[s]) return;
+    // 经过节点 s，标记为已遍历
+    visited[s] = true;
+    // 做选择：标记节点 s 在路径上
+    onPath[s] = true;
+    for (int neighbor : graph.neighbors(s)) {
+        traverse(graph, neighbor);
+    }
+    // 撤销选择：节点 s 离开路径
+    onPath[s] = false;
+}</code></pre>]]></description></item><item>    <title><![CDATA[rabbitmq 同一个队列可以绑定多个相同的交换机和路由键吗？ rabbitcoder ]]></title>    <link>https://segmentfault.com/a/1190000047531327</link>    <guid>https://segmentfault.com/a/1190000047531327</guid>    <pubDate>2026-01-09 00:02:12</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>ceo 优化：</p><ul><li>rabbitmq 明明绑定的交换机和路由键没问题但是没有消息任务进入队列怎么回事</li><li>rabbitmq 消息进不到队列，收不到消息的可能原因</li><li>nameko</li></ul><p><img width="723" height="301" referrerpolicy="no-referrer" src="/img/bVdnBej" alt="图片.png" title="图片.png"/></p><p>看上图的，居然出现了一样的交换机和路由键，怎么回事？</p><p>rabbitmq 是不允许出现这种情况，答案在不可见字符</p><pre><code class="json">[
     {
         "source": "xxxxxxxxxxxxx.events",
         "vhost": "xmatch",
@@ -2521,429 +2663,4 @@ ws = websocket.WebSocketApp(
     on_message=on_message
 )
 ws.run_forever()
-</code></pre><p>这种统一接口的设计，核心价值在于让回测与实盘复用同一数据源，从根源上减少数据差异导致的策略偏差。相比多数据源分开调用的方式，不仅省去了格式转换、时序校准的冗余工作，还能让策略调试流程更高效，避免你反复排查数据层面的问题，把精力聚焦在算法优化上。<br/>四、落地场景：高频交易对数据的 “极致要求”<br/>尤其在高频交易、日内回转这类对数据敏感度极高的技术场景中，你会发现数据的低延迟与稳定性更为关键。这类策略的单笔盈利空间本就狭窄，数据延迟哪怕仅几毫秒，都可能让盈利单变成亏损单。而统一的跨市场行情接口，不仅能解决数据延迟问题，还能在策略优化、风险控制阶段提供可靠的数据源支撑，让策略从回测到实盘的衔接更顺滑，也让你和团队的开发效率提升至少 50%。<br/>对量化开发者和策略开发团队来说，选对一款稳定、低延迟的多市场行情接口，本质是搭建起 “数据获取 - 策略调试 - 实盘执行” 的技术闭环。不用再为数据兼容问题反复试错，不用再耗费大量工时校准数据，这才是跨市场量化策略开发的核心效率所在。<br/>总结<br/>超 70% 的美股 + 外汇跨市场量化策略实盘偏差源于行情数据的延迟与一致性问题，而非算法缺陷；<br/>统一接口的多市场行情工具可大幅降低数据对接调试成本，实现回测与实盘数据源统一；<br/>高频 / 日内交易场景对行情数据的低延迟、标准化要求更高，优质接口是策略落地的核心保障。<br/><img width="723" height="408" referrerpolicy="no-referrer" src="/img/bVdnAT7" alt="" title=""/></p>]]></description></item><item>    <title><![CDATA[HyperAgent：企业级Agentic架构怎么实现？ 容智信息 ]]></title>    <link>https://segmentfault.com/a/1190000047530115</link>    <guid>https://segmentfault.com/a/1190000047530115</guid>    <pubDate>2026-01-08 16:02:37</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p><img referrerpolicy="no-referrer" src="/img/remote/1460000047530117" alt="图片" title="图片"/></p><p>在AI技术深度重构企业数字化与自动化体系的进程中，Agentic Architecture正在从“前沿概念”快速演进为企业级系统架构的新范式。与偏重交互体验和单点能力的消费级Agent不同，企业级Agentic架构直接嵌入真实业务流程，连接核心系统、真实数据与组织责任，其成败不取决于模型是否“聪明”，而取决于是否“可控、可治理、可持续”。<br/>正因如此，企业级Agentic架构并不是对传统单体应用或微服务的简单叠加，而是一套同时覆盖技术底座、业务流程、数据治理与运行管理的系统工程。本文以Hyper Agent为代表，对企业级Agentic架构的实现逻辑与核心实践进行系统拆解，重点回答三个ToB决策者普遍关心的问题：为什么企业必须采用Agentic架构、这一架构如何工程化落地，以及它如何在可控前提下持续释放业务价值。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047530118" alt="图片" title="图片" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047530119" alt="图片" title="图片" loading="lazy"/></p><p>在ToB场景中，Agent的不确定性必须被严格限制在系统可治理的范围内。因此，企业级Agentic架构普遍采用从交互层到数据层的分层设计，通过明确边界来换取整体稳定性。<br/>交互层作为用户与系统的统一入口，需要同时服务不同角色与终端形态。通过Vue、Vite、Element UI、Tailwind等技术栈构建响应式界面，系统可以覆盖PC、移动端、小程序、可视化大屏与一体机等多种使用场景。在此基础上引入多模态交互能力，使文本、语音、图像成为同一交互体系中的自然输入输出，为Agent的“拟人化协作”奠定基础。<br/>应用服务层承担企业级系统最关键的治理职责。基于Spring Cloud微服务架构，结合Nginx与Spring Gateway构建统一网关，使流量管理、权限校验、限流熔断与动态路由成为平台级能力，而非分散在各业务模块中。这种集中治理模式的核心价值，在于确保Agent能力的扩展不会破坏系统整体稳定性。<br/>微服务中心是Agentic架构的运行中枢。通过Redis、MySQL、MQ、Nacos等中间件协同工作，平台既能保障事务一致性，又能通过异步通信解耦复杂业务流程。在此之上，用户与权限管理、模型治理、知识库运营、工具调度等核心模块共同构成Agent的“行为边界”，使自主规划、多Agent协作与RPA执行都运行在可审计、可回溯的框架内。<br/>数据持久化层采用多元存储策略，以适配企业真实的数据形态。结构化数据由关系型数据库承载，高频数据通过缓存加速访问，非结构化内容存储于对象存储系统，而Milvus等向量数据库则支撑大规模语义检索。分层存储的目标并非追求技术先进性，而是确保数据在安全、性能与扩展性之间取得长期平衡。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047530120" alt="图片" title="图片" loading="lazy"/></p><p>如果说分层架构解决的是“能不能稳定运行”，那么核心能力体系解决的则是“Agent能做什么，以及能做到什么程度”。<br/>首先是混合模型治理能力。企业级Agent不应被绑定在单一模型之上，而应通过统一模型管理服务，实现多模型接入、协同与替换。通用大模型负责语言理解与推理，行业模型处理专业数据，多模态模型解析语音与图像，模型版本、性能与调用行为均可被监控与审计，从而避免模型能力成为系统不可控的黑箱。<br/>其次是可插拔工具引擎。真正进入企业流程的Agent，必须具备直接操作系统与数据的能力。通过对接RPA、BI、Office、API等工具，并在沙箱环境中进行隔离管理，Agent可以安全地完成数据采集、流程执行与结果输出，实现“决策即执行”的闭环，而不会引入新的系统风险。<br/>第三是多模态交互与理解能力。企业业务输入并不局限于对话文本，而是大量存在于文档、表格、图片与语音之中。通过ASR、TTS与视觉识别能力的统一整合，Agent能够在复杂输入环境下保持稳定理解能力，从而真正融入日常业务操作。<br/>最后是记忆增强与知识治理能力。企业级Agent的“智能”并非来源于短期对话，而是来源于长期可积累的业务知识。通过短期记忆维持上下文一致性，通过长期记忆与知识库沉淀业务经验，并结合向量检索与重排序机制，Agent才能在不同时间、不同任务中保持判断一致性与经验复用能力。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047530121" alt="图片" title="图片" loading="lazy"/></p><p>企业级Agent并不是一次性部署的软件，而是一类需要长期运营的数字资产。<br/>在开发阶段，通过Agent Studio等可视化构建工具，业务人员与开发人员可以以低代码方式完成Agent创建、工作流编排与节点调试，大幅降低智能体落地门槛。通过模板市场沉淀行业与岗位Agent，使能力复用成为可能。<br/>在运营阶段，平台需要覆盖Agent的发布、迭代与下线全过程。通过对话记录、行为审计、工具调用日志与权限管理，实现Agent行为的可追溯与可修正。这一运营能力，正是ToB Agent与实验型Agent的根本分界线。<br/>多终端接入能力则确保Agent能够嵌入企业真实工作场景，无论是桌面端深度操作，还是移动端即时协作，均保持一致体验。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047530122" alt="图片" title="图片" loading="lazy"/></p><p>在部署层面，基于Azure云平台与AKS的云原生架构，使系统具备弹性扩展与高可用能力。向量数据库与核心中间件采用独立部署策略，以降低性能与安全风险。<br/>在运维层面，通过GPE与ELK体系实现指标监控与日志分析，结合告警与安全事件管理机制，形成完整的运行闭环。对企业而言，Agent系统是否成熟，并不取决于单次回答质量，而取决于能否在高风险场景下长期稳定运行。</p><h3>结语：企业级Agentic架构，本质是一种新的生产力组织方式</h3><hr/><p>从长期来看，企业级Agentic架构并不是一项单点技术创新，而是一种重构数字生产关系的系统能力。它将模型、工具、数据与规则统一纳入可治理框架之中，使智能体从“实验工具”转变为可被信任的执行单元。随着多Agent协作与治理技术的持续演进，这一架构将成为企业智能化的基础设施，而非可选项。</p>]]></description></item><item>    <title><![CDATA[Apache DolphinScheduler年终盘点 海豚调度 ]]></title>    <link>https://segmentfault.com/a/1190000047530197</link>    <guid>https://segmentfault.com/a/1190000047530197</guid>    <pubDate>2026-01-08 16:02:01</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>Apache DolphinScheduler 的社区成员、开发者、合作伙伴以及关心我们的朋友们：</p><p>2025 年转瞬即逝，这一年里，Apache DolphinScheduler 收获了不少成果。GitHub 上关注我们项目的人越来越多，Star 和 Fork 数量也在不断增长。我们还发布了多个重要版本，带来了多项实用功能，提升了系统性能和智能化程度。</p><p>这一年，社区活动也在大家的支持下开展得有声有色，项目也得到了企业的认可，有超过 8000 家企业在使用。商业版也在不断优化。这些成绩离不开每一位社区成员的付出。下面，就让我们一起回顾过去一年的点点滴滴吧~</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047530199" alt="长海报" title="长海报"/></p><h3>GitHub数据</h3><ul><li><strong>Star数</strong>：截至2025年12月，GitHub Star数已突破14.1k，日均调度任务量稳居同类项目首位。</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047530200" alt="" title="" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047530201" alt="" title="" loading="lazy"/></p><ul><li><strong>Fork数</strong>：Fork数约为5K，显示出项目受到了广泛关注和众多开发者的积极参与。</li><li><strong>issue数</strong>：截至2025年12月，Closed 8014， Open 197</li><li><strong>贡献者</strong>：社区贡献者已有609人，来自全球各地的不同公司和机构，为项目发展提供了强大动力。</li><li><strong>PR总数</strong>：8464</li><li><strong>代码行数</strong>：604460</li></ul><h3>PMC</h3><ul><li><strong>PMC Member</strong>：27</li><li><strong>Committer</strong>：59</li><li><strong>Contributor</strong>：609</li></ul><h3>年度贡献者Top10</h3><p>根据2025年各贡献者的PR提交数量、代码审核贡献、文档完善等综合表现，年度贡献者Top10如下：</p><ul><li>代码贡献大咖 (Contribution Masters)</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047530202" alt="pr_created_leaderboard" title="pr_created_leaderboard" loading="lazy"/></p><ul><li>代码审查先锋 (Review Stars)</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047530203" alt="review_leaderboard" title="review_leaderboard" loading="lazy"/></p><ul><li>社区活跃之星 (Discussion Heroes)</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047530204" alt="issue_leaderboard" title="issue_leaderboard" loading="lazy"/></p><ul><li>问题反馈侦探 (Issue Reporters)</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047530205" alt="issue_reporter_leaderboard" title="issue_reporter_leaderboard" loading="lazy"/></p><blockquote>📅 统计周期: 2024-12-30 12:24 ~ 2025-12-30 12:24 (UTC)<br/>(Generated by SeaTunnel Community Bot at 2025-12-30 20:32)</blockquote><h3>亮点更新Top10</h3><p>Apache DolphinScheduler在2025年推出了多个新版本，带来了许多实用的新增功能，并对已有问题进行优化：</p><ol><li><strong>增加Listener机制</strong>：3.3.0 alpha版本增加了Listener机制（#14981），可更好地监听工作流状态等，为系统监控和故障处理提供了更有力的支持。</li><li><strong>支持多种告警方式</strong>：3.3.0 alpha版本支持Prometheus AlertManager、Aliyun Voice、HTTP测试发送（#15079, #15248, #15163），丰富了告警途径，便于用户及时获取系统异常信息。</li><li><strong>丰富插件集成</strong>：3.3.0 alpha版本新增 OceanBase DataX 任务、EMR Serverless Spark 支持、腾讯云 COS 存储等插件与集成。</li><li><strong>本地任务支持SSH密钥</strong>：3.3.1版本允许在执行本地任务时使用SSH密钥进行认证，提升了操作的便捷性和安全性。</li><li><strong>支持LDAP TLS/SSL</strong>：3.3.1版本增强了对LDAP的安全支持，企业用户在进行用户认证时可以启用加密传输，保障账户信息安全。</li><li><strong>ClickHouse JDBC URL支持自定义参数</strong>：3.3.1版本为ClickHouse数据源提供了更高的灵活性，方便用户根据特定场景配置连接参数。</li><li><strong>数据库性能与稳定性提升：</strong> 3.3.2版本新增索引，提升调度信息查询性能；修复 Zookeeper 连接事件处理的 NPE 异常，增强系统稳定性。</li><li><strong>Master 模块优化</strong>：将<code>batchTriggerAcquisitionMaxCount</code>默认值与线程数<code>threadCount</code>对齐，优化任务触发和调度性能；新增 Quartz 独立数据源配置支持，为企业级部署提供更灵活的数据库选择。</li><li><strong>存储与插件体系优化</strong>：解耦本地存储实现与 HDFS 插件，使存储插件架构更清晰、轻量，并修复多项 HDFS 存储及 Kubernetes 挂载路径相关问题，提升多环境兼容性。</li><li><strong>文档优化：</strong> 更新安装部署、贡献者及配置使用等多类文档，提升文档质量与可读性，帮助用户和贡献者更好使用与参与项目。</li></ol><h3>社区活动盘点</h3><ul><li><strong>CommunityOverCode 2025</strong>：</li><li><p><strong>技术分享会</strong>：定期举办线上技术分享会，2025年功举行6次社区Meetup，邀请社区内技术专家和核心贡献者，分享Apache DolphinScheduler的最新技术进展、应用案例等。</p><ul><li><a href="https://link.segmentfault.com/?enc=IQADQpX%2BJNTAss7%2FbQQTDw%3D%3D.v%2FLudnny%2FP4GNv8PcmUuHNikX0AguHNAoSn1E4alqORq6N8DL9jZfcJEZUHyYBCmH2CRK7SbytiTQLfvY9%2BeaA%3D%3D" rel="nofollow" target="_blank">奇虎 360 商业化 Apache DolphinScheduler on Kubernetes 的部署改造实践</a></li><li><a href="https://link.segmentfault.com/?enc=YcwyTMXqZReqbccWzRHDkQ%3D%3D.TPiqMncrZFp%2FSCYYrphU1RwLwEn5VCfm0xSk9XcbCZBb47Ngkeq6H19YAmwo6UKz8r5uBfKva4kwIer%2B9aq0bw%3D%3D" rel="nofollow" target="_blank">天翼云 × Apache DolphinScheduler 的云上调度实践</a></li><li><a href="https://link.segmentfault.com/?enc=RhgcSIHsV797XBxOcfN0XA%3D%3D.pFU6zmRIdgq1CHWVOu7YRmKDx%2FABG7D2K%2B61mxgstghkZOinDpVQI7jw61HFKCvN%2ByNMG%2BJhdZqhk1cwZOtavQ%3D%3D" rel="nofollow" target="_blank">Zoom 基于 Apache DolphinScheduler 的流批统一调度系统演进</a></li><li><a href="https://link.segmentfault.com/?enc=%2ByQseqfuTpiyTFu%2BtOs09A%3D%3D.btQjp6aJpur%2BCi4K9lk7h0YNOQvx9dq8iOLcw2QnJYd%2B3P4278PISlTgNk7itGfQoAmd4MdD8df947M8ilogUA%3D%3D" rel="nofollow" target="_blank">网易邮箱 Apache DolphinScheduler 迁移实战</a></li><li><a href="https://link.segmentfault.com/?enc=J1DBua8U%2FNoC6F%2F0Gc4SBA%3D%3D.zZUlh%2BtiLhvon6pqERepjXuXKAN%2BqNlgGru4cNSvjl0NJBTqRU7vwDd1G5PGGQQHNdYHnpAlSmWv0Hn3ud1kog%3D%3D" rel="nofollow" target="_blank">Apache DolphinScheduler 在智能制造场景下的规模化实践</a></li><li><a href="https://link.segmentfault.com/?enc=oNcFXc4Lwf6%2FE2AwzzDXGg%3D%3D.yx7kBwqtmVYc23qFpw4BT%2BuGLPxFlEm8uREJhWJJCfPFDld%2B9gwdTaC7VHGRy8SudHfiW0AyGrr4gX1kv8bo1g%3D%3D" rel="nofollow" target="_blank">百年博世的智能驾驶调度升级</a></li></ul></li><li><strong>GSoC</strong>：Google Summer of Code 2025，Apache DolphinScheduler 参与者的项目顺利结项，增强了 Apache DolphinScheduler 的通用 OIDC 认证功能。</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047530206" alt="" title="" loading="lazy"/></p><p><a href="https://link.segmentfault.com/?enc=uy8Oyjujd66I%2Fg7S08DCwQ%3D%3D.0MR6TJMwYv2HZ6RAzmJyCywd25SMb3Pi%2BBZoXkiNaZtOBK75yL7jQLc5B%2FMAYuijyGHSQciJCqv7IPjAkdaoNA%3D%3D" rel="nofollow" target="_blank">GSoC 成果公布！印度开发者为 DolphinScheduler 引入通用 OIDC 认证，实现无缝安全访问</a></p><ul><li><strong>开源之夏</strong>：在今年的开源之夏活动中，来自北京交通大学电气工程专业的优秀学生赵海波为 Apache DolphinScheduler 带来了全新的任务插件 gRPC，实现在 java 运行时中动态发起 gRPC 调用。</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047530207" alt="" title="" loading="lazy"/></p><p><a href="https://link.segmentfault.com/?enc=%2F%2BXQsbj3ZFTQospVlqgvyA%3D%3D.UtCgRza7yTFZ7GqY4ZPs%2B8LOcxDg7wFffQLojmGGzOPuqWyoALkBowtNE9RxtXcvI2l8K14eEijN3JfXmMvwlA%3D%3D" rel="nofollow" target="_blank">Apache DolphinScheduler 新增 gRPC 任务插件啦！</a></p><ul><li><strong>答疑Star评选</strong>：开展社区答疑Star评选活动，表彰为社区用户提供专业解答的管理员，如刘闯、杨佳豪等获奖。</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047530208" alt="排名" title="排名" loading="lazy"/></p><ul><li><strong>月度Merge之星评选</strong>：每月评选“月度Merge之星”，全年共计100多位贡献者获此荣誉，激励更多开发者参与贡献。</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047530209" alt="DSMerge之星" title="DSMerge之星" loading="lazy"/></p><h3>社区生态拓展</h3><ul><li><strong>企业应用广泛</strong>：成为全球8000余家企业的核心调度引擎，在长安汽车智能网联业务中支撑核心场景，在每日互动中结合ClickHouse构建零压入库平台，效率提升95%。</li><li><strong>商业版功能强化</strong>：白鲸开源基于Apache DolphinScheduler推出的商业版WhaleScheduler，服务于中信建投、中国联通等头部企业，新增资源隔离、跨集群调度等功能，推动项目商业化发展。</li><li><p><strong>荣誉获得</strong>：</p><ul><li>在2025上海开源创新菁英荟上，荣获「优秀开源项目奖」，提升了项目在开源社区的知名度和影响力。</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047530210" alt="" title="" loading="lazy"/></p></li></ul><p>2025 年，Apache DolphinScheduler 满载收获。社区壮大，功能升级，企业认可纷至沓来。这是成果的加冕，更是前行的号角。但不要忘了，我们还有难题待解，新峰待攀，愿你我携手，为它再添荣光，续写开源新辉煌！</p>]]></description></item><item>    <title><![CDATA[云流技术深度剖析：实时云渲染为何选择与远程桌面不同的技术路线？ 点量实时云渲染 ]]></title>    <link>https://segmentfault.com/a/1190000047530245</link>    <guid>https://segmentfault.com/a/1190000047530245</guid>    <pubDate>2026-01-08 16:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p><img width="723" height="411" referrerpolicy="no-referrer" src="/img/bVdnAVN" alt="" title=""/><br/>曾经，当我们需要远程控制云端电脑/云端电脑上某款软件时，首先想到的往往是远程桌面（RDP, VNC, SPICE等）。然而，近年来，当场景切换到需要实时交付超高清3D画面、支持用户低延迟交互的云游戏、云设计、云VR/AR时，业界却几乎一致地摒弃了这套传统方案，转而采用专属的云流化串流技术。这并非技术迭代的随意选择，而是两者在设计初衷、核心架构上的本质差异，导致传统远程桌面技术无法匹配实时云渲染低延迟实时交互的场景需求。本文作者在软件研发领域从业20余年，将从技术底层出发，拆解这一选择背后的核心逻辑。</p><h3>一、现状：常见的远程桌面技术与实时云渲染系统</h3><p>（一）常见远程桌面技术及核心特征<br/>目前主流远程桌面协议可分为开源与商业两类，覆盖不同应用场景，核心技术特征与适配范围各有侧重，具体如下：</p><p>1、商业类远程桌面协议</p><ul><li>RDP协议：源于ITU-T的T.128协议，后由微软收购优化并商业化，常用于共享云桌面方案（如很多瘦终端客户机搭配RDP8.0）。7.0版本开始新增Remote FX功能提升图形渲染效果。并开始支持TCP/UDP双传输，向视频流模式靠拢，支持AVC 4:4:4模式及60fps刷新率，相比于之前2D时代早期的传输和编码，也在参考实时串流系统的优点，逐步支持一些视频流模式。但该技术更多是追求更广阔场景的兼容性，低延迟和高画质性能上并非最优。</li><li>PCoIP协议：由Teradici公司开发，后与VMware合作推动商用化，广泛应用于VMware旗下相关产品。基于UDP传输，跨平台兼容性强，最新版本带宽占用低、图像质量优，底层基于H.264视频流技术。其最初设计目标为瘦客户机及硬件图形加速使用。</li><li>ICA/HDX协议：ICA协议由Citrix公司开发，基于UXP协议，核心优势为平台无关性强，并且从窄带时代发展而来，它对带宽资源的占用极低（平均每用户20Kbps），发展至今已近20年。2009年推出的HDX技术基于ICA协议扩展，通过媒体流优化、实时通信增强、3D图形优化等子技术，提升多媒体与图形密集型应用体验，支持外设即插即用与智能缓存，广泛应用于虚拟云桌面（VDI），授权费用不菲。</li></ul><p>2、开源类远程桌面协议</p><ul><li>SPICE协议：由RedHat开发的开源桌面虚拟化传输协议，核心组成包括协议、客户端侧、服务端侧及虚拟机侧，支持跨平台（Windows/Linux/Mac OS）、外接设备透传（USB、打印机等）及丰富媒体格式，可通过QXL驱动优化图形操作捕获与传输。因开源特性，易于扩展定制，是目前国内多家云桌面厂商研发领域的重点研究对象之一。</li><li>VNC（RFB协议）：基于RFB（远程帧缓存）协议，是平台无关的超级瘦客户系统，由AT&amp;T实验室开发。协议工作在帧缓存级别，通过矩形序列更新画面，主流编码方式为ZRLE、Hextile等，支持状态保存，断开重连后可恢复原用户状态。但不支持视频GPU加速、音频传输及USB透传，多适用于简单远程控制场景。</li></ul><p>商业桌面协议目前授权成本高；开源协议（SPICE、VNC）与Windows自带的RDP协议因获取成本低，是国内部分云桌面厂商研发领域的主要研究和使用对象。</p><p>但多数远程桌面技术源于90年代2D时代，初始设计核心为节省带宽以适配低速网络，近年虽向视频流传输转型，但一方面船大难调头，不可能一下子完全转为视频流模式；另一方面，目前低延迟高画质的实时云渲染场景和工业上的需求，国外厂商的反应速度远不及国内厂商，在极专业适配这些场景上，还有很多功能需要去实现。</p><p>（二）常见实时云渲染系统<br/>实时云渲染系统围绕高负载3D图形实时交互需求构建，核心采用专属云流化串流技术，主流方案可分为四类：<br/>1、厂商自研协议方案。如NVIDIA CloudXR、AMD Cloud Gaming技术等，针对GPU渲染与图形流传输深度定制，适配自家硬件生态；或者类似UE的像素流技术，是适配自家的软件引擎生态。</p><p>2、开源框架方案。如Moonlight（基于NVIDIA GameStream协议）等，可实现游戏、3D应用的云端流化。但这类开源框架往往还需要不少深度开发，缺少产品化成熟度，还需要自己基于场景进行打磨。</p><p>3、国内多个厂家推出的通用商业解决方案。比如点量云流、平行云、3DCat，属于通用性的实时云渲染技术，不局限于某些硬件，也不局限于UE、Unity等3D引擎，具备非常通用的适配能力。并且对于应用的支持是免侵入式模式，直接就可以通过配置几分钟就能使用，方便快捷，更为专业，但需要商业授权。</p><p>4、垂直领域的解决方案。比如腾讯云游戏、网易云游戏，蔚领时代云游戏、顺网云网吧等厂商，聚焦云游戏、云网吧的适配。</p><p>以上这些实时云渲染系统普遍具备动态码率调整、帧预测、GPU资源动态调度等核心能力，且在低延迟交互、高效利用GPU资源等方面相比云桌面有很大优势，更能适配云游戏、云设计、云VR/AR等场景的低延迟、高画质需求。</p><h3>二、核心定位：两种技术的设计初衷截然不同</h3><p>任何技术的架构设计都围绕其核心应用场景展开，这是判断技术适配性的根本前提。传统远程桌面技术的诞生，核心目标是解决“远程办公场景下的桌面共享与基础操作”需求——比如员工在家访问公司内网电脑处理文档、使用办公软件，或者IT人员远程维护服务器。其设计核心是“保障基础办公功能的稳定性与兼容性”，对图形处理能力、实时交互响应的要求相对宽松。</p><p><strong>1、交互延迟：实时场景的“致命短板”</strong><br/>对实时云渲染而言，交互延迟直接决定用户体验，这是沉浸感/可用性的生命线——云游戏中100ms的延迟会导致操作与画面脱节，3D设计中延迟过高会让创作“不跟手”，而VR/XR场景更是要求延迟低于50-60ms才能避免眩晕感。传统远程桌面协议在延迟控制上存在先天不足：以主流的RDP协议为例，其在普通办公场景下的延迟通常在40-80ms，面对3D模型浏览等简单图形场景时延迟会升至80-150ms，若用于实时交互编辑，延迟甚至会超过150ms，完全无法满足需求。</p><p>很多远程桌面技术，发源于上世纪90年代，当时的带宽条件是极低带宽环境，他们很多系统的设计理念和底层架构也更多强调节省带宽，而不是极低延迟和高画质。时至今日，即使这些厂商也都在逐步改进调整算法，比如RDP也引入了4:4:4真彩色和H.264编码，但默认模式仍然不是这种视频流模式，需要很多配置后才能生效。更不用说在适配这些场景上，往往还需要很多调教和优化、功能。<br/>这种延迟差异的根源在于传输机制的底层设计：</p><p>在整体流程路径上：</p><ul><li>远程桌面的设计路径长，大都采用：应用渲染 -&gt; 系统显示服务 -&gt; 桌面合成 -&gt; 帧捕获 -&gt; 编码 -&gt; 网络 -&gt; 解码 -&gt; 显示。其中“桌面合成”等环节引入额外延迟。</li><li>而实时云渲染追求端到端最短路径：应用渲染 -&gt; 直接捕获 -&gt; 编码 -&gt; 网络 -&gt; 解码 -&gt; 显示。主流方案甚至能做到渲染输出直接进入编码器（GPU内存零拷贝），比如点量云流官方文档显示，在服务器编码环节最低延迟可以做到1ms。并且，对于多并发模式，实时云渲染行业内，大都将每个用户会话运行在独立的、无桌面的容器或轻量级CELL中，剥离不必要的GUI开销。</li></ul><p>在传输上：</p><ul><li>传统远程桌面协议多基于TCP传输，数据传输需经过多次确认。并且有些远程桌面技术，为了减少带宽占用，还对画面的传输做缓存和策略优化，比如极短时间内的多次画面变化，会先做cache缓存，有些云桌面技术只传递一定时间内鼠标、画面变化的最后一次合并结果，而不是有变化立即传输，这在网络波动时会进一步放大延迟。</li><li>而实时云渲染采用的专属协议（如WebRTC、自研低延迟协议）多基于UDP优化，并且减少数据确认环节、优化帧捕获与编码链路，能将端到端延迟控制在10-50ms，甚至VR场景所需的低于30ms的水平。更关键的是，传统远程桌面协议未针对图形渲染的“帧同步”需求优化，而实时云渲染技术会通过帧预测、动态码率调整、GPU层画面截获等方式，进一步压缩交互延迟。</li></ul><p>笔者选取点量云流同微软RDP做对比实测，通过多次实测数据，方法是跑服务器上的毫秒表，让二者获取同一个服务器画面，通过截图对比二者的时间差。在局域网环境下，点量云流客户端比RDP延迟低16-33ms，画质流畅度更优；公网真实环境（北京服务器-杭州客户机）下，分别基于正常网络、用软件做限速、丢包模拟弱网环境进行操作，点量云流这一实时云渲染系统（客户端/Web模式）比RDP延迟低30-100ms，平均低60ms左右。测试部分结果如下所示：<br/><img width="723" height="622" referrerpolicy="no-referrer" src="/img/bVdnAV6" alt="" title="" loading="lazy"/></p><p><strong>2、画质与编码效率：无法匹配高负载图形需求</strong><br/>实时云渲染场景需要必须无损或视觉无损地传输复杂的3D图形、光影特效，分辨率常达4K/8K。要求传输的是高清动态图形流（如4K分辨率、60帧/秒的游戏画面），这对编码效率和画质保留能力提出了极高要求。</p><p>传统远程桌面协议的编码机制是为“静态办公界面”设计的，难以应对高负载图形传输：这类协议为通用办公设计，多采用有损压缩，且为降低延迟，可能使用帧间差分等算法。面对高速运动、细节丰富的3D画面，易产生模糊、块效应，画质损失严重，或为保画质而带宽激增。比如RDP协议受编码算法限制，在带宽受限或高负载场景下，为维持连接会主动牺牲画质，导致画面模糊、细节丢失，甚至出现明显的卡顿与跳帧。</p><p>与之相对，实时云渲染采用的编码技术是“图形流专属优化”的——通过H.264/H.265等高效编码算法，结合“只传输像素变化区域”的智能压缩策略，可能结合视觉无损编码、内容自适应码率控制等技术，在有限带宽下追求最佳画质。比如近几年流行数字孪生等高逼真画质领域，通过超游戏画质的3D场景对大模型做展示，传统RDP方案往往会因画质损失和卡顿无法满足需求，而云流技术通过专属编码与传输优化，可以实现高清视频流的稳定传输，操作响应迅速且无明显延迟。此外，实时云渲染还支持根据网络状况动态调整分辨率、帧率等参数，平衡画质与流畅度，这是传统远程桌面协议不具备的能力。</p><p><strong>3、算力调度：资源利用率与灵活性不足</strong><br/>实时云渲染的核心优势之一是“云端算力的灵活调度”——能够根据用户的渲染需求，动态分配GPU资源，实现多用户、多应用共享算力，提升资源利用率。而传统远程桌面技术的算力调度模式与之相悖：其采用“系统级隔离”的资源分配方式，每个用户会获得独立的虚拟机，GPU资源通过虚拟化技术固定分割，分配粒度粗、弹性差，资源利用率差，并且通过GPU虚拟化，还会有性能损耗。</p><p>并且，实时云渲染系统，比如前文提到的点量云流等系统大都具备了单服务器同时并行运行多个UE、Unity等3D场景实例的并发调度能力。据其官方文档显示是采用CELL多开技术（一种类似轻量化docker容器的方式），可以在一台机器隔离方式并行运行多个UE实例，彼此之间的画面、声音、键盘鼠标等互不干扰，等同于一个超轻量的应用级沙盒，这种资源调度能力几乎0性能损耗。蔚领时代、腾讯云游戏等厂商，也是实现了单服务器运行多个游戏实例，互不干扰，而不需要云桌面这种通过虚拟机的重损耗模式。</p><p>更关键的是，传统远程桌面技术未针对GPU渲染任务优化——部分远程桌面协议（如RDP）甚至不调用GPU，仅依靠CPU进行画面渲染，面对复杂图形计算时会瞬间过载。而实时云渲染采用“应用级隔离”的调度模式，能按渲染任务动态分配GPU资源，支持多应用共享单GPU，资源利用率可提升至85%以上，且能实现秒级弹性伸缩，完美匹配实时渲染场景“按需分配算力”的需求。</p><h3>三、瓶颈：传统远程桌面无法突破低延迟高画质场景的核心障碍</h3><p>技术的价值在于适配场景，可以通过下表清晰看到两种技术的场景适配边界：<br/><img width="723" height="251" referrerpolicy="no-referrer" src="/img/bVdnAWa" alt="" title="" loading="lazy"/></p><p>从场景适配来看，传统远程桌面技术是“办公场景的最优解”，而实时云渲染技术是“高负载实时图形场景的专属解”。当应用场景从“处理文档”转向“渲染高清动态图形”，技术选择的切换就成了必然。</p><h3>四、结论：技术选择的本质是适应场景需求</h3><p>传统远程桌面技术并非“落后技术”，而是其设计初衷与架构体系，决定了它无法匹配实时云渲染对低延迟、高画质、灵活算力调度的核心需求。实时云渲染之所以摒弃传统远程桌面技术，本质上是“场景需求驱动的技术迭代”——当用户需要的是“实时、高清、沉浸式的图形交互体验”时，基于UDP优化的低延迟传输协议、高效的图形编码算法、动态的GPU算力调度体系，才是更适配的技术选择。</p><p>在选择云端图形处理方案时，核心不是追求“最新技术”，而是明确自身场景的核心需求：若仅需远程二维软件办公，传统远程桌面技术足够高效；若涉及三维可视化展示、云游戏、3D设计、VR/XR等实时图形场景，那么适配这些场景的实时云渲染技术，才是保障体验与效率的关键。</p>]]></description></item><item>    <title><![CDATA[MCP圣经：理论 + 实践吃透 大火的 MCP 协议 本文系转载，阅读原文
-https://mp.w]]></title>    <link>https://segmentfault.com/a/1190000047529698</link>    <guid>https://segmentfault.com/a/1190000047529698</guid>    <pubDate>2026-01-08 15:06:55</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>MCP圣经：理论 + 实践吃透 大火的 MCP 协议</h2><p>原文地址：<a href="https://link.segmentfault.com/?enc=TL6tfO%2Byrwly%2F%2BdUvCrbaQ%3D%3D.26H0gTvZ59XwlNcf49g%2B%2BLtr4AljFFHKzQsJxJukONgIT77o%2BMJaFEQIrluVyVmE1%2FppH1h%2FpPFpR4ZIezrSGg%3D%3D" rel="nofollow" target="_blank">https://mp.weixin.qq.com/s/jwzEFeHuB_k9BA7go8bNVg</a><br/><img width="723" height="535" referrerpolicy="no-referrer" src="/img/bVdnAOZ" alt="image.png" title="image.png"/><br/>最近大火的 MCP 协议，看这篇文章就够了</p><p>本篇旨在回答以下三个问题：</p><ol><li>什么是 MCP？</li><li>为什么需要 MCP？</li><li>作为用户，我们如何使用/开发 MCP？</li></ol><h3>一、为什么需要 MCP?</h3><p>我认为 MCP 的出现是 prompt engineering（提示工程）发展的产物。更结构化的上下文信息对模型的性能提升是显著的。我们在构造 prompt （提示词）时，希望能提供一些更具体的信息（比如本地文件，数据库，一些网络实时信息等）给模型，这样模型更容易理解真实场景中的问题。</p><p>想象一下没有 MCP 之前我们会怎么做？</p><p>我们可能会人工从数据库中筛选或者使用工具检索可能需要的信息，手动的粘贴到 prompt 中。随着我们要解决的问题越来越复杂，手工把信息引入到 prompt 中会变得越来越困难。</p><p>为了克服手工 prompt 的局限性，许多 LLM 平台（如 OpenAI、Google）引入了 function call （函数调用）功能。</p><p>这一机制允许模型在需要时调用预定义的函数来获取数据或执行操作，显著提升了自动化水平。</p><h4>Agent 开发的过程和痛点：</h4><p>AI 的发展链路大致是这样的：从最初只能对话的 Chatbot，辅助人类决策的 Copilot，再到能自主感知和行动的 Agent，AI 在任务中的参与度不断提升。</p><p>这要求 AI 拥有更丰富的任务上下文（Context），并拥有执行行动所需的工具（Tool）。</p><h5>Agent 让 LLM 调用工具</h5><p>一个 Agent 让 LLM 调用工具，步骤如下：</p><ol><li>写好函数工具<br/>开发者需要在本地写好函数工具，例如，如果想让 LLM 学会查询天气，我们需要在本地写好一个查询天气的函数</li><li><p>写好函数的介绍（这个很关键）<br/>LLM 将会通过函数的介绍，理解函数的作用。函数介绍包括：函数的作用、参数的类型、参数的作用等。例如，DeepSeek 的函数介绍格式如下：</p><pre><code class="json">tools = [{
- "type": "function",
- "function": {
-     "name": "get_weather",
-     "description": "Get weather of an location, the user shoud supply a location first",
-     "parameters": {
-         "type": "object",
-         "properties": {
-             "location": {
-                 "type": "string",
-                 "description": "The city and state, e.g. San Francisco, CA",
-             }
-         },
-         "required": ["location"]
-     },
- }
-}, ]</code></pre><p>这是一个天气查询的函数，参数为 location，LLM 将会通过这些介绍，学会如何调用函数。</p></li><li><p>解析响应，并在本地执行函数<br/>若 DeepSeek 认为当前应该调用函数，则会输出参数的填写方式，格式如下：</p><pre><code class="json">{
- "message": {
-     "role": "assistant",
-     "content": "",
-     "tool_calls": [{
-         "index": 0,
-         "id": "call 0_c2fd458f-b1e3-43a0-b76a-c9138e609678",
-         "type": "function",
-         "function": {
-             "name": "get_weather",
-             "arguments": "{\"location\":\"Beijing\"}"
-         }
-     }]
- }
-}</code></pre><p>我们可以通过解析 message 中的 tool_calls 字段，将 DeepSeek 给出的参数填写在函数中，并在本地执行函数。</p></li><li>LLM 根据运行结果进行总结并回复<br/>最后把函数执行的结果反馈给 DeepSeek，DeepSeek 再整理执行结果，给出回复。</li></ol><h5>Agent 开发 三大痛点</h5><p>缺少标准化的上下文和工具集导致 Agent 开发有三大痛点：</p><ol><li>开发耦合度高：<br/>工具开发者需要深入了解 Agent 的内部实现细节，并在 Agent 层编写工具代码。这导致在工具的开发与调试困难。</li><li>工具复用性差：<br/>因每个工具实现都耦合在 Agent 应用代码内，即使是通过 API 实现适配层，在给到 LLM 的出入参上也有区别。<br/>从编程语言角度来讲，没办法做到跨编程语言进行复用。</li><li>生态碎片化：<br/>工具提供方能提供的只有 OpenAPI，由于缺乏标准使得不同 Agent 生态中的工具 Tool 互不兼容。</li></ol><p><img width="723" height="506" referrerpolicy="no-referrer" src="/img/bVdnANz" alt="image.png" title="image.png" loading="lazy"/></p><p>但是 function call 也有其局限性，function call 平台依赖性强，不同 LLM 平台的 function call API 实现差异较大。</p><p>例如，OpenAI 的函数调用方式与 Google 的不兼容，开发者在切换模型时需要重写代码，增加了适配成本。除此之外，还有安全性、交互性等问题。</p><h3>二、什么是 MCP？</h3><p>数据与工具本身是客观存在的，只不过我们希望将数据连接到模型的这个环节可以更智能更统一。</p><p>MCP（Model Context Protocol）是 Anthropic（Claude 的母公司）在 2024 年提出的一种协议标准，中文翻译过来的意思是"模型上下文协议"。</p><p>MCP 的核心作用是让 AI 模型能够主动调用外部工具和服务，从而大大扩展 AI 的能力边界。</p><p>MCP 起源于 2024 年 11 月 25 日 Anthropic 发布的文章：<a href="https://link.segmentfault.com/?enc=dt3RWiHWlme2nZiUCOipLQ%3D%3D.viJWRhQOd%2BUHKQnhXlwdl%2BtpxoZrSJluYCvs%2FooR74LL4zpPge6uMGwV%2B6dyymtT8esJ2pB720UA7yTOSOVluQ%3D%3D" rel="nofollow" target="_blank">Introducing the Model Context Protocol</a>[1]。</p><p>MCP（Model Context Protocol，模型上下文协议）定义了应用程序和 AI 模型之间交换上下文信息的方式。</p><p>MCP 使得开发者能够以一致的方式将各种数据源、工具和功能连接到 AI 模型（一个中间协议层），就像 USB-C 让不同设备能够通过相同的接口连接一样。</p><p>MCP 的目标是创建一个通用标准，使 AI 应用程序的开发和集成变得更加简单和统一。</p><p>所谓一图胜千言，我这里引用一些制作的非常精良的图片来帮助理解：</p><p><img width="723" height="412" referrerpolicy="no-referrer" src="/img/bVdnAND" alt="image.png" title="image.png" loading="lazy"/></p><p>可以看出，MCP 就是以更标准的方式让 LLM Chat 使用不同工具，更简单的可视化如下图所示，这样你应该更容易理解“中间协议层”的概念了。</p><p>Anthropic 旨在实现 LLM Tool Call（LLM 工具调用）的标准。</p><p><img width="723" height="342" referrerpolicy="no-referrer" src="/img/bVdnANE" alt="image.png" title="image.png" loading="lazy"/></p><p>Anthropic 基于这样的痛点设计了 MCP，充当 AI 模型的"万能转接头"，让 LLM 能轻松地获取数据或者调用工具。</p><p>一句话解释就是 MCP 提供给 LLM 所需的上下文：Resources 资源、Prompts 提示词、Tools 工具。</p><p>更具体的说 MCP 的优势在于：</p><ol><li>生态：MCP 提供很多现成的插件，你的 AI 可以直接使用。</li><li>统一性：不限制于特定的 AI 模型，任何支持 MCP 的模型都可以灵活切换。</li><li>数据安全：你的敏感数据留在自己的电脑上，不必全部上传（因为我们可以自行设计接口确定传输哪些数据）。</li></ol><p><img width="723" height="1216" referrerpolicy="no-referrer" src="/img/bVdnANF" alt="image.png" title="image.png" loading="lazy"/></p><h4>MCP 和 Function Call 区别？</h4><table><thead><tr><th> </th><th>MCP</th><th>Function Call</th></tr></thead><tbody><tr><td>定义</td><td>模型和其它设备集成的标准接口，包含：工具 Tools、资源 Resources、提示词 Prompts</td><td>将模型连接到外部数据和系统，平铺式的罗列 Tools 工具。和 MCP Tool 不同的在于：MCP Tool 的函数约定了输入输出的协议规范。</td></tr><tr><td>协议</td><td>JSON-RPC，支持双向通信（但目前使用不多）、可发现性、更新通知能力。</td><td>JSON-Schema，静态函数调用。</td></tr><tr><td>调用方式</td><td>Stdio / SSE / 同进程调用（见下文）</td><td>同进程调用 / 编程语言对应的函数</td></tr><tr><td>适用场景</td><td>更适合动态、复杂的交互场景</td><td>单一特定工具、静态函数执行调用</td></tr><tr><td>系统集成难度</td><td>高</td><td>简单</td></tr><tr><td>工程化程度</td><td>高</td><td>低</td></tr></tbody></table><h4>从前后端分离看 MCP</h4><p>早期 Web 开发在 JSP、PHP 盛行时，前端交互页面都是耦合在后端逻辑里的，造成开发复杂度高、代码维护困难、前后端协作不便，难以适应现代 Web 应用对用户体验和性能的更高要求。</p><p>AJAX、Node.js、RESTful API 推动前后端分离，对应 MCP 也正在实现 AI 开发的“工具分层”：</p><ul><li>前后端分离：<br/>前端专注界面，后端专注 API 接口；</li><li>MCP 分层：<br/>让工具开发者和 Agent 开发者各司其职，工具质量和功能的迭代不需要 Agent 开发者感知。</li></ul><p>这种分层让 AI Agent 开发者能像搭积木一样组合工具，快速构建复杂 AI 应用。</p><p><img width="723" height="426" referrerpolicy="no-referrer" src="/img/bVdnANG" alt="image.png" title="image.png" loading="lazy"/></p><h3>三、用户如何使用 MCP？</h3><p>对于用户来说，我们并不关心 MCP 是如何实现的，通常我们只考虑如何更简单地用上这一特性。</p><p>具体的使用方式参考官方文档：<a href="https://link.segmentfault.com/?enc=%2FvpuDcrq%2BhNFMLioPhthiw%3D%3D.DBp8RMOjCfuCAo4Cna6CFqMU6ktA9YDW66e4k3HW9Wm5Nq06bwNRrdCB95%2FhR5lC" rel="nofollow" target="_blank">For Claude Desktop Users</a>。</p><p>这里不再赘述，配置成功后可以在 Claude 中测试：<code>Can you write a poem and save it to my desktop?</code> Claude 会请求你的权限后在本地新建一个文件。</p><p>并且官方也提供了非常多现成的 MCP Servers，你只需要选择你希望接入的工具，然后接入即可。</p><ol><li><a href="https://link.segmentfault.com/?enc=vtsvIZGr%2Bhi8rAyOITk%2FGQ%3D%3D.fZ2yUY7mosvstKhobsFCxjMxZowYbB18GC0i89XPWFKszvjqZ8Wb21uGh3m0bwlu" rel="nofollow" target="_blank">Awesome MCP Servers</a></li><li><a href="https://link.segmentfault.com/?enc=IdiVkSWYEy63c0loljLt2g%3D%3D.u4ajXstlHOu8Lz%2BusWLVtDLZ4ddsEQUdjSiFEYaLSVQ%3D" rel="nofollow" target="_blank">MCP Servers Website</a></li><li><a href="https://link.segmentfault.com/?enc=JmC9Y9qiHqTrctq9qUD5Jw%3D%3D.zbWpg4HmxlmNU%2FLPd8dBnWzMOfXQ%2BtJxi3TM1HvSu0%2Bbc7CwOGU1FGrm2yv5NVpx" rel="nofollow" target="_blank">Official MCP Servers</a></li></ol><p>比如官方介绍的 filesystem 工具，它允许 Claude 读取和写入文件，就像在本地文件系统中一样。</p><h3>四、MCP 架构解构</h3><p>这里首先引用官方给出的架构图。<br/><img width="723" height="491" referrerpolicy="no-referrer" src="/img/bVdnANH" alt="image.png" title="image.png" loading="lazy"/></p><p>MCP 由三个核心组件构成：Host（主机）、Client（客户端） 和 Server（服务器）。</p><p>让我们通过一个实际场景来理解这些组件如何协同工作：假设你正在使用 Claude Desktop (Host) 询问："我桌面上有哪些文档？"</p><ol><li>Host：Claude Desktop 作为 Host，负责接收你的提问并与 Claude 模型交互。</li><li>Client：当 Claude 模型决定需要访问你的文件系统时，Host 中内置的 MCP Client 会被激活。这个 Client 负责与适当的 MCP Server 建立连接。</li><li>Server：在这个例子中，文件系统 MCP Server 会被调用。它负责执行实际的文件扫描操作，访问你的桌面目录，并返回找到的文档列表。</li></ol><p>整个流程是这样的：你的问题 → Claude Desktop(Host) → Claude 模型 → 需要文件信息 → MCP Client 连接 → 文件系统 MCP Server → 执行操作 → 返回结果 → Claude 生成回答 → 显示在 Claude Desktop 上。</p><p>这种架构设计使得 Claude 可以在不同场景下灵活调用各种工具和数据源，而开发者只需专注于开发对应的 MCP Server，无需关心 Host 和 Client 的实现细节。</p><p><img width="723" height="481" referrerpolicy="no-referrer" src="/img/bVdnANO" alt="image.png" title="image.png" loading="lazy"/></p><p>更加细致的整体架构图，如下：</p><p><img width="600" height="707" referrerpolicy="no-referrer" src="/img/bVdnANS" alt="image.png" title="image.png" loading="lazy"/></p><p>直观地说，MCP 就像 AI 应用的 USB-C 接口。</p><p>正如 USB-C 为设备连接各种配件提供了标准化方案，MCP 也将 AI 应用连接到不同数据源和工具的方式标准化了。</p><p><img width="600" height="557" referrerpolicy="no-referrer" src="/img/bVdnANT" alt="image.png" title="image.png" loading="lazy"/></p><p>MCP 的核心遵循客户端-服务器（client-server）架构，Host 应用程序可以连接到多个 Server。</p><p>它包含三个主要组件：</p><ul><li>Host</li><li>Client</li><li>Server</li></ul><p>Host 代表任何提供 AI 交互环境、访问外部工具和数据源，且负责运行 MCP Client 的 AI 应用（如 Claude 桌面版、Cursor）。</p><p>MCP Client 在 Host 内运行，实现与 MCP Servers 的通信。</p><p><img width="723" height="349" referrerpolicy="no-referrer" src="/img/bVdnANU" alt="image.png" title="image.png" loading="lazy"/></p><p>MCP Server 对外开放特定能力，并提供对数据源的访问权限，包括：</p><p><img width="723" height="699" referrerpolicy="no-referrer" src="/img/bVdnANV" alt="image.png" title="image.png" loading="lazy"/></p><p>MCP Server 包括：</p><ul><li>Tools：使大语言模型能够通过你的 Server 执行操作。</li><li>Resources：将 Server 上的数据和内容开放给大语言模型。</li><li>Prompts：创建可复用的提示词模板和工作流程。</li></ul><p>要构建属于你自己的 MCP 系统，理解客户端-服务器通信机制是必不可少的。</p><h4>动态服务发现与适配机制</h4><p>MCP Server 和 MCP Client 之间，是一种动态服务发现与适配机制，也叫做能力交换 Capability Exchange 机制</p><p><img width="600" height="537" referrerpolicy="no-referrer" src="/img/bVdnANW" alt="image.png" title="image.png" loading="lazy"/></p><p>首先进行 Capability Exchange（译者注：Capability Exchange（能力交换）是一种动态服务发现与适配机制，是 MCP 连接建立的必经步骤，类似于“握手协议”。）</p><p>Capability Exchange 流程如下：</p><ol><li>客户端发送初始请求，获取服务器能力信息</li><li>服务器返回其能力信息详情</li><li>例如当天气 API 服务器被调用时，它可以返回可用的“tools”、“prompts templates”及其他资源供客户端使用</li></ol><p>交换完成后，客户端确认连接成功，然后继续交换消息。</p><p>Capability Exchange 流程具体如何实现呢？MCP 协议官方提供了两种主要通信方式：stdio（标准输入输出）和 SSE（Server-Sent Events，服务器发送事件）。</p><h4>客户端与服务器的通信流程</h4><p>MCP 协议官方提供了两种主要通信方式：stdio（标准输入输出）和 SSE（Server-Sent Events，服务器发送事件）。</p><p>这两种方式均采用全双工通信模式，通过独立的读写通道实现服务器消息的实时接收和发送。</p><h5>什么是 SSE Transport？</h5><p>MCP（Model Context Protocol）是一个开放协议，旨在标准化应用程序与大型语言模型（LLM）之间的上下文交互。它定义了客户端与服务器如何通过传输层交换消息。</p><p>MCP 支持两种标准传输机制：</p><ul><li>stdio：通过标准输入输出流进行本地通信。</li><li>SSE（Server-Sent Events）：通过 HTTP 协议实现服务器到客户端的实时单向数据推送，结合 HTTP POST 用于客户端到服务器的消息发送。</li></ul><p>SSE Transport 是 MCP 中基于 HTTP 的传输方式，利用 SSE 技术实现服务器到客户端的流式消息推送，同时通过 HTTP POST 请求处理客户端到服务器的双向通信。</p><p>这种机制特别适合需要实时更新或远程通信的场景。</p><h5>SSE Transport 的工作原理</h5><p>SSE（Server-Sent Events）是一种基于 HTTP 协议的服务器推送技术，允许服务器向客户端发送实时更新。</p><p>MCP 的 SSE Transport 结合了 SSE 和 HTTP POST，形成了以下工作流程：</p><p><img width="723" height="889" referrerpolicy="no-referrer" src="/img/bVdnAN0" alt="image.png" title="image.png" loading="lazy"/></p><h5>SSE Transport 交互流程</h5><ol><li><p>建立连接：</p><ul><li>客户端通过 HTTP GET 请求访问服务器的 SSE 端点（例如 /sse）。</li><li>服务器响应一个 text/event-stream 类型的内容，保持连接打开。</li><li>服务器发送一个初始的 endpoint 事件，包含一个唯一的 URI（例如 /messages?session_id=xxx），客户端后续通过这个 URI 发送消息。</li></ul></li><li><p>服务器到客户端的消息推送：</p><ul><li>服务器通过 SSE 连接，将 JSON-RPC 格式的消息，以事件流的形式发送给客户端。</li><li>客户端通过 EventSource 或类似机制监听这些事件。</li></ul></li><li><p>客户端到服务器的消息发送：</p><ul><li>客户端通过 HTTP POST 请求将消息，发送到服务器提供的 URI（例如 /messages）。</li><li>服务器接收并处理这些请求，返回响应或通过 SSE 推送结果。</li></ul></li><li><p>连接管理：</p><ul><li>SSE 连接是单向的（服务器到客户端），通常通过定期发送心跳消息（keep-alive）保持活跃。</li><li>如果连接断开，客户端可以重新发起 SSE 请求重建连接。</li></ul></li></ol><h5>数据格式</h5><p>MCP 使用 JSON-RPC 2.0 协议封装消息，确保请求和响应的结构化处理</p><p>SSE 消息遵循 <code>event:\ndata:\n\n</code> 的格式。</p><h5>示例</h5><p>客户端 POST 请求：</p><pre><code class="http">POST /messages HTTP/1.1
-Content-Type: application/json
-
-{"jsonrpc": "2.0", "method": "example", "params": {"text": "Hi"}, "id": 1}</code></pre><p>服务器推送：</p><pre><code class="text">event: message
-data: {"jsonrpc": "2.0", "id": 1, "result": {"text": "Hello"}}</code></pre><h3>五、SSE 通信流程详解</h3><h4>1、建立 SSE 连接</h4><p>客户端首先需要与服务端建立一个 SSE 长连接，该连接用于接收服务端推送的所有消息：<br/><code>http://localhost:8000/sse</code></p><p>提示：</p><ul><li>可以直接在浏览器中打开此链接实时查看接收到的消息流</li><li>同步使用 curl、Postman 等工具进行消息发送测试，便于双向操作验证</li></ul><p>建立连接后，服务端会首先返回一个专用的消息发送端点（Endpoint），这是后续通信的关键：</p><pre><code class="text">event: endpoint
-data: /messages/?session_id=2b3c8777119444c1a1b26bc0d0f05a0a</code></pre><p>说明：<br/>客户端之后发送的所有消息请求，都必须指向这个专用 Endpoint (其实就是专用的 url)。<br/>当请求格式正确时，该 Endpoint 会返回一个”Accepted”状态码，但是，真正的服务器响应内容都是通过 SSE 端点异步推送的。</p><h4>2、通信初始化流程</h4><p>客户端需要完成两个关键的初始化步骤，确保通信渠道正常建立：</p><h5>a) 发送初始化请求</h5><p>客户端需要先向服务端发送初始化请求，表明自身身份和期望的通信参数：</p><pre><code class="bash">curl -X POST 'http://localhost:8000/messages/?session_id=2b3c8777119444c1a1b26bc0d0f05a0a' -H 'Content-Type: application/json' -d '{
-    "jsonrpc": "2.0",
-    "id": 0,
-    "method": "initialize",
-    "params": {
-      "protocolVersion": "2024-11-05",
-      "capabilities": {},
-      "clientInfo": {
-        "name": "mcp",
-        "version": "0.1.0"
-      }
-    }
-}'</code></pre><p>服务端会返回其支持的功能列表，便于客户端了解可用的交互能力：</p><pre><code class="text">event: message
-data: {
-    "jsonrpc": "2.0",
-    "id": 0,
-    "result": {
-        "protocolVersion": "2024-11-05",
-        "capabilities": {
-            "experimental": {},
-            "prompts": {
-                "listChanged": false
-            },
-            "resources": {
-                "subscribe": false,
-                "listChanged": false
-            },
-            "tools": {
-                "listChanged": false
-            }
-        },
-        "serverInfo": {
-            "name": "weather",
-            "version": "1.3.0"
-        }
-    }
-}</code></pre><h5>b) 发送初始化完成通知</h5><p>初始化协商完成后，客户端需要明确通知服务端，初始化已完成：</p><pre><code class="bash">curl -X POST 'http://localhost:8000/messages/?session_id=2b3c8777119444c1a1b26bc0d0f05a0a' -H 'Content-Type: application/json' -d '{
-    "jsonrpc": "2.0",
-    "method": "notifications/initialized",
-    "params": {}
-}'</code></pre><h4>3、工具调用示例</h4><p>MCP 协议的核心价值在于其工具调用能力，以下是一个完整的调用流程：</p><h5>a) 获取可用工具列表</h5><p>客户端首先应该获取服务端提供的工具列表，如果已经知道其工具参数也可跳过，直接去调用工具：</p><pre><code class="bash">curl -X POST 'http://localhost:8000/messages/?session_id=2b3c8777119444c1a1b26bc0d0f05a0a' -H 'Content-Type: application/json' -d '{
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "tools/list",
-    "params": {}
-}'</code></pre><p>服务端会返回所有可用的工具及其参数规范：</p><pre><code class="text">event: message
-data: {
-    "jsonrpc": "2.0",
-    "id": 1,
-    "result": {
-        "tools": [{
-            "name": "get_alerts",
-            "description": "Get weather alerts for a US state.\n\n    Args:\n        state: Two-letter US state code (e.g. CA, NY)\n    ",
-            "inputSchema": {
-                "properties": {
-                    "state": {
-                        "title": "State",
-                        "type": "string"
-                    }
-                },
-                "required": ["state"],
-                "title": "get_alertsArguments",
-                "type": "object"
-            }
-        }, {
-            "name": "get_forecast",
-            "description": "Get weather forecast for a location.\n\n    Args:\n        latitude: Latitude of the location\n        longitude: Longitude of the location\n    ",
-            "inputSchema": {
-                "properties": {
-                    "latitude": {
-                        "title": "Latitude",
-                        "type": "number"
-                    },
-                    "longitude": {
-                        "title": "Longitude",
-                        "type": "number"
-                    }
-                },
-                "required": ["latitude", "longitude"],
-                "title": "get_forecastArguments",
-                "type": "object"
-            }
-        }]
-    }
-}</code></pre><h5>b) 调用特定工具</h5><p>客户端根据需求，选择并调用特定工具：</p><pre><code class="bash">curl -X POST 'http://localhost:8000/messages/?session_id=2b3c8777119444c1a1b26bc0d0f05a0a' -H 'Content-Type: application/json' -d '{
-    "jsonrpc": "2.0",
-    "id": 2,
-    "method": "tools/call",
-    "params": {"name": "get_alerts", "arguments": {"state": "CA"}}
-}'</code></pre><p>服务端执行工具调用并返回结果：</p><pre><code class="text">event: message
-data: {
-    "jsonrpc": "2.0",
-    "id": 2,
-    "result": {
-        "content": [{
-            "type": "text",
-            "text": "\nEvent: Wind Advisory\nArea: San Gorgonio Pass Near Banning\nSeverity: Moderate\nDescription: * WHAT... \n"
-        }],
-        "isError": false
-    }
-}</code></pre><h4>4、通信特点</h4><ol><li>双向异步通信：接收通道通过 SSE 长连接接收服务端消息，发送通道通过 HTTP POST 向专用端点发送客户端消息</li><li>会话状态管理：使用 session_id 维护客户端与服务端的会话状态，支持多客户端并发连接</li><li>标准通信协议：基于 JSON-RPC 2.0 规范，确保通信格式统一，便于跨平台</li><li>可扩展性：支持动态发现和调用服务端工具</li></ol><p>MCP 协议通过其灵活而高效的通信机制，为客户端与服务端之间的交互提供了可靠保障。基于 SSE 的实现方案不仅便于开发和调试，还具备良好的性能表现。</p><p>对于开发者而言，深入理解 MCP 通信模式不仅有助于实现高质量的客户端应用，也为设计其他分布式通信系统提供了宝贵经验。希望本文的详细解析能为您的技术实践提供有益参考。</p><h4>5、注意事项</h4><ol><li>所有客户端请求必须使用服务端分配的 Endpoint</li><li>初始化流程必须严格按照顺序完成</li></ol><h3>六、MCP 官方给出的代码示例</h3><p>我们可以分析一段 MCP 官方给出的代码示例<br/><a href="https://link.segmentfault.com/?enc=SIfMXTW31yQVt70T%2Fawx8w%3D%3D.4DFueqE2zjR2J6u9SGz7kDOZa08onGmwed8D9nnUhqvR0OMBOWhsrwpP1a%2FODPN%2F3pQVBKaUu3skZqDWBe%2FRcj%2FmtDNM9xcqXBdiNTAXy4XXgXwk1bvL1GQynxKdwAZtH4Cc4AiShpIXhYeKW3EAoXG2c%2FqVgH3NytyOUlLekt0%3D" rel="nofollow" target="_blank">https://github.com/modelcontextprotocol/python-sdk/blob/main/examples/clients/simple-chatbot/mcp_simple_chatbot/main.py#L196</a></p><pre><code class="python">all_tools = []
-for server in self.servers: 
-    tools = await server.list_tools() 
-    all_tools.extend(tools)
-
-tools_description = "\n".join([tool.format_for_llm() for tool in all_tools])
-
-system_message = ("You are a helpful assistant with access to these tools:\n\n"
-    f "{tools_description}\n"
-    "Choose the appropriate tool based on the user's question. "
-    "If no tool is needed, reply directly.\n\n"
-    "IMPORTANT: When you need to use a tool, you must ONLY respond with "
-    "the exact JSON object format below, nothing else:\n"
-    "{\n"
-    '    "tool": "tool-name",\n'
-    '    "arguments": {\n'
-    '        "argument-name": "value"\n'
-    "    }\n"
-    "}\n\n"
-    "After receiving a tool's response:\n"
-    "1. Transform the raw data into a natural, conversational response\n"
-    "2. Keep responses concise but informative\n"
-    "3. Focus on the most relevant information\n"
-    "4. Use appropriate context from the user's question\n"
-    "5. Avoid simply repeating the raw data\n\n"
-    "Please use only the tools that are explicitly defined above.")</code></pre><p>方便起见，我们翻译一些系统提示词：</p><p>您是一个有用的助手，可以访问这些工具：{tools_description} 根据用户的问题选择合适的工具。如果不需要工具，请直接回复。</p><p>重要提示：当您需要使用工具时，您必须只回复下面确切的 JSON 对象格式，不回复别的内容：</p><pre><code class="json">{
-    "tool": "tool-name",
-    "arguments": {
-        "argument-name": "value"
-    }
-}</code></pre><p>收到执行结果后：</p><ol><li>将原始数据转换为自然的对话式响应</li><li>保持回答简洁但信息丰富</li><li>关注最相关的信息</li><li>使用用户问题中的适当上下文</li><li>避免简单地重复原始数据</li></ol><p>你只能使用上面明确定义的工具。</p><p>看到这里，你是不是恍然大悟。</p><p>MCP，实际上就是把函数的介绍写在了系统提示词里。</p><p>对于 Function Calling 来说，我需要把函数的参数填到请求参数 tools 里面，这些函数最终以什么样的方式输入到模型里，这个过程是不透明的，解析 tools 的工作是在云端进行的，返回的格式也是在云端定义的。我们只能通过官方文档来确定返回参数的格式。</p><p>而 MCP 很巧妙的绕过了云端解析 tools 的过程。</p><p>MCP 把函数的介绍、参数的返回格式都写在了系统提示里面，这样一来，只要 LLM 能够理解系统提示词，就能够按照提示词定义的格式输出。</p><p>这就实现了格式的统一。</p><p>在理解了 MCP 的原理后，我们就能很清晰地解释 MCP 的服务端和客户端了：</p><ul><li>✅ MCP 服务端，是执行函数工具的场所。</li><li>✅ MCP 客户端，是与 LLM 交互的场所，包括介绍函数和获取函数的参数</li></ul><p>MCP 服务端中常用的函数工具、数据查询工具等已经由社区的开发者们开发好了，可以直接进行调用。</p><p>对于大多数的开发者来说，需要开发的是 MCP 客户端。</p><p>而在 MCP 客户端中，开发者根据业务流程，让 LLM 选择合适的函数工具进行调用，最终实现业务逻辑。</p><p><img width="331" height="818" referrerpolicy="no-referrer" src="/img/bVdnAN1" alt="image.png" title="image.png" loading="lazy"/></p><h3>七、LLM 大模型是如何确定工具的选用的？</h3><p>在学习的过程中，我一直好奇一个问题：Claude（模型）是在什么时候确定使用哪些工具的呢？</p><p>Anthropic 在官网为我们提供了一个简单的解释：</p><p>当用户提出一个问题时：</p><ol><li>客户端（Claude Desktop / Cursor）将你的问题发送给 Claude。</li><li>Claude 分析可用的工具，并决定使用哪一个（或多个）。</li><li>MCP Client 客户端 通过 MCP Server 执行所选的工具。</li><li>工具的执行结果被送回给 Claude。</li><li>Claude 结合执行结果构造最终的 prompt 并生成自然语言的回应。</li><li>回应最终展示给用户！</li></ol><p>MCP Server 是由 Claude 主动选择并调用的。</p><p>有意思的是 Claude 具体是如何确定该使用哪些工具呢？以及是否会使用一些不存在的工具呢（幻觉）？</p><p>为了探索这个问题让我们深入源码。</p><p>显然这个调用过程可以分为两个步骤：</p><ol><li>由 LLM（Claude）确定使用哪些 MCP Server。</li><li>执行对应的 MCP Server 并对执行结果进行重新处理。</li></ol><p>先给出一个简单可视化帮助理解：</p><p><img width="723" height="435" referrerpolicy="no-referrer" src="/img/bVdnAN2" alt="image.png" title="image.png" loading="lazy"/></p><h4>第一步 模型如何确定该使用哪些工具</h4><p>先理解第一步模型如何确定该使用哪些工具？</p><p>这里以 MCP 官方提供的 client example[8] 为讲解示例，并简化了对应的代码（删除了一些不影响阅读逻辑的异常控制代码）。</p><p>通过阅读代码，可以发现模型是通过 prompt 来确定当前有哪些工具。我们通过将工具的具体使用描述以文本的形式传递给模型，供模型了解有哪些工具以及结合实时情况进行选择。</p><p>参考代码中的注释：</p><pre><code class="python">... // 省略了无关的代码
-
-async def start(self):
-    // 初始化所有的 mcp server
-    for server in self.servers:
-        await server.initialize()
-    // 获取所有的 tools 命名为 all_tools
-    all_tools = []
-    for server in self.servers:
-        tools = await server.list_tools()
-        all_tools.extend(tools)
-    // 将所有的 tools 的功能描述格式化成字符串供 LLM 使用
-    // tool.format_for_llm() 我放到了这段代码最后，方便阅读。
-    tools_description = "\n".join(
-        [tool.format_for_llm() for tool in all_tools]
-    )
-    // 这里就不简化了，以供参考，实际上就是基于 prompt 和当前所有工具的信息
-    // 询问 LLM（Claude） 应该使用哪些工具。
-    system_message = (
-        "You are a helpful assistant with access to these tools:\n\n"
-        f"{tools_description}\n"
-        "Choose the appropriate tool based on the user's question. "
-        "If no tool is needed, reply directly.\n\n"
-        "IMPORTANT: When you need to use a tool, you must ONLY respond with "
-        "the exact JSON object format below, nothing else:\n"
-        "{\n"
-        '    "tool": "tool-name",\n'
-        '    "arguments": {\n'
-        '        "argument-name": "value"\n'
-        "    }\n"
-        "}\n\n"
-        "After receiving a tool's response:\n"
-        "1. Transform the raw data into a natural, conversational response\n"
-        "2. Keep responses concise but informative\n"
-        "3. Focus on the most relevant information\n"
-        "4. Use appropriate context from the user's question\n"
-        "5. Avoid simply repeating the raw data\n\n"
-        "Please use only the tools that are explicitly defined above."
-    )
-    messages = [{"role": "system", "content": system_message}]
-    while True:
-        // Final... 假设这里已经处理了用户消息输入.
-        messages.append({"role": "user", "content": user_input})
-        // 将 system_message 和用户消息输入一起发送给 LLM
-        llm_response = self.llm_client.get_response(messages)
-    ... // 后面和确定使用哪些工具无关
-
-class Tool:
-    """Represents a tool with its properties and formatting."""
-
-    def __init__(
-        self, name: str, description: str, input_schema: dict[str, Any]
-    ) -&gt; None:
-        self.name: str = name
-        self.description: str = description
-        self.input_schema: dict[str, Any] = input_schema
-
-    // 把工具的名字 / 工具的用途（description）和工具所需要的参数（args_desc）转化为文本
-    def format_for_llm(self) -&gt; str:
-        """Format tool information for LLM.
-
-        Returns:
-            A formatted string describing the tool.
-        """
-        args_desc = []
-        if "properties" in self.input_schema:
-            for param_name, param_info in self.input_schema["properties"].items():
-                arg_desc = (
-                    f"- {param_name}: {param_info.get('description', 'No description')}"
-                )
-                if param_name in self.input_schema.get("required", []):
-                    arg_desc += " (required)"
-                args_desc.append(arg_desc)
-
-        return f"""
-Tool: {self.name}
-Description: {self.description}
-Arguments:
-{chr(10).join(args_desc)}
-"""</code></pre><p>那 tool 的描述和代码中的 input_schema 是从哪里来的呢？</p><p>通过进一步分析 MCP 的 Python SDK 源代码可以发现：大部分情况下，当使用装饰器 @mcp.tool() 来装饰函数时，对应的 name 和 description 等其实直接源自用户定义函数的函数名以及函数的 docstring 等。</p><p>这里仅截取一小部分片段，想了解更多请参考原始代码。</p><pre><code class="python">@classmethod
-def from_function(
-    cls,
-    fn: Callable,
-    name: str | None = None,
-    description: str | None = None,
-    context_kwarg: str | None = None,
-) -&gt; "Tool":
-    """Create a Tool from a function."""
-    func_name = name or fn.__name__ # 获取函数名
-
-    if func_name == "&lt;lambda&gt;":
-        raise ValueError("You must provide a name for lambda functions")
-
-    func_doc = description or fn.__doc__ or "" # 获取函数 docstring
-    is_async = inspect.iscoroutinefunction(fn)
-
-    ...   更多请参考原始代码...</code></pre><p>总结：模型是通过 prompt engineering，即提供所有工具的结构化描述和 few-shot 的 example 来确定该使用哪些工具。</p><p>另一方面，Anthropic 肯定对 Claude 做了专门的训练（毕竟是自家协议，Claude 更能理解工具的 prompt 以及输出结构化的 tool call json 代码）</p><h4>第二步: 工具执行与结果反馈机制</h4><p>其实工具的执行就比较简单和直接了。承接上一步，我们把 system prompt（指令与工具调用描述）和用户消息一起发送给模型，然后接收模型的回复。当模型分析用户请求后，它会决定是否需要调用工具：</p><ol><li>无需工具时：模型直接生成自然语言回复。</li><li>需要工具时：模型输出结构化 JSON 格式的工具调用请求。</li></ol><p>如果回复中包含结构化 JSON 格式的工具调用请求，则客户端会根据这个 json 代码执行对应的工具。</p><p>具体的实现逻辑都在 process_llm_response 中，代码[10]，逻辑非常简单。</p><p>如果模型执行了 tool call，则工具执行的结果 result 会和 system prompt 和用户消息一起重新发送给模型，请求模型生成最终回复。</p><p>如果 tool call 的 json 代码存在问题或者模型产生了幻觉怎么办呢？通过阅读代码[11] 发现，我们会 skip 掉无效的调用请求。</p><p>执行相关的代码与注释如下：</p><pre><code class="python">... // 省略无关的代码
-
-async def start(self):
-    ... // 上面已经介绍过了，模型如何选择工具
-
-    while True:
-        // 假设这里已经处理了用户消息输入.
-        messages.append({"role": "user", "content": user_input})
-
-        // 获取 LLM 的输出
-        llm_response = self.llm_client.get_response(messages)
-
-        // 处理 LLM 的输出（如果有 tool call 则执行对应的工具）
-        result = await self.process_llm_response(llm_response)
-
-        // 如果 result 与 llm_response 不同，说明执行了 tool call （有额外信息了）
-        // 则将 tool call 的结果重新发送给 LLM 进行处理。
-        if result != llm_response:
-            messages.append({"role": "assistant", "content": llm_response})
-            messages.append({"role": "system", "content": result})
-
-            final_response = self.llm_client.get_response(messages)
-            logging.info("\nFinal response: %s", final_response)
-            messages.append(
-                {"role": "assistant", "content": final_response}
-            )
-        // 否则代表没有执行 tool call，则直接将 LLM 的输出返回给用户。
-        else:
-            messages.append({"role": "assistant", "content": llm_response})</code></pre><p>结合这部分原理分析：</p><ol><li>工具文档至关重要 - 模型通过工具描述文本来理解和选择工具，因此精心编写工具的名称、docstring 和参数说明至关重要。</li><li>由于 MCP 的选择是基于 prompt 的，所以任何模型其实都适配 MCP，只要你能提供对应的工具描述。但是当你使用非 Claude 模型时，MCP 使用的效果和体验难以保证（没有做专门的训练）。</li></ol><h3>MCP (Model Context Protocol) 总结</h3><p>MCP (Model Context Protocol) 代表了 AI 与外部工具和数据交互的标准建立。通过本文，我们可以了解到：</p><ol><li>MCP 的本质：它是一个统一的协议标准，使 AI 模型能够以一致的方式连接各种数据源和工具，类似于 AI 世界的"USB-C"接口。</li><li>MCP 的价值：它解决了传统 function call 的平台依赖问题，提供了更统一、开放、安全、灵活的工具调用机制，让用户和开发者都能从中受益。</li><li>使用与开发：对于普通用户，MCP 提供了丰富的现成工具，用户可以在不了解任何技术细节的情况下使用；对于开发者，MCP 提供了清晰的架构和 SDK，使工具开发变得相对简单。</li></ol><p>MCP 还处于发展初期，但其潜力巨大。</p><p>更重要的是生态吧，基于统一标准下构筑的生态也会正向的促进整个领域的发展。</p><h3>八、MCP (Model Context Protocol) 实战</h3><p>我们按照官方 github <a href="https://link.segmentfault.com/?enc=wFK7YvKoWMA5Dpj86KgovA%3D%3D.xNv2BCDdzS28KESbDSeZ5JUq2tHdDjaThszqSLOhOz6gMNm5mHTdfnYYsiPJQrvZZMB4RO1xBJqysehTb%2BK1ew%3D%3D" rel="nofollow" target="_blank">modelcontextprotocol/python-sdk</a> 实际操作一下，这里我们仅开发 MCP Server，MCP Client 直接使用 Claude Desktop App.</p><p>我们会为 Claude Desktop App 增加个 tools: calculate_bmi 和 fetch_weather，默认 Claude Desktop App 是不具备计算 BMI 和查询天气的功能。</p><h4>实现 MCP Server （Python SDK）</h4><h5>代码实现</h5><pre><code class="python">// server.py
-import httpx
-from mcp.server.fastmcp import FastMCP
-
-// Create an MCP server
-mcp = FastMCP("Demo")
-
-@mcp.tool()
-def calculate_bmi(weight_kg: float, height_m: float) -&gt; float:
-    """Calculate BMI given weight in kg and height in meters"""
-    return weight_kg / (height_m ** 2)
-
-@mcp.tool()
-async def fetch_weather(city: str) -&gt; str:
-    """Fetch current weather for a city"""
-    async with httpx.AsyncClient() as client:
-        response = await client.get(f"https://api.weather.com/{city}")
-        return response.text
-
-if __name__ == "__main__":
-    mcp.run()</code></pre><h4>实现 MCP Client</h4><p>MCP 客户端充当 LLM 和 MCP 服务器之间的桥梁，MCP 客户端的工作流程如下：</p><ul><li>MCP 客户端首先从 MCP 服务器获取可用的工具列表。</li><li>将用户的查询连同工具描述通过 function calling 一起发送给 LLM。</li><li>LLM 决定是否需要使用工具以及使用哪些工具。</li><li>如果需要使用工具，MCP 客户端会通过 MCP 服务器执行相应的工具调用。</li><li>工具调用的结果会被发送回 LLM。</li><li>LLM 基于所有信息生成自然语言响应。</li><li>最后将响应展示给用户。</li></ul><h5>MCP Client 调用工具</h5><p>在 MCP 客户端中，我们使用了以下两个函数来与 MCP 服务器进行交互。</p><ul><li>list_tools()：获取 MCP 服务器提供的所有可用工具。</li><li>call_tool(name, args)：调用指定的工具并获取结果，这里调用 list_indices 来获取 Elasticsearch 集群中的索引信息。</li></ul><pre><code class="python">from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
-
-async def run():
-    // 建立连接
-    async with stdio_client(server_params) as (read, write):
-        async with ClientSession(read, write) as session:
-            // 初始化连接
-            await session.initialize()
-
-            // 列出可用工具
-            tools = await session.list_tools()
-            print("Tools:", tools)
-
-            // 调用工具
-            indices = await session.call_tool("list_indices")
-            print("Indices:", indices)
-
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(run())</code></pre><h4>集成 LLM 调用 MCP Client</h4><p>在实际应用中，我们通常希望让 LLM（如 OpenAI、Claude、通义千问 等）自主决定调用哪些工具。</p><p>下面的代码将以通义千问为示例进行演示，并使用 OpenAI SDK 与其交互。</p><p>为了简化这一过程，我们将借助 OpenRouter（一个统一的 LLM 网关，它提供了 OpenAI 兼容的接口），使我们能够通过相同的 OpenAI API 访问包括通义千问在内的多种 LLM。</p><p>OpenRouter 的使用方式非常简单。</p><p>我们只需在创建 OpenAI 客户端时指定 OpenRouter 的 base_url 和 api_key，并在调用模型时以 &lt;provider&gt;/&lt;model&gt; 的格式（例如 qwen/qwen-plus）指定目标模型，OpenRouter 就会根据模型名称自动将请求路由到对应的 LLM 上。</p><p>除此之外，其他代码与标准的 OpenAI SDK 保持一致。</p><p>接下来介绍一下 MCP 客户端的主要代码。</p><h5>初始化 MCP Client 客户端类</h5><p>MCPClient 类的初始化包含以下 3 个组件：</p><ol><li>self.session：用于存储与 MCP 服务器的会话对象，初始设为 None，将在连接服务器时被赋值。</li><li>self.exit_stack：使用 AsyncExitStack 来管理异步资源，确保所有资源（如服务器连接、会话等）在程序结束时能够正确关闭。</li><li>self.client：创建 OpenAI 异步客户端，通过 OpenRouter 来访问 LLM。</li></ol><p>这里我们：</p><ul><li>设置 base_url 为 OpenRouter 的 API 端点。</li><li>从环境变量获取 API Key（请确保设置了 OPENROUTER_API_KEY 环境变量）。</li></ul><pre><code class="python">class MCPClient:
-    def __init__(self):
-        self.session: Optional[ClientSession] = None
-        self.exit_stack = AsyncExitStack()
-        self.client = AsyncOpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=os.getenv("OPENROUTER_API_KEY"),
-        )</code></pre><h5>MCP Client 和 MCP 服务器连接</h5><p>connect_to_server 方法负责建立与 MCP 服务器的连接。它首先配置服务器进程的启动参数，然后通过 stdio_client 建立双向通信通道，最后创建并初始化会话。</p><p>所有的资源管理都通过 AsyncExitStack 来处理，确保资源能够正确释放。</p><p>连接成功后，它会打印出 MCP 服务器提供的所有可用工具。</p><pre><code class="python">async def connect_to_server(self, server_script_path: str):
-    server_params = StdioServerParameters(
-        command="python",
-        args=[server_script_path],
-        env=None
-    )
-
-    stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
-    self.stdio, self.write = stdio_transport
-    self.session = await self.exit_stack.enter_async_context(ClientSession(self.stdio, self.write))
-
-    await self.session.initialize()
-
-    # 列出可用工具
-    response = await self.session.list_tools()
-    tools = response.tools
-    print("\nConnected to server with tools:", [tool.name for tool in tools])</code></pre><h5>处理请求</h5><p>定义一个 process_query 方法，完成处理请求的流程：</p><ul><li>首先，将用户的查询作为初始消息发送给 LLM，同时提供 MCP 服务器上所有可用工具的描述信息。</li><li>LLM 分析用户查询，决定是直接回答还是需要调用工具。如果需要工具，它会指定要调用的工具名称和参数。</li><li>对于每个工具调用，MCP 客户端执行调用并收集结果。</li><li>将工具调用的结果返回给 LLM，让它基于这些新信息生成或更新回答。</li></ul><p>如果 LLM 认为还需要更多信息，它会继续请求调用其他工具。</p><p>这个过程会一直重复，直到 LLM 收集了足够的信息来完整回答用户的查询。</p><pre><code class="python">async def process_query(self, query: str) -&gt; str:
-    """使用 LLM 和 MCP 服务器提供的工具处理查询"""
-    messages = [
-        {
-            "role": "user",
-            "content": query
-        }
-    ]
-
-    response = await self.session.list_tools()
-    available_tools = [{
-        "type": "function",
-        "function": {
-            "name": tool.name,
-            "description": tool.description,
-            "parameters": tool.inputSchema
-        }
-    } for tool in response.tools]
-
-    // 初始化 LLM API 调用
-    response = await self.client.chat.completions.create(
-        model="qwen/qwen-plus",
-        messages=messages,
-        tools=available_tools
-    )
-
-    final_text = []
-    message = response.choices[0].message
-    final_text.append(message.content or "")
-
-    // 处理响应并处理工具调用
-    while message.tool_calls:
-        // 处理每个工具调用
-        for tool_call in message.tool_calls:
-            tool_name = tool_call.function.name
-            tool_args = json.loads(tool_call.function.arguments)
-
-            // 执行工具调用
-            result = await self.session.call_tool(tool_name, tool_args)
-            final_text.append(f"[Calling tool {tool_name} with args {tool_args}]")
-
-            // 将工具调用和结果添加到消息历史
-            messages.append({
-                "role": "assistant",
-                "tool_calls": [
-                    {
-                        "id": tool_call.id,
-                        "type": "function",
-                        "function": {
-                            "name": tool_name,
-                            "arguments": json.dumps(tool_args)
-                        }
-                    }
-                ]
-            })
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": str(result.content)
-            })
-
-        // 将工具调用的结果交给 LLM
-        response = await self.client.chat.completions.create(
-            model="qwen/qwen-plus",
-            messages=messages,
-            tools=available_tools
-        )
-
-        message = response.choices[0].message
-        if message.content:
-            final_text.append(message.content)
-
-    return "\n".join(final_text)</code></pre><h3>九、MCP (Model Context Protocol) 生态</h3><p>MCP 生态不断发展壮大，越来越多的应用支持 MCP，同时开放平台也提供 MCP Server。</p><p>同时也有像 Cloudflare 、 Composio 、 Zapier 使用 SSE 方式将 MCP 进行托管（即接入一个 MCP Endpoint 即接入一批 MCP Servers），通过 Stdio 方式最理想场景是 MCP Servers 和 Agent 系统跑在同一 Docker 容器中（类似 Sidecar 模式）。</p><p><img width="723" height="618" referrerpolicy="no-referrer" src="/img/bVdnAN8" alt="image.png" title="image.png" loading="lazy"/></p><p>举个例子：接入地图厂商的 MCP Server 后，Agent 具备生活服务工具能力，远远优于单纯依赖搜索的方式。</p><h4>MCP (Model Context Protocol) 未来</h4><p>目前的 MCP 开发非常初级，在工程化上缺少一套完善的框架来约束和规范。</p><p>根据 MCP Roadmap，未来主要三件事：</p><ul><li>Remote MCP Support：鉴权、服务发现、无状态服务，很明显奔着 K8S 架构去的，这样才能构建一个生产级、可扩展的 MCP 服务。根据最近的 RFC Replace HTTP+SSE with new "Streamable HTTP" transport，支持 Streamable HTTP，可以低延迟、双向传输。</li><li>Agent Support：提升不同领域复杂的 Agent 工作流，并可以处理更好的人机交互。</li><li>Developer Ecosystem：更多的开发者和大厂商参与进来，才能扩展 AI Agent 的能力边界。</li></ul><p>实践下来，MCP Server SSE 并不是理想的方案，因为需要保持连接和 session 状态，而云服务（如 FaaS）更倾向于无状态架构，所以最近提出了更适配云场景的 Streamable HTTP Transport。</p><h5>MCP 模型调用与 RL 强化学习：</h5><p>如果 MCP 成为未来的规范，那么 Agent 应用能否准确调用各个 MCP，将成为模型 RL 未来需要支持的关键功能。与 Function Call 模型不同，MCP 是一个动态的工具库，模型需要具备对新增 MCP 的泛化理解能力。</p><h5>Agent K8S：</h5><p>虽然目前 LLM 和上下文之间建立了标准化的通信协议，但 Agent 之间的交互协议尚未形成统一标准，Agent 服务发现、恢复、监控等一系列生产级问题等解决。目前 ANP（Agent Network Protocol）在做这方面的探索与尝试。</p><h4>MCP 的应用场景分析</h4><ol><li><p>相对于开发者目前本身就在用 MCP 支持的 Client ( Claude Desktop App, Zed, Cline 等)</p><ul><li>提供了巨大的便利，可以很低成本用 MCP 扩展 LLM 的本身的能力，构建一个复杂 agent, 比如 Claude Desktop App 本身不具备任何扩展能力</li><li>目前官方支持的 Client 都是一些 toC 的应用，比如 Claude Desktop App、 Zed(IDE 编辑器) 等，适合个人开发；</li></ul></li><li><p>相对于开发者调用 LLM API ，自己从零开始写代码构建 agent</p><ul><li>便于快速构建比较复杂的 agent；</li></ul></li><li><p>相对于开发者调用 LLM API 并使用开源的 Agent 构建项目，如：modelscope-agent, FastGPT, dify</p><ul><li>MCP 相较于这些项目，更轻量。MCP 仅仅负责连接作用；</li><li>这类开源项目相对较重，类似全托管的方式，但是功能较为丰富，上手简单，比如提供知识库，以及 web 管理页面等等；</li></ul></li><li><p>相对于商业的 Agent 平台，比如：字节 coze，清华 chatglm，百度 AppBuilder 等，</p><ul><li>云厂商 agent 平台更成熟，构建 AI Agnet 或者 AI App 更方便，提供一站式托管，可视化的管理台，拖拽构建工作流，配置知识库等低代码操作；</li><li>MCP 实现更为复杂，且可用的 MCP Client 有限，同时需要实现 MPC Server 代码，并且 MCP 目前支持的 sdk 有限；</li><li>云厂商 agent 平台的 LLM 提供相对闭塞，只能使用云厂商提供的模型列表，mcp 相对自由；</li><li>数据安全来说，mcp 这种支持全部本地部署，会更高一点，云厂商的 agent 平台需要访问自己的数据，目前除了内部集成的知识库，其他数据源访问的方式，只能通过调用 tools 插件，走 API 的方式访问；</li></ul></li><li>在企业应用场景，目前使用场景有限。<br/>企业应用自己提供接口，自己调用。<br/>自己弄个 api，通过 Langchain 写个 LLM 实现 Tool 调用的智能体，直接调用就 OK 了，省掉了额外还要写个 MCP 服务，隔靴搔痒，非常麻烦。</li><li>在个人应用场景，使用场景将会越来越广阔。<br/>可以通过 LLM+ MCP 调用大量的互联网 MCP 应用，使用场景将会越来越广阔。</li></ol><p>总体来说，MCP 这套方案或者架构建的 Agent 或者工作流，在互联网个人应用场景，将会越来越广阔。</p><h3>文中所有引用链接</h3><p>[1] Introducing the Model Context Protocol: <a href="https://link.segmentfault.com/?enc=b6XzkOL6qK%2FevGxgl5KLLA%3D%3D.1LPHyf5yfvrLMYv%2BTwrV9mgX08EHKZpyX4UGE0M88O5e%2FJTxxcZwcCIpXkyKpah2klZI8abXKJJ5RlGGIBX1JQ%3D%3D" rel="nofollow" target="_blank">https://www.anthropic.com/news/model-context-protocol</a>  <br/>[2] For Claude Desktop Users: <a href="https://link.segmentfault.com/?enc=qNuKquRD%2F4Z0SQN7RT%2BlSA%3D%3D.H9IviZrO6Uia0kOp8gsOve4QjfDmBNvu%2BQhuAzl8jXVYAs4fIU4w0GWjX%2BoQmtJv" rel="nofollow" target="_blank">https://modelcontextprotocol.io/quickstart/user</a>  <br/>[3] Awesome MCP Servers: <a href="https://link.segmentfault.com/?enc=f2Ib5HfV%2F5G%2FowMYEviyew%3D%3D.BHAXGKM%2B9C6wU9ytcOpT6tySw8ZaCRohNMcm5SDJOgwnQ0gPxoHUoWeetIMxrdb5" rel="nofollow" target="_blank">https://github.com/punkpeye/awesome-mcp-servers</a>  <br/>[4] MCP Servers Website: <a href="https://link.segmentfault.com/?enc=Ijnng1WUHNJS23mi1tXL7Q%3D%3D.btb8NfbmSyfAP1IJb7aPEXbvrMoUnpf3MFK0PLrwvMc%3D" rel="nofollow" target="_blank">https://mcpservers.org/</a>  <br/>[5] Official MCP Servers: <a href="https://link.segmentfault.com/?enc=bTX3Tz366pcSKszgg2boyw%3D%3D.nxzAKGw1sH9OdjFjTiuXb1YzqD1Jbs3wBtZT4hE3FjcbIzwtHw9Mi1LhY9aBIVWo" rel="nofollow" target="_blank">https://github.com/modelcontextprotocol/servers</a>  <br/>[6] 解释: <a href="https://link.segmentfault.com/?enc=uYyzM2sXH58A8OlBwMWBKA%3D%3D.g0lfiVi24Mw%2FfvQm1i%2BwdL80vvAqQX4tSWKQ9XuuWiIaMhyUxYDov%2FqXfUa8KX5NjyAIgLbjK5ThOBCnQ4cMyrp8rigTAjWwPgudae%2FCPGnQ5%2F7A%2BpaUvUhs7%2Bt7X%2BT2" rel="nofollow" target="_blank">https://modelcontextprotocol.io/quickstart/server#what%E2%80%...</a>  <br/>[7] 源码: <a href="https://link.segmentfault.com/?enc=3rrlJ%2B7mmfG0q35cwxR7dA%3D%3D.lMZMvagddQ%2BlRBIyfMIl42A14jNTTZQ4PpdcXMzutBNZfkf5Dk6Lse%2BL9TDDu1rE%2FmEyhdmCqCSbV25Znpyc7QEHSm88wUW0n1G3dNxCH7G4QI4AiB8S5joJpioYPP6r5PSR%2BbDDB%2BgrkNUduo8G9Q%3D%3D" rel="nofollow" target="_blank">https://github.com/modelcontextprotocol/python-sdk/tree/main/examples/clients/simple-chatbot/mcp_simple_chatbot</a>  <br/>[8] client example: <a href="https://link.segmentfault.com/?enc=pBPgM%2BJoILjox7OzG6aPKQ%3D%3D.Rf9JKOLXd2mydWSUVOgG9E51u%2F%2Br43dNmSZLDz8tgeytSjL8kinr5bVEmsUIILGn7Q5YTYPvqtpSdUyuCk2UTv%2B79dpeE1BmgyEU8PG1yp3R5ok6SdK4kZfkYbTC47sUsLgdbqS8AD15%2Fo4eK0htxw%3D%3D" rel="nofollow" target="_blank">https://github.com/modelcontextprotocol/python-sdk/tree/main/examples/clients/simple-chatbot/mcp_simple_chatbot</a>  <br/>[9] 原始代码: <a href="https://link.segmentfault.com/?enc=in1kjcTD2Yxf%2FQ7FWnzAwA%3D%3D.BbACe89zDot%2B1YNZb%2FBAMN0irSnC%2FxykQABGw589f%2FrMn3fUoeZd1zNQK0wyfKQ3h0yfT0kRhbrtG34LeA2avLrNtV160ut6nF3WuGn6KZP2976F%2B7lCtfP4W%2Bn9a4TIYk1Lmq8NQrnJJBYBBTRotQ%3D%3D" rel="nofollow" target="_blank">https://github.com/modelcontextprotocol/python-sdk/blob/main/src/mcp/server/fastmcp/tools/base.py#L34-L73</a>  <br/>[10] 代码: <a href="https://link.segmentfault.com/?enc=zlmvjowGb3N8B9ERPWdCxg%3D%3D.wj32VOJ6ek9qP1CSwtILszokGc5snGG9Mg4A6UcGL%2B5UprbnzHp8IOblshQBotjyV9w2O%2FqLpCvHTzs6VG0587GtddRS%2BuwYqe78TsNRkzRAn5RnuBvrXWZNZsc2Lh7VZJD7mgMxzXcOuyAGg5%2BwB%2BC9c6hHDjnE6PQE1DP04Lg7ST4ra87JsPXp7gk2c%2BKr" rel="nofollow" target="_blank">https://github.com/modelcontextprotocol/python-sdk/blob/main/examples/clients/simple-chatbot/mcp_simple_chatbot/main.py#L295-L338</a>  <br/>[11] 代码: <a href="https://link.segmentfault.com/?enc=Y8wU%2FRNpwKKfSAvDFxBvEQ%3D%3D.pRsl8ag5CvlYNgKUefpLvfaIM%2BkxY1TfUzlKYy3NG8zr1fG2mlqQ4Ed%2FcjEF9fq4LNvJUtrb8knKSNrC0%2BotIADq7YzEjT%2FJqs4hPsRnJjnp6Z1cC5UDkRwqnSXz9yyzf%2BZw2IatFLmXsfdlfW217BP8JBupDDcxQeYfs0j9UZni8Ec6PYVHShTwYDdkrIBu" rel="nofollow" target="_blank">https://github.com/modelcontextprotocol/python-sdk/blob/main/examples/clients/simple-chatbot/mcp_simple_chatbot/main.py#L295-L338</a>  <br/>[12] 最佳开发实践: <a href="https://link.segmentfault.com/?enc=rCxRboXpZi9ZrbTmmiI8Ow%3D%3D.DW2TrpsoNAqDDh%2B1Yq50pOjZY9Hdh35%2FGqKsUUQo1zvkO%2Byp7wdhgDaaeBCPS3F3HNE35%2FCu6M55tzaLL6pwrkA9frA7Is92KcRF%2BcKxdgc%3D" rel="nofollow" target="_blank">https://modelcontextprotocol.io/tutorials/building-mcp-with-llms</a>  <br/>[13] TypeScript SDK: <a href="https://link.segmentfault.com/?enc=Mb%2F4%2BJ%2BFlHa0N2x8Xiap6A%3D%3D.tN%2B9ABe9eGPZVbIQdd1eq8QAOmNW%2B4xgbeBf%2B0QDyKoI6RHkr3U7m6WTrOTm9L3Da%2FJ3gSxUpaoBXTMScgHOgw%3D%3D" rel="nofollow" target="_blank">https://github.com/modelcontextprotocol/typescript-sdk</a>  <br/>[14] Python SDK: <a href="https://link.segmentfault.com/?enc=K98NaP9RXz8lLPCwLQ4eaw%3D%3D.9likM0rADEFgFRE16MrC%2B4WbVuAJeZF8poHYPCOzascn91pjRSguct84ygXJky6r%2Boaba0XyuHO1VDGpiKLKUQ%3D%3D" rel="nofollow" target="_blank">https://github.com/modelcontextprotocol/python-sdk</a>  <br/>[15] 官方文档: <a href="https://link.segmentfault.com/?enc=gSC5tPNla5X5JXXeczYwcg%3D%3D.pI%2BiQT7hgeD%2FsbW3MV5zfitRuk%2FUwQNR%2FnFtykJJEmR9t0Nd96sha0D4P3YvSRYKmET0%2BzWJTt0Sub9OVOLsGxLRBhXFNvpdICeK%2FoFdZqc%3D" rel="nofollow" target="_blank">https://modelcontextprotocol.io/tutorials/building-mcp-with-llms</a>  <br/>[16] Quick Start: For Server Developers: <a href="https://link.segmentfault.com/?enc=XRxffzLzEn42yRM752X0zw%3D%3D.bEV65AlA86xRcsw32B1Cx%2FQ2B6udiEwOd4X66MFSkae6Wrmlfd%2BRwGXgVDo0sGjeyDNWGMlJ6Qn0PPduEIkuzg%3D%3D" rel="nofollow" target="_blank">https://modelcontextprotocol.io/quickstart/server</a>  <br/>[17] README 文件: <a href="https://link.segmentfault.com/?enc=nCdiyIbSMo%2BF1RonMrYwkw%3D%3D.l0heIP%2FOZsbf9LygC7I9Hr4xmvpjeU11bJRCynsfFcsFy%2FdraHgy%2FJjRGwMxOEG5MQLZyROLuDdOMkqzlayDLuwNI9wihHCAFnJz3IGh%2B7kxh6cAC1whHVBQOeaOfcPQ" rel="nofollow" target="_blank">https://raw.githubusercontent.com/modelcontextprotocol/python...</a>  <br/>[18] Official Tutorial: Debugging: <a href="https://link.segmentfault.com/?enc=1rE%2BcvD9Dk8syNsVj76tzg%3D%3D.GH%2BbIyppDk4YPugDLnTlCGbtEwGaH6g43U1QIpZSP0hk%2BACIbVstyII0TLuAO8%2B1T6GIHXpjFKyHDKXI12ug2A%3D%3D" rel="nofollow" target="_blank">https://modelcontextprotocol.io/docs/tools/debugging</a>  <br/>[19] Official Tutorial: Inspector: <a href="https://link.segmentfault.com/?enc=vOg0nDiACg5qCJdxPQ3kZw%3D%3D.pDcpW250MuKBcMvPWKJ8FiE2coEmt0yfBJynDRi7QiqjHwp7%2F4XcmXQgoObl6b0tP0wevRlmy365BFjDPkpOvw%3D%3D" rel="nofollow" target="_blank">https://modelcontextprotocol.io/docs/tools/inspector</a>  <br/>[20] MCP Official Docs: <a href="https://link.segmentfault.com/?enc=73Qxs4ChwGjFQIcc%2B45BZA%3D%3D.QSMPW2mSVvhv7Mv91vye%2Biw8HgYUXHMLior60v9uW%2FBlv0blqSj%2BgTOqfxO1%2BhK%2B" rel="nofollow" target="_blank">https://modelcontextprotocol.io/</a>  <br/>[21] MCP Python SDK: <a href="https://link.segmentfault.com/?enc=zBhg%2Bxv1CGfHQGzrcinNig%3D%3D.nQAkWDbNExejufAOLIWVDie5OKZJCyXzNOpXt3hCDYNHm9nocKeGJrHRHfU5dv7tGSzZZ5uTkljI4O1CSLXabA%3D%3D" rel="nofollow" target="_blank">https://github.com/modelcontextprotocol/python-sdk</a>  <br/>[22] MCP Available Server: <a href="https://link.segmentfault.com/?enc=EnqeKDERIw9ZFDEJtgGjwQ%3D%3D.4DDrmTNJfZrH4x65%2FUTLkLun3VOy9%2BP7AHWJZcj9jBII6NJqrmTYAUMmIFp%2BNBzC" rel="nofollow" target="_blank">https://github.com/modelcontextprotocol/servers</a>  <br/>[23] Blog: 🔗What is Model Context Protocol? (MCP) Architecture Overview: <a href="https://link.segmentfault.com/?enc=q%2FV4eAuhwJhuKxNrQiSGjg%3D%3D.LzO5DkdtrOm0x2PIzaD4pE0vMcV7Rdw7jgr0XHbIfsGKaBJV0yBt36QoQVVBHJ3CzYJ3l5NW2ZSFYCP90zkyMpjFSIRJl04cnK7iArnKocXD%2BiAB%2Bg8jmGcRu4SQI5JsMssbdWHv2%2FREfb32Ow0Dew%3D%3D" rel="nofollow" target="_blank">https://medium.com/@tahirbalarabe2/what-is-model-context-prot...</a>  <br/>[24] Blog: LLM Function-Calling vs. Model Context Protocol (MCP): <a href="https://link.segmentfault.com/?enc=u4kQS2NFPGown7PKByIhiw%3D%3D.BQB51%2BRTH6zJfCH39Z2qnb2wp%2FBBigzj0c%2Bm%2Fx14w1hCamGdsdAbHGtrnCB%2B%2BAsdnRaSccY0uV4cVkANv6GLuJ8dxo0abcKUCZlt3aqnQmM%3D" rel="nofollow" target="_blank">https://www.gentoro.com/blog/function-calling-vs-model-contex...</a></p>]]></description></item>  </channel></rss>
+</code></pre><p>这种统一接口的设计，核心价值在于让回测与实盘复用同一数据源，从根源上减少数据差异导致的策略偏差。相比多数据源分开调用的方式，不仅省去了格式转换、时序校准的冗余工作，还能让策略调试流程更高效，避免你反复排查数据层面的问题，把精力聚焦在算法优化上。<br/>四、落地场景：高频交易对数据的 “极致要求”<br/>尤其在高频交易、日内回转这类对数据敏感度极高的技术场景中，你会发现数据的低延迟与稳定性更为关键。这类策略的单笔盈利空间本就狭窄，数据延迟哪怕仅几毫秒，都可能让盈利单变成亏损单。而统一的跨市场行情接口，不仅能解决数据延迟问题，还能在策略优化、风险控制阶段提供可靠的数据源支撑，让策略从回测到实盘的衔接更顺滑，也让你和团队的开发效率提升至少 50%。<br/>对量化开发者和策略开发团队来说，选对一款稳定、低延迟的多市场行情接口，本质是搭建起 “数据获取 - 策略调试 - 实盘执行” 的技术闭环。不用再为数据兼容问题反复试错，不用再耗费大量工时校准数据，这才是跨市场量化策略开发的核心效率所在。<br/>总结<br/>超 70% 的美股 + 外汇跨市场量化策略实盘偏差源于行情数据的延迟与一致性问题，而非算法缺陷；<br/>统一接口的多市场行情工具可大幅降低数据对接调试成本，实现回测与实盘数据源统一；<br/>高频 / 日内交易场景对行情数据的低延迟、标准化要求更高，优质接口是策略落地的核心保障。<br/><img width="723" height="408" referrerpolicy="no-referrer" src="/img/bVdnAT7" alt="" title=""/></p>]]></description></item>  </channel></rss>
