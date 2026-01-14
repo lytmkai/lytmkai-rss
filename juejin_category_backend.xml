@@ -1,0 +1,605 @@
+<?xml version="1.0" encoding="UTF-8"?><rss xmlns:atom="http://www.w3.org/2005/Atom" version="2.0"><channel><title>掘金 后端</title><link>https://juejin.cn/backend</link><atom:link href="http://10.0.0.5:1200/juejin/category/backend" rel="self" type="application/rss+xml"></atom:link><description>掘金 后端 - Powered by RSSHub</description><generator>RSSHub</generator><webMaster>contact@rsshub.app (RSSHub)</webMaster><language>en</language><lastBuildDate>Wed, 14 Jan 2026 04:35:00 GMT</lastBuildDate><ttl>5</ttl><item><title>Spring Boot多数据源配置实战指南：从选型到落地优化</title><description>&lt;h2 data-id=&quot;heading-0&quot;&gt;Spring Boot多数据源配置实战指南：从选型到落地优化&lt;/h2&gt;
+&lt;p&gt;在后端开发中，随着业务复杂度提升，单一数据源往往无法满足需求——比如电商系统需要区分订单库与用户库、数据归档场景需要同时操作业务库与历史库、高并发场景需要通过读写分离提升性能。多数据源配置已成为后端开发者的必备技能。本文从核心场景、选型方案、实战实现到避坑优化，完整拆解Spring Boot生态下的多数据源配置全流程。&lt;/p&gt;
+&lt;h3 data-id=&quot;heading-1&quot;&gt;一、为什么需要多数据源？核心场景与价值&lt;/h3&gt;
+&lt;p&gt;多数据源并非“炫技”，而是为了解决单一数据源无法覆盖的业务痛点，核心应用场景分为4类：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;业务拆分&lt;/strong&gt;：大型系统按业务模块拆分数据库（如电商系统的订单库、用户库、商品库），降低单库压力，提升系统扩展性；&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;读写分离&lt;/strong&gt;：主库负责写入操作，从库负责查询操作，通过负载均衡分散压力，解决高并发下的查询性能瓶颈；&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;数据归档/同步&lt;/strong&gt;：如历史数据归档场景，需同时操作“业务库（源库）”和“历史库（目标库）”，实现数据迁移；&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;多类型数据源整合&lt;/strong&gt;：系统需同时连接关系型数据库（MySQL）、非关系型数据库（Redis）、数据仓库（ClickHouse）等不同类型数据源，实现数据联动。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;多数据源配置的核心价值：&lt;strong&gt;解耦业务与数据、提升系统性能、保障数据安全与可扩展性&lt;/strong&gt;。&lt;/p&gt;
+&lt;h3 data-id=&quot;heading-2&quot;&gt;二、多数据源配置选型：3种主流方案对比&lt;/h3&gt;
+&lt;p&gt;Spring Boot生态下，多数据源配置有多种实现方案，需根据业务复杂度、技术栈选型合适的方案。以下是3种主流方案的详细对比：&lt;/p&gt;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+&lt;table&gt;&lt;thead&gt;&lt;tr&gt;&lt;th&gt;实现方案&lt;/th&gt;&lt;th&gt;核心原理&lt;/th&gt;&lt;th&gt;优势&lt;/th&gt;&lt;th&gt;局限性&lt;/th&gt;&lt;th&gt;适用场景&lt;/th&gt;&lt;/tr&gt;&lt;/thead&gt;&lt;tbody&gt;&lt;tr&gt;&lt;td&gt;配置多个DataSource Bean&lt;/td&gt;&lt;td&gt;为每个数据源配置独立的DataSource、SqlSessionFactory、MapperScannerConfigurer，通过包路径区分数据源&lt;/td&gt;&lt;td&gt;1. 实现简单，无额外依赖；2. 数据源隔离性好；3. 支持不同ORM框架&lt;/td&gt;&lt;td&gt;1. 配置冗余，新增数据源需重复配置；2. 无法动态切换数据源；3. 跨数据源事务处理复杂&lt;/td&gt;&lt;td&gt;数据源数量固定、无需动态切换的场景（如固定的业务库拆分）&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;动态数据源切换（主流）&lt;/td&gt;&lt;td&gt;通过ThreadLocal存储当前数据源标识，结合AOP切面拦截注解，动态切换DataSource&lt;/td&gt;&lt;td&gt;1. 配置简洁，支持动态新增数据源；2. 切换灵活，可通过注解快速指定数据源；3. 适配大多数业务场景&lt;/td&gt;&lt;td&gt;1. 需自定义切面与上下文管理；2. 跨数据源事务需额外处理；3. 多线程环境下需注意线程安全&lt;/td&gt;&lt;td&gt;大多数多数据源场景（读写分离、数据归档、动态业务库）&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;分布式事务框架（Seata/Sharding-JDBC）&lt;/td&gt;&lt;td&gt;通过框架封装多数据源管理与分布式事务，支持数据源分片、动态路由&lt;/td&gt;&lt;td&gt;1. 支持分布式事务；2. 提供丰富的分片策略；3. 高可用、可扩展&lt;/td&gt;&lt;td&gt;1. 框架学习成本高；2. 轻量场景略显重量级；3. 配置与运维复杂&lt;/td&gt;&lt;td&gt;大型分布式系统、需分布式事务或数据分片的场景&lt;/td&gt;&lt;/tr&gt;&lt;/tbody&gt;&lt;/table&gt;
+&lt;p&gt;选型建议： - 简单场景（固定2-3个数据源）：优先用“多个DataSource Bean”方案； - 通用场景（需动态切换、数据源较多）：首选“动态数据源切换”方案； - 分布式场景（需事务一致性、数据分片）：用Seata/Sharding-JDBC框架。&lt;/p&gt;
+&lt;h3 data-id=&quot;heading-3&quot;&gt;三、实战：动态数据源切换方案落地（Spring Boot+MyBatis-Plus）&lt;/h3&gt;
+&lt;p&gt;以“业务库+历史库”的双数据源场景为例（呼应历史数据归档需求），采用“动态数据源切换”方案，实现通过注解快速指定数据源的功能。技术栈：Spring Boot 2.7.x + MyBatis-Plus 3.5.x + MySQL。&lt;/p&gt;
+&lt;h4 data-id=&quot;heading-4&quot;&gt;1. 环境准备&lt;/h4&gt;
+&lt;h5 data-id=&quot;heading-5&quot;&gt;（1）引入核心依赖&lt;/h5&gt;
+&lt;p&gt;在pom.xml中引入Spring Boot核心依赖、MyBatis-Plus、数据库驱动、连接池依赖：&lt;/p&gt;
+&lt;pre&gt;&lt;code class=&quot;hljs language-xml&quot; lang=&quot;xml&quot;&gt;&lt;span class=&quot;hljs-comment&quot;&gt;&amp;lt;!-- Spring Boot核心依赖 --&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;dependency&lt;/span&gt;&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;groupId&lt;/span&gt;&amp;gt;&lt;/span&gt;org.springframework.boot&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;groupId&lt;/span&gt;&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;artifactId&lt;/span&gt;&amp;gt;&lt;/span&gt;spring-boot-starter-web&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;artifactId&lt;/span&gt;&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;dependency&lt;/span&gt;&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;dependency&lt;/span&gt;&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;groupId&lt;/span&gt;&amp;gt;&lt;/span&gt;org.springframework.boot&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;groupId&lt;/span&gt;&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;artifactId&lt;/span&gt;&amp;gt;&lt;/span&gt;spring-boot-starter-aop&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;artifactId&lt;/span&gt;&amp;gt;&lt;/span&gt; &lt;span class=&quot;hljs-comment&quot;&gt;&amp;lt;!-- AOP切面依赖，用于动态切换 --&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;dependency&lt;/span&gt;&amp;gt;&lt;/span&gt;
+
+&lt;span class=&quot;hljs-comment&quot;&gt;&amp;lt;!-- MyBatis-Plus（简化CRUD操作） --&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;dependency&lt;/span&gt;&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;groupId&lt;/span&gt;&amp;gt;&lt;/span&gt;com.baomidou&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;groupId&lt;/span&gt;&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;artifactId&lt;/span&gt;&amp;gt;&lt;/span&gt;mybatis-plus-boot-starter&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;artifactId&lt;/span&gt;&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;version&lt;/span&gt;&amp;gt;&lt;/span&gt;3.5.3.1&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;version&lt;/span&gt;&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;dependency&lt;/span&gt;&amp;gt;&lt;/span&gt;
+
+&lt;span class=&quot;hljs-comment&quot;&gt;&amp;lt;!-- MySQL驱动 --&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;dependency&lt;/span&gt;&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;groupId&lt;/span&gt;&amp;gt;&lt;/span&gt;com.mysql&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;groupId&lt;/span&gt;&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;artifactId&lt;/span&gt;&amp;gt;&lt;/span&gt;mysql-connector-j&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;artifactId&lt;/span&gt;&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;scope&lt;/span&gt;&amp;gt;&lt;/span&gt;runtime&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;scope&lt;/span&gt;&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;dependency&lt;/span&gt;&amp;gt;&lt;/span&gt;
+
+&lt;span class=&quot;hljs-comment&quot;&gt;&amp;lt;!-- 德鲁伊连接池（性能更优，支持监控） --&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;dependency&lt;/span&gt;&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;groupId&lt;/span&gt;&amp;gt;&lt;/span&gt;com.alibaba&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;groupId&lt;/span&gt;&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;artifactId&lt;/span&gt;&amp;gt;&lt;/span&gt;druid-spring-boot-starter&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;artifactId&lt;/span&gt;&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;version&lt;/span&gt;&amp;gt;&lt;/span&gt;1.2.16&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;version&lt;/span&gt;&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;dependency&lt;/span&gt;&amp;gt;&lt;/span&gt;
+
+&lt;span class=&quot;hljs-comment&quot;&gt;&amp;lt;!-- Lombok（简化实体类代码） --&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;dependency&lt;/span&gt;&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;groupId&lt;/span&gt;&amp;gt;&lt;/span&gt;org.projectlombok&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;groupId&lt;/span&gt;&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;artifactId&lt;/span&gt;&amp;gt;&lt;/span&gt;lombok&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;artifactId&lt;/span&gt;&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;optional&lt;/span&gt;&amp;gt;&lt;/span&gt;true&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;optional&lt;/span&gt;&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;dependency&lt;/span&gt;&amp;gt;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;h5 data-id=&quot;heading-6&quot;&gt;（2）配置多数据源信息&lt;/h5&gt;
+&lt;p&gt;在application.yml中配置两个数据源：业务库（business）和历史库（history），指定连接信息、连接池参数：&lt;/p&gt;
+&lt;pre&gt;&lt;code class=&quot;hljs language-yaml&quot; lang=&quot;yaml&quot;&gt;&lt;span class=&quot;hljs-attr&quot;&gt;spring:&lt;/span&gt;
+  &lt;span class=&quot;hljs-attr&quot;&gt;datasource:&lt;/span&gt;
+    &lt;span class=&quot;hljs-comment&quot;&gt;# 业务库（源库）配置&lt;/span&gt;
+    &lt;span class=&quot;hljs-attr&quot;&gt;business:&lt;/span&gt;
+      &lt;span class=&quot;hljs-attr&quot;&gt;url:&lt;/span&gt; &lt;span class=&quot;hljs-string&quot;&gt;jdbc:mysql://localhost:3306/ecommerce_business?useSSL=false&amp;amp;serverTimezone=Asia/Shanghai&amp;amp;allowPublicKeyRetrieval=true&lt;/span&gt;
+      &lt;span class=&quot;hljs-attr&quot;&gt;username:&lt;/span&gt; &lt;span class=&quot;hljs-string&quot;&gt;root&lt;/span&gt;
+      &lt;span class=&quot;hljs-attr&quot;&gt;password:&lt;/span&gt; &lt;span class=&quot;hljs-number&quot;&gt;123456&lt;/span&gt;
+      &lt;span class=&quot;hljs-attr&quot;&gt;driver-class-name:&lt;/span&gt; &lt;span class=&quot;hljs-string&quot;&gt;com.mysql.cj.jdbc.Driver&lt;/span&gt;
+      &lt;span class=&quot;hljs-attr&quot;&gt;druid:&lt;/span&gt;
+        &lt;span class=&quot;hljs-attr&quot;&gt;initial-size:&lt;/span&gt; &lt;span class=&quot;hljs-number&quot;&gt;5&lt;/span&gt; &lt;span class=&quot;hljs-comment&quot;&gt;# 初始化连接数&lt;/span&gt;
+        &lt;span class=&quot;hljs-attr&quot;&gt;min-idle:&lt;/span&gt; &lt;span class=&quot;hljs-number&quot;&gt;5&lt;/span&gt; &lt;span class=&quot;hljs-comment&quot;&gt;# 最小空闲连接数&lt;/span&gt;
+        &lt;span class=&quot;hljs-attr&quot;&gt;max-active:&lt;/span&gt; &lt;span class=&quot;hljs-number&quot;&gt;20&lt;/span&gt; &lt;span class=&quot;hljs-comment&quot;&gt;# 最大活跃连接数&lt;/span&gt;
+        &lt;span class=&quot;hljs-attr&quot;&gt;max-wait:&lt;/span&gt; &lt;span class=&quot;hljs-number&quot;&gt;60000&lt;/span&gt; &lt;span class=&quot;hljs-comment&quot;&gt;# 最大等待时间（毫秒）&lt;/span&gt;
+    &lt;span class=&quot;hljs-comment&quot;&gt;# 历史库（目标库）配置&lt;/span&gt;
+    &lt;span class=&quot;hljs-attr&quot;&gt;history:&lt;/span&gt;
+      &lt;span class=&quot;hljs-attr&quot;&gt;url:&lt;/span&gt; &lt;span class=&quot;hljs-string&quot;&gt;jdbc:mysql://localhost:3306/ecommerce_history?useSSL=false&amp;amp;serverTimezone=Asia/Shanghai&amp;amp;allowPublicKeyRetrieval=true&lt;/span&gt;
+      &lt;span class=&quot;hljs-attr&quot;&gt;username:&lt;/span&gt; &lt;span class=&quot;hljs-string&quot;&gt;root&lt;/span&gt;
+      &lt;span class=&quot;hljs-attr&quot;&gt;password:&lt;/span&gt; &lt;span class=&quot;hljs-number&quot;&gt;123456&lt;/span&gt;
+      &lt;span class=&quot;hljs-attr&quot;&gt;driver-class-name:&lt;/span&gt; &lt;span class=&quot;hljs-string&quot;&gt;com.mysql.cj.jdbc.Driver&lt;/span&gt;
+      &lt;span class=&quot;hljs-attr&quot;&gt;druid:&lt;/span&gt;
+        &lt;span class=&quot;hljs-attr&quot;&gt;initial-size:&lt;/span&gt; &lt;span class=&quot;hljs-number&quot;&gt;5&lt;/span&gt;
+        &lt;span class=&quot;hljs-attr&quot;&gt;min-idle:&lt;/span&gt; &lt;span class=&quot;hljs-number&quot;&gt;5&lt;/span&gt;
+        &lt;span class=&quot;hljs-attr&quot;&gt;max-active:&lt;/span&gt; &lt;span class=&quot;hljs-number&quot;&gt;20&lt;/span&gt;
+        &lt;span class=&quot;hljs-attr&quot;&gt;max-wait:&lt;/span&gt; &lt;span class=&quot;hljs-number&quot;&gt;60000&lt;/span&gt;
+
+&lt;span class=&quot;hljs-comment&quot;&gt;# MyBatis-Plus配置&lt;/span&gt;
+&lt;span class=&quot;hljs-attr&quot;&gt;mybatis-plus:&lt;/span&gt;
+  &lt;span class=&quot;hljs-attr&quot;&gt;mapper-locations:&lt;/span&gt; &lt;span class=&quot;hljs-string&quot;&gt;classpath:mapper/**/*.xml&lt;/span&gt; &lt;span class=&quot;hljs-comment&quot;&gt;# Mapper.xml文件路径&lt;/span&gt;
+  &lt;span class=&quot;hljs-attr&quot;&gt;type-aliases-package:&lt;/span&gt; &lt;span class=&quot;hljs-string&quot;&gt;com.example.multi.datasource.entity&lt;/span&gt; &lt;span class=&quot;hljs-comment&quot;&gt;# 实体类包路径&lt;/span&gt;
+  &lt;span class=&quot;hljs-attr&quot;&gt;configuration:&lt;/span&gt;
+    &lt;span class=&quot;hljs-attr&quot;&gt;map-underscore-to-camel-case:&lt;/span&gt; &lt;span class=&quot;hljs-literal&quot;&gt;true&lt;/span&gt; &lt;span class=&quot;hljs-comment&quot;&gt;# 下划线转驼峰&lt;/span&gt;
+    &lt;span class=&quot;hljs-attr&quot;&gt;log-impl:&lt;/span&gt; &lt;span class=&quot;hljs-string&quot;&gt;org.apache.ibatis.logging.stdout.StdOutImpl&lt;/span&gt; &lt;span class=&quot;hljs-comment&quot;&gt;# 开发环境打印SQL&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;h4 data-id=&quot;heading-7&quot;&gt;2. 核心配置：动态数据源切换核心组件&lt;/h4&gt;
+&lt;p&gt;动态数据源切换的核心是通过ThreadLocal存储当前线程的数据源标识，结合AOP切面拦截自定义注解，实现数据源的动态切换。需实现4个核心组件：数据源枚举、数据源上下文、数据源切换注解、AOP切面。&lt;/p&gt;
+&lt;h5 data-id=&quot;heading-8&quot;&gt;（1）数据源枚举（DataSourceType）&lt;/h5&gt;
+&lt;p&gt;定义数据源标识，与application.yml中的数据源名称对应，便于统一管理：&lt;/p&gt;
+&lt;pre&gt;&lt;code class=&quot;hljs language-arduino&quot; lang=&quot;arduino&quot;&gt;package com.example.multi.datasource.config;
+
+&lt;span class=&quot;hljs-comment&quot;&gt;/**
+ * 数据源枚举：对应配置文件中的数据源名称
+ */&lt;/span&gt;
+&lt;span class=&quot;hljs-keyword&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;enum&lt;/span&gt; &lt;span class=&quot;hljs-title class_&quot;&gt;DataSourceType&lt;/span&gt; {
+    BUSINESS, &lt;span class=&quot;hljs-comment&quot;&gt;// 业务库（默认数据源）&lt;/span&gt;
+    HISTORY   &lt;span class=&quot;hljs-comment&quot;&gt;// 历史库&lt;/span&gt;
+}}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;h5 data-id=&quot;heading-9&quot;&gt;（2）数据源上下文（DataSourceContextHolder）&lt;/h5&gt;
+&lt;p&gt;通过ThreadLocal存储当前线程的数据源标识，确保线程安全（避免多线程环境下数据源混乱）：&lt;/p&gt;
+&lt;pre&gt;&lt;code class=&quot;hljs language-csharp&quot; lang=&quot;csharp&quot;&gt;package com.example.multi.datasource.config;
+
+&lt;span class=&quot;hljs-comment&quot;&gt;/**
+ * 数据源上下文：存储当前线程的数据源标识
+ */&lt;/span&gt;
+&lt;span class=&quot;hljs-keyword&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;hljs-title&quot;&gt;DataSourceContextHolder&lt;/span&gt; {
+    &lt;span class=&quot;hljs-comment&quot;&gt;// ThreadLocal：线程本地变量，确保每个线程的数据源标识独立&lt;/span&gt;
+    &lt;span class=&quot;hljs-keyword&quot;&gt;private&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;static&lt;/span&gt; final ThreadLocal&amp;lt;DataSourceType&amp;gt; CONTEXT_HOLDER = &lt;span class=&quot;hljs-keyword&quot;&gt;new&lt;/span&gt; ThreadLocal&amp;lt;&amp;gt;();
+
+    &lt;span class=&quot;hljs-comment&quot;&gt;/**
+     * 设置当前数据源
+     */&lt;/span&gt;
+    &lt;span class=&quot;hljs-function&quot;&gt;&lt;span class=&quot;hljs-keyword&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;static&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;hljs-title&quot;&gt;setDataSourceType&lt;/span&gt;(&lt;span class=&quot;hljs-params&quot;&gt;DataSourceType type&lt;/span&gt;)&lt;/span&gt; {
+        CONTEXT_HOLDER.&lt;span class=&quot;hljs-keyword&quot;&gt;set&lt;/span&gt;(type);
+    }
+
+    &lt;span class=&quot;hljs-comment&quot;&gt;/**
+     * 获取当前数据源（默认返回业务库）
+     */&lt;/span&gt;
+    &lt;span class=&quot;hljs-function&quot;&gt;&lt;span class=&quot;hljs-keyword&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;static&lt;/span&gt; DataSourceType &lt;span class=&quot;hljs-title&quot;&gt;getDataSourceType&lt;/span&gt;()&lt;/span&gt; {
+        &lt;span class=&quot;hljs-keyword&quot;&gt;return&lt;/span&gt; CONTEXT_HOLDER.&lt;span class=&quot;hljs-keyword&quot;&gt;get&lt;/span&gt;() == &lt;span class=&quot;hljs-literal&quot;&gt;null&lt;/span&gt; ? DataSourceType.BUSINESS : CONTEXT_HOLDER.&lt;span class=&quot;hljs-keyword&quot;&gt;get&lt;/span&gt;();
+    }
+
+    &lt;span class=&quot;hljs-comment&quot;&gt;/**
+     * 清除数据源标识：避免线程复用导致数据源污染
+     */&lt;/span&gt;
+    &lt;span class=&quot;hljs-function&quot;&gt;&lt;span class=&quot;hljs-keyword&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;static&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;hljs-title&quot;&gt;clearDataSourceType&lt;/span&gt;()&lt;/span&gt; {
+        CONTEXT_HOLDER.&lt;span class=&quot;hljs-keyword&quot;&gt;remove&lt;/span&gt;();
+    }
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;h5 data-id=&quot;heading-10&quot;&gt;（3）数据源切换注解（DataSource）&lt;/h5&gt;
+&lt;p&gt;自定义注解，用于标记需要切换数据源的方法或类，指定要使用的数据源：&lt;/p&gt;
+&lt;pre&gt;&lt;code class=&quot;hljs language-java&quot; lang=&quot;java&quot;&gt;&lt;span class=&quot;hljs-keyword&quot;&gt;package&lt;/span&gt; com.example.multi.datasource.config;
+
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; java.lang.annotation.*;
+
+&lt;span class=&quot;hljs-comment&quot;&gt;/**
+ * 数据源切换注解：用于指定方法/类使用的数据源
+ */&lt;/span&gt;
+&lt;span class=&quot;hljs-meta&quot;&gt;@Target({ElementType.METHOD, ElementType.TYPE})&lt;/span&gt; &lt;span class=&quot;hljs-comment&quot;&gt;// 可用于方法或类上&lt;/span&gt;
+&lt;span class=&quot;hljs-meta&quot;&gt;@Retention(RetentionPolicy.RUNTIME)&lt;/span&gt; &lt;span class=&quot;hljs-comment&quot;&gt;// 运行时生效&lt;/span&gt;
+&lt;span class=&quot;hljs-meta&quot;&gt;@Documented&lt;/span&gt;
+&lt;span class=&quot;hljs-keyword&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;hljs-meta&quot;&gt;@interface&lt;/span&gt; DataSource {
+    &lt;span class=&quot;hljs-comment&quot;&gt;// 默认数据源为业务库&lt;/span&gt;
+    DataSourceType &lt;span class=&quot;hljs-title function_&quot;&gt;value&lt;/span&gt;&lt;span class=&quot;hljs-params&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;default&lt;/span&gt; DataSourceType.BUSINESS;
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;h5 data-id=&quot;heading-11&quot;&gt;（4）AOP切面（DataSourceAspect）&lt;/h5&gt;
+&lt;p&gt;通过AOP切面拦截@DataSource注解，在方法执行前设置当前数据源，执行后清除数据源标识，实现动态切换：&lt;/p&gt;
+&lt;pre&gt;&lt;code class=&quot;hljs language-java&quot; lang=&quot;java&quot;&gt;&lt;span class=&quot;hljs-keyword&quot;&gt;package&lt;/span&gt; com.example.multi.datasource.config;
+
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; lombok.extern.slf4j.Slf4j;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; org.aspectj.lang.JoinPoint;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; org.aspectj.lang.annotation.After;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; org.aspectj.lang.annotation.Before;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; org.aspectj.lang.annotation.Pointcut;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; org.aspectj.lang.reflect.MethodSignature;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; org.springframework.core.Ordered;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; org.springframework.stereotype.Component;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; org.aspectj.lang.annotation.Aspect;
+
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; java.lang.reflect.Method;
+
+&lt;span class=&quot;hljs-comment&quot;&gt;/**
+ * 数据源切换切面：拦截&lt;span class=&quot;hljs-doctag&quot;&gt;@DataSource&lt;/span&gt;注解，实现数据源动态切换
+ */&lt;/span&gt;
+&lt;span class=&quot;hljs-meta&quot;&gt;@Aspect&lt;/span&gt;
+&lt;span class=&quot;hljs-meta&quot;&gt;@Component&lt;/span&gt;
+&lt;span class=&quot;hljs-meta&quot;&gt;@Slf4j&lt;/span&gt;
+&lt;span class=&quot;hljs-meta&quot;&gt;@Order(Ordered.HIGHEST_PRECEDENCE)&lt;/span&gt; &lt;span class=&quot;hljs-comment&quot;&gt;// 设置切面优先级：确保在事务切面之前执行&lt;/span&gt;
+&lt;span class=&quot;hljs-keyword&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;hljs-title class_&quot;&gt;DataSourceAspect&lt;/span&gt; {
+
+    &lt;span class=&quot;hljs-comment&quot;&gt;/**
+     * 切入点：拦截所有带有&lt;span class=&quot;hljs-doctag&quot;&gt;@DataSource&lt;/span&gt;注解的方法或类
+     */&lt;/span&gt;
+    &lt;span class=&quot;hljs-meta&quot;&gt;@Pointcut(&quot;@annotation(com.example.multi.datasource.config.DataSource) || @within(com.example.multi.datasource.config.DataSource)&quot;)&lt;/span&gt;
+    &lt;span class=&quot;hljs-keyword&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;hljs-title function_&quot;&gt;dataSourcePointCut&lt;/span&gt;&lt;span class=&quot;hljs-params&quot;&gt;()&lt;/span&gt; {}
+
+    &lt;span class=&quot;hljs-comment&quot;&gt;/**
+     * 方法执行前：设置当前数据源
+     */&lt;/span&gt;
+    &lt;span class=&quot;hljs-meta&quot;&gt;@Before(&quot;dataSourcePointCut()&quot;)&lt;/span&gt;
+    &lt;span class=&quot;hljs-keyword&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;hljs-title function_&quot;&gt;beforeSwitchDataSource&lt;/span&gt;&lt;span class=&quot;hljs-params&quot;&gt;(JoinPoint joinPoint)&lt;/span&gt; {
+        &lt;span class=&quot;hljs-comment&quot;&gt;// 获取当前方法上的@DataSource注解&lt;/span&gt;
+        &lt;span class=&quot;hljs-type&quot;&gt;MethodSignature&lt;/span&gt; &lt;span class=&quot;hljs-variable&quot;&gt;signature&lt;/span&gt; &lt;span class=&quot;hljs-operator&quot;&gt;=&lt;/span&gt; (MethodSignature) joinPoint.getSignature();
+        &lt;span class=&quot;hljs-type&quot;&gt;Method&lt;/span&gt; &lt;span class=&quot;hljs-variable&quot;&gt;method&lt;/span&gt; &lt;span class=&quot;hljs-operator&quot;&gt;=&lt;/span&gt; signature.getMethod();
+        &lt;span class=&quot;hljs-type&quot;&gt;DataSource&lt;/span&gt; &lt;span class=&quot;hljs-variable&quot;&gt;dataSourceAnnotation&lt;/span&gt; &lt;span class=&quot;hljs-operator&quot;&gt;=&lt;/span&gt; method.getAnnotation(DataSource.class);
+
+        &lt;span class=&quot;hljs-comment&quot;&gt;// 如果方法上没有注解，检查类上是否有注解&lt;/span&gt;
+        &lt;span class=&quot;hljs-keyword&quot;&gt;if&lt;/span&gt; (dataSourceAnnotation == &lt;span class=&quot;hljs-literal&quot;&gt;null&lt;/span&gt;) {
+            dataSourceAnnotation = joinPoint.getTarget().getClass().getAnnotation(DataSource.class);
+        }
+
+        &lt;span class=&quot;hljs-comment&quot;&gt;// 设置数据源标识&lt;/span&gt;
+        &lt;span class=&quot;hljs-keyword&quot;&gt;if&lt;/span&gt; (dataSourceAnnotation != &lt;span class=&quot;hljs-literal&quot;&gt;null&lt;/span&gt;) {
+            &lt;span class=&quot;hljs-type&quot;&gt;DataSourceType&lt;/span&gt; &lt;span class=&quot;hljs-variable&quot;&gt;dataSourceType&lt;/span&gt; &lt;span class=&quot;hljs-operator&quot;&gt;=&lt;/span&gt; dataSourceAnnotation.value();
+            DataSourceContextHolder.setDataSourceType(dataSourceType);
+            log.info(&lt;span class=&quot;hljs-string&quot;&gt;&quot;切换数据源：{}&quot;&lt;/span&gt;, dataSourceType);
+        }
+    }
+
+    &lt;span class=&quot;hljs-comment&quot;&gt;/**
+     * 方法执行后：清除数据源标识
+     */&lt;/span&gt;
+    &lt;span class=&quot;hljs-meta&quot;&gt;@After(&quot;dataSourcePointCut()&quot;)&lt;/span&gt;
+    &lt;span class=&quot;hljs-keyword&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;hljs-title function_&quot;&gt;afterSwitchDataSource&lt;/span&gt;&lt;span class=&quot;hljs-params&quot;&gt;(JoinPoint joinPoint)&lt;/span&gt; {
+        DataSourceContextHolder.clearDataSourceType();
+        log.info(&lt;span class=&quot;hljs-string&quot;&gt;&quot;清除数据源标识&quot;&lt;/span&gt;);
+    }
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;h5 data-id=&quot;heading-12&quot;&gt;（5）动态数据源配置类（DynamicDataSourceConfig）&lt;/h5&gt;
+&lt;p&gt;配置多个数据源Bean，创建动态数据源（DynamicRoutingDataSource），并将其作为默认数据源注入Spring容器：&lt;/p&gt;
+&lt;pre&gt;&lt;code class=&quot;hljs language-less&quot; lang=&quot;less&quot;&gt;&lt;span class=&quot;hljs-selector-tag&quot;&gt;package&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;com&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.example&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.multi&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.datasource&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.config&lt;/span&gt;;
+
+&lt;span class=&quot;hljs-selector-tag&quot;&gt;import&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;com&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.alibaba&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.druid&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.spring&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.boot&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.autoconfigure&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.DruidDataSourceBuilder&lt;/span&gt;;
+&lt;span class=&quot;hljs-selector-tag&quot;&gt;import&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;org&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.mybatis&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.spring&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.SqlSessionFactoryBean&lt;/span&gt;;
+&lt;span class=&quot;hljs-selector-tag&quot;&gt;import&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;org&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.mybatis&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.spring&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.annotation&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.MapperScan&lt;/span&gt;;
+&lt;span class=&quot;hljs-selector-tag&quot;&gt;import&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;org&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.springframework&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.beans&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.factory&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.annotation&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.Qualifier&lt;/span&gt;;
+&lt;span class=&quot;hljs-selector-tag&quot;&gt;import&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;org&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.springframework&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.boot&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.context&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.properties&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.ConfigurationProperties&lt;/span&gt;;
+&lt;span class=&quot;hljs-selector-tag&quot;&gt;import&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;org&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.springframework&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.context&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.annotation&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.Bean&lt;/span&gt;;
+&lt;span class=&quot;hljs-selector-tag&quot;&gt;import&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;org&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.springframework&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.context&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.annotation&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.Configuration&lt;/span&gt;;
+&lt;span class=&quot;hljs-selector-tag&quot;&gt;import&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;org&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.springframework&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.context&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.annotation&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.Primary&lt;/span&gt;;
+&lt;span class=&quot;hljs-selector-tag&quot;&gt;import&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;org&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.springframework&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.core&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.io&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.support&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.PathMatchingResourcePatternResolver&lt;/span&gt;;
+&lt;span class=&quot;hljs-selector-tag&quot;&gt;import&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;org&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.springframework&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.jdbc&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.datasource&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.DataSourceTransactionManager&lt;/span&gt;;
+
+&lt;span class=&quot;hljs-selector-tag&quot;&gt;import&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;javax&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.sql&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.DataSource&lt;/span&gt;;
+&lt;span class=&quot;hljs-selector-tag&quot;&gt;import&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;java&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.util&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.HashMap&lt;/span&gt;;
+&lt;span class=&quot;hljs-selector-tag&quot;&gt;import&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;java&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.util&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.Map&lt;/span&gt;;
+
+&lt;span class=&quot;hljs-comment&quot;&gt;/**
+ * 动态数据源配置类：创建数据源Bean，配置动态数据源
+ */&lt;/span&gt;
+@&lt;span class=&quot;hljs-selector-tag&quot;&gt;Configuration&lt;/span&gt;
+@&lt;span class=&quot;hljs-selector-tag&quot;&gt;MapperScan&lt;/span&gt;(basePackages = &lt;span class=&quot;hljs-string&quot;&gt;&quot;com.example.multi.datasource.mapper&quot;&lt;/span&gt;) &lt;span class=&quot;hljs-comment&quot;&gt;// 扫描Mapper接口包&lt;/span&gt;
+&lt;span class=&quot;hljs-selector-tag&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;DynamicDataSourceConfig&lt;/span&gt; {
+
+    &lt;span class=&quot;hljs-comment&quot;&gt;/**
+     * 配置业务库数据源（对应application.yml中的spring.datasource.business）
+     */&lt;/span&gt;
+    &lt;span class=&quot;hljs-variable&quot;&gt;@Bean&lt;/span&gt;(name = &lt;span class=&quot;hljs-string&quot;&gt;&quot;businessDataSource&quot;&lt;/span&gt;)
+    &lt;span class=&quot;hljs-variable&quot;&gt;@ConfigurationProperties&lt;/span&gt;(prefix = &lt;span class=&quot;hljs-string&quot;&gt;&quot;spring.datasource.business&quot;&lt;/span&gt;)
+    public DataSource &lt;span class=&quot;hljs-built_in&quot;&gt;businessDataSource&lt;/span&gt;() {
+        &lt;span class=&quot;hljs-comment&quot;&gt;// 使用德鲁伊连接池构建数据源&lt;/span&gt;
+        &lt;span class=&quot;hljs-selector-tag&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;DruidDataSourceBuilder&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.create&lt;/span&gt;()&lt;span class=&quot;hljs-selector-class&quot;&gt;.build&lt;/span&gt;();
+    }
+
+    &lt;span class=&quot;hljs-comment&quot;&gt;/**
+     * 配置历史库数据源（对应application.yml中的spring.datasource.history）
+     */&lt;/span&gt;
+    @&lt;span class=&quot;hljs-selector-tag&quot;&gt;Bean&lt;/span&gt;(name = &lt;span class=&quot;hljs-string&quot;&gt;&quot;historyDataSource&quot;&lt;/span&gt;)
+    @&lt;span class=&quot;hljs-selector-tag&quot;&gt;ConfigurationProperties&lt;/span&gt;(prefix = &lt;span class=&quot;hljs-string&quot;&gt;&quot;spring.datasource.history&quot;&lt;/span&gt;)
+    &lt;span class=&quot;hljs-selector-tag&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;DataSource&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;historyDataSource&lt;/span&gt;() {
+        &lt;span class=&quot;hljs-selector-tag&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;DruidDataSourceBuilder&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.create&lt;/span&gt;()&lt;span class=&quot;hljs-selector-class&quot;&gt;.build&lt;/span&gt;();
+    }
+
+    &lt;span class=&quot;hljs-comment&quot;&gt;/**
+     * 配置动态数据源：整合所有数据源，实现动态切换
+     * @Primary：标识为默认数据源，避免Spring容器中数据源Bean冲突
+     */&lt;/span&gt;
+    @&lt;span class=&quot;hljs-selector-tag&quot;&gt;Bean&lt;/span&gt;(name = &lt;span class=&quot;hljs-string&quot;&gt;&quot;dynamicDataSource&quot;&lt;/span&gt;)
+    @&lt;span class=&quot;hljs-selector-tag&quot;&gt;Primary&lt;/span&gt;
+    &lt;span class=&quot;hljs-selector-tag&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;DataSource&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;dynamicDataSource&lt;/span&gt;(
+            &lt;span class=&quot;hljs-variable&quot;&gt;@Qualifier&lt;/span&gt;(&lt;span class=&quot;hljs-string&quot;&gt;&quot;businessDataSource&quot;&lt;/span&gt;) DataSource businessDataSource,
+            &lt;span class=&quot;hljs-variable&quot;&gt;@Qualifier&lt;/span&gt;(&lt;span class=&quot;hljs-string&quot;&gt;&quot;historyDataSource&quot;&lt;/span&gt;) DataSource historyDataSource) {
+        &lt;span class=&quot;hljs-selector-tag&quot;&gt;DynamicRoutingDataSource&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;dynamicDataSource&lt;/span&gt; = &lt;span class=&quot;hljs-selector-tag&quot;&gt;new&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;DynamicRoutingDataSource&lt;/span&gt;();
+        &lt;span class=&quot;hljs-comment&quot;&gt;// 存储所有数据源的映射关系&lt;/span&gt;
+        &lt;span class=&quot;hljs-selector-tag&quot;&gt;Map&lt;/span&gt;&amp;lt;&lt;span class=&quot;hljs-selector-tag&quot;&gt;Object&lt;/span&gt;, &lt;span class=&quot;hljs-selector-tag&quot;&gt;Object&lt;/span&gt;&amp;gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;dataSourceMap&lt;/span&gt; = &lt;span class=&quot;hljs-selector-tag&quot;&gt;new&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;HashMap&lt;/span&gt;&amp;lt;&amp;gt;();
+        &lt;span class=&quot;hljs-selector-tag&quot;&gt;dataSourceMap&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.put&lt;/span&gt;(DataSourceType.BUSINESS, businessDataSource);
+        &lt;span class=&quot;hljs-selector-tag&quot;&gt;dataSourceMap&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.put&lt;/span&gt;(DataSourceType.HISTORY, historyDataSource);
+        &lt;span class=&quot;hljs-selector-tag&quot;&gt;dynamicDataSource&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.setTargetDataSources&lt;/span&gt;(dataSourceMap);
+        &lt;span class=&quot;hljs-comment&quot;&gt;// 设置默认数据源（业务库）&lt;/span&gt;
+        &lt;span class=&quot;hljs-selector-tag&quot;&gt;dynamicDataSource&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.setDefaultTargetDataSource&lt;/span&gt;(businessDataSource);
+        &lt;span class=&quot;hljs-selector-tag&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;dynamicDataSource&lt;/span&gt;;
+    }
+
+    &lt;span class=&quot;hljs-comment&quot;&gt;/**
+     * 配置SqlSessionFactory：指定动态数据源和Mapper.xml路径
+     */&lt;/span&gt;
+    @&lt;span class=&quot;hljs-selector-tag&quot;&gt;Bean&lt;/span&gt;
+    &lt;span class=&quot;hljs-selector-tag&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;SqlSessionFactoryBean&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;sqlSessionFactory&lt;/span&gt;(&lt;span class=&quot;hljs-variable&quot;&gt;@Qualifier&lt;/span&gt;(&lt;span class=&quot;hljs-string&quot;&gt;&quot;dynamicDataSource&quot;&lt;/span&gt;) DataSource dynamicDataSource) &lt;span class=&quot;hljs-selector-tag&quot;&gt;throws&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;Exception&lt;/span&gt; {
+        &lt;span class=&quot;hljs-selector-tag&quot;&gt;SqlSessionFactoryBean&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;sessionFactory&lt;/span&gt; = &lt;span class=&quot;hljs-selector-tag&quot;&gt;new&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;SqlSessionFactoryBean&lt;/span&gt;();
+        &lt;span class=&quot;hljs-selector-tag&quot;&gt;sessionFactory&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.setDataSource&lt;/span&gt;(dynamicDataSource);
+        &lt;span class=&quot;hljs-comment&quot;&gt;// 配置Mapper.xml文件路径&lt;/span&gt;
+        &lt;span class=&quot;hljs-selector-tag&quot;&gt;sessionFactory&lt;/span&gt;&lt;span class=&quot;hljs-selector-class&quot;&gt;.setMapperLocations&lt;/span&gt;(new &lt;span class=&quot;hljs-built_in&quot;&gt;PathMatchingResourcePatternResolver&lt;/span&gt;()
+                .&lt;span class=&quot;hljs-built_in&quot;&gt;getResources&lt;/span&gt;(&lt;span class=&quot;hljs-string&quot;&gt;&quot;classpath:mapper/**/*.xml&quot;&lt;/span&gt;));
+        &lt;span class=&quot;hljs-selector-tag&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;sessionFactory&lt;/span&gt;;
+    }
+
+    &lt;span class=&quot;hljs-comment&quot;&gt;/**
+     * 配置事务管理器：绑定动态数据源，确保事务生效
+     */&lt;/span&gt;
+    @&lt;span class=&quot;hljs-selector-tag&quot;&gt;Bean&lt;/span&gt;
+    &lt;span class=&quot;hljs-selector-tag&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;DataSourceTransactionManager&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;transactionManager&lt;/span&gt;(&lt;span class=&quot;hljs-variable&quot;&gt;@Qualifier&lt;/span&gt;(&lt;span class=&quot;hljs-string&quot;&gt;&quot;dynamicDataSource&quot;&lt;/span&gt;) DataSource dynamicDataSource) {
+        &lt;span class=&quot;hljs-selector-tag&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;new&lt;/span&gt; &lt;span class=&quot;hljs-selector-tag&quot;&gt;DataSourceTransactionManager&lt;/span&gt;(dynamicDataSource);
+    }
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;h5 data-id=&quot;heading-13&quot;&gt;（6）动态数据源路由类（DynamicRoutingDataSource）&lt;/h5&gt;
+&lt;p&gt;继承AbstractRoutingDataSource，重写determineCurrentLookupKey方法，从数据源上下文中获取当前数据源标识，实现数据源路由：&lt;/p&gt;
+&lt;pre&gt;&lt;code class=&quot;hljs language-scala&quot; lang=&quot;scala&quot;&gt;&lt;span class=&quot;hljs-keyword&quot;&gt;package&lt;/span&gt; com.example.multi.datasource.config;
+
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; org.springframework.jdbc.datasource.lookup.&lt;span class=&quot;hljs-type&quot;&gt;AbstractRoutingDataSource&lt;/span&gt;;
+
+&lt;span class=&quot;hljs-comment&quot;&gt;/**
+ * 动态数据源路由类：根据数据源标识路由到对应的数据源
+ */&lt;/span&gt;
+public &lt;span class=&quot;hljs-class&quot;&gt;&lt;span class=&quot;hljs-keyword&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;hljs-title&quot;&gt;DynamicRoutingDataSource&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;extends&lt;/span&gt; &lt;span class=&quot;hljs-title&quot;&gt;AbstractRoutingDataSource&lt;/span&gt; &lt;/span&gt;{
+
+    &lt;span class=&quot;hljs-comment&quot;&gt;/**
+     * 重写方法：获取当前数据源标识（从上下文获取）
+     */&lt;/span&gt;
+    &lt;span class=&quot;hljs-meta&quot;&gt;@Override&lt;/span&gt;
+    &lt;span class=&quot;hljs-keyword&quot;&gt;protected&lt;/span&gt; &lt;span class=&quot;hljs-type&quot;&gt;Object&lt;/span&gt; determineCurrentLookupKey() {
+        &lt;span class=&quot;hljs-type&quot;&gt;DataSourceType&lt;/span&gt; dataSourceType = &lt;span class=&quot;hljs-type&quot;&gt;DataSourceContextHolder&lt;/span&gt;.getDataSourceType();
+        log.info(&lt;span class=&quot;hljs-string&quot;&gt;&quot;当前使用的数据源：{}&quot;&lt;/span&gt;, dataSourceType);
+        &lt;span class=&quot;hljs-keyword&quot;&gt;return&lt;/span&gt; dataSourceType;
+    }
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;h4 data-id=&quot;heading-14&quot;&gt;3. 业务实现：多数据源数据操作示例&lt;/h4&gt;
+&lt;p&gt;以“订单数据查询（业务库）”和“订单历史数据插入（历史库）”为例，演示如何通过@DataSource注解切换数据源。&lt;/p&gt;
+&lt;h5 data-id=&quot;heading-15&quot;&gt;（1）实体类定义&lt;/h5&gt;
+&lt;p&gt;定义订单实体（对应业务库t_order表）和订单历史实体（对应历史库t_order_history表）：&lt;/p&gt;
+&lt;pre&gt;&lt;code class=&quot;hljs language-kotlin&quot; lang=&quot;kotlin&quot;&gt;&lt;span class=&quot;hljs-comment&quot;&gt;// 订单实体（业务库）&lt;/span&gt;
+&lt;span class=&quot;hljs-keyword&quot;&gt;package&lt;/span&gt; com.example.multi.datasource.entity;
+
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; com.baomidou.mybatisplus.&lt;span class=&quot;hljs-keyword&quot;&gt;annotation&lt;/span&gt;.TableName;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; lombok.Data;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; java.math.BigDecimal;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; java.time.LocalDateTime;
+
+&lt;span class=&quot;hljs-meta&quot;&gt;@Data&lt;/span&gt;
+&lt;span class=&quot;hljs-meta&quot;&gt;@TableName(&lt;span class=&quot;hljs-string&quot;&gt;&quot;t_order&quot;&lt;/span&gt;)&lt;/span&gt;
+&lt;span class=&quot;hljs-keyword&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;hljs-title class_&quot;&gt;Order&lt;/span&gt; {
+    &lt;span class=&quot;hljs-keyword&quot;&gt;private&lt;/span&gt; &lt;span class=&quot;hljs-built_in&quot;&gt;Long&lt;/span&gt; id;
+    &lt;span class=&quot;hljs-keyword&quot;&gt;private&lt;/span&gt; String orderNo; &lt;span class=&quot;hljs-comment&quot;&gt;// 订单编号&lt;/span&gt;
+    &lt;span class=&quot;hljs-keyword&quot;&gt;private&lt;/span&gt; &lt;span class=&quot;hljs-built_in&quot;&gt;Long&lt;/span&gt; userId; &lt;span class=&quot;hljs-comment&quot;&gt;// 用户ID&lt;/span&gt;
+    &lt;span class=&quot;hljs-keyword&quot;&gt;private&lt;/span&gt; BigDecimal amount; &lt;span class=&quot;hljs-comment&quot;&gt;// 订单金额&lt;/span&gt;
+    &lt;span class=&quot;hljs-keyword&quot;&gt;private&lt;/span&gt; Integer status; &lt;span class=&quot;hljs-comment&quot;&gt;// 订单状态：0-待支付，1-已完成，2-已取消&lt;/span&gt;
+    &lt;span class=&quot;hljs-keyword&quot;&gt;private&lt;/span&gt; LocalDateTime createTime; &lt;span class=&quot;hljs-comment&quot;&gt;// 创建时间&lt;/span&gt;
+    &lt;span class=&quot;hljs-keyword&quot;&gt;private&lt;/span&gt; LocalDateTime updateTime; &lt;span class=&quot;hljs-comment&quot;&gt;// 更新时间&lt;/span&gt;
+}
+
+&lt;span class=&quot;hljs-comment&quot;&gt;// 订单历史实体（历史库）&lt;/span&gt;
+&lt;span class=&quot;hljs-keyword&quot;&gt;package&lt;/span&gt; com.example.multi.datasource.entity;
+
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; com.baomidou.mybatisplus.&lt;span class=&quot;hljs-keyword&quot;&gt;annotation&lt;/span&gt;.TableName;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; lombok.Data;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; java.math.BigDecimal;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; java.time.LocalDateTime;
+
+&lt;span class=&quot;hljs-meta&quot;&gt;@Data&lt;/span&gt;
+&lt;span class=&quot;hljs-meta&quot;&gt;@TableName(&lt;span class=&quot;hljs-string&quot;&gt;&quot;t_order_history&quot;&lt;/span&gt;)&lt;/span&gt;
+&lt;span class=&quot;hljs-keyword&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;hljs-title class_&quot;&gt;OrderHistory&lt;/span&gt; {
+    &lt;span class=&quot;hljs-keyword&quot;&gt;private&lt;/span&gt; &lt;span class=&quot;hljs-built_in&quot;&gt;Long&lt;/span&gt; id;
+    &lt;span class=&quot;hljs-keyword&quot;&gt;private&lt;/span&gt; String orderNo;
+    &lt;span class=&quot;hljs-keyword&quot;&gt;private&lt;/span&gt; &lt;span class=&quot;hljs-built_in&quot;&gt;Long&lt;/span&gt; userId;
+    &lt;span class=&quot;hljs-keyword&quot;&gt;private&lt;/span&gt; BigDecimal amount;
+    &lt;span class=&quot;hljs-keyword&quot;&gt;private&lt;/span&gt; Integer status;
+    &lt;span class=&quot;hljs-keyword&quot;&gt;private&lt;/span&gt; LocalDateTime createTime;
+    &lt;span class=&quot;hljs-keyword&quot;&gt;private&lt;/span&gt; LocalDateTime updateTime;
+    &lt;span class=&quot;hljs-keyword&quot;&gt;private&lt;/span&gt; LocalDateTime archiveTime; &lt;span class=&quot;hljs-comment&quot;&gt;// 归档时间（历史库新增字段）&lt;/span&gt;
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;h5 data-id=&quot;heading-16&quot;&gt;（2）Mapper接口定义&lt;/h5&gt;
+&lt;p&gt;定义OrderMapper（操作业务库t_order表）和OrderHistoryMapper（操作历史库t_order_history表），通过@DataSource注解指定数据源：&lt;/p&gt;
+&lt;pre&gt;&lt;code class=&quot;hljs language-java&quot; lang=&quot;java&quot;&gt;&lt;span class=&quot;hljs-comment&quot;&gt;// OrderMapper（业务库）&lt;/span&gt;
+&lt;span class=&quot;hljs-keyword&quot;&gt;package&lt;/span&gt; com.example.multi.datasource.mapper;
+
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; com.baomidou.mybatisplus.core.mapper.BaseMapper;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; com.example.multi.datasource.config.DataSource;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; com.example.multi.datasource.config.DataSourceType;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; com.example.multi.datasource.entity.Order;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; org.apache.ibatis.annotations.Param;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; java.util.List;
+
+&lt;span class=&quot;hljs-comment&quot;&gt;// 类上指定数据源：业务库（可省略，默认就是业务库）&lt;/span&gt;
+&lt;span class=&quot;hljs-meta&quot;&gt;@DataSource(DataSourceType.BUSINESS)&lt;/span&gt;
+&lt;span class=&quot;hljs-keyword&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;interface&lt;/span&gt; &lt;span class=&quot;hljs-title class_&quot;&gt;OrderMapper&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;extends&lt;/span&gt; &lt;span class=&quot;hljs-title class_&quot;&gt;BaseMapper&lt;/span&gt;&amp;lt;Order&amp;gt; {
+    &lt;span class=&quot;hljs-comment&quot;&gt;// 查询3个月前的订单（用于归档）&lt;/span&gt;
+    List&amp;lt;Order&amp;gt; &lt;span class=&quot;hljs-title function_&quot;&gt;selectOldOrders&lt;/span&gt;&lt;span class=&quot;hljs-params&quot;&gt;(&lt;span class=&quot;hljs-meta&quot;&gt;@Param(&quot;endTime&quot;)&lt;/span&gt; LocalDateTime endTime)&lt;/span&gt;;
+}
+
+&lt;span class=&quot;hljs-comment&quot;&gt;// OrderHistoryMapper（历史库）&lt;/span&gt;
+&lt;span class=&quot;hljs-keyword&quot;&gt;package&lt;/span&gt; com.example.multi.datasource.mapper;
+
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; com.baomidou.mybatisplus.core.mapper.BaseMapper;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; com.example.multi.datasource.config.DataSource;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; com.example.multi.datasource.config.DataSourceType;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; com.example.multi.datasource.entity.OrderHistory;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; org.apache.ibatis.annotations.Param;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; java.util.List;
+
+&lt;span class=&quot;hljs-comment&quot;&gt;// 类上指定数据源：历史库&lt;/span&gt;
+&lt;span class=&quot;hljs-meta&quot;&gt;@DataSource(DataSourceType.HISTORY)&lt;/span&gt;
+&lt;span class=&quot;hljs-keyword&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;interface&lt;/span&gt; &lt;span class=&quot;hljs-title class_&quot;&gt;OrderHistoryMapper&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;extends&lt;/span&gt; &lt;span class=&quot;hljs-title class_&quot;&gt;BaseMapper&lt;/span&gt;&amp;lt;OrderHistory&amp;gt; {
+    &lt;span class=&quot;hljs-comment&quot;&gt;// 批量插入历史订单&lt;/span&gt;
+    &lt;span class=&quot;hljs-type&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;hljs-title function_&quot;&gt;batchInsert&lt;/span&gt;&lt;span class=&quot;hljs-params&quot;&gt;(&lt;span class=&quot;hljs-meta&quot;&gt;@Param(&quot;list&quot;)&lt;/span&gt; List&amp;lt;OrderHistory&amp;gt; orderHistoryList)&lt;/span&gt;;
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;h5 data-id=&quot;heading-17&quot;&gt;（3）Mapper XML实现&lt;/h5&gt;
+&lt;p&gt;在resources/mapper目录下创建OrderMapper.xml和OrderHistoryMapper.xml，编写SQL语句：&lt;/p&gt;
+&lt;pre&gt;&lt;code class=&quot;hljs language-xml&quot; lang=&quot;xml&quot;&gt;&lt;span class=&quot;hljs-comment&quot;&gt;&amp;lt;!-- OrderMapper.xml（业务库） --&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;hljs-meta&quot;&gt;&amp;lt;?xml version=&lt;span class=&quot;hljs-string&quot;&gt;&quot;1.0&quot;&lt;/span&gt; encoding=&lt;span class=&quot;hljs-string&quot;&gt;&quot;UTF-8&quot;&lt;/span&gt;?&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;hljs-meta&quot;&gt;&amp;lt;!DOCTYPE &lt;span class=&quot;hljs-keyword&quot;&gt;mapper&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;PUBLIC&lt;/span&gt; &lt;span class=&quot;hljs-string&quot;&gt;&quot;-//mybatis.org//DTD Mapper 3.0//EN&quot;&lt;/span&gt; &lt;span class=&quot;hljs-string&quot;&gt;&quot;http://mybatis.org/dtd/mybatis-3-mapper.dtd&quot;&lt;/span&gt;&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;mapper&lt;/span&gt; &lt;span class=&quot;hljs-attr&quot;&gt;namespace&lt;/span&gt;=&lt;span class=&quot;hljs-string&quot;&gt;&quot;com.example.multi.datasource.mapper.OrderMapper&quot;&lt;/span&gt;&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;select&lt;/span&gt; &lt;span class=&quot;hljs-attr&quot;&gt;id&lt;/span&gt;=&lt;span class=&quot;hljs-string&quot;&gt;&quot;selectOldOrders&quot;&lt;/span&gt; &lt;span class=&quot;hljs-attr&quot;&gt;resultType&lt;/span&gt;=&lt;span class=&quot;hljs-string&quot;&gt;&quot;com.example.multi.datasource.entity.Order&quot;&lt;/span&gt;&amp;gt;&lt;/span&gt;
+        SELECT id, order_no, user_id, amount, status, create_time, update_time
+        FROM t_order
+        WHERE create_time &amp;lt; #{endTime}
+          AND status IN (1, 2) -- 只查询已完成、已取消的订单
+    &lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;select&lt;/span&gt;&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;mapper&lt;/span&gt;&amp;gt;&lt;/span&gt;
+
+&lt;span class=&quot;hljs-comment&quot;&gt;&amp;lt;!-- OrderHistoryMapper.xml（历史库） --&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;hljs-meta&quot;&gt;&amp;lt;?xml version=&lt;span class=&quot;hljs-string&quot;&gt;&quot;1.0&quot;&lt;/span&gt; encoding=&lt;span class=&quot;hljs-string&quot;&gt;&quot;UTF-8&quot;&lt;/span&gt;?&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;hljs-meta&quot;&gt;&amp;lt;!DOCTYPE &lt;span class=&quot;hljs-keyword&quot;&gt;mapper&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;PUBLIC&lt;/span&gt; &lt;span class=&quot;hljs-string&quot;&gt;&quot;-//mybatis.org//DTD Mapper 3.0//EN&quot;&lt;/span&gt; &lt;span class=&quot;hljs-string&quot;&gt;&quot;http://mybatis.org/dtd/mybatis-3-mapper.dtd&quot;&lt;/span&gt;&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;mapper&lt;/span&gt; &lt;span class=&quot;hljs-attr&quot;&gt;namespace&lt;/span&gt;=&lt;span class=&quot;hljs-string&quot;&gt;&quot;com.example.multi.datasource.mapper.OrderHistoryMapper&quot;&lt;/span&gt;&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;insert&lt;/span&gt; &lt;span class=&quot;hljs-attr&quot;&gt;id&lt;/span&gt;=&lt;span class=&quot;hljs-string&quot;&gt;&quot;batchInsert&quot;&lt;/span&gt;&amp;gt;&lt;/span&gt;
+        INSERT INTO t_order_history (
+            id, order_no, user_id, amount, status, create_time, update_time, archive_time
+        )
+        VALUES
+        &lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;&lt;span class=&quot;hljs-name&quot;&gt;foreach&lt;/span&gt; &lt;span class=&quot;hljs-attr&quot;&gt;collection&lt;/span&gt;=&lt;span class=&quot;hljs-string&quot;&gt;&quot;list&quot;&lt;/span&gt; &lt;span class=&quot;hljs-attr&quot;&gt;item&lt;/span&gt;=&lt;span class=&quot;hljs-string&quot;&gt;&quot;item&quot;&lt;/span&gt; &lt;span class=&quot;hljs-attr&quot;&gt;separator&lt;/span&gt;=&lt;span class=&quot;hljs-string&quot;&gt;&quot;,&quot;&lt;/span&gt;&amp;gt;&lt;/span&gt;
+            (
+                #{item.id}, #{item.orderNo}, #{item.userId}, #{item.amount},
+                #{item.status}, #{item.createTime}, #{item.updateTime}, #{item.archiveTime}
+            )
+        &lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;foreach&lt;/span&gt;&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;insert&lt;/span&gt;&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;hljs-tag&quot;&gt;&amp;lt;/&lt;span class=&quot;hljs-name&quot;&gt;mapper&lt;/span&gt;&amp;gt;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;h5 data-id=&quot;heading-18&quot;&gt;（4）Service层实现&lt;/h5&gt;
+&lt;p&gt;实现订单归档服务，调用两个数据源的Mapper接口，完成“查询业务库旧订单→插入历史库→删除业务库旧订单”的流程：&lt;/p&gt;
+&lt;pre&gt;&lt;code class=&quot;hljs language-java&quot; lang=&quot;java&quot;&gt;&lt;span class=&quot;hljs-keyword&quot;&gt;package&lt;/span&gt; com.example.multi.datasource.service;
+
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; com.example.multi.datasource.config.DataSource;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; com.example.multi.datasource.config.DataSourceType;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; com.example.multi.datasource.entity.Order;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; com.example.multi.datasource.entity.OrderHistory;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; com.example.multi.datasource.mapper.OrderHistoryMapper;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; com.example.multi.datasource.mapper.OrderMapper;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; lombok.extern.slf4j.Slf4j;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; org.springframework.beans.BeanUtils;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; org.springframework.stereotype.Service;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; org.springframework.transaction.annotation.Transactional;
+
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; javax.annotation.Resource;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; java.time.LocalDateTime;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; java.util.List;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; java.util.stream.Collectors;
+
+&lt;span class=&quot;hljs-meta&quot;&gt;@Service&lt;/span&gt;
+&lt;span class=&quot;hljs-meta&quot;&gt;@Slf4j&lt;/span&gt;
+&lt;span class=&quot;hljs-keyword&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;hljs-title class_&quot;&gt;OrderArchiveService&lt;/span&gt; {
+
+    &lt;span class=&quot;hljs-meta&quot;&gt;@Resource&lt;/span&gt;
+    &lt;span class=&quot;hljs-keyword&quot;&gt;private&lt;/span&gt; OrderMapper orderMapper;
+
+    &lt;span class=&quot;hljs-meta&quot;&gt;@Resource&lt;/span&gt;
+    &lt;span class=&quot;hljs-keyword&quot;&gt;private&lt;/span&gt; OrderHistoryMapper orderHistoryMapper;
+
+    &lt;span class=&quot;hljs-comment&quot;&gt;/**
+     * 订单归档：从业务库迁移到历史库
+     */&lt;/span&gt;
+    &lt;span class=&quot;hljs-meta&quot;&gt;@Transactional(rollbackFor = Exception.class)&lt;/span&gt; &lt;span class=&quot;hljs-comment&quot;&gt;// 事务控制：确保迁移+删除原子性&lt;/span&gt;
+    &lt;span class=&quot;hljs-keyword&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;hljs-title function_&quot;&gt;archiveOrders&lt;/span&gt;&lt;span class=&quot;hljs-params&quot;&gt;()&lt;/span&gt; {
+        log.info(&lt;span class=&quot;hljs-string&quot;&gt;&quot;开始执行订单归档任务&quot;&lt;/span&gt;);
+        &lt;span class=&quot;hljs-keyword&quot;&gt;try&lt;/span&gt; {
+            &lt;span class=&quot;hljs-comment&quot;&gt;// 1. 计算归档时间阈值：3个月前&lt;/span&gt;
+            &lt;span class=&quot;hljs-type&quot;&gt;LocalDateTime&lt;/span&gt; &lt;span class=&quot;hljs-variable&quot;&gt;archiveEndTime&lt;/span&gt; &lt;span class=&quot;hljs-operator&quot;&gt;=&lt;/span&gt; LocalDateTime.now().minusMonths(&lt;span class=&quot;hljs-number&quot;&gt;3&lt;/span&gt;);
+            &lt;span class=&quot;hljs-comment&quot;&gt;// 2. 从业务库查询旧订单（自动使用业务库数据源）&lt;/span&gt;
+            List&amp;lt;Order&amp;gt; oldOrderList = orderMapper.selectOldOrders(archiveEndTime);
+            &lt;span class=&quot;hljs-keyword&quot;&gt;if&lt;/span&gt; (oldOrderList.isEmpty()) {
+                log.info(&lt;span class=&quot;hljs-string&quot;&gt;&quot;无需要归档的订单&quot;&lt;/span&gt;);
+                &lt;span class=&quot;hljs-keyword&quot;&gt;return&lt;/span&gt;;
+            }
+            log.info(&lt;span class=&quot;hljs-string&quot;&gt;&quot;本次需归档订单数量：{}&quot;&lt;/span&gt;, oldOrderList.size());
+
+            &lt;span class=&quot;hljs-comment&quot;&gt;// 3. 转换为历史订单实体&lt;/span&gt;
+            List&amp;lt;OrderHistory&amp;gt; orderHistoryList = oldOrderList.stream().map(order -&amp;gt; {
+                &lt;span class=&quot;hljs-type&quot;&gt;OrderHistory&lt;/span&gt; &lt;span class=&quot;hljs-variable&quot;&gt;history&lt;/span&gt; &lt;span class=&quot;hljs-operator&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;new&lt;/span&gt; &lt;span class=&quot;hljs-title class_&quot;&gt;OrderHistory&lt;/span&gt;();
+                BeanUtils.copyProperties(order, history);
+                history.setArchiveTime(LocalDateTime.now()); &lt;span class=&quot;hljs-comment&quot;&gt;// 设置归档时间&lt;/span&gt;
+                &lt;span class=&quot;hljs-keyword&quot;&gt;return&lt;/span&gt; history;
+            }).collect(Collectors.toList());
+
+            &lt;span class=&quot;hljs-comment&quot;&gt;// 4. 批量插入历史库（自动使用历史库数据源）&lt;/span&gt;
+            orderHistoryMapper.batchInsert(orderHistoryList);
+            log.info(&lt;span class=&quot;hljs-string&quot;&gt;&quot;订单批量插入历史库完成&quot;&lt;/span&gt;);
+
+            &lt;span class=&quot;hljs-comment&quot;&gt;// 5. 批量删除业务库旧订单&lt;/span&gt;
+            List&amp;lt;Long&amp;gt; orderIds = oldOrderList.stream().map(Order::getId).collect(Collectors.toList());
+            orderMapper.deleteBatchIds(orderIds);
+            log.info(&lt;span class=&quot;hljs-string&quot;&gt;&quot;业务库旧订单删除完成&quot;&lt;/span&gt;);
+
+        } &lt;span class=&quot;hljs-keyword&quot;&gt;catch&lt;/span&gt; (Exception e) {
+            log.error(&lt;span class=&quot;hljs-string&quot;&gt;&quot;订单归档任务失败&quot;&lt;/span&gt;, e);
+            &lt;span class=&quot;hljs-keyword&quot;&gt;throw&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;new&lt;/span&gt; &lt;span class=&quot;hljs-title class_&quot;&gt;RuntimeException&lt;/span&gt;(&lt;span class=&quot;hljs-string&quot;&gt;&quot;归档失败&quot;&lt;/span&gt;, e); &lt;span class=&quot;hljs-comment&quot;&gt;// 抛出异常触发事务回滚&lt;/span&gt;
+        }
+    }
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;h5 data-id=&quot;heading-19&quot;&gt;（5）测试验证&lt;/h5&gt;
+&lt;p&gt;编写测试类，调用archiveOrders方法，验证数据源切换是否生效：&lt;/p&gt;
+&lt;pre&gt;&lt;code class=&quot;hljs language-java&quot; lang=&quot;java&quot;&gt;&lt;span class=&quot;hljs-keyword&quot;&gt;package&lt;/span&gt; com.example.multi.datasource;
+
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; com.example.multi.datasource.service.OrderArchiveService;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; org.junit.jupiter.api.Test;
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; org.springframework.boot.test.context.SpringBootTest;
+
+&lt;span class=&quot;hljs-keyword&quot;&gt;import&lt;/span&gt; javax.annotation.Resource;
+
+&lt;span class=&quot;hljs-meta&quot;&gt;@SpringBootTest&lt;/span&gt;
+&lt;span class=&quot;hljs-keyword&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;hljs-title class_&quot;&gt;MultiDataSourceTest&lt;/span&gt; {
+
+    &lt;span class=&quot;hljs-meta&quot;&gt;@Resource&lt;/span&gt;
+    &lt;span class=&quot;hljs-keyword&quot;&gt;private&lt;/span&gt; OrderArchiveService orderArchiveService;
+
+    &lt;span class=&quot;hljs-meta&quot;&gt;@Test&lt;/span&gt;
+    &lt;span class=&quot;hljs-keyword&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;hljs-keyword&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;hljs-title function_&quot;&gt;testArchiveOrders&lt;/span&gt;&lt;span class=&quot;hljs-params&quot;&gt;()&lt;/span&gt; {
+        orderArchiveService.archiveOrders();
+    }
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;运行测试后，查看日志： - 切换数据源：BUSINESS（查询业务库）； - 切换数据源：HISTORY（插入历史库）； - 再次切换到BUSINESS（删除业务库数据）； 若数据成功从业务库迁移到历史库，说明多数据源配置生效。&lt;/p&gt;
+&lt;h3 data-id=&quot;heading-20&quot;&gt;四、多数据源配置避坑指南：8个高频问题与解决方案&lt;/h3&gt;
+&lt;p&gt;多数据源配置在生产环境中容易出现数据源切换失效、事务异常、性能问题等，以下是8个高频坑点及规避方案：&lt;/p&gt;
+&lt;h4 data-id=&quot;heading-21&quot;&gt;1. 坑点1：数据源切换失效&lt;/h4&gt;
+&lt;p&gt;现象：添加@DataSource注解后，数据源未切换，仍使用默认数据源。 规避方案： - 检查切面优先级：确保数据源切换切面（@Order(Ordered.HIGHEST_PRECEDENCE)）在事务切面之前执行； - 检查注解位置：@DataSource注解需添加在方法上（类上注解优先级低于方法）； - 检查数据源枚举：确保注解指定的数据源枚举与配置文件中的数据源名称一致； - 检查ThreadLocal清理：确保方法执行后清除数据源标识，避免线程复用污染。&lt;/p&gt;
+&lt;h4 data-id=&quot;heading-22&quot;&gt;2. 坑点2：事务与多数据源冲突&lt;/h4&gt;
+&lt;p&gt;现象：跨数据源操作时，事务无法回滚；或单数据源事务生效，但切换数据源后事务失效。 规避方案： - 配置事务管理器：确保事务管理器绑定的是动态数据源（DynamicDataSource）； - 避免跨数据源事务：尽量将同一事务内的操作限制在单个数据源内； - 复杂场景用分布式事务：跨数据源事务需使用Seata等分布式事务框架。&lt;/p&gt;
+&lt;h4 data-id=&quot;heading-23&quot;&gt;3. 坑点3：多线程环境下数据源混乱&lt;/h4&gt;
+&lt;p&gt;现象：使用线程池时，不同线程的数据源标识相互干扰，导致查询数据错误。 规避方案： - 强制清除数据源标识：在每个线程任务执行完毕后，调用DataSourceContextHolder.clearDataSourceType()； - 线程池配置：避免使用无界线程池，控制线程复用频率； - 局部变量隔离：在多线程任务中，显式设置和清除数据源标识，不依赖全局状态。&lt;/p&gt;
+&lt;h4 data-id=&quot;heading-24&quot;&gt;4. 坑点4：连接池参数配置不合理&lt;/h4&gt;
+&lt;p&gt;现象：多数据源并发访问时，出现连接超时、连接池耗尽等问题。 规避方案： - 为每个数据源配置独立的连接池参数（初始化连接数、最大活跃数等）； - 根据业务并发量调整连接池大小：高并发数据源设置更大的max-active； - 启用连接池监控：通过德鲁伊监控页面（/druid/index.html）查看连接池状态，动态调整参数。&lt;/p&gt;
+&lt;h4 data-id=&quot;heading-25&quot;&gt;5. 坑点5：Mapper扫描范围错误&lt;/h4&gt;
+&lt;p&gt;现象：Mapper接口无法注入，或注入后无法关联到正确的数据源。 规避方案： - 统一扫描所有Mapper：在DynamicDataSourceConfig中通过@MapperScan扫描所有数据源的Mapper接口； - 避免重复扫描：不要在多个配置类中重复扫描同一Mapper包； - 明确数据源关联：通过@DataSource注解在Mapper类上指定数据源，避免混淆。&lt;/p&gt;
+&lt;h4 data-id=&quot;heading-26&quot;&gt;6. 坑点6：读写分离场景下主从同步延迟&lt;/h4&gt;
+&lt;p&gt;现象：主库写入数据后，从库查询不到（主从同步延迟），导致业务异常。 规避方案： - 关键业务强制走主库：如用户下单后查询订单状态，通过@DataSource(DataSourceType.MASTER)指定主库； - 配置主从同步优化：减少同步延迟（如优化binlog模式、增加从库配置）； - 重试机制：从库查询失败时，重试几次或切换到主库查询。&lt;/p&gt;
+&lt;h4 data-id=&quot;heading-27&quot;&gt;7. 坑点7：动态新增数据源时配置不生效&lt;/h4&gt;
+&lt;p&gt;现象：运行时动态添加新数据源（如多租户场景），但无法切换到新数据源。 规避方案： - 扩展动态数据源：在DynamicRoutingDataSource中添加动态更新数据源的方法； - 刷新数据源缓存：新增数据源后，调用dynamicDataSource.setTargetDataSources()更新数据源映射； - 线程安全控制：新增数据源时加锁，避免并发修改导致的线程安全问题。&lt;/p&gt;
+&lt;h4 data-id=&quot;heading-28&quot;&gt;8. 坑点8：忽略数据源监控&lt;/h4&gt;
+&lt;p&gt;现象：多数据源运行状态不透明，出现问题后无法快速定位。 规避方案： - 启用连接池监控：如德鲁伊监控，实时查看各数据源的连接数、SQL执行情况； - 日志追踪：在数据源切换切面中打印日志，记录每个方法使用的数据源； - 告警配置：针对连接池耗尽、SQL执行超时等问题配置告警（钉钉/邮件）。&lt;/p&gt;
+&lt;h3 data-id=&quot;heading-29&quot;&gt;五、进阶优化：多数据源配置的高级能力&lt;/h3&gt;
+&lt;p&gt;对于复杂业务场景，还需掌握多数据源的进阶优化能力，提升系统性能与可扩展性：&lt;/p&gt;
+&lt;h4 data-id=&quot;heading-30&quot;&gt;1. 动态数据源健康检查&lt;/h4&gt;
+&lt;p&gt;需求：实时监控各数据源的连接状态，发现异常数据源及时告警。 实现方案： - 自定义健康检查器：实现Spring Boot的HealthIndicator接口，定期检查各数据源的连接状态； - 集成Spring Boot Actuator：通过/actuator/health端点暴露数据源健康状态，便于监控系统集成。&lt;/p&gt;
+&lt;h4 data-id=&quot;heading-31&quot;&gt;2. 多数据源读写分离优化&lt;/h4&gt;
+&lt;p&gt;需求：自动将查询操作路由到从库，写入操作路由到主库，无需手动添加注解。 实现方案： - 扩展切面逻辑：通过AOP拦截所有查询方法（select开头），自动切换到从库；写入方法（insert/update/delete开头）切换到主库； - 使用Sharding-JDBC：框架自带读写分离功能，支持多种负载均衡策略（轮询、随机等）。&lt;/p&gt;
+&lt;h4 data-id=&quot;heading-32&quot;&gt;3. 多数据源缓存优化&lt;/h4&gt;
+&lt;p&gt;需求：减少多数据源的重复查询，提升性能。 实现方案： - 针对不同数据源配置独立缓存：如业务库查询结果缓存到Redis，历史库查询结果缓存到本地缓存； - 缓存键隔离：缓存键添加数据源标识前缀（如&quot;business:order:123&quot;），避免不同数据源的缓存冲突。&lt;/p&gt;
+&lt;h3 data-id=&quot;heading-33&quot;&gt;六、总结：多数据源配置的核心原则与落地建议&lt;/h3&gt;
+&lt;p&gt;多数据源配置的核心是“&lt;strong&gt;隔离清晰、切换灵活、事务可靠、监控到位&lt;/strong&gt;”，落地时需遵循以下原则：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;选型适配场景&lt;/strong&gt;：根据业务复杂度选择合适的实现方案，避免过度设计（如简单场景无需引入分布式事务框架）；&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;配置规范统一&lt;/strong&gt;：统一数据源命名、注解使用、连接池参数配置，降低维护成本；&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;事务谨慎处理&lt;/strong&gt;：尽量避免跨数据源事务，复杂场景借助分布式事务框架；&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;监控贯穿全程&lt;/strong&gt;：启用连接池监控、日志追踪、健康检查，确保问题早发现、早解决。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;多数据源配置是后端系统架构设计的重要环节，合理的多数据源方案能有效解耦业务、提升性能、保障扩展性。希望本文的实战指南能帮助你避开坑点，高效落地多数据源需求。&lt;/p&gt;</description><link>https://juejin.cn/post/7594854295746707492</link><guid isPermaLink="false">https://juejin.cn/post/7594854295746707492</guid><pubDate>Wed, 14 Jan 2026 03:51:14 GMT</pubDate><author>回家路上绕了弯</author><category>后端</category><category>分布式</category></item><item><title>ebpf检测Linux系统要来了</title><description>哈喽，我是子牙老师，深耕计算机底层，手写过操作系统、Linux 内核等核心技术。此前推出《手写生产级 eBPF 内存监测工具》，结合学员需求，决定将工具升级为通用 Linux 系统检测工具！</description><link>https://juejin.cn/post/7594859060857225226</link><guid isPermaLink="false">https://juejin.cn/post/7594859060857225226</guid><pubDate>Wed, 14 Jan 2026 03:46:00 GMT</pubDate><author>硬核子牙</author><category>后端</category><category>Linux</category></item><item><title>Node.js 编程实战：博客系统 —— 数据库设计</title><description>一、数据库设计的重要性 数据库设计是博客系统的根基。它决定了： • 数据存储结构是否合理 • 功能扩展是否顺畅 • 查询性能是否高效 • 数据一致性是否有保障 如果在项目初期忽略数据库设计，后续改表和</description><link>https://juejin.cn/post/7594822511436333082</link><guid isPermaLink="false">https://juejin.cn/post/7594822511436333082</guid><pubDate>Wed, 14 Jan 2026 03:26:48 GMT</pubDate><author>程序员爱钓鱼</author><category>后端</category><category>前端</category><category>Node.js</category></item><item><title>Nginx分布式框架</title><description>Nginx 是一个高性能的HTTP和反向代理web服务器。 提供的服务： 动静分离（web 服务） 负载均衡 （反向代理） web 缓存 内存少，并发能力强。</description><link>https://juejin.cn/post/7594874733382336563</link><guid isPermaLink="false">https://juejin.cn/post/7594874733382336563</guid><pubDate>Wed, 14 Jan 2026 03:18:18 GMT</pubDate><author>优秀的颜</author><category>后端</category></item><item><title>Java Stream：Collectors.collectingAndThen() 用法详解</title><description>Collectors.collectingAndThen() 是一个收集器适配器，允许在收集完成后对结果进行转换。本文介绍其基本概念、基本用法、使用建议，仅供学习参考。</description><link>https://juejin.cn/post/7594859060856979466</link><guid isPermaLink="false">https://juejin.cn/post/7594859060856979466</guid><pubDate>Wed, 14 Jan 2026 03:16:52 GMT</pubDate><author>白衣鸽子</author><category>后端</category></item><item><title>Maven详细配置（完整笔记）</title><description>Maven：Java 领域开源自动化构建工具，基于项目对象模型（POM），统一依赖管理、构建流程，提升项目开发效率与协作一致性。</description><link>https://juejin.cn/post/7594831933515857966</link><guid isPermaLink="false">https://juejin.cn/post/7594831933515857966</guid><pubDate>Wed, 14 Jan 2026 03:13:42 GMT</pubDate><author>优秀的颜</author><category>后端</category></item><item><title>Ubuntu 24.04 PostgreSQL + PostGIS 完整安装与配置指南</title><description>Ubuntu 24.04 PostgreSQL + PostGIS 完整安装与配置指南 PostGIS 是 PostgreSQL 的空间数据库扩展，为地理空间数据提供了强大的存储、查询和分析功能。本教</description><link>https://juejin.cn/post/7594765626457030706</link><guid isPermaLink="false">https://juejin.cn/post/7594765626457030706</guid><pubDate>Wed, 14 Jan 2026 03:09:03 GMT</pubDate><author>勿忘初心720</author><category>后端</category></item><item><title>深入理解 LLVM：从编译器原理到 JIT 实战</title><description>本文从编译器基础概念开始，逐步深入到 LLVM 的实现细节和实际应用，帮助开发者全面理解 LLVM 的工作原理和使用方法。</description><link>https://juejin.cn/post/7594722586731642886</link><guid isPermaLink="false">https://juejin.cn/post/7594722586731642886</guid><pubDate>Wed, 14 Jan 2026 02:45:45 GMT</pubDate><author>杨杨杨大侠</author><category>后端</category><category>Java</category><category>JVM</category><category>编译器</category></item><item><title>10分钟搞定！SpringBoot集成腾讯云短信全攻略，从配置到发送一气呵成</title><description>在Spring Boot项目中集成腾讯云短信服务，主要通过官方SDK调用API实现，具有稳定性高、接入便捷的特点。下面是详细介绍如何实现。</description><link>https://juejin.cn/post/7594739292200665123</link><guid isPermaLink="false">https://juejin.cn/post/7594739292200665123</guid><pubDate>Wed, 14 Jan 2026 02:09:31 GMT</pubDate><author>悟空码字</author><category>后端</category><category>Java</category><category>Spring Boot</category></item><item><title>SpringCloud分布式追踪深度实战：Sleuth+Zipkin从入门到生产部署全攻略</title><description>分布式链路追踪 - 微服务里的&quot;侦探&quot;，请求去哪儿了一清二楚🔍 一、先白话白话为啥需要链路追踪 零基础全栈开发Java微服务版本实战-后端-前端-运维-实战企业级三个实战项目 资源获取：关注公</description><link>https://juejin.cn/post/7594742976711884834</link><guid isPermaLink="false">https://juejin.cn/post/7594742976711884834</guid><pubDate>Wed, 14 Jan 2026 02:06:05 GMT</pubDate><author>小坏说Java</author><category>后端</category><category>Spring Cloud</category><category>分布式</category></item><item><title>工作中最常用的5种本地缓存</title><description>前言 今天和大家聊聊一个几乎所有Java开发者都会用到，但很多人对其理解不够深入的技术——本地缓存。 有些小伙伴在工作中可能遇到过这样的场景：系统性能测试时，发现某个接口响应时间越来越长，一查发现是数</description><link>https://juejin.cn/post/7594728203257364514</link><guid isPermaLink="false">https://juejin.cn/post/7594728203257364514</guid><pubDate>Wed, 14 Jan 2026 01:58:04 GMT</pubDate><author>苏三说技术</author><category>后端</category></item><item><title>“磁盘爆满告警”——Linux 服务器空间排查与优化实战</title><description>来自运维的告警 近日运维同事找到我说你看看这台 113 的机器是不是你这边业务的，存储使用超出 80% 了，我心里一沉这确实是我的业务！根分区使用率超过 90% 就是高危状态，再涨一点</description><link>https://juejin.cn/post/7594735599313993778</link><guid isPermaLink="false">https://juejin.cn/post/7594735599313993778</guid><pubDate>Wed, 14 Jan 2026 01:53:26 GMT</pubDate><author>帅气的你</author><category>后端</category><category>Linux</category><category>程序员</category></item><item><title>工作中七天免登录如何实现</title><description>作为一名Java后端高级开发，我敢说“七天免登录”是业务系统里最常见的需求之一——用户登录一次后，一周内再次访问系统无需重复输入账号密码，直接就能进入主页。这个需求看似简单，但实现不好很容易踩坑：要么</description><link>https://juejin.cn/post/7594728203257167906</link><guid isPermaLink="false">https://juejin.cn/post/7594728203257167906</guid><pubDate>Wed, 14 Jan 2026 01:30:47 GMT</pubDate><author>天天摸鱼的java工程师</author><category>后端</category><category>Java</category></item><item><title>大数据量查询处理方案</title><description>在实际开发中，经常遇到需要查询大量数据的场景，如：订单历史数据导出，报表统计查询等，此文章记录如何优化该场景</description><link>https://juejin.cn/post/7594734666009100297</link><guid isPermaLink="false">https://juejin.cn/post/7594734666009100297</guid><pubDate>Wed, 14 Jan 2026 01:01:27 GMT</pubDate><author>码头整点薯条</author><category>后端</category><category>Java</category></item><item><title>C 语言实战：水果总价计算程序（结构体应用 + 细节优化）</title><description>C 语言实战：水果总价计算程序（结构体应用 + 细节优化） 这是一个典型的 C 语言结构体入门应用案例，通过定义结构体存储水果单价，接收用户输入的购买斤数，最终计算并输出总价。</description><link>https://juejin.cn/post/7594759496367964170</link><guid isPermaLink="false">https://juejin.cn/post/7594759496367964170</guid><pubDate>Wed, 14 Jan 2026 00:58:15 GMT</pubDate><author>小杨同学49</author><category>后端</category><category>算法</category><category>程序员</category></item><item><title>【RuoYi-SpringBoot3-Pro】：多租户功能上手指南</title><description>RuoYi-SpringBoot3-Pro 直接集成了 MyBatis-Plus 的多租户插件，不用再关注租户 ID，框架层自动注入过滤条件。配合&amp;nbsp;使用 Dify + AI 快速生成多数据库建表语句</description><link>https://juejin.cn/post/7594759496367865866</link><guid isPermaLink="false">https://juejin.cn/post/7594759496367865866</guid><pubDate>Wed, 14 Jan 2026 00:40:02 GMT</pubDate><author>undsky</author><category>后端</category><category>MyBatis</category><category>Spring Boot</category></item><item><title>松耦合的设计模式-观察者</title><description>观察者模式是一种对象行为型模式，定义对象间一对多的依赖关系，当一个对象（被观察者/主题）的状态发生改变时，所有依赖它的对象（观察者）都会收到通知并自动更新。 代码实现 比如说在订单业务中，当我们实现订</description><link>https://juejin.cn/post/7594523145212166198</link><guid isPermaLink="false">https://juejin.cn/post/7594523145212166198</guid><pubDate>Wed, 14 Jan 2026 00:19:39 GMT</pubDate><author>明天有专业课</author><category>后端</category></item><item><title>JINA AI 与 Elasticsearch 的集成</title><description>Jina AI现在是 Elastic 的一部分，将其高性能多语言和多模态搜索 AI 带入 Elasticsearch 强大的数据存储、检索和索引能力。Jina AI 模型可以通过公共 API 与 El</description><link>https://juejin.cn/post/7594627998852448262</link><guid isPermaLink="false">https://juejin.cn/post/7594627998852448262</guid><pubDate>Tue, 13 Jan 2026 23:26:40 GMT</pubDate><author>Elasticsearch</author><category>后端</category><category>Elasticsearch</category></item><item><title>使用 Elastic 中的 OpenTelemetry 为 Nginx 实现端到端分布式追踪的实用指南</title><description>作者：来自 Elastic&amp;nbsp;Frederic Maussion 使用 OpenTelemetry 跟踪模块为 Nginx 进行埋点，并将 spans 导出到 Elastic Observability</description><link>https://juejin.cn/post/7594863660280021011</link><guid isPermaLink="false">https://juejin.cn/post/7594863660280021011</guid><pubDate>Tue, 13 Jan 2026 22:58:36 GMT</pubDate><author>Elasticsearch</author><category>后端</category><category>Elasticsearch</category></item><item><title>《自动化埋点：利用 AOP 统一记录接口入参、出参及执行耗时》</title><description>前言 在定位线上问题时，最常用的操作就是查看接口的“入参是什么”以及“返回了什么”。如果手动在每个 Controller 方法中去打印日志，不仅代码臃肿，且难以维护。 通过 Spring AOP（面向</description><link>https://juejin.cn/post/7594682922684006409</link><guid isPermaLink="false">https://juejin.cn/post/7594682922684006409</guid><pubDate>Tue, 13 Jan 2026 16:09:34 GMT</pubDate><author>用户94835701651</author><category>后端</category></item></channel></rss>
