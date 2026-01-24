@@ -1,4 +1,986 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[宇凡微亮相2026雨果大会：以“AI硬件方案首选提供商”赋能跨境出海]]></title>    <link>https://www.elecfans.com/d/7616348.html</link>    <guid>https://www.elecfans.com/d/7616348.html</guid>    <pubDate>2026-01-24 11:47:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[【MCU学习】GPIO详解]]></title>    <link>https://www.elecfans.com/d/7616442.html</link>    <guid>https://www.elecfans.com/d/7616442.html</guid>    <pubDate>2026-01-24 11:45:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_7616442" value="https://www.elecfans.com/outside?redirect=https://www.st.com/resource/en/reference_manual/cd00171190-stm32f101xx-stm32f102xx-stm32f103xx-stm32f105xx-and-stm32f107xx-advanced-arm-based-32-bit-mcus-stmicroelectronics.pdf"/><div class="vditor-preview__action"/><div class="vditor-reset"><p>@[toc]</p><h2>概要</h2><p><img src="https://file1.elecfans.com/web3/M00/48/B2/wKgZO2lyBFOAGovoACepN10ELuA69.jpeg" alt="在这里插入图片描述"/><br/><img src="https://file1.elecfans.com/web3/M00/48/B0/wKgZPGlyBFOAXaQkAAUc0XgK5zg909.png" alt="在这里插入图片描述"/><br/> 摘自：<a href="javascript:;" data-annex="annex0_7616442" target="_blank">STM32F10x 参考手册</a></p><p><img src="https://file1.elecfans.com/web3/M00/48/B0/wKgZPGlyBFKAS900AAkcDVXIm0s942.png" alt="在这里插入图片描述"/></p><p>本实验通过一个“小实验框架 GPIO Mode Lab”，在同一个 GPIO 引脚上依次配置不同模式，并用 <a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a> 探头测量电压、同时读取数字电平，系统化地观察：</p><ul><li>内部上拉 / 下拉<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>的大致阻值和效果</li><li>外部电阻（不同阻值、接 VCC / 接 GND / 悬空）与内部电阻的“谁主导”关系</li><li>推挽输出（OUTPUT）和开漏输出（OPEN-DRAIN）的真实行为</li><li>浮空输入在<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>量和数字量上的不稳定性</li></ul><p>并由此得出一系列可量化的直观结论，可写成一篇“GPIO 行为直观实验报告”。</p><hr/><h2>整体架构流程</h2><p>整体分为三层：</p><ol><li><strong>实验框架层：GPIO Mode Lab 类</strong><ul><li>固定一组 GPIO 模式序列： <ul><li><code>INPUT</code>、<code>INPUT_PULLUP</code>、<code>INPUT_PUL<a href="https://m.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>WN</code>、<code>INPUT_<a href="https://bbs.elecfans.com/group_65" target="_blank"><u>ANALOG</u></a></code></li><li><code>OUTPUT LOW</code> / <code>OUTPUT HIGH</code></li><li><code>OUTPUT_OPEN_DRAIN LOW</code> / <code>OUTPUT_OPEN_DRAIN HIGH</code></li></ul></li><li>每轮实验：依次切换模式 → 延时稳定 → <a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>C 采样多次求平均 → 读取数字电平 → 串口打印结果和说明。</li></ul></li><li><strong>串口交互层：MiniShell + 菜单</strong><ul><li>用户通过串口输入： <ul><li>外部电阻值 <code>R_ext</code>（单位 Ω，支持 0 表示无）</li><li>电阻连接方式：<code>node → R → GND / VCC / none</code></li></ul></li><li>支持多轮实验连续运行，任意输入阶段按 <code>q/Q</code> 退出。</li></ul></li><li><strong>测量与分析层：ADC + 简单电路模型</strong><ul><li>ADC：10 位，0–1023，对应约 0–3.3 V。</li><li>对特定场景（如 <code>INPUT_PULLUP + R_ext→GND</code>）使用分压公式： <ul><li><code>Vnode / <a href="https://www.elecfans.com/v/tag/3668/" target="_blank"><u>Vr</u></a>ef = R_down / (R_up + R_down)</code></li><li>估算内部上拉电阻 <code>R_up = R_down * (1 / ra<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>ti</u></a>o - 1)</code>，其中 <code>ratio = ADC / 1023</code>。</li></ul></li><li>把不同 R_ext / 接法 / 模式的结果整理成表格，对比得出工程结论。</li></ul></li></ol><hr/><h2>技术名词解释</h2><ul><li><strong>INPUT（浮空输入）</strong><br/> 仅打开数字输入缓冲，不启用内部上拉/下拉。引脚呈高阻态，电平完全由外部电路和泄漏、噪声等决定。</li><li><strong>INPUT_PULLUP / INPUT_PULLDOWN</strong><br/> 在 INPUT 的基础上，内部通过一只几十 kΩ 量级的“弱上拉 / 弱下拉”电阻，把引脚轻微拉向 VCC 或 GND，常用于按键等简单输入，避免悬空。</li><li><strong>INPUT_ANALOG</strong><br/> 关闭数字输入缓冲和施密特触发器，仅保留到 ADC 的模拟路径，减小噪声和漏电，专用于电压采样。</li><li><strong>OUTPUT（推挽输出）</strong><br/> 上下两个 MOS 管组成推挽结构，可主动拉高到 VCC 或拉低到 GND，等效输出电阻较小，能驱动一定<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>。</li><li><strong>OUTPUT_OPEN_DRAIN（开漏输出）</strong><br/> 仅有下拉管能导通到 GND，上拉管常关；输出 LOW 时主动拉低，输出 HIGH 时为高阻态，需要外部上拉决定高电平，适合 I²C、线与等总线。</li><li><strong>浮空（Floating）</strong><br/> 引脚未通过明显的上拉/下拉或驱动源确定电平，表现为 ADC 读数在中间随机漂移，digitalRead 可能随机判 0/1。</li><li><strong>内部上拉/下拉电阻</strong><br/> <a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a> 内部集成的可选电阻网络，通常在几十 kΩ 量级，用于给输入引脚提供弱上拉/下拉，避免悬空。</li></ul><hr/><h2>技术细节</h2><h3>1. 测量配置与流程</h3><ul><li>ADC 分辨率：10 位，<code>0..1023</code>，<code>Vref ≈ 3.3 V</code>。</li><li>每个模式下： <ol><li><code><a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>pi</u></a>nMode(target, mode)</code> 配置模式</li><li>若为输出模式，则 <code>digitalWri<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a></code> 设为 HIGH/LOW</li><li>延时若干 ms 等待电平稳定</li><li><code>analogRead(probe)</code> 多次采样取平均 → 得到 <code>ADC avg</code> 和电压</li><li>把探针脚临时设为 <code>INPUT</code>，<code>digitalRead</code> 一次 → 观察数字门限行为</li><li>串口打印模式名、ADC、电压、数字结果和文字说明</li></ol></li></ul><h3>2. 外部电阻与接法的实验组合</h3><p>通过串口交互设置：</p><ul><li><code>R_ext</code>（示例：100 kΩ、15 kΩ；输入整数：100000、15000）</li><li>接法：<code>node -&gt; R -&gt; GND / VCC / none</code></li></ul><p>本次记录的数据覆盖六种典型组合：</p><ol><li><code>R_ext = 100 kΩ</code>，接 VCC</li><li><code>R_ext = 100 kΩ</code>，接 GND</li><li><code>R_ext = 100 kΩ</code>，逻辑上当作 none（菜单选 3）</li><li><code>R_ext = 15 kΩ</code>，接 VCC</li><li><code>R_ext = 15 kΩ</code>，接 GND</li><li><code>R_ext = 15 kΩ</code>，逻辑上当作 none（菜单选 3）</li></ol><hr/><h3>3. 实验数据表格</h3><h4>3.1 R_ext = 100 kΩ，接 VCC</h4><table><thead><tr><th>序号</th><th>模式</th><th>ADC</th><th>电压 (V)</th><th>digitalRead</th><th>备注</th></tr></thead><tbody><tr><td>1</td><td>INPUT (floating)</td><td>715</td><td>2.306</td><td>1</td><td>外部 100k 上拉占主导，输入脚高阻跟着被拉高</td></tr><tr><td>2</td><td>INPUT_PULLUP</td><td>917</td><td>2.958</td><td>1</td><td>内部上拉与外部 100k 上拉并联，更接近 VCC</td></tr><tr><td>3</td><td>INPUT_PULLDOWN</td><td>268</td><td>0.865</td><td>0</td><td>内部下拉 vs 外部上拉分压，电平在中间偏低</td></tr><tr><td>4</td><td>INPUT_ANALOG</td><td>713</td><td>2.300</td><td>1</td><td>数字缓冲关掉，模拟只看到外部 100k 上拉</td></tr><tr><td>5</td><td>OUTPUT LOW</td><td>0</td><td>0.000</td><td>0</td><td>推挽强拉低，压制 100k 上拉</td></tr><tr><td>6</td><td>OUTPUT HIGH</td><td>1022</td><td>3.297</td><td>1</td><td>推挽强拉高，与上拉同向</td></tr><tr><td>7</td><td>OUTPUT_OPEN_DRAIN LOW</td><td>0</td><td>0.000</td><td>0</td><td>开漏下管导通，压制外部上拉</td></tr><tr><td>8</td><td>OUTPUT_OPEN_DRAIN HIGH</td><td>715</td><td>2.306</td><td>1</td><td>开漏高阻，完全由 100k 上拉决定</td></tr></tbody></table><hr/><h4>3.2 R_ext = 100 kΩ，接 GND</h4><table><thead><tr><th>序号</th><th>模式</th><th>ADC</th><th>电压 (V)</th><th>digitalRead</th><th>备注</th></tr></thead><tbody><tr><td>1</td><td>INPUT (floating)</td><td>0</td><td>0.000</td><td>0</td><td>外部 100k 下拉占主导</td></tr><tr><td>2</td><td>INPUT_PULLUP</td><td>653</td><td>2.106</td><td>1</td><td>内部上拉 vs 100k 下拉分压，估算 Rup≈56.7 kΩ</td></tr><tr><td>3</td><td>INPUT_PULLDOWN</td><td>0</td><td>0.000</td><td>0</td><td>内部+外部下拉叠加，牢牢在 0V</td></tr><tr><td>4</td><td>INPUT_ANALOG</td><td>0</td><td>0.000</td><td>0</td><td>模拟输入也只看到外部下拉</td></tr><tr><td>5</td><td>OUTPUT LOW</td><td>0</td><td>0.000</td><td>0</td><td>推挽强拉低</td></tr><tr><td>6</td><td>OUTPUT HIGH</td><td>1022</td><td>3.297</td><td>1</td><td>推挽强拉高，压制 100k 下拉</td></tr><tr><td>7</td><td>OUTPUT_OPEN_DRAIN LOW</td><td>0</td><td>0.000</td><td>0</td><td>开漏拉低</td></tr><tr><td>8</td><td>OUTPUT_OPEN_DRAIN HIGH</td><td>0</td><td>0.000</td><td>0</td><td>开漏高阻 + 仅有 100k 下拉 → 节点仍为低</td></tr></tbody></table><hr/><h4>3.3 R_ext = 100 kΩ，逻辑当作 none（菜单选 3）</h4><blockquote><p>注：代码中 <code>extType=EXT_NONE</code>，因此提示为“no external resistor (node floating)”，物理上是否仍接 100k 视实验连线而定。这里按“逻辑视为悬空”来理解。</p></blockquote><table><thead><tr><th>序号</th><th>模式</th><th>ADC</th><th>电压 (V)</th><th>digitalRead</th><th>备注</th></tr></thead><tbody><tr><td>1</td><td>INPUT (floating)</td><td>128</td><td>0.413</td><td>1</td><td>浮空，受杂散<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>/泄漏影响，偏低但数字偶判 1</td></tr><tr><td>2</td><td>INPUT_PULLUP</td><td>861</td><td>2.777</td><td>1</td><td>仅内部上拉，电平接近 VCC</td></tr><tr><td>3</td><td>INPUT_PULLDOWN</td><td>0</td><td>0.000</td><td>0</td><td>仅内部下拉</td></tr><tr><td>4</td><td>INPUT_ANALOG</td><td>237</td><td>0.765</td><td>0</td><td>模拟浮空，电压在低中区间漂移</td></tr><tr><td>5</td><td>OUTPUT LOW</td><td>0</td><td>0.000</td><td>0</td><td>推挽拉低</td></tr><tr><td>6</td><td>OUTPUT HIGH</td><td>1022</td><td>3.297</td><td>1</td><td>推挽拉高</td></tr><tr><td>7</td><td>OUTPUT_OPEN_DRAIN LOW</td><td>0</td><td>0.000</td><td>0</td><td>开漏拉低</td></tr><tr><td>8</td><td>OUTPUT_OPEN_DRAIN HIGH</td><td>238</td><td>0.768</td><td>0</td><td>开漏高阻 + 无上拉，下垂到中间偏低</td></tr></tbody></table><hr/><h4>3.4 R_ext = 15 kΩ，接 GND</h4><table><thead><tr><th>序号</th><th>模式</th><th>ADC</th><th>电压 (V)</th><th>digitalRead</th><th>备注</th></tr></thead><tbody><tr><td>1</td><td>INPUT (floating)</td><td>0</td><td>0.000</td><td>0</td><td>外部 15k 下拉很强，直接拉到 0V</td></tr><tr><td>2</td><td>INPUT_PULLUP</td><td>276</td><td>0.890</td><td>0</td><td>15k 下拉明显比内部上拉强，节点偏低；估算 Rup≈40.6 kΩ</td></tr><tr><td>3</td><td>INPUT_PULLDOWN</td><td>0</td><td>0.000</td><td>0</td><td>内部+外部下拉，更低</td></tr><tr><td>4</td><td>INPUT_ANALOG</td><td>0</td><td>0.000</td><td>0</td><td>模拟通道也看到 0V</td></tr><tr><td>5</td><td>OUTPUT LOW</td><td>0</td><td>0.000</td><td>0</td><td>推挽拉低</td></tr><tr><td>6</td><td>OUTPUT HIGH</td><td>1021</td><td>3.294</td><td>1</td><td>推挽拉高，压制 15k 下拉</td></tr><tr><td>7</td><td>OUTPUT_OPEN_DRAIN LOW</td><td>0</td><td>0.000</td><td>0</td><td>开漏拉低</td></tr><tr><td>8</td><td>OUTPUT_OPEN_DRAIN HIGH</td><td>0</td><td>0.000</td><td>0</td><td>开漏高阻 + 15k 下拉 → 节点为低</td></tr></tbody></table><hr/><h4>3.5 R_ext = 15 kΩ，接 VCC</h4><table><thead><tr><th>序号</th><th>模式</th><th>ADC</th><th>电压 (V)</th><th>digitalRead</th><th>备注</th></tr></thead><tbody><tr><td>1</td><td>INPUT (floating)</td><td>995</td><td>3.210</td><td>1</td><td>外部 15k 上拉很强，几乎 3.3V</td></tr><tr><td>2</td><td>INPUT_PULLUP</td><td>1013</td><td>3.268</td><td>1</td><td>内部+外部上拉并联，更接近满刻度</td></tr><tr><td>3</td><td>INPUT_PULLDOWN</td><td>738</td><td>2.381</td><td>1</td><td>内部下拉 vs 15k 上拉分压，仍被视为 HIGH</td></tr><tr><td>4</td><td>INPUT_ANALOG</td><td>996</td><td>3.213</td><td>1</td><td>模拟通道看到 3.2V 左右</td></tr><tr><td>5</td><td>OUTPUT LOW</td><td>1</td><td>0.003</td><td>0</td><td>推挽强拉低，对 15k 上拉也是轻松压制</td></tr><tr><td>6</td><td>OUTPUT HIGH</td><td>1022</td><td>3.297</td><td>1</td><td>推挽拉高，与上拉同向</td></tr><tr><td>7</td><td>OUTPUT_OPEN_DRAIN LOW</td><td>1</td><td>0.003</td><td>0</td><td>开漏拉低</td></tr><tr><td>8</td><td>OUTPUT_OPEN_DRAIN HIGH</td><td>995</td><td>3.210</td><td>1</td><td>开漏高阻 + 15k 上拉 → 节点接近 3.3V</td></tr></tbody></table><hr/><h4>3.6 R_ext = 15 kΩ，逻辑当作 none（菜单选 3）</h4><p>同样地，代码逻辑将其视为“无外部电阻”，以下理解为“悬空”场景。</p><table><thead><tr><th>序号</th><th>模式</th><th>ADC</th><th>电压 (V)</th><th>digitalRead</th><th>备注</th></tr></thead><tbody><tr><td>1</td><td>INPUT (floating)</td><td>174</td><td>0.561</td><td>1</td><td>浮空偏低，但数字采样到 1（说明门限在中间）</td></tr><tr><td>2</td><td>INPUT_PULLUP</td><td>860</td><td>2.774</td><td>1</td><td>仅内部上拉，接近 VCC</td></tr><tr><td>3</td><td>INPUT_PULLDOWN</td><td>0</td><td>0.000</td><td>0</td><td>仅内部下拉</td></tr><tr><td>4</td><td>INPUT_ANALOG</td><td>232</td><td>0.748</td><td>0</td><td>浮空模拟，低中间漂移</td></tr><tr><td>5</td><td>OUTPUT LOW</td><td>0</td><td>0.000</td><td>0</td><td>推挽拉低</td></tr><tr><td>6</td><td>OUTPUT HIGH</td><td>1022</td><td>3.297</td><td>1</td><td>推挽拉高</td></tr><tr><td>7</td><td>OUTPUT_OPEN_DRAIN LOW</td><td>0</td><td>0.000</td><td>0</td><td>开漏拉低</td></tr><tr><td>8</td><td>OUTPUT_OPEN_DRAIN HIGH</td><td>180</td><td>0.581</td><td>0</td><td>开漏高阻 + 无上拉，电平漂在中间偏低</td></tr></tbody></table><hr/><p>同样地，代码逻辑将其视为“无外部电阻”，以下理解为“悬空”场景。</p><table><thead><tr><th>序号</th><th>模式</th><th>ADC</th><th>电压 (V)</th><th>digitalRead</th><th>备注</th></tr></thead><tbody><tr><td>1</td><td>INPUT (floating)</td><td>174</td><td>0.561</td><td>1</td><td>浮空偏低，但数字采样到 1（说明门限在中间）</td></tr><tr><td>2</td><td>INPUT_PULLUP</td><td>860</td><td>2.774</td><td>1</td><td>仅内部上拉，接近 VCC</td></tr><tr><td>3</td><td>INPUT_PULLDOWN</td><td>0</td><td>0.000</td><td>0</td><td>仅内部下拉</td></tr><tr><td>4</td><td>INPUT_ANALOG</td><td>232</td><td>0.748</td><td>0</td><td>浮空模拟，低中间漂移</td></tr><tr><td>5</td><td>OUTPUT LOW</td><td>0</td><td>0.000</td><td>0</td><td>推挽拉低</td></tr><tr><td>6</td><td>OUTPUT HIGH</td><td>1022</td><td>3.297</td><td>1</td><td>推挽拉高</td></tr><tr><td>7</td><td>OUTPUT_OPEN_DRAIN LOW</td><td>0</td><td>0.000</td><td>0</td><td>开漏拉低</td></tr><tr><td>8</td><td>OUTPUT_OPEN_DRAIN HIGH</td><td>180</td><td>0.581</td><td>0</td><td>开漏高阻 + 无上拉，电平漂在中间偏低</td></tr></tbody></table><hr/><h3>4. GPIO 模式与外部场景对比总表</h3><p>下面用一张总表，横向对比“同一个 GPIO 模式在不同外部电阻场景下”的典型行为，便于在文章中一眼看出规律。</p><blockquote><p>说明：</p><ul><li>“低 / 高”指数字电平稳定为 0 / 1；</li><li>“中间电压”指 ADC 在 0.8–2.5 V 区间，属于分压或浮空状态；</li><li>“浮空/不稳定”指 ADC 明显在中间且 digitalRead 有抖动可能。</li></ul></blockquote><table><thead><tr><th>模式 / 场景</th><th>100 kΩ → GND</th><th>100 kΩ → VCC</th><th>浮空（ext=none）</th><th>15 kΩ → GND</th><th>15 kΩ → VCC</th></tr></thead><tbody><tr><td><strong>INPUT (floating)</strong></td><td>0 V，稳定低，完全由外部下拉决定</td><td>≈2.3 V，中间偏高，数字判高</td><td>0.4–0.6 V 浮动，数字判值不稳定</td><td>0 V，稳定低，下拉很强</td><td>≈3.2 V，稳定高，上拉很强</td></tr><tr><td><strong>INPUT_PULLUP</strong></td><td>≈2.1 V，中间偏高，数字判高，弱上拉与 100k 下拉分压</td><td>≈3.0 V，接近 VCC，内部+外部上拉并联更硬</td><td>≈2.8 V，稳定高，仅内部上拉</td><td>≈0.9 V，中间偏低，数字已判低，15k 压制内部上拉</td><td>≈3.27 V，稳定高，内部+15k 上拉都朝上</td></tr><tr><td><strong>INPUT_PULLDOWN</strong></td><td>0 V，稳定低，内部+外部都往下拉</td><td>≈0.87 V，中间偏低，数字判低</td><td>0 V，稳定低，仅内部下拉</td><td>0 V，稳定低，内部+15k 下拉都往下</td><td>≈2.38 V，中间偏高，数字已判高，15k 压制内部下拉</td></tr><tr><td><strong>INPUT_ANALOG</strong></td><td>0 V，只看到外部下拉</td><td>≈2.3 V，只看到外部上拉</td><td>0.7–0.8 V 左右，中间电压，浮空漂移</td><td>0 V，只看到外部 15k 下拉</td><td>≈3.21 V，只看到外部 15k 上拉</td></tr><tr><td><strong>OUTPUT LOW</strong></td><td>0 V，强拉低，压制 100k 下拉</td><td>0 V，强拉低，压制 100k 上拉</td><td>0 V，强拉低</td><td>0 V，强拉低，压制 15k 下拉</td><td>≈0 V，强拉低，压制 15k 上拉</td></tr><tr><td><strong>OUTPUT HIGH</strong></td><td>≈3.30 V，强拉高，压制 100k 下拉</td><td>≈3.30 V，强拉高，与 100k 上拉同向</td><td>≈3.30 V，强拉高</td><td>≈3.29 V，强拉高，压制 15k 下拉</td><td>≈3.30 V，强拉高，与 15k 上拉同向</td></tr><tr><td><strong>OPEN_DRAIN LOW</strong></td><td>0 V，下管导通，压制外部</td><td>0 V，下管导通，压制外部</td><td>0 V，下管导通</td><td>0 V，下管导通</td><td>≈0 V，下管导通</td></tr><tr><td><strong>OPEN_DRAIN HIGH（高阻）</strong></td><td>0 V，高阻 + 100k 下拉 → 低</td><td>≈2.3 V，高阻 + 100k 上拉 → 中间/偏高，高电平</td><td>0.6–0.8 V，中间电压，浮空漂移，数字多为低</td><td>0 V，高阻 + 15k 强下拉 → 低</td><td>≈3.2 V，高阻 + 15k 强上拉 → 稳定高</td></tr></tbody></table><h2>小结</h2><p>结合上面的完整表格，可以得出几条在结论（每条都能用上述数据佐证）：</p><ol><li><strong>内部上拉电阻量级在几十千欧，可以用“R_ext→GND + ADC 分压”反推出大致范围</strong><ul><li><code>R_ext=100 kΩ → GND</code> 时推算约 56.7 kΩ，<code>R_ext=15 kΩ → GND</code> 时推算约 40.6 kΩ，印证了“弱上拉”的工程经验。</li></ul></li><li><strong>外部电阻是“比拼阻值”的游戏：谁阻值小，谁主导节点电平</strong><ul><li>100 kΩ 下拉 vs 内部上拉：得到中间电压（约 2.1 V）；</li><li>15 kΩ 下拉 vs 内部上拉：节点被明显拉向 0 V，digitalRead 直接读 0。</li></ul></li><li><strong>当外部电阻和内部上/下拉连在同一侧<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>时，只能增强高/低电平，不能再用来估 R_up</strong><ul><li>比如 15 kΩ → VCC + INPUT_PULLUP，电压接近满刻度，只能说明“上拉更硬”，不适合再反算内部阻值。</li></ul></li><li><strong>浮空输入真的会乱飘，模拟值在 0.x V 区间抖动，数字判 0/1 都有可能</strong><ul><li><code>R_ext=none</code> 的多组数据表明，INPUT/INPUT_ANALOG 下 ADC 在 0.4–0.8 V 对应的计数间漂移，digitalRead 既有 0 也有 1，说明浮空脚高度不可靠。</li></ul></li><li><strong>推挽输出表现为几乎理想的电压源，轻松压住 15 kΩ、100 kΩ 这类负载</strong><ul><li>不论 100 kΩ 还是 15 kΩ 接到 VCC 或 GND，<code>OUTPUT HIGH/LOW</code> 电压几乎仍为理想的 0 / 3.3 V，佐证了推挽输出的强驱动能力。</li></ul></li><li><strong>开漏输出 HIGH 态的“高阻”本质：节点完全等于外部网络的结果</strong><ul><li><code>OD HIGH + R→GND</code> 得低电平，<code>OD HIGH + R→VCC</code> 得高电平，<code>OD HIGH + none</code> 得中间漂移电平，清楚展示了开漏 + 上拉构成“线与总线”的物理基础。</li></ul></li></ol><h2>代码部分</h2><pre><code class="language-cpp hljs vditor-linenumber" style="max-height:855px;"><span class="hljs-comment">/**
+ * @brief 示例主程序
+ *
+ * 通过编译开关选择运行不同的硬件实验：
+ * - <a href="https://m.hqchip.com/app/1721" target="_blank"><u>LED</u></a> 自动检测实验（使用 AutoDetect 框架）
+ * - GPIO 模式学习实验（使用 GpioModeLab）
+ */</span>
+
+<span class="hljs-meta">#<span class="hljs-meta-keyword">include</span> <span class="hljs-meta-string">&lt; PinNames.h &gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-meta-keyword">include</span> <span class="hljs-meta-string">"AutoDetect.h"</span></span>
+<span class="hljs-meta">#<span class="hljs-meta-keyword">include</span> <span class="hljs-meta-string">"GpioModeLab.h"</span></span>
+
+<span class="hljs-comment">/**
+ * @brief 实验选择开关
+ *
+ * 将对应宏改为 1/0 以选择要编译运行的实验。
+ */</span>
+<span class="hljs-meta">#<span class="hljs-meta-keyword">define</span> DEMO_LED_AUTODETECT   0   <span class="hljs-comment">///&lt; LED 自动检测演示</span></span>
+<span class="hljs-meta">#<span class="hljs-meta-keyword">define</span> DEMO_GPIO_MODE_LAB    1   <span class="hljs-comment">///&lt; GPIO 模式学习实验</span></span>
+
+<span class="hljs-meta">#<span class="hljs-meta-keyword">if</span> DEMO_LED_AUTODETECT</span>
+
+<span class="hljs-comment">/***************************************
+ *  LED 自动检测演示 (AutoDetect)
+ ***************************************/</span>
+
+<span class="hljs-comment">/**
+ * @brief 候选引脚列表
+ * 包含所有可能连接LED的引脚，排除已知用途的引脚
+ */</span>
+<span class="hljs-keyword">const</span> PinName allPins[] = {
+  <span class="hljs-comment">// Port A（去掉 PA_0: probe、PA_2/PA_3: USART2、PA_13/PA_14: SWD）</span>
+           PA_1,            PA_4,  PA_5,  PA_6,  PA_7,
+  PA_8,  PA_9,  PA_10,    PA_11, PA_12,        PA_15,
+  <span class="hljs-comment">// Port B</span>
+  PB_0,  PB_1,  PB_2,  PB_3,  PB_4,  PB_5,  PB_6,  PB_7,
+  PB_8,  PB_9,  PB_10, PB_11, PB_12, PB_13, PB_14, PB_15,
+  <span class="hljs-comment">// Port C</span>
+  PC_0,  PC_1,  PC_2,  PC_3,  PC_4,  PC_5,  PC_6,  PC_7,
+  PC_8,  PC_9,  PC_10, PC_11, PC_12, PC_13, PC_14, PC_15,
+  <span class="hljs-comment">// Port F</span>
+  PF_0,  PF_1,  PF_2,  PF_3,  PF_4,  PF_5,  PF_6,  PF_7,
+  PF_8,  PF_9,  PF_10, PF_11, PF_12, PF_13, PF_14, PF_15
+};
+
+<span class="hljs-comment">/**
+ * @brief 排除引脚列表
+ * 包含串口、SWD调试<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>等不能用于LED控制的引脚
+ */</span>
+<span class="hljs-keyword">const</span> PinName excludedPins[] = {
+  PA_2, PA_3,    <span class="hljs-comment">// USART2 (Serial2)</span>
+  PA_13, PA_14,  <span class="hljs-comment">// SWD</span>
+  PC_0           <span class="hljs-comment">// 已知 LED=PC_0，避免再次测试</span>
+};
+
+<span class="hljs-comment">/// @brief 候选引脚总数</span>
+<span class="hljs-keyword">const</span> <span class="hljs-keyword">int</span> ALL_PIN_COUNT      = <span class="hljs-built_in"><span class="hljs-keyword">sizeof</span></span>(allPins) / <span class="hljs-built_in"><span class="hljs-keyword">sizeof</span></span>(allPins[<span class="hljs-number">0</span>]);
+
+<span class="hljs-comment">/// @brief 排除引脚总数</span>
+<span class="hljs-keyword">const</span> <span class="hljs-keyword">int</span> EXCLUDED_PIN_COUNT = <span class="hljs-built_in"><span class="hljs-keyword">sizeof</span></span>(excludedPins) / <span class="hljs-built_in"><span class="hljs-keyword">sizeof</span></span>(excludedPins[<span class="hljs-number">0</span>]);
+
+<span class="hljs-comment">/// @brief 探头引脚，用于检测LED连接状态</span>
+<span class="hljs-keyword">const</span> PinName PROBE_PIN = PA_0;
+
+<span class="hljs-comment">/**
+ * @brief LED专用自动检测类
+ * 继承自AutoDetect框架，专门用于检测LED引脚并演示闪烁效果
+ */</span>
+<span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">LedDetect</span> :</span> <span class="hljs-keyword">public</span> AutoDetect {
+<span class="hljs-keyword">public</span>:
+  <span class="hljs-built_in">LedDetect</span>(<span class="hljs-keyword">const</span> PinName* pins,
+            <span class="hljs-keyword">int</span> pinCount,
+            <span class="hljs-keyword">const</span> PinName* excluded,
+            <span class="hljs-keyword">int</span> excludedCount,
+            PinName probePin,
+            Stream&amp; log)
+    : <span class="hljs-built_in">AutoDetect</span>(pins, pinCount, excluded, excludedCount, probePin, log)
+  {}
+
+<span class="hljs-keyword">protected</span>:
+  <span class="hljs-comment">/// @brief 打印 LED 自动检测的头信息。</span>
+  <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">logHeader</span><span class="hljs-params">()</span> <span class="hljs-keyword">override</span> </span>{
+    log_.<span class="hljs-built_in">println</span>(<span class="hljs-string">"LED pin auto-detect (AutoDetect framework)"</span>);
+    log_.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Please connect PA0 to LED low-side pad."</span>);
+  }
+
+  <span class="hljs-comment">/// @brief 找到 LED 引脚后，在已找到状态下循环闪灯（低电平亮）。</span>
+  <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">loopOnFound</span><span class="hljs-params">(PinName pin)</span> <span class="hljs-keyword">override</span> </span>{
+    <span class="hljs-built_in">digitalWrite</span>((<span class="hljs-keyword">int</span>)pin, LOW);   <span class="hljs-comment">// 亮</span>
+    <span class="hljs-built_in">delay</span>(<span class="hljs-number">300</span>);
+    <span class="hljs-built_in">digitalWrite</span>((<span class="hljs-keyword">int</span>)pin, HIGH);  <span class="hljs-comment">// 灭</span>
+    <span class="hljs-built_in">delay</span>(<span class="hljs-number">300</span>);
+  }
+
+  <span class="hljs-comment">/// @brief 找到 LED 引脚瞬间的动作：释放其它引脚，只保留 LED 为输出。</span>
+  <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">onFound</span><span class="hljs-params">(PinName pin)</span> <span class="hljs-keyword">override</span> </span>{
+    <span class="hljs-comment">// 1) 把所有候选脚恢复为输入，避免继续强推导致发热</span>
+    <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i = <span class="hljs-number">0</span>; i &lt; pinCount_; ++i) {
+      <span class="hljs-keyword">if</span> (<span class="hljs-built_in">isExcluded</span>(pins_[i])) <span class="hljs-keyword">continue</span>;
+      <span class="hljs-built_in">pinMode</span>((<span class="hljs-keyword">int</span>)pins_[i], INPUT);
+    }
+    <span class="hljs-comment">// 2) 只保留 LED 引脚为输出，高电平默认灭（低电平亮）</span>
+    <span class="hljs-built_in">pinMode</span>((<span class="hljs-keyword">int</span>)pin, OUTPUT);
+    <span class="hljs-built_in">digitalWrite</span>((<span class="hljs-keyword">int</span>)pin, HIGH);
+
+    foundPin_ = pin;
+  }
+};
+
+<span class="hljs-comment">/// @brief 全局检测器指针，指向具体的检测器实例</span>
+AutoDetect* g_detector = <span class="hljs-literal">nullptr</span>;
+
+<span class="hljs-comment">/**
+ * @brief setup：初始化串口<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>和LED检测器
+ */</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">setup</span><span class="hljs-params">()</span> </span>{
+  Serial2.<span class="hljs-built_in">begin</span>(<span class="hljs-number">115200</span>);
+  <span class="hljs-built_in">delay</span>(<span class="hljs-number">100</span>);
+
+  <span class="hljs-function"><span class="hljs-keyword">static</span> LedDetect <span class="hljs-title">ledDetector</span><span class="hljs-params">(allPins,
+                               ALL_PIN_COUNT,
+                               excludedPins,
+                               EXCLUDED_PIN_COUNT,
+                               PROBE_PIN,
+                               Serial2)</span></span>;
+  g_detector = &amp;ledDetector;
+
+  g_detector- &gt;<span class="hljs-built_in">begin</span>();
+}
+
+<span class="hljs-comment">/**
+ * @brief loop：执行LED引脚检测和闪烁演示
+ */</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">loop</span><span class="hljs-params">()</span> </span>{
+  <span class="hljs-keyword">if</span> (g_detector) {
+    g_detector- &gt;<span class="hljs-built_in">update</span>();
+  }
+}
+
+<span class="hljs-meta">#<span class="hljs-meta-keyword">elif</span> DEMO_GPIO_MODE_LAB</span>
+
+<span class="hljs-comment">/***************************************
+ *  GPIO 模式学习实验 (GpioModeLab)
+ ***************************************/</span>
+
+<span class="hljs-meta">#<span class="hljs-meta-keyword">include</span> <span class="hljs-meta-string">"MiniShell.h"</span></span>
+
+<span class="hljs-keyword">const</span> PinName TARGET_PIN    = PB_1;
+<span class="hljs-keyword">const</span> PinName PROBE_ADC_PIN = PA_0;
+
+<span class="hljs-function">GpioModeLab <span class="hljs-title">gpioLab</span><span class="hljs-params">(TARGET_PIN, PROBE_ADC_PIN, Serial2)</span></span>;
+<span class="hljs-function">MiniShell   <span class="hljs-title">shell</span><span class="hljs-params">(Serial2)</span></span>;
+
+<span class="hljs-keyword">static</span> <span class="hljs-keyword">bool</span> g_running = <span class="hljs-literal">false</span>;  <span class="hljs-comment">// 当前是否在跑一轮实验</span>
+<span class="hljs-keyword">static</span> <span class="hljs-keyword">bool</span> g_quit    = <span class="hljs-literal">false</span>;  <span class="hljs-comment">// 全局退出标志</span>
+
+<span class="hljs-comment">/**
+ * @brief 做一次“配置 + gpioLab.begin()”。
+ * @return true  正常开始一轮实验
+ *         false 用户在任意输入阶段按 q/Q，要求退出所有实验
+ */</span>
+<span class="hljs-function"><span class="hljs-keyword">static</span> <span class="hljs-keyword">bool</span> <span class="hljs-title">configureExperimentOnce</span><span class="hljs-params">()</span> </span>{
+  Serial2.<span class="hljs-built_in">println</span>(<span class="hljs-string">"========================================"</span>);
+  Serial2.<span class="hljs-built_in">println</span>(<span class="hljs-string">" GPIO Mode Lab - external resistor configuration"</span>);
+  Serial2.<span class="hljs-built_in">println</span>(<span class="hljs-string">"  (press 'q' at any time to quit)"</span>);
+  Serial2.<span class="hljs-built_in">println</span>(<span class="hljs-string">"----------------------------------------"</span>);
+  Serial2.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Connect TARGET_PIN &lt; - &gt; PROBE_ADC_PIN with a wire."</span>);
+  Serial2.<span class="hljs-built_in">println</span>();
+  Serial2.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Step 1: input external resistor value (Ohm)."</span>);
+  Serial2.<span class="hljs-built_in">println</span>(<span class="hljs-string">"        Enter 0 if no external resistor."</span>);
+  Serial2.<span class="hljs-built_in">print</span>  (<span class="hljs-string">"R_ext (Ohm) = "</span>);
+
+  <span class="hljs-keyword">long</span> r = <span class="hljs-number">0</span>;
+  <span class="hljs-keyword">if</span> (shell.<span class="hljs-built_in">readUInt</span>(r) == MiniShell::QUIT) {
+    Serial2.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Quit requested."</span>);
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;
+  }
+  Serial2.<span class="hljs-built_in">println</span>();  <span class="hljs-comment">// 换行</span>
+
+  GpioModeLab::ExternalNodeType type = GpioModeLab::EXT_NONE;
+
+  <span class="hljs-keyword">if</span> (r &lt;= <span class="hljs-number">0</span>) {
+    Serial2.<span class="hljs-built_in">println</span>(<span class="hljs-string">"No external resistor will be used (floating node)."</span>);
+  } <span class="hljs-keyword">else</span> {
+    Serial2.<span class="hljs-built_in">println</span>();
+    Serial2.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Step 2: choose how this resistor is connected:"</span>);
+    Serial2.<span class="hljs-built_in">println</span>(<span class="hljs-string">"  [1] node - &gt; R - &gt; GND"</span>);
+    Serial2.<span class="hljs-built_in">println</span>(<span class="hljs-string">"  [2] node - &gt; R - &gt; VCC"</span>);
+    Serial2.<span class="hljs-built_in">println</span>(<span class="hljs-string">"  [3] ignore resistor (treat as none)"</span>);
+    Serial2.<span class="hljs-built_in">print</span>  (<span class="hljs-string">"Select 1/2/3 (or 'q' to quit): "</span>);
+
+    <span class="hljs-keyword">char</span> sel = <span class="hljs-number">0</span>;
+    <span class="hljs-keyword">if</span> (shell.<span class="hljs-built_in">readMenuKey</span>(<span class="hljs-string">"123"</span>, sel) == MiniShell::QUIT) {
+      Serial2.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Quit requested."</span>);
+      <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;
+    }
+
+    <span class="hljs-keyword">if</span>      (sel == <span class="hljs-string">'1'</span>) type = GpioModeLab::EXT_TO_GND;
+    <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (sel == <span class="hljs-string">'2'</span>) type = GpioModeLab::EXT_TO_VCC;
+    <span class="hljs-keyword">else</span>                 type = GpioModeLab::EXT_NONE;
+  }
+
+  gpioLab.<span class="hljs-built_in">setExternal</span>((<span class="hljs-keyword">float</span>)r, type);
+  gpioLab.<span class="hljs-built_in">begin</span>();
+  <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;
+}
+
+<span class="hljs-comment">/**
+ * @brief setup：打印总说明。
+ */</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">setup</span><span class="hljs-params">()</span> </span>{
+  Serial2.<span class="hljs-built_in">begin</span>(<span class="hljs-number">115200</span>);
+  <span class="hljs-built_in">delay</span>(<span class="hljs-number">100</span>);
+
+  Serial2.<span class="hljs-built_in">println</span>(<span class="hljs-string">"GPIO Mode Lab - multi-run demo"</span>);
+  Serial2.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Use this firmware to learn GPIO modes."</span>);
+  Serial2.<span class="hljs-built_in">println</span>(<span class="hljs-string">"At ANY time, press 'q' or 'Q' to quit all experiments."</span>);
+  Serial2.<span class="hljs-built_in">println</span>();
+}
+
+<span class="hljs-comment">/**
+ * @brief loop：
+ *  - 没有在跑实验时：弹出菜单配置一轮；可多轮；
+ *  - 正在跑实验时：调用 gpioLab.update() 推进；
+ *  - 任意阶段输入 q/Q：在 MiniShell 里统一处理，结束循环。
+ */</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">loop</span><span class="hljs-params">()</span> </span>{
+  <span class="hljs-keyword">if</span> (g_quit) {
+    <span class="hljs-keyword">return</span>;
+  }
+
+  <span class="hljs-keyword">if</span> (!g_running) {
+    <span class="hljs-keyword">bool</span> ok = <span class="hljs-built_in">configureExperimentOnce</span>();
+    <span class="hljs-keyword">if</span> (!ok) {
+      g_quit = <span class="hljs-literal">true</span>;
+      Serial2.<span class="hljs-built_in">println</span>(<span class="hljs-string">"nExperiment loop stopped by user."</span>);
+      <span class="hljs-keyword">return</span>;
+    }
+    g_running = <span class="hljs-literal">true</span>;
+    <span class="hljs-keyword">return</span>;
+  }
+
+  gpioLab.<span class="hljs-built_in">update</span>();
+
+  <span class="hljs-keyword">if</span> (gpioLab.<span class="hljs-built_in">isFinished</span>()) {
+    g_running = <span class="hljs-literal">false</span>;
+    Serial2.<span class="hljs-built_in">println</span>(<span class="hljs-string">"n=== One experiment round finished. ==="</span>);
+    Serial2.<span class="hljs-built_in">println</span>(<span class="hljs-string">"You <a href="https://www.hqchip.com/app/2004" target="_blank"><u>can</u></a> start a new configuration, or press 'q' at any prompt to quit."</span>);
+    Serial2.<span class="hljs-built_in">println</span>();
+    <span class="hljs-built_in">delay</span>(<span class="hljs-number">500</span>);
+  }
+}
+
+<span class="hljs-meta">#<span class="hljs-meta-keyword">else</span></span>
+
+<span class="hljs-meta">#<span class="hljs-meta-keyword">warning</span> <span class="hljs-meta-string">"No demo enabled. Set DEMO_LED_AUTODETECT or DEMO_GPIO_MODE_LAB to 1."</span></span>
+
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">setup</span><span class="hljs-params">()</span> </span>{}
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">loop</span><span class="hljs-params">()</span>  </span>{}
+
+<span class="hljs-meta">#<span class="hljs-meta-keyword">endif</span></span>
+<span class="vditor-linenumber__rows"><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/></span></code></pre><pre><code class="language-cpp hljs vditor-linenumber" style="max-height:855px;"><span class="hljs-meta">#<span class="hljs-meta-keyword">include</span> <span class="hljs-meta-string">"GpioModeLab.h"</span></span>
+
+<span class="hljs-comment">/// ADC 满量程值（10 位 ADC：0..1023）</span>
+<span class="hljs-keyword">static</span> <span class="hljs-keyword">const</span> <span class="hljs-keyword">int</span>   ADC_MAX_COUNTS = <span class="hljs-number">1023</span>;
+<span class="hljs-comment">/// 参考电压（按 3.3V 算）</span>
+<span class="hljs-keyword">static</span> <span class="hljs-keyword">const</span> <span class="hljs-keyword">float</span> ADC_VREF       = <span class="hljs-number">3.3f</span>;
+
+<span class="hljs-comment">/**
+ * @brief 本实验中要依次测试的 GPIO 模式列表。
+ *
+ * - name       : 模式名称（日志打印用）
+ * - mode       : 传给 pinMode 的模式值
+ * - isOutput   : 是否为输出模式
+ * - driveLevel : 输出模式下的电平（0=LOW,1=HIGH,-1=不驱动）
+ */</span>
+<span class="hljs-keyword">static</span> <span class="hljs-keyword">const</span> GpioModeLab::ModeTest kModeTests[] = {
+  { <span class="hljs-string">"INPUT (floating)"</span>,        INPUT,             <span class="hljs-literal">false</span>, <span class="hljs-number">-1</span> },
+  { <span class="hljs-string">"INPUT_PULLUP"</span>,            INPUT_PULLUP,      <span class="hljs-literal">false</span>, <span class="hljs-number">-1</span> },
+  { <span class="hljs-string">"INPUT_PULLDOWN"</span>,          INPUT_PULLDOWN,    <span class="hljs-literal">false</span>, <span class="hljs-number">-1</span> },
+  { <span class="hljs-string">"INPUT_ANALOG"</span>,            INPUT_ANALOG,      <span class="hljs-literal">false</span>, <span class="hljs-number">-1</span> },
+  { <span class="hljs-string">"OUTPUT LOW"</span>,              OUTPUT,            <span class="hljs-literal">true</span>,   <span class="hljs-number">0</span> },
+  { <span class="hljs-string">"OUTPUT HIGH"</span>,             OUTPUT,            <span class="hljs-literal">true</span>,   <span class="hljs-number">1</span> },
+  { <span class="hljs-string">"OUTPUT_OPEN_DRAIN LOW"</span>,   OUTPUT_OPEN_DRAIN, <span class="hljs-literal">true</span>,   <span class="hljs-number">0</span> },
+  { <span class="hljs-string">"OUTPUT_OPEN_DRAIN HIGH"</span>,  OUTPUT_OPEN_DRAIN, <span class="hljs-literal">true</span>,   <span class="hljs-number">1</span> },
+};
+
+GpioModeLab::<span class="hljs-built_in">GpioModeLab</span>(PinName targetPin,
+                         PinName probeA<a href="https://m.hqchip.com/app/1703" target="_blank"><u>dc</u></a>Pin,
+                         Stream&amp; log)
+  : <span class="hljs-built_in">targetPin_</span>(targetPin),
+    <span class="hljs-built_in">probeAdcPin_</span>(probeAdcPin),
+    <span class="hljs-built_in">log_</span>(log),
+    <span class="hljs-built_in">tests_</span>(kModeTests),
+    <span class="hljs-built_in">testCount_</span>(<span class="hljs-built_in"><span class="hljs-keyword">sizeof</span></span>(kModeTests) / <span class="hljs-built_in"><span class="hljs-keyword">sizeof</span></span>(kModeTests[<span class="hljs-number">0</span>])),
+    <span class="hljs-built_in">currentIndex_</span>(<span class="hljs-number">0</span>),
+    <span class="hljs-built_in">finished_</span>(<span class="hljs-literal">false</span>),
+    <span class="hljs-built_in">extResOhms_</span>(<span class="hljs-number">0.0f</span>),
+    <span class="hljs-built_in">extType_</span>(EXT_NONE)
+{}
+
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">GpioModeLab::setExternal</span><span class="hljs-params">(<span class="hljs-keyword">float</span> resistorOhms, ExternalNodeType type)</span> </span>{
+  <span class="hljs-keyword">if</span> (resistorOhms &lt;= <span class="hljs-number">0.0f</span> || type == EXT_NONE) {
+    extResOhms_ = <span class="hljs-number">0.0f</span>;
+    extType_    = EXT_NONE;
+  } <span class="hljs-keyword">else</span> {
+    extResOhms_ = resistorOhms;
+    extType_    = type;
+  }
+}
+
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">GpioModeLab::begin</span><span class="hljs-params">()</span> </span>{
+  finished_     = <span class="hljs-literal">false</span>;
+  currentIndex_ = <span class="hljs-number">0</span>;
+
+  log_.<span class="hljs-built_in">println</span>(<span class="hljs-string">"========================================"</span>);
+  log_.<span class="hljs-built_in">println</span>(<span class="hljs-string">" GPIO Mode Lab - learn GPIO modes"</span>);
+  log_.<span class="hljs-built_in">println</span>(<span class="hljs-string">"  - targetPin  : PB1 (default in sketch)"</span>);
+  log_.<span class="hljs-built_in">println</span>(<span class="hljs-string">"  - probeAdcPin: PA0 (ADC)"</span>);
+  log_.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Please connect TARGET_PIN &lt; - &gt; PROBE_ADC_PIN with a wire."</span>);
+
+  log_.<span class="hljs-built_in">print</span>(<span class="hljs-string">"External wiring: "</span>);
+  <span class="hljs-keyword">if</span> (extType_ == EXT_NONE || extResOhms_ &lt;= <span class="hljs-number">0.0f</span>) {
+    log_.<span class="hljs-built_in">println</span>(<span class="hljs-string">"no external resistor (node floating)."</span>);
+  } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (extType_ == EXT_TO_GND) {
+    log_.<span class="hljs-built_in">print</span>(<span class="hljs-string">"node - &gt; "</span>);
+    log_.<span class="hljs-built_in">print</span>(extResOhms_, <span class="hljs-number">0</span>);
+    log_.<span class="hljs-built_in">println</span>(<span class="hljs-string">" Ohm - &gt; GND."</span>);
+  } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (extType_ == EXT_TO_VCC) {
+    log_.<span class="hljs-built_in">print</span>(<span class="hljs-string">"node - &gt; "</span>);
+    log_.<span class="hljs-built_in">print</span>(extResOhms_, <span class="hljs-number">0</span>);
+    log_.<span class="hljs-built_in">println</span>(<span class="hljs-string">" Ohm - &gt; VCC."</span>);
+  }
+  log_.<span class="hljs-built_in">println</span>(<span class="hljs-string">"========================================"</span>);
+}
+
+<span class="hljs-comment">/**
+ * @brief 对探头 ADC 引脚进行多次采样并取平均值。
+ */</span>
+<span class="hljs-function"><span class="hljs-keyword">int</span> <span class="hljs-title">GpioModeLab::readAdcAverage</span><span class="hljs-params">(<span class="hljs-keyword">uint8_t</span> samples)</span> </span>{
+  <span class="hljs-keyword">long</span> sum = <span class="hljs-number">0</span>;
+  <span class="hljs-built_in">pinMode</span>((<span class="hljs-keyword">int</span>)probeAdcPin_, INPUT_ANALOG);
+  <span class="hljs-built_in">delay</span>(<span class="hljs-number">2</span>);
+
+  <span class="hljs-keyword">for</span> (<span class="hljs-keyword">uint8_t</span> i = <span class="hljs-number">0</span>; i &lt; samples; ++i) {
+    sum += <span class="hljs-built_in">analogRead</span>((<span class="hljs-keyword">int</span>)probeAdcPin_);
+    <span class="hljs-built_in">delay</span>(<span class="hljs-number">2</span>);
+  }
+  <span class="hljs-keyword">return</span> (<span class="hljs-keyword">int</span>)(sum / samples);
+}
+
+<span class="hljs-comment">/**
+ * @brief 根据 ADC 原始值粗略判断电平状态。
+ */</span>
+<span class="hljs-function"><span class="hljs-keyword">int</span> <span class="hljs-title">GpioModeLab::classifyLevel</span><span class="hljs-params">(<span class="hljs-keyword">int</span> rawAdc)</span> <span class="hljs-keyword">const</span> </span>{
+  <span class="hljs-keyword">const</span> <span class="hljs-keyword">int</span> lowTh  = ADC_MAX_COUNTS / <span class="hljs-number">4</span>;       <span class="hljs-comment">// ≈ 256</span>
+  <span class="hljs-keyword">const</span> <span class="hljs-keyword">int</span> highTh = (ADC_MAX_COUNTS * <span class="hljs-number">3</span>) / <span class="hljs-number">4</span>; <span class="hljs-comment">// ≈ 768</span>
+
+  <span class="hljs-keyword">if</span> (rawAdc &lt; lowTh)  <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>; <span class="hljs-comment">// LOW</span>
+  <span class="hljs-keyword">if</span> (rawAdc &gt; highTh) <span class="hljs-keyword">return</span> <span class="hljs-number">1</span>; <span class="hljs-comment">// HIGH</span>
+  <span class="hljs-keyword">return</span> <span class="hljs-number">2</span>;                      <span class="hljs-comment">// MID / unknown</span>
+}
+
+<span class="hljs-comment">/**
+ * @brief 打印单次模式测试的结果，并给出英文说明。
+ */</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">GpioModeLab::printResult</span><span class="hljs-params">(<span class="hljs-keyword">const</span> ModeTest&amp; t,
+                              <span class="hljs-keyword">int</span> rawAdc,
+                              <span class="hljs-keyword">int</span> digitalLevel,
+                              <span class="hljs-keyword">int</span> idx)</span>
+</span>{
+  <span class="hljs-keyword">int</span> cls = <span class="hljs-built_in">classifyLevel</span>(rawAdc);
+
+  log_.<span class="hljs-built_in">print</span>(<span class="hljs-string">"n["</span>);
+  log_.<span class="hljs-built_in">print</span>(idx + <span class="hljs-number">1</span>);
+  log_.<span class="hljs-built_in">print</span>(<span class="hljs-string">"/"</span>);
+  log_.<span class="hljs-built_in">print</span>(testCount_);
+  log_.<span class="hljs-built_in">print</span>(<span class="hljs-string">"] Mode = "</span>);
+  log_.<span class="hljs-built_in">println</span>(t.name);
+
+  <span class="hljs-keyword">float</span> volts = (<span class="hljs-keyword">float</span>)rawAdc * ADC_VREF / (<span class="hljs-keyword">float</span>)ADC_MAX_COUNTS;
+
+  log_.<span class="hljs-built_in">print</span>(<span class="hljs-string">"  ADC avg   = "</span>);
+  log_.<span class="hljs-built_in">print</span>(rawAdc);
+  log_.<span class="hljs-built_in">print</span>(<span class="hljs-string">"  ("</span>);
+  log_.<span class="hljs-built_in">print</span>(volts, <span class="hljs-number">3</span>);
+  log_.<span class="hljs-built_in">print</span>(<span class="hljs-string">" V)  - &gt; "</span>);
+
+  <span class="hljs-keyword">if</span> (cls == <span class="hljs-number">0</span>)      log_.<span class="hljs-built_in">print</span>(<span class="hljs-string">"LOW"</span>);
+  <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (cls == <span class="hljs-number">1</span>) log_.<span class="hljs-built_in">print</span>(<span class="hljs-string">"HIGH"</span>);
+  <span class="hljs-keyword">else</span>               log_.<span class="hljs-built_in">print</span>(<span class="hljs-string">"MID/unknown"</span>);
+
+  log_.<span class="hljs-built_in">print</span>(<span class="hljs-string">"n  digitalRead = "</span>);
+  log_.<span class="hljs-built_in">print</span>(digitalLevel);
+  log_.<span class="hljs-built_in">println</span>();
+
+  <span class="hljs-comment">// 简单英文说明（详细中文可以看源码注释）</span>
+  log_.<span class="hljs-built_in">print</span>(<span class="hljs-string">"  info: "</span>);
+  <span class="hljs-keyword">if</span> (!t.isOutput &amp;&amp; t.mode == INPUT &amp;&amp; t.driveLevel &lt; <span class="hljs-number">0</span>) {
+    log_.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Digital input, floating (no pull). High imp<a href="https://www.elecfans.com/v/tag/1053/" target="_blank"><u>eda</u></a>nce, level decided by external circuit."</span>);
+  } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (!t.isOutput &amp;&amp; t.mode == INPUT_PULLUP) {
+    log_.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Digital input with internal pull-up (~tens of kOhm) to VCC. Good for buttons, avoids floating."</span>);
+  } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (!t.isOutput &amp;&amp; t.mode == INPUT_PULLDOWN) {
+    log_.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Digital input with internal pull-down to GND. Default level is low."</span>);
+  } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (!t.isOutput &amp;&amp; t.mode == INPUT_ANALOG) {
+    log_.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Analog input: digital buffer off, only ADC path enabled. Used for ADC measurement."</span>);
+  } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (t.isOutput &amp;&amp; t.mode == OUTPUT &amp;&amp; t.driveLevel == <span class="hljs-number">0</span>) {
+    log_.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Push-pull output, driving LOW. Strongly sinks current to GND."</span>);
+  } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (t.isOutput &amp;&amp; t.mode == OUTPUT &amp;&amp; t.driveLevel == <span class="hljs-number">1</span>) {
+    log_.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Push-pull output, driving HIGH. Strongly sources current to VCC."</span>);
+  } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (t.isOutput &amp;&amp; t.mode == OUTPUT_OPEN_DRAIN &amp;&amp; t.driveLevel == <span class="hljs-number">0</span>) {
+    log_.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Open-drain output, pulling LOW (transistor to GND on)."</span>);
+  } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (t.isOutput &amp;&amp; t.mode == OUTPUT_OPEN_DRAIN &amp;&amp; t.driveLevel == <span class="hljs-number">1</span>) {
+    log_.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Open-drain output, HIGH = high-Z. Level decided by external pull-up/down."</span>);
+  } <span class="hljs-keyword">else</span> {
+    log_.<span class="hljs-built_in">println</span>(<span class="hljs-string">"Uncategorized mode."</span>);
+  }
+
+  <span class="hljs-comment">// 只有在“节点通过已知电阻接 GND + INPUT_PULLUP”时，用分压估算内部上拉电阻</span>
+  <span class="hljs-keyword">if</span> (!t.isOutput &amp;&amp;
+      t.mode == INPUT_PULLUP &amp;&amp;
+      extType_ == EXT_TO_GND &amp;&amp;
+      extResOhms_ &gt; <span class="hljs-number">0.0f</span> &amp;&amp;
+      rawAdc &gt; <span class="hljs-number">0</span> &amp;&amp;
+      rawAdc &lt; ADC_MAX_COUNTS) {
+
+    <span class="hljs-keyword">float</span> ratio = (<span class="hljs-keyword">float</span>)rawAdc / (<span class="hljs-keyword">float</span>)ADC_MAX_COUNTS; <span class="hljs-comment">// Vnode / Vref</span>
+    <span class="hljs-comment">// Vnode / Vref = Rdown / (Rup + Rdown)  = &gt;  Rup = Rdown * (1/ratio - 1)</span>
+    <span class="hljs-keyword">float</span> rup   = extResOhms_ * (<span class="hljs-number">1.0f</span> / ratio - <span class="hljs-number">1.0f</span>);
+
+    log_.<span class="hljs-built_in">print</span>(<span class="hljs-string">"  Est. internal pull-up ~= "</span>);
+    <span class="hljs-keyword">if</span> (rup &gt; <span class="hljs-number">1000.0f</span>) {
+      log_.<span class="hljs-built_in">print</span>(rup / <span class="hljs-number">1000.0f</span>, <span class="hljs-number">1</span>);
+      log_.<span class="hljs-built_in">println</span>(<span class="hljs-string">" kOhm"</span>);
+    } <span class="hljs-keyword">else</span> {
+      log_.<span class="hljs-built_in">print</span>(rup, <span class="hljs-number">1</span>);
+      log_.<span class="hljs-built_in">println</span>(<span class="hljs-string">" Ohm"</span>);
+    }
+  }
+}
+
+<span class="hljs-comment">/**
+ * @brief 执行下一步模式测试。
+ */</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">GpioModeLab::update</span><span class="hljs-params">()</span> </span>{
+  <span class="hljs-keyword">if</span> (finished_) {
+    <span class="hljs-built_in">delay</span>(<span class="hljs-number">200</span>);
+    <span class="hljs-keyword">return</span>;
+  }
+
+  <span class="hljs-keyword">if</span> (currentIndex_ &gt;= testCount_) {
+    finished_ = <span class="hljs-literal">true</span>;
+    log_.<span class="hljs-built_in">println</span>(<span class="hljs-string">"nAll GPIO mode tests finished."</span>);
+    <span class="hljs-keyword">return</span>;
+  }
+
+  <span class="hljs-keyword">const</span> ModeTest&amp; t = tests_[currentIndex_];
+
+  <span class="hljs-comment">// 1. 配置目标引脚模式</span>
+  <span class="hljs-built_in">pinMode</span>((<span class="hljs-keyword">int</span>)targetPin_, t.mode);
+  <span class="hljs-built_in">delay</span>(<span class="hljs-number">5</span>);
+
+  <span class="hljs-comment">// 2. 若为输出模式，设置输出电平</span>
+  <span class="hljs-keyword">if</span> (t.isOutput &amp;&amp; t.driveLevel &gt;= <span class="hljs-number">0</span>) {
+    <span class="hljs-built_in">digitalWrite</span>((<span class="hljs-keyword">int</span>)targetPin_, t.driveLevel ? HIGH : LOW);
+  }
+
+  <span class="hljs-built_in">delay</span>(<span class="hljs-number">10</span>); <span class="hljs-comment">// 等待电平稳定</span>
+
+  <span class="hljs-comment">// 3. 采样 ADC 平均值</span>
+  <span class="hljs-keyword">int</span> rawAdc = <span class="hljs-built_in">readAdcAverage</span>(<span class="hljs-number">16</span>);
+
+  <span class="hljs-comment">// 4. 再以数字输入方式读取一次</span>
+  <span class="hljs-built_in">pinMode</span>((<span class="hljs-keyword">int</span>)probeAdcPin_, INPUT);
+  <span class="hljs-built_in">delay</span>(<span class="hljs-number">2</span>);
+  <span class="hljs-keyword">int</span> dig = <span class="hljs-built_in">digitalRead</span>((<span class="hljs-keyword">int</span>)probeAdcPin_);
+
+  <span class="hljs-comment">// 5. 打印结果</span>
+  <span class="hljs-built_in">printResult</span>(t, rawAdc, dig, currentIndex_);
+
+  currentIndex_++;
+  <span class="hljs-built_in">delay</span>(<span class="hljs-number">300</span>); <span class="hljs-comment">// 模式之间稍作停顿</span>
+}
+<span class="vditor-linenumber__rows"><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/></span></code></pre><pre><code class="language-cpp hljs vditor-linenumber" style="max-height:855px;"><span class="hljs-meta">#<span class="hljs-meta-keyword">pragma</span> once</span>
+
+<span class="hljs-meta">#<span class="hljs-meta-keyword">include</span> <span class="hljs-meta-string">&lt; Arduino.h &gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-meta-keyword">include</span> <span class="hljs-meta-string">&lt; PinNames.h &gt;</span></span>
+
+<span class="hljs-comment">/**
+ * @brief GPIO 模式实验：在一个目标引脚上依次配置不同模式，
+ *        并通过一个 ADC 探头引脚采样电压，用于学习各模式的差异。
+ */</span>
+<span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">GpioModeLab</span> {</span>
+<span class="hljs-keyword">public</span>:
+  <span class="hljs-comment">/**
+   * @brief 单个模式测试描述。
+   */</span>
+  <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">ModeTest</span> {</span>
+    <span class="hljs-keyword">const</span> <span class="hljs-keyword">char</span>* name;      <span class="hljs-comment">///&lt; 模式名称</span>
+    <span class="hljs-keyword">uint8_t</span>     mode;      <span class="hljs-comment">///&lt; pinMode 使用的模式值</span>
+    <span class="hljs-keyword">bool</span>        isOutput;  <span class="hljs-comment">///&lt; 是否为输出模式</span>
+    <span class="hljs-keyword">int</span>         driveLevel;<span class="hljs-comment">///&lt; 输出电平：0=LOW,1=HIGH,-1=不驱动</span>
+  };
+
+  <span class="hljs-comment">/**
+   * @brief 外部接线类型
+   *
+   * - EXT_NONE   : 节点无额外电阻
+   * - EXT_TO_GND : 节点 - &gt; R - &gt; GND
+   * - EXT_TO_VCC : 节点 - &gt; R - &gt; VCC
+   */</span>
+  <span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">ExternalNodeType</span> {</span>
+    EXT_NONE = <span class="hljs-number">0</span>,
+    EXT_TO_GND,
+    EXT_TO_VCC
+  };
+
+  <span class="hljs-comment">/**
+   * @brief 构造函数
+   * @pa<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>ram</u></a> targetPin   被测试的 GPIO 引脚（会被配置为各种模式）
+   * @param probeAdcPin 用于 ADC 采样的探头引脚（只读电压）
+   * @param log         日志输出流（例如 Serial2）
+   */</span>
+  <span class="hljs-built_in">GpioModeLab</span>(PinName targetPin, PinName probeAdcPin, Stream&amp; log);
+
+  <span class="hljs-comment">/**
+   * @brief 配置外部电阻及其连接方式。
+   *
+   * @param resistorOhms 电阻值（单位：欧姆）。&lt;=0 表示无电阻。
+   * @param type         连接方式：EXT_NONE / EXT_TO_GND / EXT_TO_VCC
+   */</span>
+  <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">setExternal</span><span class="hljs-params">(<span class="hljs-keyword">float</span> resistorOhms, ExternalNodeType type)</span></span>;
+
+  <span class="hljs-comment">/**
+   * @brief 初始化实验（在 setup() 中调用）。
+   */</span>
+  <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">begin</span><span class="hljs-params">()</span></span>;
+
+  <span class="hljs-comment">/**
+   * @brief 运行实验的下一步（在 loop() 中反复调用）。
+   */</span>
+  <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">update</span><span class="hljs-params">()</span></span>;
+
+  <span class="hljs-comment">/**
+   * @brief 实验是否已经完成所有模式测试。
+   */</span>
+  <span class="hljs-function"><span class="hljs-keyword">bool</span> <span class="hljs-title">isFinished</span><span class="hljs-params">()</span> <span class="hljs-keyword">const</span> </span>{ <span class="hljs-keyword">return</span> finished_; }
+
+<span class="hljs-keyword">private</span>:
+  PinName targetPin_;
+  PinName probeAdcPin_;
+  Stream&amp; log_;
+
+  <span class="hljs-keyword">const</span> ModeTest* tests_;
+  <span class="hljs-keyword">int</span>             testCount_;
+  <span class="hljs-keyword">int</span>             currentIndex_;
+  <span class="hljs-keyword">bool</span>            finished_;
+
+  <span class="hljs-comment">// 外部电阻配置</span>
+  <span class="hljs-keyword">float</span>            extResOhms_; <span class="hljs-comment">///&lt; 外接电阻值（欧姆），0 表示无</span>
+  ExternalNodeType extType_;    <span class="hljs-comment">///&lt; 外接电阻接到哪：GND / VCC / none</span>
+
+  <span class="hljs-function"><span class="hljs-keyword">int</span>  <span class="hljs-title">readAdcAverage</span><span class="hljs-params">(<span class="hljs-keyword">uint8_t</span> samples)</span></span>;
+  <span class="hljs-function"><span class="hljs-keyword">int</span>  <span class="hljs-title">classifyLevel</span><span class="hljs-params">(<span class="hljs-keyword">int</span> rawAdc)</span> <span class="hljs-keyword">const</span></span>;
+  <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">printResult</span><span class="hljs-params">(<span class="hljs-keyword">const</span> ModeTest&amp; t, <span class="hljs-keyword">int</span> rawAdc, <span class="hljs-keyword">int</span> digitalLevel, <span class="hljs-keyword">int</span> idx)</span></span>;
+};
+<span class="vditor-linenumber__rows"><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/></span></code></pre><pre><code class="language-cpp hljs vditor-linenumber" style="max-height:855px;"><span class="hljs-meta">#<span class="hljs-meta-keyword">include</span> <span class="hljs-meta-string">"MiniShell.h"</span></span>
+
+<span class="hljs-function">MiniShell::Result <span class="hljs-title">MiniShell::readLine</span><span class="hljs-params">(<span class="hljs-keyword">char</span>* buf, <span class="hljs-keyword">size_t</span> len)</span> </span>{
+  <span class="hljs-keyword">size_t</span> idx = <span class="hljs-number">0</span>;
+
+  <span class="hljs-keyword">while</span> (<span class="hljs-literal">true</span>) {
+    <span class="hljs-keyword">if</span> (!io_.<span class="hljs-built_in">av<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>ai</u></a>lable</span>()) <span class="hljs-keyword">continue</span>;
+
+    <span class="hljs-keyword">char</span> c = io_.<span class="hljs-built_in">read</span>();
+
+    <span class="hljs-comment">// 全局退出命令</span>
+    <span class="hljs-keyword">if</span> (c == <span class="hljs-string">'q'</span> || c == <span class="hljs-string">'Q'</span>) {
+      io_.<span class="hljs-built_in">println</span>();
+      <span class="hljs-keyword">return</span> QUIT;
+    }
+
+    <span class="hljs-comment">// 回车/换行：一行结束</span>
+    <span class="hljs-keyword">if</span> (c == <span class="hljs-string">'r'</span> || c == <span class="hljs-string">'n'</span>) {
+      <span class="hljs-keyword">if</span> (idx &gt; <span class="hljs-number">0</span>) {
+        buf[idx] = <span class="hljs-string">'�'</span>;
+        <span class="hljs-keyword">return</span> OK;
+      }
+      <span class="hljs-comment">// 空行则继续读</span>
+      <span class="hljs-keyword">continue</span>;
+    }
+
+    <span class="hljs-comment">// 退格</span>
+    <span class="hljs-keyword">if</span> (c == <span class="hljs-string">'b'</span> || c == <span class="hljs-number">127</span>) {
+      <span class="hljs-keyword">if</span> (idx &gt; <span class="hljs-number">0</span>) {
+        idx--;
+        io_.<span class="hljs-built_in">print</span>(<span class="hljs-string">"b b"</span>);
+      }
+      <span class="hljs-keyword">continue</span>;
+    }
+
+    <span class="hljs-comment">// 普通字符，回显并存入缓冲</span>
+    <span class="hljs-keyword">if</span> (idx &lt; len - <span class="hljs-number">1</span>) {
+      buf[idx++] = c;
+      io_.<span class="hljs-built_in">print</span>(c);
+    }
+  }
+}
+
+<span class="hljs-function">MiniShell::Result <span class="hljs-title">MiniShell::readUInt</span><span class="hljs-params">(<span class="hljs-keyword">long</span>&amp; value)</span> </span>{
+  <span class="hljs-keyword">char</span> line[<span class="hljs-number">16</span>];
+  Result r = <span class="hljs-built_in">readLine</span>(line, <span class="hljs-built_in"><span class="hljs-keyword">sizeof</span></span>(line));
+  <span class="hljs-keyword">if</span> (r != OK) <span class="hljs-keyword">return</span> r;
+  value = <span class="hljs-built_in">atol</span>(line);
+  <span class="hljs-keyword">return</span> OK;
+}
+
+<span class="hljs-function">MiniShell::Result <span class="hljs-title">MiniShell::readMenuKey</span><span class="hljs-params">(<span class="hljs-keyword">const</span> <span class="hljs-keyword">char</span>* valid, <span class="hljs-keyword">char</span>&amp; outKey)</span> </span>{
+  <span class="hljs-keyword">while</span> (<span class="hljs-literal">true</span>) {
+    <span class="hljs-keyword">if</span> (!io_.<span class="hljs-built_in">available</span>()) <span class="hljs-keyword">continue</span>;
+    <span class="hljs-keyword">char</span> c = io_.<span class="hljs-built_in">read</span>();
+
+    <span class="hljs-keyword">if</span> (c == <span class="hljs-string">'q'</span> || c == <span class="hljs-string">'Q'</span>) {
+      io_.<span class="hljs-built_in">println</span>();
+      <span class="hljs-keyword">return</span> QUIT;
+    }
+
+    <span class="hljs-comment">// 检查是否在候选集合中</span>
+    <span class="hljs-keyword">for</span> (<span class="hljs-keyword">const</span> <span class="hljs-keyword">char</span>* p = valid; *p; ++p) {
+      <span class="hljs-keyword">if</span> (c == *p) {
+        io_.<span class="hljs-built_in">println</span>(c);
+        outKey = c;
+        <span class="hljs-keyword">return</span> OK;
+      }
+    }
+  }
+}
+<span class="vditor-linenumber__rows"><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/></span></code></pre><pre><code class="language-cpp hljs vditor-linenumber" style="max-height:855px;"><span class="hljs-meta">#<span class="hljs-meta-keyword">pragma</span> once</span>
+
+<span class="hljs-meta">#<span class="hljs-meta-keyword">include</span> <span class="hljs-meta-string">&lt; Arduino.h &gt;</span></span>
+
+<span class="hljs-comment">/**
+ * @brief 串口迷你命令行：统一处理行输入、菜单输入和 q/Q 退出。
+ */</span>
+<span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">MiniShell</span> {</span>
+<span class="hljs-keyword">public</span>:
+  <span class="hljs-comment">/// 输入结果</span>
+  <span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">Result</span> {</span>
+    OK = <span class="hljs-number">0</span>,   <span class="hljs-comment">///&lt; 正常返回</span>
+    QUIT      <span class="hljs-comment">///&lt; 用户输入 q/Q 请求退出</span>
+  };
+
+  <span class="hljs-function"><span class="hljs-keyword">explicit</span> <span class="hljs-title">MiniShell</span><span class="hljs-params">(Stream&amp; io)</span> : io_(io) {</span>}
+
+  <span class="hljs-comment">/**
+   * @brief 读取一整行文本（回车结束），支持退格、回显。
+   *        若过程中收到 q/Q，则返回 QUIT。
+   *
+   * @param buf 缓冲区
+   * @param len 缓冲区长度
+   */</span>
+  <span class="hljs-function">Result <span class="hljs-title">readLine</span><span class="hljs-params">(<span class="hljs-keyword">char</span>* buf, <span class="hljs-keyword">size_t</span> len)</span></span>;
+
+  <span class="hljs-comment">/**
+   * @brief 读取一个正整数（十进制），回车结束。
+   *        若过程中收到 q/Q，则返回 QUIT。
+   *
+   * @param value 输出的整数
+   */</span>
+  <span class="hljs-function">Result <span class="hljs-title">readUInt</span><span class="hljs-params">(<span class="hljs-keyword">long</span>&amp; value)</span></span>;
+
+  <span class="hljs-comment">/**
+   * @brief 从给定候选集合中读取一个按键（例如 "123"），
+   *        若收到 q/Q，则返回 QUIT。
+   *
+   * @param valid    C 字符串，如 "123"
+   * @param outKey   输出选中的字符
+   */</span>
+  <span class="hljs-function">Result <span class="hljs-title">readMenuKey</span><span class="hljs-params">(<span class="hljs-keyword">const</span> <span class="hljs-keyword">char</span>* valid, <span class="hljs-keyword">char</span>&amp; outKey)</span></span>;
+
+<span class="hljs-keyword">private</span>:
+  Stream&amp; io_;
+};
+<span class="vditor-linenumber__rows"><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/></span></code></pre><pre><code class="language-cpp hljs vditor-linenumber" style="max-height:855px;"><span class="hljs-meta">#<span class="hljs-meta-keyword">pragma</span> once</span>
+
+<span class="hljs-meta">#<span class="hljs-meta-keyword">include</span> <span class="hljs-meta-string">&lt; Arduino.h &gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-meta-keyword">include</span> <span class="hljs-meta-string">&lt; PinNames.h &gt;</span></span>
+
+<span class="hljs-comment">/**
+ * @brief 通用自动检测框架
+ *
+ * 该类提供了一个通用的引脚自动检测框架，通过扫描候选引脚列表，
+ * 使用探头引脚检测特定条件，自动识别匹配的引脚。
+ * 支持排除特定引脚、自定义匹配规则和日志输出。
+ */</span>
+<span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">AutoDetect</span> {</span>
+<span class="hljs-keyword">public</span>:
+  <span class="hljs-comment">/**
+   * @brief 构造函数
+   *
+   * @param pins 候选引脚列表
+   * @param pinCount 候选引脚数量
+   * @param excluded 排除引脚列表
+   * @param excludedCount 排除引脚数量
+   * @param probePin 探头引脚
+   * @param log 日志输出流
+   */</span>
+  <span class="hljs-built_in">AutoDetect</span>(<span class="hljs-keyword">const</span> PinName* pins,
+             <span class="hljs-keyword">int</span> pinCount,
+             <span class="hljs-keyword">const</span> PinName* excluded,
+             <span class="hljs-keyword">int</span> excludedCount,
+             PinName probePin,
+             Stream&amp; log);
+
+  <span class="hljs-comment">/// @brief 析构函数</span>
+  <span class="hljs-keyword">virtual</span> ~<span class="hljs-built_in">AutoDetect</span>() {}
+
+  <span class="hljs-comment">/// @brief 初始化检测过程，在setup()中调用</span>
+  <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">begin</span><span class="hljs-params">()</span></span>;
+
+  <span class="hljs-comment">/// @brief 执行检测循环，在loop()中反复调用</span>
+  <span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">update</span><span class="hljs-params">()</span></span>;
+
+  <span class="hljs-comment">/// @brief 检查检测是否完成</span>
+  <span class="hljs-comment">/// @return true如果扫描完成，false如果仍在进行</span>
+  <span class="hljs-function"><span class="hljs-keyword">bool</span> <span class="hljs-title">isFinished</span><span class="hljs-params">()</span> <span class="hljs-keyword">const</span> </span>{ <span class="hljs-keyword">return</span> finished_; }
+
+  <span class="hljs-comment">/// @brief 检查是否找到匹配引脚</span>
+  <span class="hljs-comment">/// @return true如果找到匹配引脚，false否则</span>
+  <span class="hljs-function"><span class="hljs-keyword">bool</span> <span class="hljs-title">isFound</span><span class="hljs-params">()</span>    <span class="hljs-keyword">const</span> </span>{ <span class="hljs-keyword">return</span> found_; }
+
+  <span class="hljs-comment">/// @brief 获取找到的匹配引脚</span>
+  <span class="hljs-comment">/// @return 匹配的引脚名，如果未找到返回NC</span>
+  <span class="hljs-function">PinName <span class="hljs-title">getFoundPin</span><span class="hljs-params">()</span> <span class="hljs-keyword">const</span> </span>{ <span class="hljs-keyword">return</span> foundPin_; }
+
+<span class="hljs-keyword">protected</span>:
+  <span class="hljs-comment">// —— 可在子类中按需覆写的钩子 —— //</span>
+
+  <span class="hljs-comment">/// @brief 开始检测时打印头信息</span>
+  <span class="hljs-function"><span class="hljs-keyword">virtual</span> <span class="hljs-keyword">void</span> <span class="hljs-title">logHeader</span><span class="hljs-params">()</span></span>;
+
+  <span class="hljs-comment">/// @brief 测试引脚前打印信息</span>
+  <span class="hljs-function"><span class="hljs-keyword">virtual</span> <span class="hljs-keyword">void</span> <span class="hljs-title">logTestingPin</span><span class="hljs-params">(PinName pin)</span></span>;
+
+  <span class="hljs-comment">/// @brief 打印探头读取的电平值</span>
+  <span class="hljs-function"><span class="hljs-keyword">virtual</span> <span class="hljs-keyword">void</span> <span class="hljs-title">logProbeValues</span><span class="hljs-params">(<span class="hljs-keyword">int</span> vLow, <span class="hljs-keyword">int</span> vHigh)</span></span>;
+
+  <span class="hljs-comment">/// @brief 打印检测进度条</span>
+  <span class="hljs-function"><span class="hljs-keyword">virtual</span> <span class="hljs-keyword">void</span> <span class="hljs-title">logProgress</span><span class="hljs-params">(<span class="hljs-keyword">int</span> index, <span class="hljs-keyword">int</span> count)</span></span>;
+
+  <span class="hljs-comment">/// @brief 找到匹配引脚时打印信息</span>
+  <span class="hljs-function"><span class="hljs-keyword">virtual</span> <span class="hljs-keyword">void</span> <span class="hljs-title">logFound</span><span class="hljs-params">(PinName pin)</span></span>;
+
+  <span class="hljs-comment">/// @brief 扫描完成但未找到匹配时打印信息</span>
+  <span class="hljs-function"><span class="hljs-keyword">virtual</span> <span class="hljs-keyword">void</span> <span class="hljs-title">logFinishedNoFound</span><span class="hljs-params">()</span></span>;
+
+  <span class="hljs-comment">/// @brief 判断是否为匹配引脚，默认规则：探头电平变化</span>
+  <span class="hljs-comment">/// @return true如果匹配，false否则</span>
+  <span class="hljs-function"><span class="hljs-keyword">virtual</span> <span class="hljs-keyword">bool</span> <span class="hljs-title">isMatch</span><span class="hljs-params">(<span class="hljs-keyword">int</span> vLow, <span class="hljs-keyword">int</span> vHigh, PinName pin)</span></span>;
+
+  <span class="hljs-comment">/**
+   * @brief 找到匹配引脚时调用的钩子函数，由子类实现具体行为。
+   *
+   * @param pin 被判定为匹配的引脚。
+   */</span>
+  <span class="hljs-function"><span class="hljs-keyword">virtual</span> <span class="hljs-keyword">void</span> <span class="hljs-title">onFound</span><span class="hljs-params">(PinName pin)</span> </span>= <span class="hljs-number">0</span>;
+
+  <span class="hljs-comment">/// @brief 已找到匹配引脚后的循环行为，默认空实现</span>
+  <span class="hljs-function"><span class="hljs-keyword">virtual</span> <span class="hljs-keyword">void</span> <span class="hljs-title">loopOnFound</span><span class="hljs-params">(PinName pin)</span></span>;
+
+  <span class="hljs-comment">// 工具函数</span>
+  <span class="hljs-comment">/// @brief 检查引脚是否在排除列表中</span>
+  <span class="hljs-comment">/// @return true如果被排除，false否则</span>
+  <span class="hljs-function"><span class="hljs-keyword">bool</span> <span class="hljs-title">isExcluded</span><span class="hljs-params">(PinName p)</span> <span class="hljs-keyword">const</span></span>;
+
+  <span class="hljs-comment">/// @brief 获取引脚的<a href="https://www.hqchip.com/app/1808" target="_blank"><u>端口</u></a>字符（A, B, C等）</span>
+  <span class="hljs-comment">/// @return 端口字符</span>
+  <span class="hljs-function"><span class="hljs-keyword">char</span> <span class="hljs-title">portChar</span><span class="hljs-params">(PinName p)</span> <span class="hljs-keyword">const</span></span>;
+
+  <span class="hljs-comment">/// @brief 获取引脚的编号（0-15）</span>
+  <span class="hljs-comment">/// @return 引脚编号</span>
+  <span class="hljs-function"><span class="hljs-keyword">int</span>  <span class="hljs-title">pinNumber</span><span class="hljs-params">(PinName p)</span> <span class="hljs-keyword">const</span></span>;
+
+<span class="hljs-keyword">protected</span>:
+  <span class="hljs-keyword">const</span> PinName* pins_;
+  <span class="hljs-keyword">int</span>            pinCount_;
+  <span class="hljs-keyword">const</span> PinName* excluded_;
+  <span class="hljs-keyword">int</span>            excludedCount_;
+  PinName        probePin_;
+  Stream&amp;        log_;
+
+  <span class="hljs-keyword">int</span>     index_;
+  <span class="hljs-keyword">bool</span>    found_;
+  <span class="hljs-keyword">bool</span>    finished_;
+  PinName foundPin_;
+
+  <span class="hljs-keyword">static</span> <span class="hljs-keyword">const</span> <span class="hljs-keyword">int</span> PROGRESS_BAR_LEN = <span class="hljs-number">20</span>;
+};
+<span class="vditor-linenumber__rows"><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/></span></code></pre><pre><code class="language-cpp hljs vditor-linenumber" style="max-height:855px;"><span class="hljs-meta">#<span class="hljs-meta-keyword">include</span> <span class="hljs-meta-string">"AutoDetect.h"</span></span>
+
+AutoDetect::<span class="hljs-built_in">AutoDetect</span>(<span class="hljs-keyword">const</span> PinName* pins,
+                       <span class="hljs-keyword">int</span> pinCount,
+                       <span class="hljs-keyword">const</span> PinName* excluded,
+                       <span class="hljs-keyword">int</span> excludedCount,
+                       PinName probePin,
+                       Stream&amp; log)
+  : <span class="hljs-built_in">pins_</span>(pins),
+    <span class="hljs-built_in">pinCount_</span>(pinCount),
+    <span class="hljs-built_in">excluded_</span>(excluded),
+    <span class="hljs-built_in">excludedCount_</span>(excludedCount),
+    <span class="hljs-built_in">probePin_</span>(probePin),
+    <span class="hljs-built_in">log_</span>(log),
+    <span class="hljs-built_in">index_</span>(<span class="hljs-number">0</span>),
+    <span class="hljs-built_in">found_</span>(<span class="hljs-literal">false</span>),
+    <span class="hljs-built_in">finished_</span>(<span class="hljs-literal">false</span>),
+    <span class="hljs-built_in">foundPin_</span>(NC)
+{}
+
+<span class="hljs-comment">/// @brief 检查引脚是否在排除列表中，包括探头引脚</span>
+<span class="hljs-function"><span class="hljs-keyword">bool</span> <span class="hljs-title">AutoDetect::isExcluded</span><span class="hljs-params">(PinName p)</span> <span class="hljs-keyword">const</span> </span>{
+  <span class="hljs-keyword">if</span> (p == probePin_) <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;
+  <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i = <span class="hljs-number">0</span>; i &lt; excludedCount_; i++) {
+    <span class="hljs-keyword">if</span> (excluded_[i] == p) <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;
+  }
+  <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;
+}
+
+<span class="hljs-comment">/// @brief 获取引脚的端口字符，从PinName的高4位提取</span>
+<span class="hljs-function"><span class="hljs-keyword">char</span> <span class="hljs-title">AutoDetect::portChar</span><span class="hljs-params">(PinName p)</span> <span class="hljs-keyword">const</span> </span>{
+  <span class="hljs-keyword">return</span> <span class="hljs-string">'A'</span> + (p &gt; &gt; <span class="hljs-number">4</span>);  <span class="hljs-comment">// 高 4 位：port 号</span>
+}
+
+<span class="hljs-comment">/// @brief 获取引脚的编号，从PinName的低4位提取</span>
+<span class="hljs-function"><span class="hljs-keyword">int</span> <span class="hljs-title">AutoDetect::pinNumber</span><span class="hljs-params">(PinName p)</span> <span class="hljs-keyword">const</span> </span>{
+  <span class="hljs-keyword">return</span> p &amp; <span class="hljs-number">0xF</span>;         <span class="hljs-comment">// 低 4 位：pin 号</span>
+}
+
+<span class="hljs-comment">// —— 默认日志/行为实现，可在子类中覆写 —— //</span>
+
+<span class="hljs-comment">/// @brief 默认实现：打印检测开始信息</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">AutoDetect::logHeader</span><span class="hljs-params">()</span> </span>{
+  log_.<span class="hljs-built_in">println</span>(<span class="hljs-string">"AutoDetect start"</span>);
+}
+
+<span class="hljs-comment">/// @brief 默认实现：打印正在测试的引脚信息</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">AutoDetect::logTestingPin</span><span class="hljs-params">(PinName pin)</span> </span>{
+  log_.<span class="hljs-built_in">print</span>(<span class="hljs-string">"nTesting pin: "</span>);
+  log_.<span class="hljs-built_in">print</span>(<span class="hljs-built_in">portChar</span>(pin));
+  log_.<span class="hljs-built_in">print</span>(<span class="hljs-built_in">pinNumber</span>(pin));
+}
+
+<span class="hljs-comment">/// @brief 默认实现：打印探头读取的电平值</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">AutoDetect::logProbeValues</span><span class="hljs-params">(<span class="hljs-keyword">int</span> vLow, <span class="hljs-keyword">int</span> vHigh)</span> </span>{
+  log_.<span class="hljs-built_in">print</span>(<span class="hljs-string">"  probe LOW/HIGH = "</span>);
+  log_.<span class="hljs-built_in">print</span>(vLow);
+  log_.<span class="hljs-built_in">print</span>(<span class="hljs-string">" / "</span>);
+  log_.<span class="hljs-built_in">println</span>(vHigh);
+}
+
+<span class="hljs-comment">/// @brief 默认实现：打印检测进度条</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">AutoDetect::logProgress</span><span class="hljs-params">(<span class="hljs-keyword">int</span> index, <span class="hljs-keyword">int</span> count)</span> </span>{
+  <span class="hljs-keyword">if</span> (count &lt;= <span class="hljs-number">0</span>) <span class="hljs-keyword">return</span>;
+
+  <span class="hljs-keyword">float</span> ratio  = (<span class="hljs-keyword">float</span>)index / (<span class="hljs-keyword">float</span>)count;
+  <span class="hljs-keyword">int</span>   filled = (<span class="hljs-keyword">int</span>)(ratio * PROGRESS_BAR_LEN);
+
+  log_.<span class="hljs-built_in">print</span>(<span class="hljs-string">"r["</span>);
+  <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i = <span class="hljs-number">0</span>; i &lt; PROGRESS_BAR_LEN; i++) {
+    <span class="hljs-keyword">if</span> (i &lt; filled) log_.<span class="hljs-built_in">print</span>(<span class="hljs-string">"#"</span>);
+    <span class="hljs-keyword">else</span>            log_.<span class="hljs-built_in">print</span>(<span class="hljs-string">"."</span>);
+  }
+  log_.<span class="hljs-built_in">print</span>(<span class="hljs-string">"] "</span>);
+  log_.<span class="hljs-built_in">print</span>(index);
+  log_.<span class="hljs-built_in">print</span>(<span class="hljs-string">"/"</span>);
+  log_.<span class="hljs-built_in">print</span>(count);
+  log_.<span class="hljs-built_in">print</span>(<span class="hljs-string">"   "</span>);
+}
+
+<span class="hljs-comment">/// @brief 默认实现：打印找到的匹配引脚信息</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">AutoDetect::logFound</span><span class="hljs-params">(PinName pin)</span> </span>{
+  log_.<span class="hljs-built_in">print</span>(<span class="hljs-string">"n &gt;&gt; &gt; Pin FOUND: "</span>);
+  log_.<span class="hljs-built_in">print</span>(<span class="hljs-built_in">portChar</span>(pin));
+  log_.<span class="hljs-built_in">println</span>(<span class="hljs-built_in">pinNumber</span>(pin));
+}
+
+<span class="hljs-comment">/// @brief 默认实现：打印扫描完成但未找到匹配的信息</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">AutoDetect::logFinishedNoFound</span><span class="hljs-params">()</span> </span>{
+  log_.<span class="hljs-built_in">println</span>(<span class="hljs-string">"nOne full round finished, no match found."</span>);
+}
+
+<span class="hljs-comment">/// @brief 默认匹配规则：探头电平发生变化即认为匹配</span>
+<span class="hljs-function"><span class="hljs-keyword">bool</span> <span class="hljs-title">AutoDetect::isMatch</span><span class="hljs-params">(<span class="hljs-keyword">int</span> vLow, <span class="hljs-keyword">int</span> vHigh, PinName <span class="hljs-comment">/*pin*/</span>)</span> </span>{
+  <span class="hljs-comment">// 默认规则：探头在此引脚高低切换时也发生变化</span>
+  <span class="hljs-keyword">return</span> (vLow != vHigh);
+}
+
+<span class="hljs-comment">/// @brief 默认实现：找到匹配后无特殊行为，由子类覆写</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">AutoDetect::loopOnFound</span><span class="hljs-params">(PinName <span class="hljs-comment">/*pin*/</span>)</span> </span>{
+  <span class="hljs-comment">// 默认什么也不做，由子类决定</span>
+}
+
+<span class="hljs-comment">// —— 生命周期 —— //</span>
+
+<span class="hljs-comment">/// @brief 初始化检测过程，设置引脚模式和初始状态</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">AutoDetect::begin</span><span class="hljs-params">()</span> </span>{
+  <span class="hljs-comment">// 注意：日志串口应在外部先 begin()，这里只做逻辑打印</span>
+  index_    = <span class="hljs-number">0</span>;
+  found_    = <span class="hljs-literal">false</span>;
+  finished_ = <span class="hljs-literal">false</span>;
+  foundPin_ = NC;
+
+  <span class="hljs-built_in">logHeader</span>();
+
+  <span class="hljs-comment">// 探头脚输入，下拉</span>
+  <span class="hljs-built_in">pinMode</span>((<span class="hljs-keyword">int</span>)probePin_, INPUT_PULLDOWN);
+
+  <span class="hljs-comment">// 所有候选引脚设置为输出高电平（不包括排除项）</span>
+  <span class="hljs-keyword">for</span> (<span class="hljs-keyword">int</span> i = <span class="hljs-number">0</span>; i &lt; pinCount_; i++) {
+    PinName p = pins_[i];
+    <span class="hljs-keyword">if</span> (<span class="hljs-built_in">isExcluded</span>(p)) <span class="hljs-keyword">continue</span>;
+    <span class="hljs-built_in">pinMode</span>((<span class="hljs-keyword">int</span>)p, OUTPUT);
+    <span class="hljs-built_in">digitalWrite</span>((<span class="hljs-keyword">int</span>)p, HIGH); <span class="hljs-comment">// 假设"低电平有效"，默认关闭</span>
+  }
+}
+
+<span class="hljs-comment">/// @brief 执行检测循环的主要逻辑</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">AutoDetect::update</span><span class="hljs-params">()</span> </span>{
+  <span class="hljs-keyword">if</span> (found_) {
+    <span class="hljs-comment">// 已找到：由子类决定在“已找到状态”下如何循环</span>
+    <span class="hljs-built_in">loopOnFound</span>(foundPin_);
+    <span class="hljs-keyword">return</span>;
+  }
+
+  <span class="hljs-keyword">if</span> (finished_) {
+    <span class="hljs-comment">// 已扫描完但没找到：空转即可</span>
+    <span class="hljs-built_in">delay</span>(<span class="hljs-number">100</span>);
+    <span class="hljs-keyword">return</span>;
+  }
+
+  <span class="hljs-comment">// 跳过所有被排除的引脚</span>
+  <span class="hljs-keyword">while</span> (index_ &lt; pinCount_ &amp;&amp; <span class="hljs-built_in">isExcluded</span>(pins_[index_])) {
+    index_++;
+  }
+
+  <span class="hljs-keyword">if</span> (index_ &gt;= pinCount_) {
+    finished_ = <span class="hljs-literal">true</span>;
+    <span class="hljs-built_in">logFinishedNoFound</span>();
+    <span class="hljs-keyword">return</span>;
+  }
+
+  PinName testPin = pins_[index_];
+
+  <span class="hljs-comment">// 日志：正在测试哪个脚</span>
+  <span class="hljs-built_in">logTestingPin</span>(testPin);
+
+  <span class="hljs-comment">// 拉低</span>
+  <span class="hljs-built_in">digitalWrite</span>((<span class="hljs-keyword">int</span>)testPin, LOW);
+  <span class="hljs-built_in">delay</span>(<span class="hljs-number">20</span>);
+  <span class="hljs-keyword">int</span> vLow = <span class="hljs-built_in">digitalRead</span>((<span class="hljs-keyword">int</span>)probePin_);
+
+  <span class="hljs-comment">// 拉高</span>
+  <span class="hljs-built_in">digitalWrite</span>((<span class="hljs-keyword">int</span>)testPin, HIGH);
+  <span class="hljs-built_in">delay</span>(<span class="hljs-number">20</span>);
+  <span class="hljs-keyword">int</span> vHigh = <span class="hljs-built_in">digitalRead</span>((<span class="hljs-keyword">int</span>)probePin_);
+
+  <span class="hljs-comment">// 日志：探头电平</span>
+  <span class="hljs-built_in">logProbeValues</span>(vLow, vHigh);
+
+  <span class="hljs-comment">// 日志：进度条</span>
+  <span class="hljs-built_in">logProgress</span>(index_ + <span class="hljs-number">1</span>, pinCount_);
+
+  <span class="hljs-comment">// 判断是否匹配</span>
+  <span class="hljs-keyword">if</span> (<span class="hljs-built_in">isMatch</span>(vLow, vHigh, testPin)) {
+    found_    = <span class="hljs-literal">true</span>;
+    foundPin_ = testPin;
+    <span class="hljs-built_in">logFound</span>(foundPin_);
+    <span class="hljs-built_in">onFound</span>(foundPin_);
+    <span class="hljs-keyword">return</span>;
+  }
+
+  index_++;
+}
+<span class="vditor-linenumber__rows"><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/><b/></span></code></pre></div>]]></description></item><item>    <title><![CDATA[宇凡微亮相2026雨果大会：以“AI硬件方案首选提供商”赋能跨境出海]]></title>    <link>https://www.elecfans.com/d/7616348.html</link>    <guid>https://www.elecfans.com/d/7616348.html</guid>    <pubDate>2026-01-24 11:47:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
 	真正的技术平权，不是让每个人都成为专家，而是让好的技术像水电一样易于取用。宇凡微站在雨果大会的聚光灯下，正将这一理念写入中国制造出海的下一章。</p>
 <p style="text-indent:2em;">
 	2026年1月21日，宇凡微受华强电子产业研究所邀请，亮相2026雨果大会<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>科创爆品展区，向来自跨境出海领域的众多品牌商、制造商及行业伙伴，展示了我们作为AI硬件方案首选提供商的核心能力。</p>
@@ -4073,191 +5055,4 @@ AI加速卡及模组是报告期内贡献公司收入的主要产品形态之一
 <p style="text-indent:2em;">
 	此外，面对Chiplet技术带来的长远挑战，西门子EDA高度重视与学术界和研究机构的合作。公司通过直接合作或授权代理商模式，与全球多所<a href="https://www.hqchip.com/gongsi.html" target="_blank"><u>知名</u></a>大学及科研机构建立了定期合作机制，开展工具协作与技术研讨，掌握未来技术发展趋势，从而确保自身工具能够应对未来挑战。</p>
 <p style="text-indent:2em;">
-	在Chiplet技术浪潮重塑半导体产业格局的关键时期，西门子EDA通过系统级协同、制造端赋能与生态化共建的多维战略，为这项复杂技术的商业化落地提供了坚实支撑。这不仅体现了其作为行业先行者的远见，更旨在系统性地确保其工具链在Chiplet技术进入大规模应用阶段时，助力全球半导体产业高效迈入异质集成的崭新阶段。</p>]]></description></item><item>    <title><![CDATA[高精度运算放大器AD8552：特性、原理及应用全解析]]></title>    <link>https://www.elecfans.com/d/7620832.html</link>    <guid>https://www.elecfans.com/d/7620832.html</guid>    <pubDate>2026-01-24 10:15:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_7620832" value="https://file1.elecfans.com/web2/M00/5A/83/poYBAGLrwVSAXnhCAAfOMkfjuao515.pdf"/><h1>
-	<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a><a href="https://www.hqchip.com/app/1737" target="_blank"><u>运算放大器</u></a><a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>8551/AD8552/AD8554：特性、原理及应用全解析</h1>
-<p>
-	在电子设计领域，运算放大器是不可或缺的基础器件。今天要给大家详细介绍的是<a href="https://bbs.elecfans.com/group_65" target="_blank"><u>Analog</u></a> Devices推出的AD8551/AD8552/AD8554系列零漂移、单电源、轨到轨输入/输出运算放大器，它在高精度测量等众多应用场景中表现出色。</p>
-<p>
-	文件下载：<a href="javascript:;" data-annex="annex0_7620832" target="_blank">AD8552.pdf</a></p>
-<h2>
-	一、产品特性亮点</h2>
-<h3>
-	高精度指标</h3>
-<p>
-	该系列<a href="https://www.elecfans.com/tags/放大器/" target="_blank"><u>放大器</u></a>具有超低失调电压（典型值1μV）和极低的输入失调漂移（0.005μV/°C），这使得它在对精度要求极高的应用中能够有效减少误差。比如在<a href="https://www.elecfans.com/tags/温度传感器/" target="_blank"><u>温度传感器</u></a>、<a href="https://www.elecfans.com/tags/压力传感器/" target="_blank"><u>压力传感器</u></a>等应用里，微小的失调电压和漂移都可能导致测量结果出现较大偏差，而AD8551/AD8552/AD8554的高精度特性就很好地解决了这个问题。</p>
-<h3>
-	轨到轨输入输出</h3>
-<p>
-	支持轨到轨输入和输出摆幅，这意味着它能够在接近<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>电压的范围内进行<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>处理，大大扩展了信号的动态范围。在单电源供电系统中，轨到轨特性使得放大器可以充分利用电源电压，提高了系统的效率和性能。</p>
-<h3>
-	高增益与高抑制比</h3>
-<p>
-	具备高增益、高共模抑制比（CMRR）和高电源抑制比（PSRR），典型值都能达到130dB。高CMRR可以有效抑制共模信号的干扰，保证差分信号的准确放大；高PSRR则能减少电源波动对输出信号的影响，提高系统的稳定性。</p>
-<h3>
-	超低偏置<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>与功耗</h3>
-<p>
-	输入偏置电流极低，仅为20pA，这对于需要高输入阻抗的应用非常重要。同时，每个放大器的供电电流仅为700μA，低功耗特性使得它在电池供电等对功耗敏感的应用中具有很大优势。</p>
-<h3>
-	快速过载恢复</h3>
-<p>
-	过载恢复时间仅为50μs，能够快速从过载状态恢复到正常工作状态，确保系统的稳定性和可靠性。在一些可能会出现瞬间过载的应用场景中，如<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机控制</u></a>、<a href="https://m.hqchip.com/app/1731" target="_blank"><u>电源管理</u></a>等，这一特性显得尤为重要。</p>
-<h3>
-	无需外部<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a></h3>
-<p>
-	设计上无需外部电容，简化了<a href="https://www.elecfans.com/v/tag/167/" target="_blank"><u>电路设计</u></a>，减少了电路板空间和成本，提高了系统的集成度和可靠性。</p>
-<h2>
-	二、产品应用领域</h2>
-<h3>
-	<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>信号调理</h3>
-<p>
-	在温度传感器、压力传感器、应变计放大器等应用中，AD8551/AD8552/AD8554的高精度和低漂移特性能够确保传感器输出信号的准确放大和处理，提高测量的精度和稳定性。</p>
-<h3>
-	医疗仪器</h3>
-<p>
-	在医疗仪器领域，如心电图机、血糖仪等设备中，对信号处理的精度和可靠性要求极高。该系列放大器的高精度、低噪声和轨到轨特性能够满足医疗仪器的严格要求，为医疗诊断提供准确的数据支持。</p>
-<h3>
-	精密<a href="https://www.hqchip.com/app/1782" target="_blank"><u>电流检测</u></a></h3>
-<p>
-	其超低的输入偏置电流和高精度特性使得它非常适合用于精密电流检测。无论是高侧还是低侧电流检测，都能够实现准确的测量，广泛应用于电源管理、电池监测等领域。</p>
-<h3>
-	热电偶放大器</h3>
-<p>
-	在热电偶放大器应用中，AD8551/AD8552/AD8554能够提供足够的精度和增益，实现对热电偶微弱信号的有效放大和处理，同时其宽温度范围和低漂移特性能够适应不同的工作环境。</p>
-<h2>
-	三、技术原理剖析</h2>
-<h3>
-	放大器架构</h3>
-<p>
-	AD8551/AD8552/AD8554采用了自动稳零技术，每个运放由主放大器和辅助放大器组成。主放大器负责信号的放大，辅助放大器则用于校正主放大器的失调电压。输入级采用了NMOS差分对和PMOS差分对并行工作的方式，实现了轨到轨的输入电压范围。输出级采用了共源配置的两个输出<a href="https://www.hqchip.com/app/1555" target="_blank"><u>晶体管</u></a>，实现了轨到轨的输出电压摆幅。</p>
-<h3>
-	自动稳零原理</h3>
-<p>
-	自动稳零过程分为自动调零阶段和放大阶段。在自动调零阶段，通过闭合特定的开关，将辅助放大器的输入短路，其输出电压存储在内部电容上，该电压包含了辅助放大器的失调电压信息。在放大阶段，将存储的失调电压用于校正主放大器的失调电压，从而实现极低的输入失调电压。这种自动稳零技术使得放大器在宽温度范围和长时间工作过程中都能保持稳定的性能。</p>
-<h2>
-	四、性能指标详解</h2>
-<h3>
-	<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>特性</h3>
-<table><thead><tr><th>
-				参数</th>
-			<th>
-				条件</th>
-			<th>
-				典型值</th>
-			<th>
-				单位</th>
-		</tr></thead><tbody><tr><td>
-				失调电压</td>
-			<td>
-				-40°C ≤ TA ≤ +125°C</td>
-			<td>
-				1 μV</td>
-			<td>
-				μV</td>
-		</tr><tr><td>
-				输入偏置电流</td>
-			<td>
-				-40°C ≤ TA ≤ +125°C</td>
-			<td>
-				10 - 50 pA</td>
-			<td>
-				pA</td>
-		</tr><tr><td>
-				输入失调电流</td>
-			<td>
-				-40°C ≤ TA ≤ +125°C</td>
-			<td>
-				20 - 70 pA</td>
-			<td>
-				pA</td>
-		</tr><tr><td>
-				共模抑制比</td>
-			<td>
-				VCM = 0V to +5V</td>
-			<td>
-				120 - 140 dB</td>
-			<td>
-				dB</td>
-		</tr><tr><td>
-				大信号电压增益</td>
-			<td>
-				RL = 10 kΩ, Vo = 0.3V to 4.7V, -40°C ≤ TA ≤ +125°C</td>
-			<td>
-				125 - 135 dB</td>
-			<td>
-				dB</td>
-		</tr><tr><td>
-				失调电压漂移</td>
-			<td>
-				-40°C ≤ TA ≤ +125°C</td>
-			<td>
-				0.005 μV/°C</td>
-			<td>
-				μV/°C</td>
-		</tr></tbody></table><h3>
-	输出特性</h3>
-<p>
-	输出电压高（VOH）和输出电压低（VOL）能够接近电源轨，在不同的负载<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>和温度条件下都能保持较好的性能。输出短路电流限制在±50 mA（25°C）和±40 mA（-40°C to +125°C），能够有效保护放大器免受短路损坏。</p>
-<h3>
-	电源特性</h3>
-<p>
-	电源抑制比（PSRR）在2.7V - 5.5V电源电压范围内典型值为130dB，能够有效抑制电源波动对输出信号的影响。每个放大器的供电电流在不同温度条件下也能保持相对稳定。</p>
-<h3>
-	动态性能</h3>
-<p>
-	压摆率（SR）为0.4 V/μs，增益带宽积（GBP）为1.5 MHz，能够满足大多数中低频应用的需求。过载恢复时间短，能够快速响应输入信号的变化。</p>
-<h3>
-	噪声性能</h3>
-<p>
-	电压噪声在0Hz - 10Hz范围内为1.0 μVp-p，在0Hz - 1Hz范围内为0.32 μVp-p，电压噪声密度在f = 1kHz时为42 nV/√Hz，电流噪声密度在f = 10Hz时为2 fA/√Hz，低噪声特性使得它在对噪声敏感的应用中表现出色。</p>
-<h2>
-	五、设计注意事项</h2>
-<h3>
-	布局优化</h3>
-<p>
-	为了实现AD8551/AD8552/AD8554的高性能，电路板布局非常关键。要保持电路板表面清洁干燥，避免相邻走线之间的漏电流。可以使用表面涂层来减少表面水分，使用保护环来进一步降低漏电流。保护环应围绕放大器的两个输入形成连续的环路，并将其电压设置为同相输入端的电压，以减小寄生电容。此外，使用聚四氟乙烯（<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>Te</u></a>flon）绝缘垫片安装元件也可以减少漏电流。</p>
-<h3>
-	热电压误差</h3>
-<p>
-	电路板上的热电电压（塞贝克电压）也是一个潜在的失调误差源。不同金属的连接处会产生塞贝克电压，当元件两端的温度不同时，就会产生热电压误差。可以通过使用假负载元件来匹配热电误差源，将假负载元件尽可能靠近其配对元件，以确保两个塞贝克电压相等，从而消除热电误差。保持电路板周围环境温度恒定也有助于减少这种误差。使用接地平面可以帮助电路板散热，减少电磁干扰（EMI）噪声的拾取。</p>
-<h3>
-	噪声考虑</h3>
-<p>
-	放大器的总宽带噪声输出主要由放大器的输入电压噪声、输入电流噪声和外部电阻的约翰逊噪声组成。在源电阻小于106 kΩ时，输入电压噪声起主导作用；当源电阻大于106 kΩ时，电阻的约翰逊噪声成为主要噪声源。由于AD8551/AD8552/AD8554的输入电流噪声非常小，只有在源电阻大于4 GΩ时，输入电流噪声才会成为主要因素，但这在实际应用中是不切实际的。</p>
-<h3>
-	过压保护</h3>
-<p>
-	虽然AD8551/AD8552/AD8554是轨到轨输入放大器，但要注意确保输入端之间的电位差不超过5V。在正常工作条件下，放大器会自动校正输出，使两个输入电压相等。但在某些特殊情况下，如配置为<a href="https://m.hqchip.com/app/1737" target="_blank"><u>比较器</u></a>或异常工作条件下，输入电压可能会产生较大差异，此时可能会有过大的电流流过内部保护<a href="https://m.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>，导致器件损坏。如果输入电压可能超过电源轨0.3V以上，应插入适当的串联电阻来限制二极管电流，使其不超过2 mA。</p>
-<h3>
-	输出相位反转</h3>
-<p>
-	部分放大器在输入共模电压超出范围时会出现输出相位反转现象，即输出电压突然跳变到电源轨的相反方向。AD8551/AD8552/AD8554经过精心设计，只要两个输入都保持在电源电压范围内，就可以防止输出相位反转。如果有一个或两个输入可能超过电源电压，应在输入端串联一个电阻，将电流限制在2 mA以下，以确保输出不会反转相位。</p>
-<h3>
-	容性负载驱动</h3>
-<p>
-	AD8551/AD8552/AD8554具有良好的容性负载驱动能力，在单5V电源下可以安全驱动高达10 nF的负载。但容性负载会限制放大器的带宽，并增加输出的过冲和振铃。可以使用R - C缓冲网络来补偿放大器，减少容性负载引起的振铃和过冲。缓冲网络的电阻和电容值应根据实际负载电容进行调整，最佳值通常需要通过实验确定。</p>
-<h2>
-	六、典型应用电路</h2>
-<h3>
-	5V精密应变计电路</h3>
-<p>
-	该电路利用AD8552的超低失调电压特性，实现了高精度的应变计测量。REF192提供2.5V精密参考电压，A2放大器将其提升至4.0V作为应变计电阻桥的参考电压。Q1为350Ω桥网络提供电流驱动，A1用于放大桥的输出。通过合理选择电阻值，输出电压可以在无应变时为0V，满应变时为4.0V，线性度良好。</p>
-<h3>
-	3V<a href="https://www.hqchip.com/app/1781" target="_blank"><u>仪表放大器</u></a></h3>
-<p>
-	AD8551/AD8552/AD8554的高共模抑制比、高开环增益和低至3V的工作电压使其成为单电源分立仪表放大器的理想选择。在<a href="https://www.hqchip.com/app/1780" target="_blank"><u>差分放大器</u></a>配置中，系统的共模抑制比不仅取决于放大器本身，还与外部电阻的公差有关。为了实现高共模抑制，需要使用高精度电阻或额外的微调电阻。</p>
-<h3>
-	高精度热电偶放大器</h3>
-<p>
-	此电路采用AD8551实现K型热电偶的放大，并进行冷端补偿。D1作为温度测量器件，应尽可能靠近热电偶的两个终端连接点，以校正冷端误差。通过调整R6，可以使热电偶测量端处于0°C冰浴时输出为0V。通过调整R9的值，可以改变输出电压与温度的变化关系，实现不同范围的温度测量。</p>
-<h3>
-	精密电流计</h3>
-<p>
-	由于其低输入偏置电流和单电源下的出色失调电压特性，AD8551/AD8552/AD8554非常适合用于精密电流监测。其轨到轨输入允许放大器用作高侧或低侧电流监测器。使用AD8552中的两个放大器可以同时监测负载的电流供应和返回路径，用于负载或故障检测。</p>
-<h3>
-	精密电压比较器</h3>
-<p>
-	AD8551/AD8552/AD8554可以开环运行并用作精密比较器。在这种配置下，失调电压小于50μV。当有50mV的过驱动时，器件在上升沿的传播延迟为15μs，下降沿为8μs。使用时要确保不超过器件的最大差分电压。</p>
-<h2>
-	七、总结</h2>
-<p>
-	AD8551/AD8552/AD8554系列运算放大器凭借其高精度、低漂移、轨到轨输入输出、低功耗等诸多优点，在电子设计领域具有广泛的应用前景。无论是传感器信号调理、医疗仪器、精密电流检测还是其他对精度要求较高的应用场景，都能发挥出色的性能。<a href="https://www.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>在设计过程中，只要充分了解其特性和原理，并注意电路板布局、噪声处理、过压保护等方面的问题，就能充分发挥该系列放大器的优势，设计出高性能、高可靠性的电子系统。希望大家通过本文对AD8551/AD8552/AD8554有了更深入的了解，在实际应用中取得更好的效果。大家在使用过程中遇到过哪些问题或者有什么独特的应用经验，欢迎在评论区分享交流。</p>]]></description></item>  </channel></rss>
+	在Chiplet技术浪潮重塑半导体产业格局的关键时期，西门子EDA通过系统级协同、制造端赋能与生态化共建的多维战略，为这项复杂技术的商业化落地提供了坚实支撑。这不仅体现了其作为行业先行者的远见，更旨在系统性地确保其工具链在Chiplet技术进入大规模应用阶段时，助力全球半导体产业高效迈入异质集成的崭新阶段。</p>]]></description></item>  </channel></rss>
