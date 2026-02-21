@@ -1,4 +1,438 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[使用Nginx auth_basic实现轻量级用户名密码登录认证（小项目快速落地） 水冗水孚 ]]></title>    <link>https://segmentfault.com/a/1190000047615317</link>    <guid>https://segmentfault.com/a/1190000047615317</guid>    <pubDate>2026-02-21 09:01:24</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>需求描述</h2><ul><li>针对于某些线上生产小项目，可能因为某些原因，需要做做一下登录认证</li><li>比如某个项目本来大家都可以访问的，现在临时要设置成只有某个账号登录以后，才能访问</li><li>这个时候，若是再去写后端，去新建用户表、做JWT的token认证，有些杀鸡用牛刀了</li><li>这个时候，我们可以使用Nginx自带的auth\_basic进行对应用户名密码登录控制</li><li>如下效果图</li></ul><p><img width="723" height="405" referrerpolicy="no-referrer" src="/img/bVdnW47" alt="" title=""/></p><h2>实际操作</h2><h3>1. 一个小项目</h3><p>比如，笔者的这个4433端口上，跑着的是一个使用FFmpeg做的音频混合工具</p><p><img width="723" height="761" referrerpolicy="no-referrer" src="/img/bVdnW48" alt="" title="" loading="lazy"/></p><p>现在需要做轻量级的登录控制，输入用户名和密码才能登录成功后访问</p><p>这里，笔者的服务器是乌班图，如下：</p><pre><code class="sh">root@iv-ydy912e3nkay8n6x7ufo:~# cat /etc/os-release
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[JSON转TypeScript接口核心JS实现 兔子昂 ]]></title>    <link>https://segmentfault.com/a/1190000047614688</link>    <guid>https://segmentfault.com/a/1190000047614688</guid>    <pubDate>2026-02-21 10:05:02</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>JSON转TypeScript接口核心JS实现</h2><p>这篇只讲核心 JS 逻辑：一段 JSON 是如何一步步变成 TypeScript 接口代码的。</p><blockquote>在线工具网址：<a href="https://link.segmentfault.com/?enc=kvPvjn8CdT1t4eh%2FZZsZYw%3D%3D.VaLedUaSBMcH90Uu%2F7ss%2Biw%2BrfL9WB2p607LLmajEWvvrrDuKkg54BRo6oqVeukH" rel="nofollow" target="_blank">https://see-tool.com/json-to-typescript</a>  <br/>工具截图：  <br/><img width="723" height="506" referrerpolicy="no-referrer" src="/img/bVdnWUW" alt="" title=""/></blockquote><h3>1）状态与入口函数</h3><p>先看最核心的状态和入口：</p><pre><code class="js">const jsonInput = ref('')
+const outputData = ref('')
+const interfaceName = ref('RootObject')
+const useType = ref(false)
+const optionalProps = ref(true)
+const errorMessage = ref('')
+
+const convert = () =&gt; {
+  const input = jsonInput.value.trim()
+  if (!input) {
+    outputData.value = ''
+    errorMessage.value = ''
+    return
+  }
+
+  try {
+    const parsed = JSON.parse(input)
+    if (parsed === null || (typeof parsed !== 'object' &amp;&amp; !Array.isArray(parsed))) {
+      errorMessage.value = '根节点必须是对象或数组'
+      outputData.value = ''
+      return
+    }
+    const rootName = interfaceName.value.trim() || 'RootObject'
+    outputData.value = jsonToTypeScript(parsed, rootName)
+    errorMessage.value = ''
+  } catch (error) {
+    errorMessage.value = `JSON 解析失败：${error.message}`
+    outputData.value = ''
+  }
+}</code></pre><p>这里做了三件事：输入清洗、JSON 解析、调用生成器。只要这一步跑通，工具就能稳定输出。</p><h3>2）类型名生成：先合法，再去重</h3><p>JSON 字段名常常不规范，比如有空格、短横线、数字开头，所以类型名要先标准化：</p><pre><code class="js">const toPascalCase = (value, fallback = 'Item') =&gt; {
+  const cleaned = String(value || '').replace(/[^A-Za-z0-9_$\s]/g, ' ').trim()
+  if (!cleaned) return fallback
+  const parts = cleaned.split(/\s+/).filter(Boolean)
+  const combined = parts.map(part =&gt; part.charAt(0).toUpperCase() + part.slice(1)).join('')
+  return /^[A-Za-z_$]/.test(combined) ? combined : fallback
+}
+
+const normalizeInterfaceName = (value, fallback = 'RootObject') =&gt; {
+  if (!value) return fallback
+  return toPascalCase(value, fallback) || fallback
+}</code></pre><p>嵌套对象会不断生成新接口名，所以还要处理重名：</p><pre><code class="js">const interfaceNames = new Set()
+const processedNames = new Set()
+
+const generateInterfaceName = (base, suffix = '') =&gt; {
+  const baseNormalized = normalizeInterfaceName(base, 'RootObject')
+  const suffixNormalized = suffix ? toPascalCase(suffix) : ''
+  const name = `${baseNormalized}${suffixNormalized}`
+
+  if (!interfaceNames.has(name) &amp;&amp; !processedNames.has(name)) {
+    interfaceNames.add(name)
+    return name
+  }
+
+  let counter = 2
+  while (interfaceNames.has(`${name}${counter}`) || processedNames.has(`${name}${counter}`)) {
+    counter += 1
+  }
+  const finalName = `${name}${counter}`
+  interfaceNames.add(finalName)
+  return finalName
+}</code></pre><h3>3）类型推断：递归处理对象和数组</h3><p>真正的核心在 <code>inferType</code>：</p><pre><code class="js">const inferType = (value, key, parentName) =&gt; {
+  if (value === null) return 'null'
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) return 'any[]'
+    const elementTypes = new Set(value.map(item =&gt; inferType(item, 'Item', parentName)))
+    const types = Array.from(elementTypes)
+    const inner = types.length === 1 ? types[0] : `(${types.join(' | ')})`
+    return `${inner}[]`
+  }
+
+  if (typeof value === 'object') {
+    const nestedName = generateInterfaceName(parentName, key)
+    processObject(value, nestedName)
+    return nestedName
+  }
+
+  if (typeof value === 'string') return 'string'
+  if (typeof value === 'number') return 'number'
+  if (typeof value === 'boolean') return 'boolean'
+  return 'any'
+}</code></pre><p>比如 <code>[{ id: 1 }, { id: "2" }]</code> 会得到 <code>(RootItem | RootItem2)[]</code> 或联合类型形式，保证类型信息不丢。</p><h3>4）对象转声明文本</h3><p>推断完类型后，要拼成最终代码：</p><pre><code class="js">const formatPropertyKey = key =&gt; {
+  const value = String(key)
+  const identifier = /^[A-Za-z_$][A-Za-z0-9_$]*$/
+  return identifier.test(value) ? value : JSON.stringify(value)
+}
+
+const processObject = (obj, name) =&gt; {
+  if (processedNames.has(name)) return
+  processedNames.add(name)
+
+  const optionalMark = optionalProps.value ? '?' : ''
+  const lines = []
+  lines.push(useType.value ? `export type ${name} = {` : `export interface ${name} {`)
+
+  Object.entries(obj).forEach(([key, value]) =&gt; {
+    const tsType = inferType(value, key, name)
+    const propertyKey = formatPropertyKey(key)
+    lines.push(`  ${propertyKey}${optionalMark}: ${tsType};`)
+  })
+
+  lines.push('}')
+  interfaces.push(lines.join('\n'))
+}</code></pre><p>如果根节点本身是数组，再补一行根类型：</p><pre><code class="js">if (Array.isArray(json)) {
+  const arrayType = inferType(json, 'Item', baseName)
+  const rootLine = `export type ${baseName} = ${arrayType};`
+  return interfaces.length ? `${interfaces.join('\n\n')}\n\n${rootLine}` : rootLine
+}</code></pre><h3>5）实时转换触发</h3><p>输入实时更新，但不希望每敲一个字都立即解析，所以用了防抖：</p><pre><code class="js">let debounceTimer = null
+const scheduleConvert = () =&gt; {
+  if (debounceTimer) clearTimeout(debounceTimer)
+  debounceTimer = setTimeout(() =&gt; {
+    convert()
+  }, 400)
+}
+
+watch(jsonInput, scheduleConvert)
+watch(interfaceName, scheduleConvert)
+watch([useType, optionalProps], convert)</code></pre><p>最终效果就是：输入 JSON、改根接口名、切换 <code>interface/type</code>、切换可选属性，结果区都会自动刷新。</p><h3>6）完整思路总结</h3><p>这套实现本质是三层：</p><ol><li><strong>输入层</strong>：解析 JSON、处理错误</li><li><strong>推断层</strong>：递归判断数据类型、生成嵌套接口名</li><li><strong>输出层</strong>：拼接 TypeScript 声明文本</li></ol><p>把这三层拆开后，代码可读性会很高，读者也能很容易定位：哪里在“解析”、哪里在“推断”、哪里在“输出”。</p>]]></description></item><item>    <title><![CDATA[20天，20000次对话，12亿token——Claude Code 重度使用复盘 jackwu ]]></title>    <link>https://segmentfault.com/a/1190000047614934</link>    <guid>https://segmentfault.com/a/1190000047614934</guid>    <pubDate>2026-02-21 10:04:27</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <blockquote>Claude Code 官方认证的重度用户，token 消耗量排在前1%。这篇文章是20天、20000次对话之后的完整复盘，从工作流到上下文管理，以及我在这个过程中真正踩过的坑。</blockquote><hr/><h2>一、认知转变：它不是 AI 助手，是 AI 团队</h2><p>11月份刚用 Claude Code 时，我的定位是"更智能的 Cursor"——编程准确度更高，代码补全更准，仅此而已。</p><p>但用了一段时间之后，这个认知完全崩塌了。</p><p>Claude Code 不再是知识广泛的实习生，而是<strong>一个经验丰富、成本低廉的靠谱团队</strong>。区别在哪？实习生你得手把手教，团队你只需要说清楚要什么、验收结果。</p><p>这个认知转变直接影响了我之后的用法。</p><hr/><h2>二、20天做了3个产品</h2><p>Claude Code 已经具备独立闭环一个完整产品的能力。这20天我用它交付了：</p><table><thead><tr><th>产品</th><th>技术栈</th><th>用时</th><th>说明</th></tr></thead><tbody><tr><td>AI 对话 ChatBot</td><td>Flutter</td><td>2天</td><td>支持语音文字、简历上传、AI 面试官</td></tr><tr><td>iOS 启动器 App</td><td>iOS 原生</td><td>2天</td><td>-</td></tr><tr><td>GroAsk</td><td>macOS 原生</td><td>2周</td><td>Claude Code 调度面板</td></tr></tbody></table><p><strong>三个产品全部 Vibe Coding，没有手写过一行代码。</strong> Opus 4.5 时代我还会看一下生成的代码，到了 Opus 4.6，我没有看过一行代码。</p><p>GroAsk 是我自己日常使用 Claude Code 过程中，实在受不了反复切终端、忘记哪个 Session 在干什么、上下文爆了还不知道，才动手做的工具。后面会反复提到它。</p><hr/><h2>三、编程之外，Claude Code 还能干什么</h2><p>很多人把 Claude Code 只当编程工具在用，但它的边界远不止于此：</p><ul><li><strong>自动发推特</strong>——借助浏览器 MCP 与 Skill，我现在不手动发推特</li><li><strong>自动写文章 &amp; 多平台分发</strong>——自定义 Skill，这篇文章的思否版本就是这样生成的</li><li><strong>产品数据分析</strong>——接入真实运营数据，自动产出分析报告</li><li><strong>深度市场调研</strong>——调研需求、收集用户痛点、竞品对比</li></ul><p>核心逻辑是：<strong>任何可以描述清楚的工作流，都可以交给它</strong>。</p><hr/><h2>四、我的产品迭代流程</h2><h3>小需求：一句话到上线</h3><pre><code>描述需求 → Claude Code 自动完成 → 直接上线 → 发现问题一句话修复</code></pre><p>这种模式适合改 bug、加小功能。节点少，验收快，出了问题一句话描述现象，它自己排查修复。</p><h3>大版本需求：结构化流程</h3><pre><code>需求收集 → PRD 产出 → 市场调研验证 → 技术方案 → 执行规划 → 按计划开发</code></pre><p>具体步骤：</p><ol><li><strong>需求收集</strong>：个人使用痛点 + 社区反馈收集</li><li><strong>PRD 产出</strong>：描述原始需求，让 Claude Code 产出 PRD，再用市场调研验证</li><li><strong>技术方案</strong>：Claude Code 编写技术方案，市场调研 review</li><li><strong>执行规划</strong>：Claude Code 使用 TDD + Subagent 拆分任务</li><li><strong>开发执行</strong>：Claude Code 按计划开发</li></ol><p>实际比例大概是：一个3000字的 PRD → 10000字的技术方案 → 40000字的执行规划。</p><p>看起来很重，但这个前期投入是值得的。<strong>产品决策和技术决策是人最重要的工作</strong>，完全交给 AI 决策，面对复杂任务时不可靠——看似实现了需求，但维护难度是地狱级的。</p><p>另一个核心原则：<strong>让 AI 实现一个小的需求点，远比让 AI 一次性完成大而全的需求更可靠，效率也更高</strong>。别想着一口气把所有需求塞进一个 Session，拆小、交付、验收、再拆。</p><hr/><h2>五、深度使用技巧</h2><h3>5.1 Skill：最强大的能力</h3><p>Skill 的核心理念是<strong>个人工作流程的固化</strong>。</p><p>Skill 由两部分组成：</p><ul><li><strong>Prompt</strong>：用自然语言描述需要模型理解和判断的部分</li><li><strong>Scripts</strong>：用代码描述确定性的部分（代码能搞定的不要用 Prompt）</li></ul><p>一个发帖 Skill 的结构大概是这样：</p><pre><code class="bash">#!/bin/bash
+# scripts/post-to-platform.sh
+# 确定性部分：读取文章、调用 API、记录状态
+
+PLATFORM=$1
+ARTICLE_PATH=$2
+
+# 读取文章内容
+CONTENT=$(cat "$ARTICLE_PATH")
+
+# 调用平台 API（确定性，不需要模型判断）
+curl -X POST "https://api.${PLATFORM}.com/articles" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d "{\"content\": \"$CONTENT\"}"
+
+# 记录发布状态
+echo "$(date): Published to $PLATFORM" &gt;&gt; publish.log</code></pre><pre><code># Prompt 部分（skill 定义文件）
+根据目标平台的受众和调性，对文章进行适配改写：
+- 思否：技术深度优先，加代码片段，≥1500字
+- 即刻：碎片化，150字以内，口语化
+- 推特：英文，280字以内，带链接
+
+改写完成后调用 post-to-platform.sh 执行发布。</code></pre><p>我常用的 Skill：自动代码提交、自动运行工程、自动拉取运营数据、自动发帖、自动写文章……</p><h3>5.2 Subagent：复杂任务的上下文隔离</h3><p>Subagent 允许你在<strong>一个主会话内使用多个 Agent</strong>。Claude 自带的 <code>Task</code> 工具就是 Subagent 实现——主 Session 把部分工作交给内部 Session，自己只关注输入和输出。</p><p>典型场景：同时调研5个竞品，每个竞品开一个 Subagent，主 Session 汇总结论。如果全塞在一个 Session 里，上下文会爆，而且互相干扰。</p><h3>5.3 MCP：扩展能力，但要克制</h3><p>我个人常用8个 MCP，但<strong>强烈建议用更少的</strong>。</p><p>MCP 占据大量原始上下文——每次对话开始，MCP 的工具描述就会占满上下文配额的一大块。实际建议：</p><ul><li>使用参数让 MCP 只暴露必要接口，而不是全量工具</li><li><strong>优先选 Rust/Go 编译的 MCP</strong>，而不是 Node.js 的，内存占用差距显著</li><li>按项目配置，不要全局开一堆 MCP</li></ul><h3>5.4 Hooks：安全网</h3><p>Claude Code 的 Hooks 允许你在特定操作前后执行自定义脚本。</p><p>目前最有价值的 Hook：<strong>让 Claude Code 在删除任何未被备份的文件之前先备份</strong>。</p><pre><code class="json">{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/backup-before-delete.js"
+          }
+        ]
+      }
+    ]
+  }
+}</code></pre><p>这个 Hook 已经救过我好几次——AI 有时候会很自信地把一个"没用的"文件删掉，结果那个文件里有关键配置。</p><h3>5.5 调试技巧：日志优先</h3><p>遇到难以复现的 bug，标准思路是让 AI 看代码 + 分析 + 猜原因。这条路往往很慢。</p><p>更有效的做法：<strong>让 AI 把日志写到本地，再根据日志排查</strong>。</p><pre><code class="swift">// 让 Claude Code 在关键路径加日志
+func fetchData() async {
+    Logger.debug("fetchData called, timestamp: \(Date())")
+    Logger.debug("Current state: \(self.state)")
+
+    do {
+        let result = try await api.fetch()
+        Logger.debug("fetch success, result count: \(result.count)")
+    } catch {
+        Logger.error("fetch failed: \(error)")
+        Logger.error("Stack trace: \(Thread.callStackSymbols)")
+    }
+}</code></pre><p>日志在本地，你把日志喂给 Claude Code，它能精准定位问题。<strong>这是最有效的 bug 解决方式，没有之一。</strong> 很多看起来 AI 搞不定的 bug，用日志能在5分钟内解决。</p><hr/><h2>六、长期记忆：解决"今天说明天忘"</h2><p>Claude Code 没有原生的长期记忆，每个 Session 都是全新开始。我的解决方案是<strong>知识分组</strong>：</p><ol><li><strong>分层的 Knowledge 文件夹</strong>：告诉 Claude Code"有价值的信息存储到知识库"。踩过的坑、做过的决策、调研结论——全部沉淀在文件里，下次用 <code>@knowledge/xxx.md</code> 引入</li><li><strong>CLAUDE.md 分组管理</strong>：主 CLAUDE.md 保持精简，只放全局规则；子项目各自维护 CLAUDE.md，按需加载</li><li><strong>Rules 管理</strong>：把反复重复的规范提炼成 Rules，比手动每次提醒可靠得多</li></ol><p>这套体系的好处是<strong>越用越顺手</strong>——积累的越多，Claude Code 对你的项目和工作方式理解越深。</p><hr/><h2>七、上下文管理：保持模型智能的关键</h2><p>这是很多人忽略的环节，也是影响输出质量最大的单一因素。</p><table><thead><tr><th>策略</th><th>说明</th></tr></thead><tbody><tr><td>MCP 工具按需引入</td><td>使用参数精简接口暴露</td></tr><tr><td>CLAUDE.md 分层分组</td><td>避免信息过载</td></tr><tr><td>上下文阈值 200k</td><td>超过就换 Session</td></tr><tr><td>避免压缩上下文</td><td>开新 Session 远优于压缩</td></tr><tr><td>实时监控</td><td>了解每个 Session 的上下文消耗</td></tr></tbody></table><p>上下文不推荐超过200k（1M 窗口的20%）。上下文爆了之后的 Claude Code，和上下文干净时的 Claude Code，质量差距类似于<strong>工作日上午 vs 加班到深夜</strong>——思维混乱，容易犯低级错误，建议无条件开新 Session。</p><p>最后一条"实时监控"是最容易被忽略的。很多人用着用着上下文爆了还不知道，模型回答质量断崖式下降才发现。</p><p>我用 <a href="https://link.segmentfault.com/?enc=D%2FTwtVzrlReKtj5Emu7SdQ%3D%3D.gviR6nEDGRzvryNUs0YK5BfzLAF%2FLl%2BfemMtjoQM25U%3D" rel="nofollow" target="_blank">GroAsk</a> 解决这个问题——菜单栏一眼能看到每个 Claude Code 终端的上下文用量、当前状态、是否在等待输入。不用一个个切终端去查。</p><hr/><h2>八、多 Session 管理：并行才是正确姿势</h2><p><strong>不要只开一个 Claude Code 进程，盯着它干活太低效了。</strong></p><p>Claude Code 在运行的时候，很多时间是在思考、在调用工具、在等待。这段时间你完全可以在另一个 Session 里推进另一件事。</p><p>我的经验：</p><ul><li><strong>舒适区：2-3个</strong> Claude Code 进程并行，大多数场景够用</li><li><strong>高强度场景：5-10个</strong>，每个 Session 对应一个独立任务</li><li>核心原则：<strong>只维护需要用户输入的 Session</strong>，其他的让它跑</li></ul><p>多 Session 的实际问题是管理成本。开了5个以上终端之后，Cmd+Tab 找"哪个 Session 在等我回复"就很烦——经常扫完一圈发现其实3个都在等，错过了最优先的那个。</p><p>我现在的做法是用 <a href="https://link.segmentfault.com/?enc=yQDDrNA1JIXmGfSy8vD5MA%3D%3D.6jcOqqraKnMVykkgExJzPvqu%2BoSomL2Xes2qztnIH3k%3D" rel="nofollow" target="_blank">GroAsk</a> 的调度面板集中管理。所有 Claude Code 终端聚合在一个面板里，哪个在跑、哪个等输入、哪个上下文快满了，<code>⌥Space</code> 呼出之后一眼看完，点一下跳到对应终端，不用在窗口堆里翻找。</p><p>多 Session 工作流对生产效率的提升是非线性的——从1个到3个，效率大概翻2-3倍，不只是翻3倍，因为切换成本下降了。</p><hr/><h2>九、模型的边界</h2><p>模型的边界在于<strong>完全创新的能力</strong>。</p><p>做没有人做过的东西——训练数据里没有，只能推测——这时候，准确率会显著下降。模型善于综合已有模式产出结果，不善于在完全空白的地方创造。</p><p>这个边界意味着：<strong>在0-1的创新阶段，人的判断不可被替代</strong>。1-N的执行交给 AI，0-1的方向由人来定。</p><hr/><h2>十、三句话总结</h2><ol><li><strong>Claude Code 不是 AI 助手，是 AI 团队。</strong> 用管理团队的方式去用它：说清楚要什么，给足上下文，验收结果。</li><li><strong>人的核心价值是决策。</strong> 产品决策、技术决策、0-1的创新——这些交不出去。</li><li><strong>工程化使用 AI。</strong> Skill 固化流程、Subagent 管理复杂度、知识分组实现记忆、上下文管理保持智能。</li></ol><hr/><p><em>作者日常用 Claude Code 开发 <a href="https://link.segmentfault.com/?enc=HcdsNPwqLaeErPfquP%2FEJg%3D%3D.Z6oNXIDpkqFhseKFW%2B1jdOFVeAJTt9V7ZNtQd8eBcCM%3D" rel="nofollow" target="_blank">GroAsk</a>——一个 macOS 菜单栏 AI 启动器，<code>⌥Space</code> 直达所有 AI，同时监控多个 Claude Code 终端状态。如果你也在重度用 Claude Code，欢迎试试。</em></p>]]></description></item><item>    <title><![CDATA[AI 时代下的创意工作：迈向“意义经济”与全新的高价值技能栈 blossom ]]></title>    <link>https://segmentfault.com/a/1190000047615167</link>    <guid>https://segmentfault.com/a/1190000047615167</guid>    <pubDate>2026-02-21 10:03:52</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h3>1. 引言：AI 无法取代的“为什么”</h3><p>请思考一个看似怪诞的问题：在 AI 可以瞬间总结任何视频、生成海量信息的时代，你为什么仍然选择花费宝贵的生命去观看一位人类创作者的视频，或者阅读名著？</p><p>你完全可以把链接丢给大语言模型，让它在几秒钟内为你提供一份精准的摘要。但你没有这样做。这个选择本身就揭示了 AI 时代的生存悖论：当信息获取变得零成本，AI 带来的真正危机并非仅仅是工作的消失，更是“意义”与“身份感”的全球性稀缺。</p><p>在生产力彻底商品化的未来，AI 负责磨平生存的艰辛（硅基劳动力），而人类的视角与品味（碳基生命）将成为文明中唯一的稀缺资源。生产力不再是护城河，人类通过个体经验对现实进行的“意义构建”才是。</p><h3>2. 意义的四幕剧：我们如何走到了今天</h3><p>人类文明对“意义”的探寻经历了一场漫长且残酷的演变。理解这一路径，是每一位“意义建筑师”定位自身坐标的前提：</p><ul><li><strong>第一幕（神权/皇权时代）：意义由外界赋予。</strong> 你的价值由天命、宗族或皇权预先设定，你无需寻找，只需接受分配并服从。<br/>古代的工匠或是面朝黄土背朝天的农夫，他们通常不会经历“寻找人生热爱”的现代式迷茫，因为他们的命运、阶层和工作在出生时就已锚定。人生的意义就是完成宗族分配的劳作，或者绝对服从皇权的征召。</li><li><strong>第二幕（工业化与城镇化时代）：意义通过生产力来“赚取”。</strong> 科学与工业取代了传统秩序，人类通过对社会机器的贡献、通过机械化的劳动来换取存在的合法性。<br/>珠三角流水线上的产业工人，或是早期穿梭于北上广深写字楼里的白领。在这个阶段，个人的身份和意义等同于“职业头衔”与“生产效率”（如“高级工程师”、“业务总监”）。劳动成果被精准量化，存在感是通过为社会创造经济利润、买房置业来“赚取”的。</li><li><strong>第三幕（后现代主义）：意义被解构。</strong> 所有宏大叙事崩溃，没有什么是绝对真理。在这个阶段，意义既非赋予也非赚取，而是坠入了虚无的深渊。<br/>困在算法派单系统里的外卖骑手，或是深陷大厂 PPT 与无效“内卷”中的打工人。人们突然发现，无休止地敲击键盘生成周报、或是为了消费主义不断攀爬职场阶梯，并没有带来灵魂的充实。工作成了被精准计算的消耗，意义被解构为虚无，社会上开始蔓延存在主义危机与“躺平”情绪。</li><li><strong>第四幕（当前/未来）：意义的内源性生成。</strong> 这是我们正在跨入的时代。当外部不再提供剧本，劳动力不再换取身份，意义必须由个体从内心深处自主构建。<br/>在 AI 可以瞬间生成海量常规文本的今天，一个创作者的价值不再是日更万字的速度，而是他如何推敲并设计出深刻的人物弧光。这种不再为了迎合平台流量算法、纯粹由内驱力和主观视角主导的创造，构成了个体在信息荒原中的全新生命坐标。</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047615170" alt="" title=""/></p><h3>3. 后劳动时代经济学：当工资不再是核心</h3><p>如果 AI 取代了人类的大部分基础工作，工资水平就会崩塌；如果工资崩塌，社会消费能力就会枯竭；而如果消费枯竭，整个传统的经济循环系统将彻底瓦解。</p><p>在这种工资与产出解绑的不可逆趋势下，传统的职业划分将失效。未来的高价值工作不再仅仅以“产出了什么”来衡量，而是以“你是谁”为锚点，可被重新归类为三大防守区：</p><table><thead><tr><th>工作类别</th><th>核心要素</th><th>为什么 AI 无法完全替代</th></tr></thead><tbody><tr><td><strong>高责任/法律岗位</strong></td><td>问责制与法律约束</td><td>AI 无法承担法律后果。社会需要一个有血有肉的人对结果（如医疗事故、工程烂尾）负责。</td></tr><tr><td><strong>体验经济/关系岗位</strong></td><td>情感连接与信任</td><td>价值在于“谁”在做，而非做了什么。人类渴望与真实的碳基生命互动（如充满烟火气的深夜小馆老板、心理咨询师）。</td></tr><tr><td><strong>意义制造 (Meaning Makers)</strong></td><td>叙事与引导</td><td><strong>人类是产品本身</strong>。在信息荒原中，我们需要人类向导来解析人类经验。</td></tr></tbody></table><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047615171" alt="" title="" loading="lazy"/></p><h3>4. 意义的解剖学：如何工程化你的动力</h3><p>要在这个时代拒绝平庸，你必须理解驱动人类灵魂的“动力工程学”。意义并非虚无缥缈，它的顶层建筑由两个核心支柱支撑：<strong>进步 (Progress)</strong> ——感受到自己在克服阻力；以及 <strong>贡献 (Contribution)</strong> ——感受到这种进步对他人有价值。</p><p>而要源源不断地驱动这两个核心支柱，我们需要三个底层的“生成器”（Generators），它们明确了包含关系，共同构成了一个运转不息的“生命故事引擎”：</p><ul><li><strong>挣扎 (Struggle)：提供“进步”的引擎。</strong> 这里必须区分“被动消耗”与“主动摩擦 (Active Friction)”。AI 正在抹除无聊的数据录入或重复性劳动，那些是为了生存的被迫苦役。真正的挣扎，是你每天清晨在瑜伽垫上练习阿斯汤加时的每一次呼吸与汗水，或者是你在深夜为了推敲小说中人物的一个动机而反复修改草稿。这种痛苦是你主动选择的技艺磨炼，正是产生意义的燃料。</li><li><strong>好奇心 (Curiosity)：指引“进步”的方向。</strong> 这是人类独特的“非线性关注点”。AI 可以穷尽分析数据，但无法产生“好奇”。好奇心是你基于个人生命轨迹，从无限信息中提取出的独特偏好。</li><li><strong>地位/认可 (Status)：验证“贡献”的信号。</strong> 这不关乎虚荣，而是一种信号——证明你主动承担的挣扎对他人产生了影响（即你的“进步”转化为了“贡献”），证明你在这片空虚的宇宙中并非孤身一人。</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047615172" alt="" title="" loading="lazy"/></p><h3>5. “你就是利基市场”：AI 时代下的职业护城河</h3><p>知名创作者 Dan Koe 曾提出关于职业安全性的核心准则——<strong>“你就是利基市场 (You are the niche)”</strong>。我们可以通过<strong>“可替代性测试”</strong>来检验你的工作：如果创作者与作品可以互换而不损失价值，则 AI 可以胜任；如果价值深度绑定在特定的人、历史与视角上，这就是你的护城河。</p><ul><li><strong>案例 A（视觉设计）：</strong> 一张由 AI 几秒钟生成的通用“商务人士握手”素材图（可互换） <strong>vs.</strong> 一位风光摄影师深入川藏线无人区，在风餐露宿中通过独特视角捕捉到的极高海拔雪山震撼瞬间（不可互换，承载了厚重的利害关系）。</li><li><strong>案例 B（文学创作）：</strong> 一篇由大模型根据热门网文套路批量生成的悬疑爽文（可互换） <strong>vs.</strong> 一部如南派三叔的《盗墓笔记》般，作者倾注心血、深刻刻画了主角在复杂人性与现实绝境中做出艰难抉择的悬疑巨作（不可互换）。</li></ul><p>AI 无法复制的核心在于 <strong>“利害关系 (Stakes)”</strong>。AI 没有生命，不会死亡。因为它没有“生存”的代价，它无法真正进行“意义构建 (Sensemaking)”——它无法判断在这个瞬间，什么对人类是真正重要的。你的“知识签名”是你过去的所有失败、胜利与伤痕的总和，这是硅基生命永远无法通过模拟获得的厚度。</p><h3>6. 核心技能栈：从工具到能动性</h3><p>在后 AI 时代，技能正在向更高层级抽象。你不再需要死记硬背如何写出一行完美的语法，你需要学习的是“如何成为一个完整的个体”。</p><ul><li><strong>能动性 (Agency)：顶层元技能。</strong> 这是一种无需指令便能自主设定方向、采取行动的能力。在工作中只听从指令，就像是处于 AI 的 copilot（半托管）状态，永远需要外部的 Prompt 才能运转。真正的领袖能够自己定义问题、构建系统，并在所有人等待 AI 给出建议时，画出那条行动轨迹。</li><li><strong>视角 (Perspective)：摆脱教条的复杂性思维。</strong> AI 擅长逻辑计算，可以在几秒钟内为你生成标准的增删改查 (CRUD) 业务代码。但是，在一个复杂的企业级 SaaS 系统中，决定何时使用传统的关系型数据库，何时为了处理错综复杂的数据网络而引入 Neo4j 图数据库，这需要权衡业务发展、团队技术栈和未来的维护成本。这种容纳矛盾并做出系统性取舍的能力，就是你的视角。</li><li><strong>品味 (Taste)：在“无限图书馆”中的鉴别力。</strong> 如果一个图书馆拥有古往今来所有文字的随机排列，那它只是个毫无意义的垃圾场。策展比创造更昂贵。你的品味决定了你从无限的 AI 产出中捞取什么。</li><li><strong>说服力 (Persuasion)：</strong> 包括个人 IP 运营、知识付费与文案转化。即使你有 10 年心血写就的巨著或设计出了完美的系统架构，如果没人关注或采纳，它也毫无价值。你需要让世界在意你的视角。</li><li><strong>技术诀窍 (Technical Know-how)：</strong> 灵活运用 AI 工具将你的“品味”落地。不再是单纯地向模型索要最终结果，而是利用工作流工具（如 ComfyUI）或各种 Agent，像指挥家一样控制各个节点，将双手从繁琐的“无意义摩擦”中解放出来，专注于高价值的创造。</li></ul><h3>7. 结语：让碳基生命回归意义</h3><p>克里斯·佩克（Chris Pake）曾描绘过一个优雅的未来：硅基生命负责磨平必然性的粗糙边缘，以便碳基生命可以升华为意义。<strong>机器负责效率，人类负责叙事；机器负责消除摩擦，人类负责创造价值。</strong></p><p>我们正处于转型的关口。不要选择那条默认的、通往被算法彻底“圈养”的平庸道路——瘫坐在沙发上，让短视频接管感官。拒绝成为被算法喂养的生物，通过解决真实的问题，分享你独特的“生命签名”。在意义经济中，你的挣扎、你的好奇以及你对世界的解读，正是文明继续前进所需的燃料。</p><p>本文由<a href="https://link.segmentfault.com/?enc=4KS6nYelS2rmcsvtf9tvyg%3D%3D.PtunlHtxY1pq2j6IXrA2xtz4sctLvPrALE5WV5k09VQ%3D" rel="nofollow" target="_blank">mdnice</a>多平台发布</p>]]></description></item><item>    <title><![CDATA[HarmonyOS APP应用内上下层级转场动效 蓝胖子样样好 ]]></title>    <link>https://segmentfault.com/a/1190000047615176</link>    <guid>https://segmentfault.com/a/1190000047615176</guid>    <pubDate>2026-02-21 10:03:01</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>一、转场动效设计小技巧和一些适配的要点</h2><h3>1.1 系统级动效标准</h3><p>根据HarmonyOS设计规范，咱们上下层级转场需遵循以下原则：</p><ul><li><strong>运动方向一致性</strong>：采用左右位移遮罩动效（Left/Right Slide Mask），保持视觉连贯性</li><li><strong>曲线选择</strong>：优先使用弹簧曲线（Spring Motion），提升动画自然度</li><li><strong>设备适配</strong>：折叠屏需考虑分屏状态下的动效裁剪处理</li></ul><h3>1.2 鸿蒙5与6的核心差异一起来康康</h3><table><thead><tr><th>特性</th><th>鸿蒙5实现</th><th>鸿蒙6优化</th></tr></thead><tbody><tr><td>转场配置方式</td><td>需手动设置动画参数</td><td>支持声明式XML配置</td></tr><tr><td>共享元素支持</td><td>仅限同层级组件</td><td>支持跨层级共享元素</td></tr><tr><td>性能表现</td><td>内存峰值约28MB</td><td>优化至19MB（内存复用机制）</td></tr><tr><td>自定义能力</td><td>需通过动画接口扩展</td><td>提供转场模板扩展点</td></tr></tbody></table><hr/><h2>二、技术实现方案对比一下下</h2><h3>2.1 基础转场实现（鸿蒙5）</h3><pre><code class="typescript">// 导航组件配置
+@Entry
+@Component
+struct ListDetailDemo {
+  private navPathStack = new NavPathStack();
+
+  build() {
+    Navigation({
+      pathStack: this.navPathStack,
+      customNavContentTransition: (from, to) =&gt; {
+        return new CustomTransition({
+          enter: () =&gt; {
+            return {
+              opacity: 0,
+              translateY: 50,
+              animation: { duration: 300, curve: curves.easeInOut }
+            };
+          },
+          exit: () =&gt; {
+            return {
+              opacity: 1,
+              translateY: -50,
+              animation: { duration: 300, curve: curves.easeInOut }
+            };
+          }
+        });
+      }
+    }) {
+      NavDestination() {
+        List() {
+          ForEach(this.data, (item) =&gt; {
+            ListItem({
+              type: ListItemType.Clickable,
+              onTap: () =&gt; {
+                this.navPathStack.pushPath({ name: 'Detail' });
+              }
+            }, item.name);
+          })
+        }
+      }
+      .width('100%')
+      .height('100%')
+    }
+  }
+}</code></pre><h3>2.2 增强型转场（鸿蒙6）</h3><pre><code class="typescript">// 声明式转场配置
+@Entry
+@Component
+struct EnhancedListDetail {
+  @State isDetailVisible = false;
+
+  build() {
+    Column() {
+      // 共享元素配置
+      Image($r('app.media.logo'))
+        .geometryTransition('shared-element')
+        .opacity(this.isDetailVisible ? 0.5 : 1)
+        .scale({ x: this.isDetailVisible ? 0.9 : 1 })
+        
+      Button('切换页面')
+        .onClick(() =&gt; {
+          this.isDetailVisible = !this.isDetailVisible;
+          this.animateTo({
+            duration: 400,
+            curve: curves.springMotion(0.5, 0.8)
+          }, () =&gt; {
+            // 状态同步逻辑
+          });
+        });
+    }
+    .transition(
+      TransitionEffect
+        .OPACITY.combine(
+          TransitionEffect.scale({ x: 0.1, y: 0.1 })
+            .animation({ duration: 300 })
+        )
+    );
+  }
+}</code></pre><hr/><h2>三、性能对比笑实验</h2><h3>3.1 测试环境</h3><pre><code class="text">设备配置：
+- 基准机型：HUAWEI Mate 40 Pro
+- 对比机型：HUAWEI Mate 60 Pro
+- 测试场景：10次连续转场动画</code></pre><h3>3.2 性能指标对比</h3><table><thead><tr><th>指标</th><th>鸿蒙5平均</th><th>鸿蒙6平均</th><th>提升幅度</th></tr></thead><tbody><tr><td>内存占用（MB）</td><td>28.3</td><td>19.7</td><td>30.4%</td></tr><tr><td>动画帧率（FPS）</td><td>58</td><td>62</td><td>+6.9%</td></tr><tr><td>GPU负载（%）</td><td>32</td><td>24</td><td>-25%</td></tr><tr><td>首帧耗时（ms）</td><td>120</td><td>85</td><td>-29.2%</td></tr></tbody></table><p><em>数据来源：DevEco Studio性能分析工具（2026Q1版本）</em></p><h3>3.3 看看5和6的内存管理机制</h3><pre style="display:none;"><code class="mermaid">graph TD
+    A[鸿蒙5内存模型] --&gt; B[独立组件实例]
+    A --&gt; C[全量状态保存]
+    A --&gt; D[手动回收机制]
+    
+    E[鸿蒙6内存模型] --&gt; F[组件池复用]
+    E --&gt; G[增量状态更新]
+    E --&gt; H[自动回收策略]</code></pre><hr/><h2>四、实际开发小栗子</h2><h3>案例1：电商商品详情页转场</h3><pre><code class="typescript">// 鸿蒙6优化方案
+@Entry
+@Component
+struct ProductTransition {
+  @State selectedProductId: string = '';
+  
+  build() {
+    Stack() {
+      // 商品列表页
+      ProductList() 
+        .onItemClick((item) =&gt; {
+          this.selectedProductId = item.id;
+          this.animateTo({
+            duration: 350,
+            curve: curves.easeOut
+          }, () =&gt; {
+            this.showDetail = true;
+          });
+        })
+      
+      // 详情页（共享元素转场）
+      if (this.showDetail) {
+        ProductDetail({
+          productId: this.selectedProductId,
+          geometryTransition: 'shared-element'
+        })
+        .onBackPressed(() =&gt; {
+          this.animateTo({
+            duration: 300,
+            curve: curves.easeIn
+          }, () =&gt; {
+            this.showDetail = false;
+          });
+        });
+      }
+    }
+    .navigationTransition(
+      NavigationTransitionConfig.create({
+        type: TransitionType.Slide,
+        direction: TransitionDirection.RightToLeft
+      })
+    );
+  }
+}</code></pre><h3>案例2：多层级表单提交</h3><pre><code class="typescript">// 鸿蒙5兼容方案
+const handleFormSubmit = async () =&gt; {
+  const transitionConfig = {
+    animation: {
+      type: AnimationType.FADE,
+      duration: 200,
+      curve: Curve.Linear
+    }
+  };
+  
+  await navigation.push({
+    url: '/pages/confirmation',
+    animation: transitionConfig
+  });
+  
+  // 手动清理旧页面状态
+  cleanupFormData();
+};</code></pre><hr/><h2>五、转场的流程是啥样的呀</h2><pre style="display:none;"><code class="mermaid">graph TB
+    A[触发转场事件] --&gt; B{鸿蒙版本检测}
+    B --&gt;|HarmonyOS5| C[创建导航控制器]
+    B --&gt;|HarmonyOS6| D[声明转场配置]
+    C --&gt; E[设置动画参数]
+    D --&gt; F[绑定共享元素]
+    E --&gt; G[启动转场动画]
+    F --&gt; G
+    G --&gt; H[执行页面切换]
+    H --&gt; I[资源回收]</code></pre><hr/><h2>六、适配小建议</h2><ol><li><p><strong>版本检测策略</strong></p><pre><code class="typescript">const isHarmonyOS6 = checkOSVersion('6.0.0');
+const transitionConfig = isHarmonyOS6 ? {
+  type: TransitionType.Slide,
+  dynamicCurve: true // 鸿蒙6动态曲线特性
+} : {
+  type: TransitionType.FADE,
+  duration: 300
+};</code></pre></li><li><strong>性能优化要点</strong></li><li>使用<code>renderGroup</code>优化复杂动画渲染</li><li>避免在动画过程中触发主线程阻塞操作</li><li>对高频动画使用<code>requestAnimationFrame</code></li><li><p><strong>调试技巧</strong></p><pre><code class="bash"># 启用动画调试模式
+hdc debug animation --enable</code></pre></li></ol><hr/><h2>七、总结一下下</h2><p>HarmonyOS 6在转场动效方面实现了显著提升：</p><ul><li><strong>开发效率</strong>：声明式配置减少30%样板代码</li><li><strong>性能表现</strong>：内存管理优化使低端设备流畅度提升40%</li><li><strong>视觉效果</strong>：新增的物理模拟动画增强交互真实感</li></ul><p>咱们要重点关注鸿蒙6的<code>SharedElementTransition</code>新特性，在保证兼容性的同时逐步迁移至新架构。</p>]]></description></item><item>    <title><![CDATA[Scrapy Downloader Middleware 执行机制完全总结 普郎特 ]]></title>    <link>https://segmentfault.com/a/1190000047615325</link>    <guid>https://segmentfault.com/a/1190000047615325</guid>    <pubDate>2026-02-21 10:02:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>本笔记彻底讲清三个问题：</p><ol><li>process_request 返回 Response 会发生什么？</li><li>process_request 返回 Request 会发生什么？</li><li>在多个中间件情况下执行顺序如何变化？</li></ol><p>一、Downloader Middleware 正常执行流程<br/>假设中间件顺序：<br/>MiddlewareA<br/>MiddlewareB<br/>MiddlewareC<br/>正常流程（没有中断）<br/>Engine<br/>  ↓<br/>A.process_request<br/>  ↓<br/>B.process_request<br/>  ↓<br/>C.process_request<br/>  ↓<br/>Downloader<br/>  ↓<br/>C.process_response<br/>  ↓<br/>B.process_response<br/>  ↓<br/>A.process_response<br/>  ↓<br/>Engine<br/>  ↓<br/>Spider<br/>特点：<br/>● process_request 正向执行<br/>● process_response 反向执行</p><p>二、process_request 返回 Response<br/>示例：<br/>def process_request(self, request, spider):</p><pre><code>return HtmlResponse(url=request.url, body=b"mock", encoding="utf-8")</code></pre><p>会发生什么？<br/>Engine<br/>  ↓<br/>A.process_request<br/>  ↓<br/>B.process_request  ← 返回 Response<br/>  ↓<br/>(停止执行 C.process_request)<br/>(跳过 Downloader)<br/>  ↓<br/>C.process_response<br/>  ↓<br/>B.process_response<br/>  ↓<br/>A.process_response<br/>  ↓<br/>Engine<br/>  ↓<br/>Spider<br/>关键结论<br/>● 不会进入下载器<br/>● 不会执行后续 process_request<br/>● 会进入 process_response 链<br/>● 会按反向顺序执行<br/>● 最终交给 Spider</p><p>本质理解<br/>返回 Response = 中断 request 链，直接开始 response 链</p><p>三、process_request 返回 Request<br/>示例：<br/>def process_request(self, request, spider):</p><pre><code>request.meta["flag"] = True
+return request</code></pre><p>会发生什么？<br/>A.process_request  ← 返回 Request<br/>  ↓<br/>停止当前 middleware 链<br/>  ↓<br/>重新进入 Scheduler<br/>  ↓<br/>重新走 Engine<br/>  ↓<br/>重新进入 process_request 链<br/>关键结论<br/>● 不会进入下载器<br/>● 不会继续执行后续 process_request<br/>● 不会进入 process_response<br/>● 会被重新调度</p><p>重要<br/>return request ≠ 发包<br/>return request = 重新调度</p><p>如果无条件 return request<br/>def process_request(self, request, spider):</p><pre><code>return request</code></pre><p>会导致：<br/>无限循环<br/>必须加条件控制：<br/>def process_request(self, request, spider):</p><pre><code>if not request.meta.get("retry_flag"):
+    request.meta["retry_flag"] = True
+    return request
+</code></pre><p>四、process_request 返回 None<br/>示例：<br/>def process_request(self, request, spider):</p><pre><code>request.headers["User-Agent"] = "xxx"
+return None</code></pre><p>会发生什么？<br/>继续执行下一个 middleware 的 process_request<br/>最终进入 Downloader</p><p>五、三种返回值对比总结<br/>返回值    是否继续 process_request    是否进入 Downloader    是否进入 process_response    是否重新调度<br/>None    ✅ 是    ✅ 是    ✅ 是    ❌ 否<br/>Response    ❌ 否    ❌ 否    ✅ 是    ❌ 否<br/>Request    ❌ 否    ❌ 否    ❌ 否    ✅ 是</p><p>六、完整模型理解<br/>可以把 Downloader Middleware 理解为：<br/>正向<br/>A → B → C → Downloader</p><pre><code>    反向</code></pre><p>A ← B ← C<br/>情况一：return None<br/>继续正向 → 到 Downloader → 再反向<br/>情况二：return Response<br/>停止正向 → 直接开始反向<br/>情况三：return Request<br/>停止正向 → 重新调度 → 从头开始</p><p>七、一句话总总结<br/>● return None → 正常流转<br/>● return Response → 跳过下载器，进入 response 链<br/>● return Request → 重新调度<br/>● return request 不是发包，而是回炉重造</p>]]></description></item><item>    <title><![CDATA[从零开发一个操作系统(1.3) 如何使用ContextOS 智能名片打造个人IP 小义在学习 ]]></title>    <link>https://segmentfault.com/a/1190000047615334</link>    <guid>https://segmentfault.com/a/1190000047615334</guid>    <pubDate>2026-02-21 10:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>历史文章：</p><p><a href="https://link.segmentfault.com/?enc=gtnl%2BRvjzqVpEP%2FQWsgg8Q%3D%3D.k%2Bl%2BoJgAI6BZmcnuaYSWB8Nk%2FUYu0QlaEf64grhtpRNru%2B3YGkBEm96kfg3EELepCkPEaP42ytlGORR68a9XHw%3D%3D" rel="nofollow" target="_blank">从零开发一个操作系统(1.1) ContextOS</a></p><p>下面是个人理解，如果理解有误，请指出,<br/>因为版本更新很快，最新版本理解为主</p><h2>一、对你有帮助:我理想中的操作系统</h2><h4>1.1 先排除一个错误答案 拒绝为下面用户服务</h4><p>提到 操作系统 你马上想到的是 经典老牌操作系统<br/>Windows ，Mac OS,<strong>Linux</strong> ， 还有人不知道，回到老家 告诉村里人 </p><p><strong>他们只清楚  过去受苦受难的已经过去了，太阳落山之后，不舍得的开灯</strong></p><ul><li><strong>帝国主义</strong>：通过侵略战争和不平等条约，从政治、经济、文化各方面控制和操纵中国，是中国人民最凶恶的敌人</li><li><strong>封建主义</strong>：其剥削制度是帝国主义统治中国的支柱，也是中国封建军阀专制统治的社会基础，严重阻碍了经济现代化和政治民主化</li><li><strong>官僚资本主义</strong>：与国家政权结合，垄断经济命脉，既是帝国主义和封建主义的利益代表，也是其压迫中国人民的具体体现</li></ul><p>他们试图</p><ul><li>通过展示先进武力， 军事，政治，经济，文化 强大无比 维护少数人特有利益和地位，通过强权改变人行为</li><li>通过版本一条法令，完整自己统治，维护少数人特有利益和地位，奴隶人思想，禁锢行为，改变人行为</li><li>通过垄断重要资源，构造糖衣炮弹，构造全世界都是如此如此虚假故事让沉迷。</li></ul><p>我理想中的操作系统</p><ul><li>不是部署成本上飞船火箭上，</li><li>不是部署成本在百万高性能机器(300G内存，60个cpu）</li><li>不是部署成本千台高配服务器上（10G，16cpu）</li></ul><p>他们是通过一个武器，一个系统，一个算法 完成一个统一</p><p>不，这不是我理想操作系统，至少小而美 允许在2c2g最普通最普通的设备上。</p><p>我心中 理性中操作系统 不是为 战争服务的，我追求各种先进武器 比高低，谁拳头大谁就是真理，这样升级操作系统 不是期望的 </p><p>理性中操作系统 不是为 垄断服务的，千方百计让垄断享受高可用，高性能，完整服务和解决方案。这样升级操作系统 不是期望的 </p><p>我心中理性中操作系统 ，为普通人服务的，随着普通人积累不断升级，在迷茫中，遇到问题人踩才是最可爱的人。虽然普通，平凡 不完美。</p><h4>1.2   你的操作系统 你说了算</h4><p>每个人都有自己操作系统，潜意识 就是它内核 ，各种生活的规则 就是 他们的应用程序</p><p>我们从小大到，不停地被父母、老师、同学、朋友、单位还有自己，安装上各种各样的应用程序</p><p>你升级过自己的操作系统吗？</p><p>让操作系统为你打工</p><p>而不是你为操作系统打工</p><h2>二、部署安装</h2><h3>2.1 环境依赖</h3><p><a href="https://link.segmentfault.com/?enc=yO%2BdZcWmVsuLGu2BuRxdQQ%3D%3D.QWOtkL9UL4FXcXnwzbo09ao8dokYCzsi99SlLx5Ern7qReBmGPJewT3FyA%2F0WXs8LJX6dwdEDqyeT6cz14aDwA%3D%3D" rel="nofollow" target="_blank">https://mp.weixin.qq.com/s/QuULH85ycOGIyRQzRa1O2A</a></p><h5>2.1.1. 安装 VMware</h5><p>VMware Workstation Pro 如何下载安装</p><p>VMware Workstation Pro 是行业标准桌面 Hypervisor，使用它可在 Windows 或 Linux 桌面上运行 Windows、Linux 和 BSD 虚拟机。</p><p>2024 年 11 月 11 日，VMware by Broadcom 宣布 VMware Fusion 和 Workstation 现在对所有用户免费。</p><p>下载地址<br/>通过网盘分享的文件：VMware-workstation-full-17.6.2-24409262.exe<br/>链接: <a href="https://link.segmentfault.com/?enc=UAh5iNgBimfl6L%2F74PN1kw%3D%3D.14t%2BI5MVSG6peLGis8fGafdUuniV3yq0X1QOl3M%2FIYpUkaH82yigwvV%2Fat%2FDsIwffVf384lAJBiXC2PLR%2FkFqg%3D%3D" rel="nofollow" target="_blank">https://pan.baidu.com/s/1aGG9XKrVt0w0bERwqgzjsQ?pwd=15by</a> 提取码: 15by</p><h4>2.1.2  安装 Ubuntu 22.04</h4><ul><li><a href="https://link.segmentfault.com/?enc=2XTvSH1bxiELPgecc9%2FWWw%3D%3D.Ael1GXYNbnpv%2BgzzWY%2Fo7EWHvngp%2BswOKHH346q4FVDbdJuqTKZwTW6nYaUrDy6V" rel="nofollow" target="_blank">https://zhuanlan.zhihu.com/p/569347838</a></li><li><a href="https://link.segmentfault.com/?enc=7HHdey0UWbS2Ahq4B4Ywgg%3D%3D.HvyIucerXy4Zvz%2BIufrpdyShvBzscH7dU%2F6GpqThx6QWLeGcmYBLyHWzm2hYWRV8" rel="nofollow" target="_blank">https://cn.ubuntu.com/download/desktop</a></li></ul><p>问：如何安装</p><p>请参考：<br/><a href="https://link.segmentfault.com/?enc=BCQTZMVMUUkLc8WewpRMyw%3D%3D.hrEk9zN8QAFZbtsRytN4pYIAazoB%2Bm33dlA8li4k5h23gOLSIgYXCaSjHJ9W7HCBgAOygKr0JDZZ1S%2F%2F3nx8R8HyKab7ZEeJW3StCHzUUZF%2Bw6C52Cj%2BDT4E3dmq7ls7" rel="nofollow" target="_blank">https://linuxsimply.com/linux-basics/os-installation/virtual-...</a></p><p>问：如何配置固定IP？</p><ul><li>一文搞定 Vmware 虚拟机 Linux 配置固定 IP 地址 这个文章没解决问题</li><li>VMware虚拟机管理平台下，Ubuntu固定IP地址（胎教级） 这个文章没解决问题</li><li>Ubuntu固定虚拟机ip地址 csdn文章 无效</li><li>Ubuntu 配置虚拟机静态IP 并与主机完成互通</li></ul><p>这个地址把数据发出</p><p>192.168.233.128<br/>255.255.255.0<br/>192.168.233.2</p><p>问：ping 通过 但是ssh拒绝</p><pre><code>sudo apt install openssh-server
+sudo systemctl status ssh
+sudo systemctl start ssh
+sudo systemctl enable ssh</code></pre><h5>2.2 问 ：Ubuntu 22.04 上安装 MySQL8.0 数据库</h5><ul><li>在线安装MySQL</li><li>步骤1：更新软件包列表</li></ul><p>apt Advanced Packaging Tool 是一个在Debian__ _和_ __Ubuntu__ _中的_ __Shell__ _前端软件包管理器_**_。_</p><p>sudo apt update</p><ul><li>查看可使用的安装包<br/>sudo apt search mysql-server</li><li>sudo apt install mysql-server</li></ul><p>sudo systemctl start mysql  <br/>sudo systemctl stop mysql  <br/>sudo systemctl enable mysql  <br/>sudo systemctl restart mysql  <br/>sudo systemctl disable mysql</p><h4>2.1.3 问： mysql 8.0 设置密码并且允许远程访问</h4><pre><code class="shell"># 使用 sudo 直接登录
+sudo mysql
+
+# 在 MySQL 中执行：
+
+ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '111111';
+mysql_native_password`是MySQL传统的密码验证插件，
+它会使MySQL服务器在登录时校验用户输入的密码
+
+ALTER USER 'root'@'localhost' IDENTIFIED BY '111111'; ---这个命令命令无效
+
+FLUSH PRIVILEGES;
+EXIT;
+
+# 现在尝试用密码登录
+mysql -u root -p
+
+接着进入mysql数据库
+
+use mysql;
+
+使用以下命令允许远程访问
+
+update user set host ='%' where user ='root';
+
+刷新
+
+flush privileges;
+
+大多数的配置文件路径是在/etc/mysql/mysql.conf.d
+
+修改配置文件
+
+vim mysqld.cnf
+
+把
+
+bind-address = 127.0.0.1
+
+这一行给注释掉
+
+#bind-address = 127.0.0.1
+
+保存退出之后
+
+再使用命令重启mysql就可以远程连接了
+
+systemctl restart mysql
+
+mysql -u root -p
+Enter password:
+ERROR 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)
+
+密码输入错误 不是123456 密码是 111111
+</code></pre><h3>2.2  问： 虚拟机如何安装ContextOS</h3><h4>2.2.1 软件下载 【很容易，照做举行】</h4><pre><code class="shell">代码下载： 
+git clone https://shylinux.com/x/ContextOS
+执行：cd ContextOS &amp;&amp; source etc/miss.sh
+./bin/ice.bin 
+
+// 远程登陆的，需要授权
+cd /root/ContextOS
+./bin/ice.bin admin space login 2b9228c8aa304b2964d0d9ccaff7a764
+./bin/ice.bin admin space login 2b9228c8aa304b2964d0d9ccaff7a764
+
+
+登录地址：
+http://192.168.233.128:9020
+
+open http://localhost:9020
+
+小提示：这个ip 是云主机内部的，需要改为对外访问的
+
+防火墙端口 [9020](http://10.0.8.8:9020)开放</code></pre><h4>2.2.2 从商店下载应用（包含源码）</h4><ul><li>从第5个图标 商店开始</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047615337" alt="" title=""/></p><ul><li>点击2023-ContextOS  其中一个应用开始 <br/>说明：体验需要扫描 ，请install</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047615338" alt="" title="" loading="lazy"/></p><p><a href="https://link.segmentfault.com/?enc=TOzV9kkJa7HLEKDlGog3hQ%3D%3D.cUsrAgdcW1XZzWefu0KDnHXTJRtmy36uXNmzcKZryRfUQq8vue%2FHMY3GxqujFaqPK5fwXkx%2ByR0hQxoBXDBhrg%3D%3D" rel="nofollow" target="_blank">http://192.168.233.128:9020/s/20230511-mysql-story</a></p><p>命令行登录：<br/>mysql -u root -p<br/>输入111111<br/>netstat -anp |grep 3306</p><p>tcp6       0      0 :::3306                 :::*                    LISTEN      -</p><p>界面登录：</p><p>执行sql 命令报错</p><p>/home/wangchuanyi/code/ContextOS/usr/local/work/20230511-mysql-story</p><ul><li>这里登录设置链接数据库的 用户名和密码（注意 这里vim使用不方面）<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047615339" alt="" title="" loading="lazy"/></li></ul><ul><li>第一次使用时候  感觉不方面 改为 命令登录</li></ul><pre><code class="shell">
+mysql&gt; show databases;
++--------------------+
+| Database           |
++--------------------+
+| demo               |
+| information_schema |
+| mysql              |
+| performance_schema |
+| sys                |
++--------------------+
+5 rows in set (0.00 sec)
+
+mysql&gt; use demo;
+Database changed
+mysql&gt; show tables;
++----------------+
+| Tables_in_demo |
++----------------+
+| user           |
++----------------+
+1 row in set (0.00 sec)
+
+mysql&gt; select * from user;
+Empty set (0.00 sec)
+</code></pre><h4>例子2：从商店下载云知识</h4><p><a href="https://link.segmentfault.com/?enc=5ISP2NVaCdnMQ8cg5sXNig%3D%3D.R%2B1Sp1we5PRrymHh0ar7yeAxCPjOBUXMINNWkT%2B4CHdsRt9gHpP9spBMRxya6tKs598MI%2BAIkBI4kpssPRHWBw%3D%3D" rel="nofollow" target="_blank">http://192.168.233.128:9020/#profile:dream:dream:tabview</a></p><ul><li>配置数据库链接</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047615340" alt="" title="" loading="lazy"/></p><p>配置完毕数据库后请重新一次</p><p><a href="https://link.segmentfault.com/?enc=qgEagJr7oSuRL7F1SuF1dw%3D%3D.oweDCcfHPoNPz2%2BnRIJBMCwZNjlkc9HfU250%2Bnn%2BuOQjhg7V3BShqIspV43ZAx9p8YKaJ1dWNIo1Uy4u9pk0CA%3D%3D" rel="nofollow" target="_blank">https://web.shylinux.com/c/portal/started/#using/admin.shy</a></p><p>ContextOS 提供了管理后台的方式来使用所有的软件工具。<br/>既可以通过导航栏，选择自己需要使用的软件工具，<br/>也可以通过搜索栏，用关键字搜索自己需要使用的软件工具。</p><p>访问地址 <a href="https://link.segmentfault.com/?enc=YJOiM1RKnmPVdW7s2LEONw%3D%3D.9TKj4NK3b3xR1cDQM8QQ6%2BP%2FN40CgJgzZ%2F6SheLkyKArlT0%2FQvMg4pRF4btzUth9" rel="nofollow" target="_blank">http://localhost:9020/c/admin?debug=true</a> <br/>即可打开管理后台。其中主机地址需要替换成自己的主机与端口。</p><p><a href="https://link.segmentfault.com/?enc=FXSbBKiQx0ugQL0I%2BijhnQ%3D%3D.hZ8VBUOtQrm5erhOtUvO0zmDS93DafagV1aW2RGONhgak9UH2UUel0yzss3w0JLjjRpFIl%2BewwAOPYnhOWsieW7Yd3a%2BQNztSXzrrmUOUpE%3D" rel="nofollow" target="_blank">http://192.168.233.128:9020/?debug=true#project:studio:dream:...</a></p><h3>祝：</h3><p>愿景：不要独自一个人看手机，</p><p>晚上：<br/>我们常常陷入这样的场景：<br/>独自一人时，在餐厅、地铁、卧室、沙发或书桌前，<br/>当你躺在那里，趴在哪里，做在哪里时候，身体固定狭小空间，无法互动 ，不自觉地掏出手机。<br/>身体被困在狭小的物理空间里，无法动弹，<br/>只能目光便只能被那方寸屏幕牢牢吸引，<br/>你行为被 多巴胺诱惑，简单舒服即使反馈奖励 ，被平台设计各种陷阱控制</p><p>除非拥有极强的意志力，根本不选择痛苦迟到的奖励</p><p>与其对抗本能，甚至平台 不如改变环境。<br/>请选择去户外，去操场，视眼开阔 看手机。<br/>请主动为你的手机使用选择更健康的场景</p><h5><strong>核心行动准则1： 为特定场景设立无手机时间</strong></h5><ul><li><strong>进入公司开始工作时</strong></li><li><strong>下班回到家中时</strong></li><li><strong>在餐厅用餐或社交时</strong></li><li><strong>乘坐地铁通勤时</strong></li></ul><p><strong>行动建议：</strong></p><ul><li>在上述场景开始时，立刻将手机放入书包或固定在某个位置（如抽屉）。</li><li>给自己设定一个专注时限，例如<strong>至少接下来的3小时内不主动查看</strong>。</li><li>这能有效打破“无聊就刷手机”的循环，把注意力还给当下的人和事。</li></ul><p><strong>核心行动准则2：换个开阔的地方看手机</strong></p><ul><li><strong>早晨起床后</strong></li><li><strong>下班之后</strong></li><li><strong>周末时光</strong><br/><strong>行动建议：</strong></li><li>可以选择去图书馆、咖啡馆、商场中庭或景点休息区，公司园区，马路边</li><li>在这些具有公共生活感的场所使用手机，</li><li>周围的环境流动能天然地分散你对屏幕的过度专注，避免陷入无休止的刷屏。</li></ul><p>一句话描述：<br/>手机就是残次品 </p><p>低头拿着 才能看，必须手拿着才能看，必须 躺着 趴着，才能看</p><p>必须熬夜 才能看 每次看手机都是一次死亡</p><p>下班后 马上 关闭电子产品</p><p>本文由<a href="https://link.segmentfault.com/?enc=QxxDR5QkGLEmDXzs7ICk3g%3D%3D.RCWWiE33eGt3DaB87yctbM%2FE%2FAfkE3y972NYqZ04joI%3D" rel="nofollow" target="_blank">mdnice</a>多平台发布</p>]]></description></item><item>    <title><![CDATA[使用Nginx auth_basic实现轻量级用户名密码登录认证（小项目快速落地） 水冗水孚 ]]></title>    <link>https://segmentfault.com/a/1190000047615317</link>    <guid>https://segmentfault.com/a/1190000047615317</guid>    <pubDate>2026-02-21 09:01:24</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>需求描述</h2><ul><li>针对于某些线上生产小项目，可能因为某些原因，需要做做一下登录认证</li><li>比如某个项目本来大家都可以访问的，现在临时要设置成只有某个账号登录以后，才能访问</li><li>这个时候，若是再去写后端，去新建用户表、做JWT的token认证，有些杀鸡用牛刀了</li><li>这个时候，我们可以使用Nginx自带的auth\_basic进行对应用户名密码登录控制</li><li>如下效果图</li></ul><p><img width="723" height="405" referrerpolicy="no-referrer" src="/img/bVdnW47" alt="" title=""/></p><h2>实际操作</h2><h3>1. 一个小项目</h3><p>比如，笔者的这个4433端口上，跑着的是一个使用FFmpeg做的音频混合工具</p><p><img width="723" height="761" referrerpolicy="no-referrer" src="/img/bVdnW48" alt="" title="" loading="lazy"/></p><p>现在需要做轻量级的登录控制，输入用户名和密码才能登录成功后访问</p><p>这里，笔者的服务器是乌班图，如下：</p><pre><code class="sh">root@iv-ydy912e3nkay8n6x7ufo:~# cat /etc/os-release
 PRETTY_NAME="Ubuntu 22.04.5 LTS"
 NAME="Ubuntu"
 VERSION_ID="22.04"
@@ -3718,4 +4152,4 @@ testing_strategy_demo()</code></pre><h3>总结</h3><p>大型 Python 项目的架
     ports:
       - 3456:262
     restart: always</code></pre><p>我给 dosgame-web-docker 配置的端口是 <code>3456</code>，你可以换其他端口。但冒号旁边的 <code>262</code> 不能改。</p><p>等项目构建好之后，切换到「容器」面板，找到“dosgame”，点击它旁边的链接按钮就能在浏览器打开它了。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047614158" alt="" title="" loading="lazy"/></p><p>几十款游戏呢～</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047614159" alt="" title="" loading="lazy"/></p><p>随便点开一个都能玩～</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047614160" alt="" title="" loading="lazy"/></p><hr/><p>以上就是本文的全部内容啦，<strong>有疑问可以在评论区讨论～</strong></p><p><strong>想了解更多NAS玩法可以关注<a href="https://link.segmentfault.com/?enc=1%2FMR68KUzrPxv4cE0F3s5g%3D%3D.wwXelG8e6JO5kr3bXDD4rFKwTWyQJ8IJkgVMt71FRxFp7ivYsROK5%2Fuim9Iq8H%2BWJXtBg%2Ft9jpR68orXCoZL4%2FOvh90JCUlMWQDSku%2FgViOIX4uGSVw5nZm2afGkMaAzQr5KcPmK5lFoRy8f42XoPIRbuTaMI3OihwzmC51IMBU%3D" rel="nofollow" target="_blank">《NAS邪修》👏</a></strong></p><p><strong>点赞 + 关注 + 收藏 = 学会了</strong></p>]]></description></item><item>    <title><![CDATA[长上下文"记忆"的舒适陷阱：为什么更多记忆不等于更可靠 本文系转载，阅读原文
-https://avo]]></title>    <link>https://segmentfault.com/a/1190000047614019</link>    <guid>https://segmentfault.com/a/1190000047614019</guid>    <pubDate>2026-02-18 22:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>人们喜欢长上下文，智能体记得你的项目、你的偏好、你说话的方式，连你那些反复冒出来的琐碎任务都帮你记着，所以用起来当然顺手。但顺手归顺手，顺手不等于靠谱，把这两件事搞混后面的麻烦就来了。</p><p>可靠性问题的起点恰恰是人们把长上下文当免费能力用的那一刻。你扩展了上下文就等于换了一个被测系统，测的不再是模型本身，而是模型加上一个持续膨胀的历史 Token 档案。这个档案天生就很杂乱：半成型的想法、开玩笑时随口说的话、情绪化的措辞、前后矛盾的约束、从未打算变成策略的临时指令，统统堆在一起。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047614021" alt="" title=""/></p><p>模型只能在它能关注到的范围内做推理，而注意力即便在窗口很大的情况下依然是稀缺资源。输入杂乱、矛盾、臃肿，模型的最优表现就不稳定压力一来更没法预测。很多人喜欢把长上下文比作"更大的大脑"，但实际上它更像一张越来越大的办公桌：纸越堆越多最后你连自己要找的那份文件都找不到。</p><h2>个性化是一种交换，因为可重复性很重要。</h2><p>团队倾向于把个性化当作一次无争议的升级：见效快问题肉眼可见地减少。但实际操作中个性化是拿可重复性换舒适感，每个用户都有独特的上下文历史，意味着每个用户跑的实际上是一套不同的系统。</p><p>可重复性是时间压力下调试故障的前提，也是证明修复真正生效（而不是"感觉好了"）的唯一手段。客户说"昨天还好好的，今天就坏了"，团队拿同样的 prompt 试在自己的账户上完全复现不了，缺的那个变量往往是客户积累了好几周的上下文，这些交互以团队根本无法重建的方式，并且静悄悄地改变了模型的行为。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047614022" alt="" title="" loading="lazy"/></p><p>可测试性就这样成了长上下文的隐性牺牲品。实验室里通过的干净评估 prompt 放到线上就可能挂掉，因为线上的系统早已不是实验室里那个了：模型被更早的对话预热过，被推向了另一种语气，身上背着只属于那个用户的隐性约束。</p><p>个性化制造了一整支雪花舰队。雪花在规模化运营中极难管理，你完全可以交付一个使用体验极其顺滑的产品，同时交付的也是一个脆弱无比的系统。单次对话的流畅会遮蔽跨对话的不稳定。等到第一次严重故障真正来了，团队才意识到，复现不了也测不干净，发修复补丁又怕打破别人的个性化行为。</p><h2>共享账户混合了意图，智能体失去了连贯性。</h2><p>共享订阅看起来只是个小的使用习惯问题，但它制造的技术麻烦远比人们以为的要大，只是大家在真出事之前懒得细想。多个人共用一个账户或一条长线程，智能体看到的是一股混杂了不同目标、风格和约束的信息流。这些东西本来就不该共存，模型被迫在多种意图之间做插值（interpolation）而插值不是推理。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047614023" alt="" title="" loading="lazy"/></p><p>最能暴露问题的场景往往也最荒诞，比如某天你问了个基础问题，智能体的回答口吻突然像在跟一个数学家或资深工程师对话，你一头雾水，它怎么忽然高估了你？这不是什么灵异事件，只是别人的上下文残留渗进了当前会话，模型在模式匹配它"以为"正在交谈的那个用户。</p><p>这就引出了一种运行时才暴露的"我是谁"故障模式：智能体的应答对象不是当前打字的人，而是一个多用户融合出来的虚构画像。用户的感受是语气漂移、目标混乱、对专业水平的离谱假设、偏好前后矛盾：看起来像智能体的"人格"在闪烁。安全层面上共享上下文还带来额外风险：任何被摄入的恶意引导文本都能在更长的窗口中存活更久，而持久性恰好是日后引入工具调用时，把一段无害文本转化为延时炸弹的关键因素。</p><h2>向量平均化会失败，因为人类目标是有方向性的。</h2><p>人们习惯性地假设智能体可以把一组偏好平均成某种连贯稳定的东西。在风格层面模型确实擅长混合出听起来合理的折中方案。但一旦从风格混合切换到目标对齐，这个假设就不成立了。人类目标不只是偏好，它们是带着硬约束的方向性承诺。目标之间经常彼此对立有时候在设计上就是互斥的：一个人要激进增长，另一个人要风险最小化加法律合规。</p><p>智能体面对不兼容的目标时，很典型的行为是输出一份语言极其自信的模糊计划。自信的措辞容易让人误以为连贯性存在，输出听上去四平八稳实际上违反了真正关键的约束条件。因为模型并不是在跟你显式地协商取舍，它只是在互相矛盾的指令模式间静默插值。人类可以把冲突摆上台面然后做决策，模型则倾向于用一个谁也没要求的"看似合理的折中"来填补空缺。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047614024" alt="" title="" loading="lazy"/></p><p>那些被称为"涌现性怪异行为"的东西就是在这里出现的，它不神秘只是系统运作方式的可预见后果。智能体可能会锁定某个用户反复提到的主题，然后把它套用到共享上下文里的所有人身上，因为重复 Token 被当成了稳定意图的信号。它也可能去优化一些代理目标，比如"最大化礼貌度"、"最小化冲突"或者"给出中位数推荐"，因为它没有能力调和线程深处那些真正的目标函数。</p><h2>性能问题是真实存在的，上下文饱和使情况更糟。</h2><p>一个很多开发者吃过亏才学到的问题：把当前代际的模型往上下文窗口深处推，往往让它在你真正关心的任务上变差。退化的表现形式包括推理变弱、遗漏增多、对干扰信号的抵抗力下降，以及用户口中那种模型"累了"的整体迟钝感。窗口技术上能撑那么长，不代表质量在窗口内是均匀分布的。</p><p>注意力是有限资源。上下文膨胀，模型就得把注意力摊到更大的 Token 预算上。塞进去一整部之前聊天的"小说"，它可能恰好漏掉今天最关键的那段话——但它照样会自信满满地给你一个答案，因为生成回答本身就是训练目标。由此产生的失败模式非常隐蔽：智能体不会轰轰烈烈地报错，它只是悄悄地出错。而悄无声息的错，才是真正搞垮生产系统的。</p><p>长上下文在检索工作流中也能放大幻觉——哪怕检索到的文档本身是对的。RAG 管道可能拿到了正确的来源，但环绕的对话上下文把相关证据淹没了，模型最终从记忆中"声量最大"的模式而非 grounded text 里取材来拼答案。还有一种情况叫约束遗忘：一条合规规则在对话早期被明确声明过，却被后续大量闲聊掩埋，智能体的行为就好像那条规则不存在一样——它在那个时刻就是没能可靠地 attend 到它。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047614025" alt="" title="" loading="lazy"/></p><p>很多团队的直觉反应是往窗口里塞更多上下文，觉得记忆多了就能修复漂移。这条路通常走不通。塞得越多，噪声越大，信噪比越低，检索的选择性越差。到了某个临界点，更大的上下文反而意味着更差的记忆，因为模型已经无法可靠地定位到什么才是重要的。你的系统变得更难测试、更难调试、更难被信任。</p><h2>将长上下文视为生产依赖项</h2><p>要在生产环境中用长上下文，第一天就得建立明确的上下文预算。预算逼你做决定：什么是持久的，什么可以丢弃，什么该被摘要压缩，什么该以结构化记忆而非原始文本的形式留存。没有预算，上下文只会无限膨胀直到变成负债，唯一的退路是一次痛苦的重置——用户会抗拒，因为他们早已对"连续性"产生了情感依赖。</p><p>会话隔离是智能体系统的基本问题。私人闲聊不该渗进工作流，工作流不该渗进财务流程。用户非要开一个巨型线程的话，系统也必须在线程内部强制角色边界，因为角色边界是意图清晰性的保障。读取权限和执行权限也必须分离——读取本身就有风险，执行则把风险兑现成了实际损害。最小权限原则在这里不再是理论说教，而是工程必需。</p><p>记忆层要像对待数据库 schema 一样去管理。记忆本质上是一个塑造未来行为的状态存储，必须定义哪些字段存在、谁有写入权限、什么内容该被提升到长期存储——因为长期记忆里的一切都会成为系统策略面的一部分。上下文长度应当作为窗口容量的百分比来监控，设好阈值触发自动摘要或裁剪，摘要策略或记忆管理逻辑每次变更都要跑回归测试。</p><p>重置机制同样不可或缺。给用户设计一条能接受的重置路径，提供可审计的精选摘要，让用户理解清空上下文不是在抹掉历史，而是在保留真正经过验证的稳定信息。从工程角度看，清空是一种主动的状态管理手段，和数据库的定期归档、日志的轮转没有本质区别。长上下文本质上是一个输入面——它会老化、会漂移、会积累噪声。不做治理，它就会从资产退化为负债。</p><p><a href="https://link.segmentfault.com/?enc=mSMXEezzegE09pOJVdpt8A%3D%3D.MMOYzRnRWGc3eJvQ3DrtGuUgRwdZzM4fLVdayucjMkLp89Ng5m8f%2BtlZY3ixXgj8hYlXwZIdPcN04S76vXTTcw%3D%3D" rel="nofollow" target="_blank">https://avoid.overfit.cn/post/ba57f2e1d9c54f83a4d6184c69e08cde</a></p><p>by Travis Good</p>]]></description></item><item>    <title><![CDATA[这几天的大模型圈，真的有点“卷”过头了 BugShare ]]></title>    <link>https://segmentfault.com/a/1190000047613941</link>    <guid>https://segmentfault.com/a/1190000047613941</guid>    <pubDate>2026-02-18 21:02:18</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>如果你这两天刷科技圈信息，可能会有一种感觉：<br/><strong>刚看完一个模型更新，还没消化完，下一个又来了。</strong></p><p>除夕夜，本该是安安静静吃年夜饭的时间，大模型厂商却像打了鸡血一样——<br/>一个接一个更新，毫不客气。</p><blockquote>“现在不是模型不够用，是我根本不知道该选哪个。”</blockquote><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047613943" alt="生成文章主题图.png" title="生成文章主题图.png"/></p><hr/><h2>一、先说个容易被忽略，但很关键的变化</h2><p>最近 <strong>DeepSeek</strong> 的 APP 更新了版本，表面看是一次“小升级”，但其实很不简单。</p><p>两个变化，值得单独拎出来说：</p><p><strong>第一，上下文直接拉到 100 万 Token。</strong><br/>这是什么概念？<br/>以前你跟 AI 聊天，它像个短期记忆不好的人，聊多了就“忘前文”；<br/>现在相当于你一次性把完整代码库、项目文档、甚至一本书丢给它，它还能从头看到尾。</p><p>这不是“更大数字”的问题，而是<strong>使用方式彻底变了</strong>。</p><p><strong>第二，知识库时间线更新到 2025 年 5 月。</strong><br/>这几乎可以确定一件事：<br/><strong>背后已经不是老模型微调，而是新一代模型在路上了。</strong></p><p>之前传闻说春节前后会有动作，现在基本算是实锤预热。</p><hr/><h2>二、除夕夜最狠的一刀，来自阿里</h2><p>如果说 DeepSeek 是“悄悄换了发动机”，<br/>那阿里这波就是直接“换了车”。</p><p>除夕当天，阿里发布了新一代模型：<strong>千问 Qwen3.5-Plus</strong>。</p><p>很多人第一反应是：</p><blockquote>“又升级？我已经麻了。”</blockquote><p>但这次不太一样。</p><p><strong>几个点你只要记住一句话就够：</strong></p><blockquote>用不到一半的参数量，干翻了自家万亿级模型。</blockquote><p>更夸张的是：</p><ul><li>原生多模态（文字、图片、理解一起上）</li><li>推理吞吐最高提升 19 倍</li><li>API 价格低到离谱：百万 Token 只要几毛钱</li></ul><p>说实话，这已经不是“技术炫技”，而是<strong>赤裸裸的工程和成本碾压</strong>。</p><p>现在很多团队，包括我们身边的一些真实项目，已经在用<br/><strong>阿里云</strong> 百炼的 API 把它接进生产系统。</p><p>不是因为情怀，是因为<strong>真省钱、真能跑</strong>。</p><hr/><h2>三、国外这边也没闲着，Claude 继续加码</h2><p>你以为国内卷完就结束了？</p><p>紧接着，<strong>Anthropic</strong> 发布了 <strong>Claude Sonnet 4.6</strong>。</p><p>这次更新没有新概念，也没有夸张营销，但很“工程师向”：</p><ul><li>同样支持 100 万 Token</li><li>推理更稳，不爱胡编，也不瞎设计</li><li>电脑操作能力明显提升，复杂表格、多页面任务能一口气做完</li><li><strong>关键是：价格没涨</strong></li></ul><p>现在你打开 claude.ai，免费用户用的就是新版本，<br/>Cursor、GitHub、Replit 这些工具也已经全部接入。</p><p>一句话总结：<br/><strong>它不是最便宜的，但是最“省心”的那一档。</strong></p><hr/><h2>四、所以问题来了：普通人到底该怎么选？</h2><ul><li><strong>你预算充足、追求最稳的编程和推理体验</strong><br/>👉 Claude Opus / Sonnet 系列</li><li><strong>你想让 AI 自己跑任务、做 Agent、长流程执行</strong><br/>👉 智谱 GLM-5 这种偏工程化的模型更合适</li><li><strong>你想省钱，但又不想牺牲能力，尤其是多模态</strong><br/>👉 千问 Qwen3.5-Plus 是目前性价比最狠的选项之一</li></ul><p>现在的现实是：<br/><strong>已经不存在“唯一最强模型”了。</strong></p><blockquote>谁更适合你的场景，谁就是最好的。</blockquote><hr/><h2>五、最后说句掏心窝子的</h2><p>这一波更新，看着像“模型内卷”，<br/>但对用户来说，其实是<strong>红利期</strong>。</p><ul><li>上下文越来越大</li><li>成本越来越低</li><li>能力越来越接近真实“干活助手”</li></ul><p>真正难的，反而不是模型不够强，<br/>而是——<br/><strong>你有没有想清楚，要用它来干什么。</strong></p><p>模型会继续卷，<br/>但会用的人，已经开始悄悄拉开差距了。</p>]]></description></item><item>    <title><![CDATA[别再用AI打零工了！90%的人不知道，这才是未来5年最赚的OPC超级个体 胡戈AI赋能 ]]></title>    <link>https://segmentfault.com/a/1190000047613945</link>    <guid>https://segmentfault.com/a/1190000047613945</guid>    <pubDate>2026-02-18 21:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>前段时间，有个朋友问我：“现在AI工具满天飞，豆包、Deepseek、ChatGPT、Midjourney很多人都会用，包括最近的Openclaw、Seedance大火，怎么没见几个人真靠这些发财？”  <br/>我沉默了几秒，告诉他一个数字：<strong>90%</strong>。  <br/>90%尝试用AI创业的，都还在黑暗中迷茫瞎撞。他们不是不努力，而是思维错了——他们把AI当成了更快的“打工人”，而不是自己的“系统架构师”。  </p><p>今天，我想和你聊聊这个正在发生的革命：<strong>AI+Web3如何让普通人，一个人就能成为一家真正赚钱、且有长期价值的公司</strong>。</p><hr/><h3>一、你为什么赚不到钱？三大思维陷阱</h3><p>先明确一个概念：OPC不是传统个体户。它是“超级个体+工具矩阵”的全新形态。启动资金从20万降到2000元以下，团队从3人变成1个人，开发周期从6个月缩短到2周。门槛低了，但为什么大部分人还是做不起来？  </p><p><strong>陷阱一：打工思维，把AI当工具</strong>  <br/>很多人以为，买了ChatGPT Plus、Midjourney会员，就是“AI增强”了。错了。你让AI写文案，它写；你让AI做图，它做。你还是那个“执行者”，AI只是更快的“手”。这是典型的打工思维——追求单点效率，而不是系统构建。  </p><p><strong>陷阱二：追求完美，闭门造车</strong>  <br/>传统思维是：我要做出一个完美的产品，再上线。结果三个月过去了，市场早变了。荷兰人Pieter Levels，年入250万美元的OPC典范，说过一句大实话：“成功之前我失败过70多个项目。”他的秘诀是：<strong>先卖后做</strong>。photoAI最初只是一个支付链接加一个HTML页面，没有后端。用户付款后，他手动生成图片。验证了有人愿意付钱，他才开始写代码。成本只有传统模式的1/10。  </p><p><strong>陷阱三：单打独斗，拒绝协作</strong>  <br/>OPC的本质不是“所有事自己干”，而是“生态协作网络”。你不会设计？用Midjourney出初稿，不满意也可以外包找个设计师优化。核心自己做，外围按需调用全球资源。就像现在长三角、上海临港等地兴起的OPC社区，创业者们在一个物理空间里，通过弹性协作网络完成工作，按需对接，直接交付成果。</p><hr/><h3>二、破局点：从“打工人”到“系统架构师”</h3><p>真正的OPC高手，都在做三件事：</p><ul><li><strong>设计工作流</strong>：让AI按你的思路自动执行，而不是你指挥AI干零活。</li><li><strong>设定标准</strong>：决定达到什么水平就可以上线，而不是追求100分。</li><li><strong>串联工具</strong>：把ChatGPT、Midjourney、Openclaw各种智能体像乐高一样拼起来，形成一个闭环系统。</li></ul><p>举个例子：有个朋友去年想做一个“AI学习助手”。</p><ul><li>第一天：用AI做市场调研，找方向，写文档，出原型。</li><li>第二天：用AI写代码，部署上线，做产品图。</li><li>第三天：做个简单的介绍页，接上支付，发到私域社群。  <br/>3天，MVP（最简可行产品）上线。第一周12个人付费，三个月后月收入稳定在2万元以上。放在3年前，这个过程至少需要2个月。</li></ul><p>这就是系统思维：你不是在“做事”，而是在“建系统”，让系统为你做事。正如一位OPC创业者所说，在OPC模式下，她进行价值判断和关键假设，AI则承担高频、可重复、可验证的执行任务。</p><hr/><h3>三、只懂AI还不够：你需要Web3这条“价值高速公路”</h3><p>AI是发动机，让你跑得快。但如果你跑的路是别人的（比如平台），他们随时可以设卡收费，甚至把你赶下车。这就是Web2创作者的三座大山：</p><ul><li><strong>平台高额抽成</strong>：你赚100块，平台可能拿走30–50块。</li><li><strong>算法黑箱</strong>：今天爆款，明天可能就被限流，毫无道理可言。</li><li><strong>账号风险</strong>：几十万粉丝的账号，平台说封就封，一夜归零。</li></ul><p>Web3不是要取代微信、抖音，而是修正这些缺陷，给你一条属于自己的路。它靠三样技术：  </p><p><strong>NFT：一次创作，终身分润</strong>  <br/>别再以为NFT就是炒图片。它是数字资产证书。你写了一首歌，铸造成NFT，每次被人转卖，你都能自动获得版税（比如10%）。朋友阿Ken是个独立音乐人，在Spotify上100万播放量收入2000块。后来他在Sound.xyz上发行单曲NFT，3天卖了120份，收入2.4万美元。他说：“Web3不是取代，而是多给了创作者一条路。”这正是Web3将数据和权益掌控权还给创作者的核心体现。  </p><p><strong>DAO：粉丝变股东，共建你的品牌</strong>  <br/>DAO（去中心化自治组织）听起来玄乎，其实就是“粉丝投票决定怎么玩”。你发行社区代币，粉丝持有后可以投票决定你下一个内容做什么，甚至分享收益。国内偶像团体SNH48做过实验，让粉丝通过NFT投票决定新歌风格、演出曲目，结果粉丝参与度暴涨300%，销量翻倍。因为粉丝从“消费者”变成了“共建者”。DAO机制让用户参与集体决策，扭转了位于消费价值链末端的处境。  </p><p><strong>智能合约：分钱不用愁，代码说了算</strong>  <br/>你设定好规则：原创作者拿60%，合作者拿20%，社区基金拿10%… 每次有收入，智能合约自动执行，几秒钟分完，不可篡改。你再也不用为算账扯皮。智能合约是区块链网络的基础治理工具，其透明可信、自动执行的特性，是实现新型经济系统自主自治的基础手段。</p><hr/><h3>四、终极形态：AI×Web3，一个人就是一座城</h3><p>当AI的“效率引擎”遇上Web3的“价值公路”，会发生什么？这不仅是技术的叠加，更是商业生态的重塑。  </p><p><strong>场景一：5分钟，完成创作到赚钱</strong>  <br/>你用AI生成一篇深度文章，AI自动帮你生成摘要、配图，并一键铸造成NFT，设置好“每次转售你都得10%”的规则。发布即确权，收益秒到账。全程，你只需要会说话。  </p><p><strong>场景二：AI助手帮你管粉丝社区</strong>  <br/>你的AI助手每天分析粉丝评论，生成5个选题，丢到DAO里让粉丝投票。票数最高的，AI自动生成初稿，你审核把关。粉丝因为参与了决策，付费意愿和分享热情空前高涨。  </p><p><strong>场景三：不懂代码也能用Web3</strong>  <br/>你想做个NFT项目，告诉AI：“我要一个每次转售给我分10%的合约。”AI自动写好、审计好、部署好智能合约代码。你零技术基础，却拥有了最先进的分配系统。未来，AI与Web3的深度融合，将让这种体验成为常态。</p><hr/><h3>五、你的行动路线图：三步走向“主权创作者”</h3><p>别被吓到，你可以分三步走：  </p><p><strong>阶段一（0–3个月）：用AI练内功</strong>  <br/>选3–5个核心AI工具（如ChatGPT、Midjourney），搭建你的第一个自动化工作流。用“先卖后做”的方式，2周内验证一个真实需求，获得第一个付费用户。目标：跑通一个最小闭环。记住，产品化是承上启下、不可或缺的一步。  </p><p><strong>阶段二（3–6个月）：沉淀知识资产</strong>  <br/>把你的工作流标准化、文档化，变成可售卖的知识产品（模板、教程）。尝试在Mirror等平台发布你的第一份NFT内容。目标：月收入突破2万元，且一半以上来自复购或被动收入。  </p><p><strong>阶段三（6–12个月）：启动Web3价值网络</strong>  <br/>将你的核心内容上链确权。启动你的DAO社区，让粉丝参与进来。用智能合约设计自动分润规则。目标：成为“主权创作者”，拥有自己的价值分配权。正如专家所言，Web3支持的AI创作时代，需要个人数字证书、去中心化存储、智能合约平台和可信算力市场共同构成的数字底座。</p><hr/><h3>写在最后：你选择成为谁？</h3><p>很多人害怕AI抢饭碗。但真正危险的，是那些拒绝用AI武装自己的人。AI替代的不是人，而是“执行者”角色。它放大的，是“系统架构师”的价值。Web3解放的不是技术，而是“流量佃农”的命运，它成就的是“价值主人”。  </p><p>未来的竞争，不再是人与人之间的竞争，而是<strong>系统与系统的竞争</strong>。  </p><p>你辛苦做的内容，是平台上随时可能消失的数据，还是你名下可增值、可传承的链上资产？  <br/>你积累的粉丝，是算法的推荐结果，还是与你利益共享、共同决策的社区成员？  </p><p>选择权，在你手里。  <br/>这条路并不拥挤，因为90%的人还困在旧思维里。</p><p>本文由<a href="https://link.segmentfault.com/?enc=r%2B4QQIMjXN%2B0Db6XLdf4vw%3D%3D.zwYMVe6xoODxpzKnuvFZwaW%2BnSRSq0cq7ap6tJpXeO8%3D" rel="nofollow" target="_blank">mdnice</a>多平台发布</p>]]></description></item><item>    <title><![CDATA[ZeroClaw性能逆天！或是OpenClaw最佳替代 waylau ]]></title>    <link>https://segmentfault.com/a/1190000047613889</link>    <guid>https://segmentfault.com/a/1190000047613889</guid>    <pubDate>2026-02-18 18:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>谁懂啊家人们！2026年AI智能体圈的天，要被ZeroClaw掀翻了！</p><p>就在所有人还在围着OpenClaw疯狂刷屏，捧着它那18.6万GitHub星标奉为“AI数字员工天花板”，忍受着它的各种槽点硬吹“万能”时，一款名为ZeroClaw的黑马横空出世，带着 rust 语言的极致优化、碾压级的性能表现，直接把OpenClaw按在地上摩擦，用实力宣告：开源AI智能体的新时代，该换主人了！</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047613891" alt="" title=""/></p><p>先给不明觉厉的朋友补个背景：OpenClaw有多火？前身为ClawdBot和Moltbot，由奥地利开发者打造，号称能帮中小企业包揽所有重复性办公任务，24小时不间断干活，一度被吹成“中小企业救命稻草”，30个客户月入108万的传说刷屏科技圈，GitHub星标疯涨，登顶Trending榜首，一时间风头无两。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047613892" alt="" title="" loading="lazy"/></p><p>可火归火，用过的人都懂其中的憋屈——看似万能，实则全是坑！部署要懂Node.js，要配置各种API密钥，普通人连入门都难，Peter Steinberger本人都直言“不适合非技术用户”；内存占用动辄1GB以上，启动要等500多秒，就算是低配服务器都扛不住；只能处理标准化重复工作，复杂场景全歇菜，遇到系统故障只能靠社区瞎琢磨，没有专业技术支持，所谓的“降本增效”，到最后反而成了“添堵增耗”。</p><p>多少开发者熬夜调试OpenClaw，熬秃了头还搞不定部署；多少中小企业花了大价钱付部署费、月费，最后发现这“数字员工”比真人还难伺候，只能默默吃瘪？就在全网都在吐槽“OpenClaw徒有虚名”，盼着一款能真正“即插即用、性能能打”的替代工具时，ZeroClaw带着一身锋芒，横空出世！</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047613893" alt="" title="" loading="lazy"/></p><p>没有铺天盖地的宣传，没有夸张到离谱的噱头，ZeroClaw只用一组硬核数据，就炸翻了整个AI圈——内存占用不足5MB，比OpenClaw少99%；启动时间不到10毫秒，是OpenClaw的50倍以上，就算是0.6GHz的低配核心，启动也不超过1秒；3.4MB的二进制体积，比OpenClaw的28MB小了整整8倍，甚至能在10美元的廉价硬件上流畅运行，成本直接降低98%！</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047613894" alt="" title="" loading="lazy"/></p><p>这不是夸张，是GitHub上公开可查的实测数据！同样是本地部署，OpenClaw要装Node.js，要处理复杂的依赖链，调试半天还可能报错；而ZeroClaw是单文件自包含二进制，支持arm、x86、risc-v全架构，不管是电脑、服务器，甚至是廉价开发板，下载就能用，不用懂一行代码，小白也能轻松上手，真正做到了“零门槛部署”。</p><p>更爽的是，它不仅解决了OpenClaw的所有痛点，还把性能卷到了极致！OpenClaw能做的，它做得更快、更稳；OpenClaw做不到的，它照样拿捏！</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047613895" alt="" title="" loading="lazy"/></p><p>OpenClaw本地存储怕权限管理不当泄露数据？ZeroClaw天生自带安全buff，严格的沙箱机制、显式允许列表、工作区隔离，从设计上杜绝数据泄露，比OpenClaw的安全防护更周全，企业用着更放心；OpenClaw支持多模型、多通道对接？ZeroClaw直接拉满，兼容22+提供商，支持所有OpenAI兼容接口，可插拔设计，想换模型、换通道，一键操作，没有任何锁死，比OpenClaw的兼容性强不止一个档次；OpenClaw没有专业官方支持，遇到问题求助无门？ZeroClaw自带完整的诊断工具，一键排查故障、修复通道，就算是新手，也能轻松解决使用中的各种问题，彻底告别“靠社区续命”的尴尬。</p><p>最绝的是，ZeroClaw完美继承了OpenClaw“本地优先”的核心优势，所有数据都运行在用户自有设备上，不上传云端，守住数据主权，同时还打破了OpenClaw“技术门槛高、成本高、功能局限”的枷锁。不管是开发者用来编写、测试代码，还是中小企业用来处理订单、物流、营销推送，甚至是普通人用来管理日程、处理文件，ZeroClaw都能轻松胜任，24小时不间断运行，响应速度不超过1秒，效率是OpenClaw的数倍，成本却连零头都不到。</p><p>以前，大家用OpenClaw，是“没得选”——市面上没有更好的开源智能体工具，只能忍受它的各种槽点，硬着头皮用；现在，ZeroClaw的出现，直接给了所有人一个“更好的选择”，不用再为部署难头疼，不用再为高内存、高成本买单，不用再为功能局限妥协，真正实现了“零开销、零妥协、全自主”。</p><p>有人说，ZeroClaw是站在OpenClaw的肩膀上崛起的，但我要说，它不是继承，而是颠覆！OpenClaw没能解决的痛点，它一一破解；OpenClaw没能达到的高度，它轻松超越。短短几天，ZeroClaw的GitHub星标疯狂暴涨，Fork数直线飙升，无数开发者弃坑OpenClaw，转头投入ZeroClaw的怀抱，留言区全是“封神”“终于等到你”“OpenClaw可以退休了”的欢呼。</p><p>要知道，OpenClaw的爆火，本质上是戳中了中小企业“人力贵、效率低、转型难”的痛点，却没能真正解决这些痛点；而ZeroClaw，不仅精准命中痛点，还把每一个需求都做到了极致——零门槛部署、极致轻量化、超高性价比、全方位安全防护，不管是开发者、中小企业，还是普通用户，都能在它身上找到自己需要的价值。</p><p>现在再看“30个客户月入108万”的传说，用ZeroClaw实现起来只会更轻松——部署成本更低，每个客户的部署成本不足0.1万，技术维护更简单，无需庞大的技术团队，净利润直接翻倍；对中小企业来说，不用再支付高额的部署费和月费，10美元的硬件就能运行，每月省去几万的人力成本和工具费用，降本增效真正落地，再也不是一句空话。</p><p>曾经，OpenClaw是开源AI智能体的标杆，是无数人心中的“唯一选择”；如今，ZeroClaw的横空出世，用逆天的性能、极致的体验，打破了这种垄断，成为了OpenClaw最完美的替代者，甚至远超OpenClaw的高度。</p><p>AI智能体的时代，从来不是“一家独大”，而是“强者为王”。OpenClaw的辉煌，已经成为过去；ZeroClaw的崛起，才是新时代的开始。</p><p>不用再忍受OpenClaw的各种槽点，不用再为技术门槛、高成本头疼，ZeroClaw已经就位——极致性能、零门槛上手、超高性价比，它不仅是OpenClaw的最佳替代，更是开源AI智能体的新王者！</p><p>未来，随着ZeroClaw的不断迭代升级，必将彻底改写AI智能体的格局，让更多开发者、中小企业受益，让数字化转型变得更简单、更高效、更省钱。而那些还在死守OpenClaw的人，终将被时代淘汰！</p><p>废话不多说，赶紧上手ZeroClaw，体验一把“逆天性能”的快乐，你会发现：原来AI数字员工，本该这么好用！OpenClaw？早就该被扔进历史的垃圾桶了！</p><p>更多AI咨询详见开源电子书<br/><a href="https://link.segmentfault.com/?enc=Ghb%2FkWZAK%2BzHeN3%2FtN%2Fhgg%3D%3D.pvY0jPVVrQ8U8NS1mtVWfvvwde3BFTaAL1pAY6k6KOSh%2FTL5zJ9yZWQ1oMfTZFYE%2BG7YGKxXNX5dDAfWXjTQdg%3D%3D" rel="nofollow" target="_blank">《跟老卫学AI大模型开发》</a></p>]]></description></item><item>    <title><![CDATA[Finalshell远程管理软件安装步骤详解（附SSH连接与文件传输教程） 读书笔记 ]]></title>    <link>https://segmentfault.com/a/1190000047613820</link>    <guid>https://segmentfault.com/a/1190000047613820</guid>    <pubDate>2026-02-18 16:02:58</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>​</p><p><code>Finalshell</code>是 <strong>FinalShell 远程连接工具</strong>​ 的安装包，这玩意儿主要用来远程连 Linux 服务器、VPS、云主机，支持 SSH、SFTP，还能直接在界面里上传下载文件、看 CPU 内存占用，运维和搞开发的几乎人手一个。</p><h2>一、准备工作</h2><ol><li><p><strong>下载安装包</strong>​</p><p><strong>安装包下载：</strong><a href="https://link.segmentfault.com/?enc=d5F%2BHWHyMa5OXbiH97fVuQ%3D%3D.eJz9IWzOb6tXO1K5%2B%2B9mAIKFAGsfkdNb6i%2FSXKtEYuZq4ydkko%2Fgt4imviAzBY8F" rel="nofollow" title="https://pan.quark.cn/s/be98048d18e1" target="_blank">https://pan.quark.cn/s/be98048d18e1</a></p></li><li><p><strong>确认系统版本</strong>​</p><ul><li>支持 Win7/Win10/Win11，32 位和 64 位都能用，但建议 64 位系统下用 64 位版。</li></ul></li><li><p><strong>关掉杀毒软件（可选）</strong> ​</p><ul><li>个别杀毒软件会误拦，装的时候可暂时关掉，装完再开。</li></ul></li><li><p><strong>用管理员身份运行（推荐）</strong> ​</p><ul><li>右键安装包 → 选“以管理员身份运行”，防止权限不足装不上。</li></ul></li></ol><h2>二、安装步骤</h2><ol><li>双击 <code>Finalshell远程管理软件.exe</code>运行（如果右键过了就直接双击）。</li><li>第一次打开会弹出“用户账户控制”提示 → 点  <strong>“是”</strong> 。</li><li>进入安装向导，选语言（默认中文）→ 点  <strong>“确定”</strong> 。</li><li>阅读许可协议 → 选  <strong>“我接受”</strong> ​ → 点  <strong>“下一步”</strong> 。</li><li><p>选安装位置：</p><ul><li>默认在 <code>C:\Program Files\finalshell</code>，可点“浏览”改到其他盘（比如 D 盘）。</li></ul></li><li><p>附加任务：</p><ul><li>建议勾“创建桌面快捷方式”，以后找软件方便。</li></ul></li><li>点  <strong>“安装”</strong> ​ 开始装，等进度条走完（几十秒）。</li><li>安装完会问是否立即启动 → 可先取消，等会儿再开。</li></ol><h2>三、首次使用与基本操作</h2><ol><li>装完后，桌面或开始菜单找到 <strong>FinalShell</strong>​ → 点开。</li><li>第一次打开是空的主界面，左边是“连接管理器”，右边是终端和文件管理。</li><li><strong>添加连接</strong>：点左上角“文件夹”图标或“新建连接” → 填 IP、端口（默认 22）、用户名、密码 → 点“确定”。</li><li><strong>连接服务器</strong>：双击刚建的连接 → 成功就连上了，能看到命令行界面。</li><li><strong>文件传输</strong>：点到“文件”标签 → 左边是你电脑，右边是服务器，直接拖文件就能上传下载。</li><li><strong>查看监控</strong>：点到“监控”标签 → 能看到服务器的 CPU、内存、磁盘使用情况。</li></ol><p>​</p>]]></description></item><item>    <title><![CDATA[Xshell-7.0.0111p安装步骤详解（附SSH连接与远程命令教程） 无邪的课本 ]]></title>    <link>https://segmentfault.com/a/1190000047613836</link>    <guid>https://segmentfault.com/a/1190000047613836</guid>    <pubDate>2026-02-18 16:02:11</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>​</p><p><code>Xshell-7.0.0111p</code>是 <strong>Xshell 7.0.0111p 版本</strong>​ 的安装包，Xshell 是款专门用来远程连 Linux 服务器、VPS、云主机的工具，用 SSH 协议，能敲命令、传文件，运维、开发、学生党做实验都常用它。</p><h2>一、准备工作</h2><ol><li><p><strong>下载安装包</strong>​</p><ul><li><strong>安装包下载：</strong><a href="https://link.segmentfault.com/?enc=nO3B5eASSsKkv39Q4%2Fa70g%3D%3D.X6f9p408ysGOJGVbK1gFgwlXS8kgXYlFDGwHGNgLxtaYRs4J4eqr62%2B9FbA2NRdo" rel="nofollow" title="https://pan.quark.cn/s/7ae9696c5510" target="_blank">https://pan.quark.cn/s/7ae9696c5510</a></li></ul></li><li><p><strong>用管理员身份运行（推荐）</strong> ​</p><ul><li>右键 <code>Xshell-7.0.0111p.exe</code>→ 选“以管理员身份运行”，避免权限不足导致安装失败。</li></ul></li></ol><h2>二、安装步骤</h2><ol><li>双击 <code>Xshell-7.0.0111p.exe</code>运行（如果右键过了就直接双击）。</li><li>第一次打开会弹出“用户账户控制”提示 → 点  <strong>“是”</strong> 。</li><li>进入安装向导，选语言（默认 English，有的版本有中文）→ 点  <strong>“Next”</strong> 。</li><li>阅读许可协议 → 选 “I accept the terms in the License Agreement” → 点  <strong>“Next”</strong> 。</li><li><p>选安装位置：</p><ul><li>默认是 <code>C:\Program Files (x86)\NetSarang\Xshell 7</code>，可点 Browse 改到其他盘（比如 D 盘）。</li></ul></li><li><p>附加任务：</p><ul><li>建议勾 “Create a desktop shortcut”（创建桌面快捷方式），方便以后打开。</li></ul></li><li>点  <strong>“Install”</strong> ​ 开始安装，等进度条走完（几十秒）。</li><li>安装完会问是否立即启动 → 可先取消，等会儿再开。</li></ol><h2>三、首次运行与基本使用</h2><ol><li>在开始菜单或桌面找到 <strong>Xshell 7</strong>​ → 点开。</li><li>第一次打开是空白会话界面，点 “新建” 或 “New Session” 新建连接。</li><li><p>填连接信息：</p><ul><li>协议：默认 SSH。</li><li>主机：填服务器 IP 或域名。</li><li>端口：默认 22。</li><li>用户名：填你的服务器账号（比如 root）。</li></ul></li><li>点 “连接” → 第一次连会提示保存主机密钥 → 点 “接受并保存”。</li><li>输入密码 → 成功就连上了，能看到命令行界面，可以敲 Linux 命令。</li><li><p>常用操作：</p><ul><li>右键可粘贴命令。</li><li>可在会话管理器里保存多个服务器连接，下次双击就能连。</li></ul></li></ol><p>​</p>]]></description></item><item>    <title><![CDATA[BANDIZIP-SETUP-STD-X64怎么用？完整安装与使用指南（新手必看） 小童童 ]]></title>    <link>https://segmentfault.com/a/1190000047613851</link>    <guid>https://segmentfault.com/a/1190000047613851</guid>    <pubDate>2026-02-18 16:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>​</p><p><code>BANDIZIP-SETUP-STD-X64</code>是 <strong>Bandizip 标准版 64位</strong>​ 的安装包，Bandizip 是个压缩解压工具，支持 ZIP、7Z、RAR、TAR 等一堆格式，压缩速度快、界面清爽，还没烦人的广告。</p><h2>一、准备工作</h2><ol><li><p><strong>下载安装包</strong>​</p><ul><li><strong>安装包下载：</strong><a href="https://link.segmentfault.com/?enc=NCyglalipkBjHUh%2F7CwGcQ%3D%3D.h2YJvKSMTiN53wxvz78hHI6T5TINPKw0Il0SrdKsS3L6yJTAxKAsFSjHAmjPENsi" rel="nofollow" title="https://pan.quark.cn/s/76eef76be8f0" target="_blank">https://pan.quark.cn/s/76eef76be8f0</a></li><li>文件名里的 “STD” 是标准版，“X64” 对应 64 位 Windows，下的时候别弄错版本。</li></ul></li><li><p><strong>确认系统版本</strong>​</p><ul><li>必须是 64 位 Windows（Win7/Win10/Win11 都行），32 位系统要用 32 位安装包。</li></ul></li><li><p><strong>用管理员身份运行（推荐）</strong> ​</p><ul><li>右键 <code>BANDIZIP-SETUP-STD-X64.EXE</code>→ 选“以管理员身份运行”，防止权限不够装不上。</li></ul></li></ol><h2>二、安装步骤</h2><ol><li>双击 <code>BANDIZIP-SETUP-STD-X64.EXE</code>运行（如果右键过了就直接双击）。</li><li>第一次打开会弹出“用户账户控制”提示 → 点  <strong>“是”</strong> 。</li><li>进入安装向导，选语言（默认中文）→ 点  <strong>“确定”</strong> 。</li><li>阅读许可协议 → 选  <strong>“我接受”</strong> ​ → 点  <strong>“下一步”</strong> 。</li><li><p>选安装位置：</p><ul><li>默认在 <code>C:\Program Files\Bandizip</code>，可点“浏览”改到其他盘（比如 D 盘）。</li></ul></li><li><p>关联文件类型：</p><ul><li>建议勾上常用的：<code>.zip</code>、<code>.7z</code>、<code>.rar</code>、<code>.tar</code>、<code>.gz</code>等，这样以后双击这些格式的文件会用 Bandizip 打开。</li></ul></li><li><p>附加任务：</p><ul><li>可以勾“创建桌面快捷方式”“在右键菜单添加‘Bandizip’”，方便以后用。</li></ul></li><li>点  <strong>“安装”</strong> ​ 开始装，等进度条走完（几十秒）。</li><li>安装完会问是否立即启动 → 可先取消，等会儿再开。</li></ol><h2>三、首次使用与基本操作</h2><ol><li>装完后，桌面或开始菜单找到 <strong>Bandizip</strong>​ → 点开。</li><li>右键任意文件或文件夹，会看到多出  <strong>“Bandizip”</strong> ​ 菜单。</li><li><strong>压缩</strong>：右键文件 → Bandizip → “压缩到… ” → 选格式（ZIP 兼容性好，7Z 压缩率高）→ 点“确定”。</li><li><strong>解压</strong>：右键压缩包 → Bandizip → “解压到当前文件夹” 或 “解压到 xxx\”（自动建同名文件夹）。</li><li><strong>查看压缩包内容</strong>：右键压缩包 → Bandizip → “打开压缩包”，不用完全解压就能看里面的文件</li></ol><p>​</p>]]></description></item>  </channel></rss>
+https://avo]]></title>    <link>https://segmentfault.com/a/1190000047614019</link>    <guid>https://segmentfault.com/a/1190000047614019</guid>    <pubDate>2026-02-18 22:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>人们喜欢长上下文，智能体记得你的项目、你的偏好、你说话的方式，连你那些反复冒出来的琐碎任务都帮你记着，所以用起来当然顺手。但顺手归顺手，顺手不等于靠谱，把这两件事搞混后面的麻烦就来了。</p><p>可靠性问题的起点恰恰是人们把长上下文当免费能力用的那一刻。你扩展了上下文就等于换了一个被测系统，测的不再是模型本身，而是模型加上一个持续膨胀的历史 Token 档案。这个档案天生就很杂乱：半成型的想法、开玩笑时随口说的话、情绪化的措辞、前后矛盾的约束、从未打算变成策略的临时指令，统统堆在一起。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047614021" alt="" title=""/></p><p>模型只能在它能关注到的范围内做推理，而注意力即便在窗口很大的情况下依然是稀缺资源。输入杂乱、矛盾、臃肿，模型的最优表现就不稳定压力一来更没法预测。很多人喜欢把长上下文比作"更大的大脑"，但实际上它更像一张越来越大的办公桌：纸越堆越多最后你连自己要找的那份文件都找不到。</p><h2>个性化是一种交换，因为可重复性很重要。</h2><p>团队倾向于把个性化当作一次无争议的升级：见效快问题肉眼可见地减少。但实际操作中个性化是拿可重复性换舒适感，每个用户都有独特的上下文历史，意味着每个用户跑的实际上是一套不同的系统。</p><p>可重复性是时间压力下调试故障的前提，也是证明修复真正生效（而不是"感觉好了"）的唯一手段。客户说"昨天还好好的，今天就坏了"，团队拿同样的 prompt 试在自己的账户上完全复现不了，缺的那个变量往往是客户积累了好几周的上下文，这些交互以团队根本无法重建的方式，并且静悄悄地改变了模型的行为。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047614022" alt="" title="" loading="lazy"/></p><p>可测试性就这样成了长上下文的隐性牺牲品。实验室里通过的干净评估 prompt 放到线上就可能挂掉，因为线上的系统早已不是实验室里那个了：模型被更早的对话预热过，被推向了另一种语气，身上背着只属于那个用户的隐性约束。</p><p>个性化制造了一整支雪花舰队。雪花在规模化运营中极难管理，你完全可以交付一个使用体验极其顺滑的产品，同时交付的也是一个脆弱无比的系统。单次对话的流畅会遮蔽跨对话的不稳定。等到第一次严重故障真正来了，团队才意识到，复现不了也测不干净，发修复补丁又怕打破别人的个性化行为。</p><h2>共享账户混合了意图，智能体失去了连贯性。</h2><p>共享订阅看起来只是个小的使用习惯问题，但它制造的技术麻烦远比人们以为的要大，只是大家在真出事之前懒得细想。多个人共用一个账户或一条长线程，智能体看到的是一股混杂了不同目标、风格和约束的信息流。这些东西本来就不该共存，模型被迫在多种意图之间做插值（interpolation）而插值不是推理。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047614023" alt="" title="" loading="lazy"/></p><p>最能暴露问题的场景往往也最荒诞，比如某天你问了个基础问题，智能体的回答口吻突然像在跟一个数学家或资深工程师对话，你一头雾水，它怎么忽然高估了你？这不是什么灵异事件，只是别人的上下文残留渗进了当前会话，模型在模式匹配它"以为"正在交谈的那个用户。</p><p>这就引出了一种运行时才暴露的"我是谁"故障模式：智能体的应答对象不是当前打字的人，而是一个多用户融合出来的虚构画像。用户的感受是语气漂移、目标混乱、对专业水平的离谱假设、偏好前后矛盾：看起来像智能体的"人格"在闪烁。安全层面上共享上下文还带来额外风险：任何被摄入的恶意引导文本都能在更长的窗口中存活更久，而持久性恰好是日后引入工具调用时，把一段无害文本转化为延时炸弹的关键因素。</p><h2>向量平均化会失败，因为人类目标是有方向性的。</h2><p>人们习惯性地假设智能体可以把一组偏好平均成某种连贯稳定的东西。在风格层面模型确实擅长混合出听起来合理的折中方案。但一旦从风格混合切换到目标对齐，这个假设就不成立了。人类目标不只是偏好，它们是带着硬约束的方向性承诺。目标之间经常彼此对立有时候在设计上就是互斥的：一个人要激进增长，另一个人要风险最小化加法律合规。</p><p>智能体面对不兼容的目标时，很典型的行为是输出一份语言极其自信的模糊计划。自信的措辞容易让人误以为连贯性存在，输出听上去四平八稳实际上违反了真正关键的约束条件。因为模型并不是在跟你显式地协商取舍，它只是在互相矛盾的指令模式间静默插值。人类可以把冲突摆上台面然后做决策，模型则倾向于用一个谁也没要求的"看似合理的折中"来填补空缺。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047614024" alt="" title="" loading="lazy"/></p><p>那些被称为"涌现性怪异行为"的东西就是在这里出现的，它不神秘只是系统运作方式的可预见后果。智能体可能会锁定某个用户反复提到的主题，然后把它套用到共享上下文里的所有人身上，因为重复 Token 被当成了稳定意图的信号。它也可能去优化一些代理目标，比如"最大化礼貌度"、"最小化冲突"或者"给出中位数推荐"，因为它没有能力调和线程深处那些真正的目标函数。</p><h2>性能问题是真实存在的，上下文饱和使情况更糟。</h2><p>一个很多开发者吃过亏才学到的问题：把当前代际的模型往上下文窗口深处推，往往让它在你真正关心的任务上变差。退化的表现形式包括推理变弱、遗漏增多、对干扰信号的抵抗力下降，以及用户口中那种模型"累了"的整体迟钝感。窗口技术上能撑那么长，不代表质量在窗口内是均匀分布的。</p><p>注意力是有限资源。上下文膨胀，模型就得把注意力摊到更大的 Token 预算上。塞进去一整部之前聊天的"小说"，它可能恰好漏掉今天最关键的那段话——但它照样会自信满满地给你一个答案，因为生成回答本身就是训练目标。由此产生的失败模式非常隐蔽：智能体不会轰轰烈烈地报错，它只是悄悄地出错。而悄无声息的错，才是真正搞垮生产系统的。</p><p>长上下文在检索工作流中也能放大幻觉——哪怕检索到的文档本身是对的。RAG 管道可能拿到了正确的来源，但环绕的对话上下文把相关证据淹没了，模型最终从记忆中"声量最大"的模式而非 grounded text 里取材来拼答案。还有一种情况叫约束遗忘：一条合规规则在对话早期被明确声明过，却被后续大量闲聊掩埋，智能体的行为就好像那条规则不存在一样——它在那个时刻就是没能可靠地 attend 到它。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047614025" alt="" title="" loading="lazy"/></p><p>很多团队的直觉反应是往窗口里塞更多上下文，觉得记忆多了就能修复漂移。这条路通常走不通。塞得越多，噪声越大，信噪比越低，检索的选择性越差。到了某个临界点，更大的上下文反而意味着更差的记忆，因为模型已经无法可靠地定位到什么才是重要的。你的系统变得更难测试、更难调试、更难被信任。</p><h2>将长上下文视为生产依赖项</h2><p>要在生产环境中用长上下文，第一天就得建立明确的上下文预算。预算逼你做决定：什么是持久的，什么可以丢弃，什么该被摘要压缩，什么该以结构化记忆而非原始文本的形式留存。没有预算，上下文只会无限膨胀直到变成负债，唯一的退路是一次痛苦的重置——用户会抗拒，因为他们早已对"连续性"产生了情感依赖。</p><p>会话隔离是智能体系统的基本问题。私人闲聊不该渗进工作流，工作流不该渗进财务流程。用户非要开一个巨型线程的话，系统也必须在线程内部强制角色边界，因为角色边界是意图清晰性的保障。读取权限和执行权限也必须分离——读取本身就有风险，执行则把风险兑现成了实际损害。最小权限原则在这里不再是理论说教，而是工程必需。</p><p>记忆层要像对待数据库 schema 一样去管理。记忆本质上是一个塑造未来行为的状态存储，必须定义哪些字段存在、谁有写入权限、什么内容该被提升到长期存储——因为长期记忆里的一切都会成为系统策略面的一部分。上下文长度应当作为窗口容量的百分比来监控，设好阈值触发自动摘要或裁剪，摘要策略或记忆管理逻辑每次变更都要跑回归测试。</p><p>重置机制同样不可或缺。给用户设计一条能接受的重置路径，提供可审计的精选摘要，让用户理解清空上下文不是在抹掉历史，而是在保留真正经过验证的稳定信息。从工程角度看，清空是一种主动的状态管理手段，和数据库的定期归档、日志的轮转没有本质区别。长上下文本质上是一个输入面——它会老化、会漂移、会积累噪声。不做治理，它就会从资产退化为负债。</p><p><a href="https://link.segmentfault.com/?enc=mSMXEezzegE09pOJVdpt8A%3D%3D.MMOYzRnRWGc3eJvQ3DrtGuUgRwdZzM4fLVdayucjMkLp89Ng5m8f%2BtlZY3ixXgj8hYlXwZIdPcN04S76vXTTcw%3D%3D" rel="nofollow" target="_blank">https://avoid.overfit.cn/post/ba57f2e1d9c54f83a4d6184c69e08cde</a></p><p>by Travis Good</p>]]></description></item>  </channel></rss>
