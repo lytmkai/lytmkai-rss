@@ -1,4 +1,980 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[【节点】[ReflectionProbe节点]原理解析与实际应用 SmalBox ]]></title>    <link>https://segmentfault.com/a/1190000047615646</link>    <guid>https://segmentfault.com/a/1190000047615646</guid>    <pubDate>2026-02-21 20:02:12</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <blockquote><a href="https://link.segmentfault.com/?enc=kwiw1htnSJZ74iji3UBFcg%3D%3D.0YTRjM5R0Ed9bGwQ9b%2FQj8ekmPa2x8kJ4etyigoNBMGaPqmTXpzwDzgit1lzRUj6QZq930uk3j%2BZsegU1RCLcLk2UUuj6FeCL4RckmLHIIvnF5nWmw334sOyLuT8y4OYhJ%2BEyMLqCDPKLFPsWhW0bdCIYgTyc%2B%2FVobKt7UFAgteXRMm84q4ft9n%2BSMqolTWPXntpc5GUYcX1t58fHKw7HcWQovtl%2FQpWcL50futej8g%3D" rel="nofollow" target="_blank">【Unity Shader Graph 使用与特效实现】</a><strong>专栏-直达</strong></blockquote><h2>摘要</h2><p>Unity URP中的ReflectionProbe节点是实现环境反射效果的核心工具，通过采样场景反射探针的立方体贴图数据，为动态物体提供真实反射。该节点需要输入对象空间的法线和视图方向向量，支持LOD控制反射模糊度。技术实现上依赖Unity反射探针系统，在片元着色器中计算反射向量并进行立方体贴图采样。主要支持URP管线，与HDRP不兼容。典型应用包括金属材质、水面效果和动态反射，使用时需注意反射探针布置、坐标系匹配和性能优化。节点生成的HLSL代码调用SHADERGRAPH_REFLECTION_PROBE宏处理复杂反射计算，开发者可通过理解底层机制实现自定义扩展。</p><h2>描述</h2><p>Reflection Probe 节点是 Unity URP Shader Graph 中用于实现高质量反射效果的核心工具。该节点允许着色器访问场景中最近的反射探针（Reflection Probe）数据，为材质提供基于环境的真实反射信息。在现代实时渲染中，反射探针技术是模拟环境反射的关键手段，它通过预计算或实时捕获场景的立方体贴图，为动态对象提供准确的环境光照和反射细节。</p><p>反射探针的工作原理是在场景中的特定位置捕获周围环境的360度视图，并将其存储为立方体贴图。当使用 Reflection Probe 节点时，着色器会根据物体的表面法线和视图方向，从最近的反射探针中采样相应的反射颜色。这种机制使得移动的物体能够在不同环境中自动获得正确的反射效果，而无需为每个物体单独设置反射贴图。</p><p>该节点需要两个关键的输入参数才能正常工作：法线向量和视图方向向量。法线向量定义了表面的朝向，用于计算反射方向；视图方向向量则表示摄像机到表面点的方向，两者结合可以确定从哪个角度采样反射探针。此外，节点还提供了 LOD 输入参数，允许在不同的细节级别进行采样，这个功能特别有用于创建模糊反射效果或性能优化。</p><p>需要注意的是，Reflection Probe 节点的具体实现行为并非在全局范围内统一定义。Shader Graph 本身并不定义此节点的具体函数实现，而是由各个渲染管线为其定义要执行的 HLSL 代码。这意味着相同的节点在不同的渲染管线中可能会产生不同的结果，开发者在跨管线使用着色器时需要特别注意兼容性问题。</p><h3>技术实现原理</h3><p>从技术层面看，Reflection Probe 节点底层依赖于 Unity 的反射探针系统。当在场景中放置反射探针时，Unity 会在该位置捕获环境信息并生成立方体贴图。Shader Graph 中的 Reflection Probe 节点在着色器执行时，会执行以下关键步骤：</p><ul><li>首先确定物体表面点对应的最近反射探针</li><li>根据输入的法线和视图方向计算反射向量</li><li>使用反射向量在立方体贴图中进行采样</li><li>应用可能的LOD模糊处理</li><li>输出最终的反射颜色值</li></ul><p>这个过程在片元着色器中执行，为每个像素提供精确的反射计算。对于性能考虑，URP 通常会对反射探针采样进行优化，比如使用较低分辨率的立方体贴图或采用近似计算方法。</p><h3>支持的渲染管线</h3><p>Reflection Probe 节点目前主要支持以下渲染管线：</p><ul><li>通用渲染管线（Universal Render Pipeline, URP）</li></ul><p>需要注意的是，高清渲染管线（High Definition Render Pipeline, HDRP）并不支持此节点。HDRP 有自己专门的反射系统实现，使用不同的节点和方法来处理反射效果。这种差异源于两个渲染管线的设计目标和架构不同 - URP 更注重性能和跨平台兼容性，而 HDRP 则专注于高端图形效果。</p><p>如果开发者计划构建需要在多个渲染管线中使用的着色器，强烈建议在实际项目应用前，分别在目标管线中进行测试和验证。某些节点可能在一个渲染管线中已完整定义并正常工作，而在另一个管线中可能未实现或行为不一致。如果 Reflection Probe 节点在某个渲染管线中未定义，通常会返回 Vector3(0, 0, 0)，即黑色值，这可能导致反射效果完全丢失。</p><h2>端口</h2><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047615648" alt="" title=""/></p><p>Reflection Probe 节点包含多个输入和输出端口，每个端口都有特定的功能和数据类型要求。正确理解和使用这些端口是实现预期反射效果的关键。</p><h3>输入端口</h3><p>View Dir 端口是关键的输入参数之一，它要求提供 Vector 3 类型的视图方向数据。这个方向应该基于对象空间（Object Space）表示，即从当前表面点指向摄像机的方向向量。视图方向在反射计算中至关重要，因为它与表面法线共同决定了反射向量的计算。在实际应用中，这个端口通常连接到 Shader Graph 中的 View Direction 节点，该节点会自动提供正确的视图方向向量。</p><ul><li>数据类型：Vector 3</li><li>空间要求：对象空间（Object Space）</li><li>典型连接：View Direction 节点</li><li>功能说明：定义了从表面点到摄像机的方向，用于反射计算</li></ul><p>Normal 端口是另一个必需的输入参数，同样需要 Vector 3 类型的法线向量，基于对象空间。表面法线定义了面的朝向，是光学计算中的基础要素。在反射计算中，法线用于根据入射光方向（视图方向的逆方向）计算反射方向。这个端口通常连接到 Normal Vector 节点，或者连接到自定义法线贴图处理后的结果。</p><ul><li>数据类型：Vector 3</li><li>空间要求：对象空间（Object Space）</li><li>典型连接：Normal Vector 节点或法线贴图采样结果</li><li>功能说明：定义表面朝向，参与反射方向计算</li></ul><p>LOD 端口是一个可选的浮点数输入，用于控制采样反射探针的细节级别。LOD 技术允许在不同距离或根据不同性能需求使用不同精度的纹理。在 Reflection Probe 节点的上下文中，LOD 参数主要用于创建模糊反射效果 - 较高的 LOD 值会产生更模糊的反射，模拟粗糙表面的反射特性或创建特殊的视觉效果。</p><ul><li>数据类型：Float</li><li>取值范围：通常为 0 到最大 LOD 级别</li><li>特殊应用：通过动画或参数控制实现动态模糊效果</li><li>性能影响：较高的 LOD 值可能降低采样精度但提升性能</li></ul><h3>输出端口</h3><p>Out 端口是节点的唯一输出，提供 Vector 3 类型的反射颜色值。这个输出代表了根据输入参数从反射探针采样得到的 RGB 颜色值，可以直接用于着色器的最终输出或与其他颜色值进行混合。输出的颜色强度和质量取决于多个因素，包括反射探针的设置、场景光照环境以及输入的参数准确性。</p><ul><li>数据类型：Vector 3（RGB 颜色）</li><li>取值范围：通常为 HDR 颜色值，可能超过 [0,1] 范围</li><li>使用方式：可直接输出或与漫反射、其他效果混合</li><li>色彩空间：根据项目设置可能是线性或伽马空间</li></ul><h3>端口连接实践</h3><p>在实际的 Shader Graph 制作中，正确连接这些端口是实现高质量反射效果的关键。典型的连接方式包括：</p><ul><li>将 View Direction 节点连接到 View Dir 端口</li><li>将 Normal Vector 节点连接到 Normal 端口</li><li>使用 Float 参数或数学节点控制 LOD 端口</li><li>将 Out 端口连接到主着色器的相应输入，如 Emission 或反射颜色混合节点</li></ul><p>理解每个端口的空间要求特别重要 - 不匹配的空间坐标系会导致错误的反射计算。例如，如果提供了世界空间的法线方向但节点期望对象空间法线，反射方向将完全错误，导致反射效果不符合预期。</p><h2>生成的代码示例</h2><p>Reflection Probe 节点在 Shader Graph 背后生成的代码展示了其实际的工作原理和实现方式。通过理解这些生成的代码，开发者可以更深入地掌握节点的功能，并在需要时进行自定义扩展或优化。</p><h3>基础函数实现</h3><p>以下示例代码表示 Reflection Probe 节点的一种典型 HLSL 实现：</p><pre><code>void Unity_ReflectionProbe_float(float3 ViewDir, float3 Normal, float LOD, out float3 Out)
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[基于YOLOv8的电缆损坏目标识别项目｜完整源码数据集+PyQt5界面+完整训练流程+开箱即用！ 逐]]></title>    <link>https://segmentfault.com/a/1190000047615690</link>    <guid>https://segmentfault.com/a/1190000047615690</guid>    <pubDate>2026-02-21 21:03:59</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>基于YOLOv8的电缆损坏目标识别项目｜完整源码数据集+PyQt5界面+完整训练流程+开箱即用！</h2><p>本项目基于 <strong>YOLOv8</strong> 构建了一个针对电力系统中电缆损坏的智能目标检测系统，支持 <strong>断裂（break）</strong> 与 <strong>雷击损伤（thunderbolt）</strong> 两类典型故障的识别。系统集成了完整的 <strong>训练流程、数据集标注、PyQt5 图形界面以及开箱即用的检测程序</strong>，能够实现图片、视频、摄像头实时检测等多种应用场景。</p><p>项目亮点如下：</p><ul><li><strong>高精度检测</strong>：基于YOLOv8最新算法架构，具备快速、精确的电缆故障识别能力。</li><li><strong>完整开箱即用</strong>：提供完整源码、数据集、训练权重和可直接运行的检测程序。</li><li><strong>多模态输入</strong>：支持单张图片、文件夹批量图片、视频文件以及摄像头实时流输入。</li><li><strong>可定制化训练</strong>：提供详细训练流程和教程，可根据企业或研究需求对模型进行二次训练优化。</li><li><strong>可视化界面</strong>：使用PyQt5构建，提供直观的操作界面，方便非技术人员使用。</li></ul><p>该系统旨在为电力设备巡检自动化、智能运维和故障预警提供可靠的数据驱动解决方案，为电力行业的安全运行和数字化管理提供有力支撑。</p><h3>基本功能演示</h3><p>源码包含：完整YOLOv8训练代码+数据集(带标注)+权重文件+直接可允许检测的yolo检测程序+直接部署教程/训练教程</p><p><a href="https://www.bilibili.com/video/BV1PH63BuEMp/" target="_blank">https://www.bilibili.com/video/BV1PH63BuEMp/</a></p><p>包含：</p><blockquote><p>📦完整项目源码</p><p>📦 预训练模型权重</p><p>🗂️ 数据集地址（含标注脚本）</p></blockquote><h3>项目摘要</h3><p>本项目集成了 <strong>YOLOv8 XX检测模型</strong> 与 <strong>PyQt5 图形界面工具</strong>，实现了包括图片、文件夹、视频与摄像头等多种输入方式的人脸表情识别功能。配套完整源码与训练流程说明，让你<strong>开箱即用、快速部署自己的XX识别系统</strong>，源码打包在文末。</p><h3>前言</h3><p>随着电力系统的不断扩展与复杂化，电缆作为核心输电部件，其损坏风险直接影响电力设备的安全运行。传统巡检依赖人工目视检查，不仅效率低、耗时长，而且容易受人为因素影响导致漏检。</p><p>本项目针对 <strong>电缆断裂</strong> 和 <strong>雷击损伤</strong> 两类典型故障，构建了基于YOLOv8的智能识别系统。通过深度学习模型对电缆图像进行目标检测，实现自动定位与识别故障部位，大幅提高巡检效率与准确率。</p><p>数据集由 <strong>约1300张高质量标注图像</strong> 构成，按训练、验证和测试集划分，兼顾模型训练与性能评估需求。配套源码提供完整训练脚本、PyQt5界面工具以及部署教程，支持快速上手与二次开发。</p><h2>一、软件核心功能介绍及效果演示</h2><h3>核心功能</h3><ol><li><p><strong>电缆故障识别</strong></p><ul><li>自动识别电缆断裂和雷击损伤。</li><li>输出检测框、类别和置信度，可直接用于故障定位。</li></ul></li><li><p><strong>多输入模式支持</strong></p><ul><li>单张图片识别</li><li>文件夹批量图片识别</li><li>视频文件识别</li><li>摄像头实时识别</li></ul></li><li><p><strong>PyQt5 图形界面</strong></p><ul><li>可视化展示检测结果</li><li>操作直观，支持用户自由选择输入源</li><li>可显示检测统计信息和置信度</li></ul></li><li><p><strong>模型训练与自定义</strong></p><ul><li>提供完整YOLOv8训练代码</li><li>支持在自定义数据集上进行迁移训练</li><li>支持输出最佳权重和评估报告</li></ul></li><li><p><strong>开箱即用</strong></p><ul><li>配套预训练权重</li><li>可直接运行检测程序，无需额外配置</li></ul></li></ol><h2>二、软件效果演示</h2><p>为了直观展示本系统基于 YOLOv8 模型的检测能力，我们设计了多种操作场景，涵盖静态图片、批量图片、视频以及实时摄像头流的检测演示。</p><h3>（1）单图片检测演示</h3><p>用户点击“选择图片”，即可加载本地图像并执行检测：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047615692" alt="image-20260128005400134" title="image-20260128005400134"/></p><hr/><h3>（2）多文件夹图片检测演示</h3><p>用户可选择包含多张图像的文件夹，系统会批量检测并生成结果图。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047615693" alt="image-20260128005335083" title="image-20260128005335083" loading="lazy"/></p><hr/><h3>（3）视频检测演示</h3><p>支持上传视频文件，系统会逐帧处理并生成目标检测结果，可选保存输出视频：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047615694" alt="image-20260128005434098" title="image-20260128005434098" loading="lazy"/></p><hr/><h3>（4）摄像头检测演示</h3><p>实时检测是系统中的核心应用之一，系统可直接调用摄像头进行检测。由于原理和视频检测相同，就不重复演示了。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047615695" alt="image-20260128005445945" title="image-20260128005445945" loading="lazy"/></p><hr/><h3>（5）保存图片与视频检测结果</h3><p>用户可通过按钮勾选是否保存检测结果，所有检测图像自动加框标注并保存至指定文件夹，支持后续数据分析与复审。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047615696" alt="image-20260128005505593" title="image-20260128005505593" loading="lazy"/></p><h2>三、模型的训练、评估与推理</h2><p>YOLOv8是Ultralytics公司发布的新一代目标检测模型，采用更轻量的架构、更先进的损失函数（如CIoU、TaskAlignedAssigner）与Anchor-Free策略，在COCO等数据集上表现优异。<br/> 其核心优势如下：</p><ul><li>高速推理，适合实时检测任务</li><li>支持Anchor-Free检测</li><li>支持可扩展的Backbone和Neck结构</li><li>原生支持ONNX导出与部署</li></ul><h3>3.1 YOLOv8的基本原理</h3><p>YOLOv8 是 Ultralytics 发布的新一代实时目标检测模型，具备如下优势：</p><ul><li><strong>速度快</strong>：推理速度提升明显；</li><li><strong>准确率高</strong>：支持 Anchor-Free 架构；</li><li><strong>支持分类/检测/分割/姿态多任务</strong>；</li><li>本项目使用 YOLOv8 的 Detection 分支，训练时每类表情均标注为独立目标。</li></ul><p>YOLOv8 由Ultralytics 于 2023 年 1 月 10 日发布，在准确性和速度方面具有尖端性能。在以往YOLO 版本的基础上，YOLOv8 引入了新的功能和优化，使其成为广泛应用中各种物体检测任务的理想选择。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047615697" alt="image-20250526165954475" title="image-20250526165954475" loading="lazy"/></p><p>YOLOv8原理图如下：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047615698" alt="image-20250526170118103" title="image-20250526170118103" loading="lazy"/></p><h3>3.2 数据集准备与训练</h3><p>采用 YOLO 格式的数据集结构如下：</p><pre><code class="kotlin">dataset/
+├── images/
+│   ├── train/
+│   └── val/
+├── labels/
+│   ├── train/
+│   └── val/</code></pre><p>每张图像有对应的 <code>.txt</code> 文件，内容格式为：</p><pre><code class="bash">4 0.5096721233576642 0.352838390077821 0.3947600423357664 0.31825755058365757</code></pre><p>分类包括（可自定义）：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047615699" alt="image-20260128005535745" title="image-20260128005535745" loading="lazy"/></p><h3>3.3. 训练结果评估</h3><p>训练完成后，将在 <code>runs/detect/train</code> 目录生成结果文件，包括：</p><ul><li><code>results.png</code>：损失曲线和 mAP 曲线；</li><li><code>weights/best.pt</code>：最佳模型权重；</li><li><code>confusion_matrix.png</code>：混淆矩阵分析图。</li></ul><blockquote>若 mAP@0.5 达到 90% 以上，即可用于部署。</blockquote><p>在深度学习领域，我们通常通过观察损失函数下降的曲线来评估模型的训练状态。YOLOv8训练过程中，主要包含三种损失：定位损失（box_loss）、分类损失（cls_loss）和动态特征损失（dfl_loss）。训练完成后，相关的训练记录和结果文件会保存在runs/目录下，具体内容如下：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047615700" alt="image-20260128005550473" title="image-20260128005550473" loading="lazy"/></p><h3>3.4检测结果识别</h3><p>使用 PyTorch 推理接口加载模型：</p><pre><code class="python">import cv2
+from ultralytics import YOLO
+import torch
+from torch.serialization import safe_globals
+from ultralytics.nn.tasks import DetectionModel
+
+# 加入可信模型结构
+safe_globals().add(DetectionModel)
+
+# 加载模型并推理
+model = YOLO('runs/detect/train/weights/best.pt')
+results = model('test.jpg', save=True, conf=0.25)
+
+# 获取保存后的图像路径
+# 默认保存到 runs/detect/predict/ 目录
+save_path = results[0].save_dir / results[0].path.name
+
+# 使用 OpenCV 加载并显示图像
+img = cv2.imread(str(save_path))
+cv2.imshow('Detection Result', img)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
+</code></pre><p>预测结果包含类别、置信度、边框坐标等信息。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047615701" alt="image-20260128005610630" title="image-20260128005610630" loading="lazy"/></p><h2>四.YOLOV8+YOLOUI完整源码打包</h2><p>本文涉及到的完整全部程序文件：包括<strong>python源码、数据集、训练代码、UI文件、测试图片视频</strong>等（见下图）：</p><h3>4.1 项目开箱即用</h3><p>作者已将整个工程打包。包含已训练完成的权重，读者可不用自行训练直接运行检测。</p><p>运行项目只需输入下面命令。</p><pre><code class="bash">python main.py</code></pre><p>读者也可自行配置训练集，或使用打包好的数据集直接训练。</p><p>自行训练项目只需输入下面命令。</p><pre><code class="bash">yolo detect train data=datasets/expression/loopy.yaml model=yolov8n.yaml pretrained=yolov8n.pt epochs=100 batch=16 lr0=0.001</code></pre><h2>总结</h2><p>本项目构建了一个基于 <strong>YOLOv8</strong> 的电缆损坏智能检测系统，实现了 <strong>断裂与雷击损伤</strong> 的高精度识别。通过集成 <strong>完整数据集、训练流程、PyQt5可视化界面</strong> 以及 <strong>开箱即用的检测程序</strong>，系统不仅大幅提升了巡检效率，也为电力设备的智能运维与故障预警提供了可靠的数据支持。</p><p>凭借多输入模式支持、可定制化训练以及直观的可视化界面，该项目可广泛应用于电力巡检、工业监测及相关研究场景，助力电力行业向自动化、智能化和安全化方向发展。</p>]]></description></item><item>    <title><![CDATA[Python单元测试框架与Mock对象使用指南 逐梦AI ]]></title>    <link>https://segmentfault.com/a/1190000047615712</link>    <guid>https://segmentfault.com/a/1190000047615712</guid>    <pubDate>2026-02-21 21:03:18</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>Python单元测试框架与Mock对象使用指南</h2><p>单元测试是保证代码质量的重要手段。本文将介绍Python单元测试框架和Mock对象的使用。</p><h3>单元测试核心概念</h3><ul><li><strong>unittest</strong>：标准库测试框架</li><li><strong>pytest</strong>：第三方测试框架</li><li><strong>Mock</strong>：模拟对象</li><li><strong>Fixture</strong>：测试夹具</li></ul><h3>单元测试核心实现</h3><pre><code class="python">"""
+Python单元测试框架与Mock对象使用
+包含unittest、pytest、mock等
+"""
+
+import unittest
+from unittest.mock import Mock, patch, MagicMock, call
+from typing import List, Dict, Optional
+import requests
+
+
+# ============ 被测试的代码 ============
+class Calculator:
+    """计算器类"""
+    
+    def add(self, a: float, b: float) -&gt; float:
+        return a + b
+    
+    def subtract(self, a: float, b: float) -&gt; float:
+        return a - b
+    
+    def multiply(self, a: float, b: float) -&gt; float:
+        return a * b
+    
+    def divide(self, a: float, b: float) -&gt; float:
+        if b == 0:
+            raise ValueError("除数不能为零")
+        return a / b
+
+
+class UserService:
+    """用户服务"""
+    
+    def __init__(self, db_connection):
+        self.db = db_connection
+    
+    def get_user(self, user_id: int) -&gt; Optional[Dict]:
+        return self.db.query(f"SELECT * FROM users WHERE id = {user_id}")
+    
+    def create_user(self, username: str, email: str) -&gt; Dict:
+        if not username or not email:
+            raise ValueError("用户名和邮箱不能为空")
+        return self.db.insert("users", {"username": username, "email": email})
+
+
+class PaymentGateway:
+    """支付网关"""
+    
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+        self.base_url = "https://api.payment.com"
+    
+    def charge(self, amount: float, card_number: str) -&gt; Dict:
+        response = requests.post(
+            f"{self.base_url}/charge",
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            json={"amount": amount, "card": card_number}
+        )
+        return response.json()
+
+
+# ============ unittest测试 ============
+class TestCalculator(unittest.TestCase):
+    """计算器测试"""
+    
+    def setUp(self):
+        """测试前准备"""
+        self.calc = Calculator()
+    
+    def test_add(self):
+        """测试加法"""
+        self.assertEqual(self.calc.add(2, 3), 5)
+        self.assertEqual(self.calc.add(-1, 1), 0)
+        self.assertEqual(self.calc.add(0.1, 0.2), 0.3, places=7)
+    
+    def test_subtract(self):
+        """测试减法"""
+        self.assertEqual(self.calc.subtract(5, 3), 2)
+        self.assertEqual(self.calc.subtract(0, 5), -5)
+    
+    def test_multiply(self):
+        """测试乘法"""
+        self.assertEqual(self.calc.multiply(3, 4), 12)
+        self.assertEqual(self.calc.multiply(-2, 3), -6)
+    
+    def test_divide(self):
+        """测试除法"""
+        self.assertEqual(self.calc.divide(6, 2), 3)
+        self.assertEqual(self.calc.divide(5, 2), 2.5)
+    
+    def test_divide_by_zero(self):
+        """测试除零异常"""
+        with self.assertRaises(ValueError) as context:
+            self.calc.divide(5, 0)
+        self.assertEqual(str(context.exception), "除数不能为零")
+
+
+class TestUserService(unittest.TestCase):
+    """用户服务测试"""
+    
+    def setUp(self):
+        """测试前准备"""
+        # 创建Mock对象
+        self.mock_db = Mock()
+        self.user_service = UserService(self.mock_db)
+    
+    def test_get_user(self):
+        """测试获取用户"""
+        # 设置Mock返回值
+        expected_user = {"id": 1, "username": "alice"}
+        self.mock_db.query.return_value = expected_user
+        
+        # 执行测试
+        user = self.user_service.get_user(1)
+        
+        # 验证结果
+        self.assertEqual(user, expected_user)
+        self.mock_db.query.assert_called_once_with("SELECT * FROM users WHERE id = 1")
+    
+    def test_create_user(self):
+        """测试创建用户"""
+        expected_result = {"id": 1, "username": "bob", "email": "bob@example.com"}
+        self.mock_db.insert.return_value = expected_result
+        
+        result = self.user_service.create_user("bob", "bob@example.com")
+        
+        self.assertEqual(result, expected_result)
+        self.mock_db.insert.assert_called_once_with(
+            "users",
+            {"username": "bob", "email": "bob@example.com"}
+        )
+    
+    def test_create_user_invalid_input(self):
+        """测试创建用户无效输入"""
+        with self.assertRaises(ValueError):
+            self.user_service.create_user("", "email@example.com")
+
+
+class TestPaymentGateway(unittest.TestCase):
+    """支付网关测试"""
+    
+    @patch('requests.post')
+    def test_charge(self, mock_post):
+        """测试支付"""
+        # 设置Mock响应
+        mock_response = Mock()
+        mock_response.json.return_value = {"status": "success", "transaction_id": "12345"}
+        mock_post.return_value = mock_response
+        
+        # 执行测试
+        gateway = PaymentGateway("test_api_key")
+        result = gateway.charge(100.0, "4111111111111111")
+        
+        # 验证结果
+        self.assertEqual(result["status"], "success")
+        mock_post.assert_called_once()
+
+
+# ============ Mock高级用法 ============
+class TestMockAdvanced(unittest.TestCase):
+    """Mock高级用法测试"""
+    
+    def test_mock_return_value(self):
+        """测试Mock返回值"""
+        mock = Mock()
+        mock.return_value = 42
+        
+        result = mock()
+        self.assertEqual(result, 42)
+    
+    def test_mock_side_effect(self):
+        """测试Mock副作用"""
+        mock = Mock()
+        mock.side_effect = [1, 2, 3]
+        
+        self.assertEqual(mock(), 1)
+        self.assertEqual(mock(), 2)
+        self.assertEqual(mock(), 3)
+    
+    def test_mock_side_effect_exception(self):
+        """测试Mock抛出异常"""
+        mock = Mock()
+        mock.side_effect = ValueError("错误")
+        
+        with self.assertRaises(ValueError):
+            mock()
+    
+    def test_mock_call_count(self):
+        """测试Mock调用次数"""
+        mock = Mock()
+        
+        mock()
+        mock()
+        mock()
+        
+        self.assertEqual(mock.call_count, 3)
+    
+    def test_mock_call_args(self):
+        """测试Mock调用参数"""
+        mock = Mock()
+        
+        mock(1, 2, key='value')
+        
+        self.assertEqual(mock.call_args, call(1, 2, key='value'))
+    
+    def test_mock_multiple_calls(self):
+        """测试Mock多次调用"""
+        mock = Mock()
+        
+        mock(1)
+        mock(2)
+        mock(3)
+        
+        expected_calls = [call(1), call(2), call(3)]
+        mock.assert_has_calls(expected_calls)
+
+
+# ============ 测试夹具 ============
+class TestWithFixtures(unittest.TestCase):
+    """使用测试夹具"""
+    
+    @classmethod
+    def setUpClass(cls):
+        """类级别设置"""
+        print("设置测试类")
+        cls.shared_resource = "shared"
+    
+    @classmethod
+    def tearDownClass(cls):
+        """类级别清理"""
+        print("清理测试类")
+    
+    def setUp(self):
+        """方法级别设置"""
+        self.test_data = [1, 2, 3]
+    
+    def tearDown(self):
+        """方法级别清理"""
+        self.test_data = None
+    
+    def test_with_fixture(self):
+        """使用夹具的测试"""
+        self.assertEqual(len(self.test_data), 3)
+        self.assertEqual(self.shared_resource, "shared")
+
+
+def main():
+    """主函数"""
+    print("="*60)
+    print("Python单元测试框架与Mock对象使用")
+    print("="*60)
+    
+    # 运行测试
+    loader = unittest.TestLoader()
+    suite = unittest.TestSuite()
+    
+    # 添加测试
+    suite.addTests(loader.loadTestsFromTestCase(TestCalculator))
+    suite.addTests(loader.loadTestsFromTestCase(TestUserService))
+    suite.addTests(loader.loadTestsFromTestCase(TestPaymentGateway))
+    suite.addTests(loader.loadTestsFromTestCase(TestMockAdvanced))
+    suite.addTests(loader.loadTestsFromTestCase(TestWithFixtures))
+    
+    # 运行
+    runner = unittest.TextTestRunner(verbosity=2)
+    result = runner.run(suite)
+    
+    print("\n" + "="*60)
+    print("单元测试总结")
+    print("="*60)
+    print("1. unittest: 标准库测试框架")
+    print("2. Mock: 模拟对象和依赖")
+    print("3. patch: 临时替换对象")
+    print("4. Fixture: 测试准备和清理")
+    print("5. 断言: 验证测试结果")
+    print("="*60)
+
+
+if __name__ == "__main__":
+    main()</code></pre><h3>单元测试架构图</h3><pre style="display:none;"><code class="mermaid">flowchart TB
+    subgraph TestCode["测试代码"]
+        T1[测试用例]
+        T2[测试夹具]
+        T3[断言]
+    end
+    
+    subgraph MockObjects["Mock对象"]
+        M1[Mock]
+        M2[MagicMock]
+        M3[Patch]
+    end
+    
+    subgraph Production["生产代码"]
+        P1[被测函数]
+        P2[被测类]
+    end
+    
+    TestCode --&gt; MockObjects
+    TestCode --&gt; Production</code></pre><h3>关键要点</h3><ol><li><strong>unittest</strong>：标准库测试框架</li><li><strong>Mock</strong>：模拟对象和依赖</li><li><strong>patch</strong>：临时替换对象</li><li><strong>Fixture</strong>：测试准备和清理</li><li><strong>断言</strong>：验证测试结果</li></ol><p>单元测试是保证代码质量的重要手段。</p>]]></description></item><item>    <title><![CDATA[Python代码重构技巧与坏味道识别 逐梦AI ]]></title>    <link>https://segmentfault.com/a/1190000047615716</link>    <guid>https://segmentfault.com/a/1190000047615716</guid>    <pubDate>2026-02-21 21:02:45</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>Python代码重构技巧与坏味道识别</h2><p>代码重构是改善代码结构而不改变外部行为的过程。本文将介绍Python代码重构技巧和坏味道识别。</p><h3>代码坏味道</h3><ul><li><strong>长方法</strong>：方法过长，职责过多</li><li><strong>重复代码</strong>：相同或相似的代码多处出现</li><li><strong>过大的类</strong>：类包含过多属性和方法</li><li><strong>过长参数列表</strong>：方法参数过多</li></ul><h3>重构核心实现</h3><pre><code class="python">"""
+Python代码重构技巧与坏味道识别
+包含提取方法、内联、移动方法等重构技巧
+"""
+
+from typing import List, Dict, Optional, Tuple
+from dataclasses import dataclass
+from enum import Enum
+
+
+# ============ 坏味道示例 ============
+class OrderProcessorBad:
+    """坏味道示例：过大的类"""
+    
+    def __init__(self):
+        self.orders = []
+        self.customers = []
+        self.products = []
+        self.inventory = {}
+        self.shipping_rates = {}
+    
+    def process_order(self, order_id: int, customer_id: int, 
+                     product_ids: List[int], quantities: List[int],
+                     shipping_address: str, payment_method: str,
+                     discount_code: Optional[str] = None,
+                     gift_wrap: bool = False,
+                     special_instructions: str = ""):
+        """坏味道：过长参数列表"""
+        # 验证客户
+        customer = None
+        for c in self.customers:
+            if c['id'] == customer_id:
+                customer = c
+                break
+        
+        if not customer:
+            raise ValueError("客户不存在")
+        
+        # 验证产品
+        products = []
+        for pid in product_ids:
+            for p in self.products:
+                if p['id'] == pid:
+                    products.append(p)
+                    break
+        
+        # 计算价格
+        total = 0
+        for i, product in enumerate(products):
+            qty = quantities[i]
+            price = product['price']
+            
+            # 应用折扣
+            if discount_code:
+                if discount_code == "SAVE10":
+                    price = price * 0.9
+                elif discount_code == "SAVE20":
+                    price = price * 0.8
+            
+            total += price * qty
+        
+        # 计算运费
+        if total &lt; 50:
+            shipping = 5.99
+        elif total &lt; 100:
+            shipping = 2.99
+        else:
+            shipping = 0
+        
+        total += shipping
+        
+        # 处理支付
+        if payment_method == "credit_card":
+            print(f"处理信用卡支付: {total}")
+        elif payment_method == "paypal":
+            print(f"处理PayPal支付: {total}")
+        elif payment_method == "bank_transfer":
+            print(f"处理银行转账: {total}")
+        
+        # 创建订单
+        order = {
+            'id': order_id,
+            'customer': customer,
+            'products': products,
+            'total': total,
+            'shipping_address': shipping_address
+        }
+        
+        self.orders.append(order)
+        return order
+
+
+# ============ 重构后代码 ============
+@dataclass
+class Customer:
+    """客户"""
+    id: int
+    name: str
+    email: str
+
+
+@dataclass
+class Product:
+    """产品"""
+    id: int
+    name: str
+    price: float
+
+
+@dataclass
+class OrderItem:
+    """订单项"""
+    product: Product
+    quantity: int
+    
+    @property
+    def subtotal(self) -&gt; float:
+        return self.product.price * self.quantity
+
+
+class DiscountStrategy:
+    """折扣策略"""
+    
+    DISCOUNTS = {
+        "SAVE10": 0.9,
+        "SAVE20": 0.8,
+        "SAVE50": 0.5
+    }
+    
+    @classmethod
+    def apply_discount(cls, price: float, code: Optional[str]) -&gt; float:
+        if code and code in cls.DISCOUNTS:
+            return price * cls.DISCOUNTS[code]
+        return price
+
+
+class ShippingCalculator:
+    """运费计算器"""
+    
+    @staticmethod
+    def calculate_shipping(order_total: float) -&gt; float:
+        if order_total &lt; 50:
+            return 5.99
+        elif order_total &lt; 100:
+            return 2.99
+        return 0
+
+
+class PaymentProcessor:
+    """支付处理器"""
+    
+    def process_payment(self, amount: float, method: str) -&gt; bool:
+        processors = {
+            "credit_card": self._process_credit_card,
+            "paypal": self._process_paypal,
+            "bank_transfer": self._process_bank_transfer
+        }
+        
+        processor = processors.get(method)
+        if processor:
+            return processor(amount)
+        raise ValueError(f"不支持的支付方式: {method}")
+    
+    def _process_credit_card(self, amount: float) -&gt; bool:
+        print(f"处理信用卡支付: {amount}")
+        return True
+    
+    def _process_paypal(self, amount: float) -&gt; bool:
+        print(f"处理PayPal支付: {amount}")
+        return True
+    
+    def _process_bank_transfer(self, amount: float) -&gt; bool:
+        print(f"处理银行转账: {amount}")
+        return True
+
+
+class CustomerRepository:
+    """客户仓储"""
+    
+    def __init__(self):
+        self._customers: Dict[int, Customer] = {}
+    
+    def add(self, customer: Customer):
+        self._customers[customer.id] = customer
+    
+    def get_by_id(self, customer_id: int) -&gt; Optional[Customer]:
+        return self._customers.get(customer_id)
+
+
+class ProductRepository:
+    """产品仓储"""
+    
+    def __init__(self):
+        self._products: Dict[int, Product] = {}
+    
+    def add(self, product: Product):
+        self._products[product.id] = product
+    
+    def get_by_ids(self, product_ids: List[int]) -&gt; List[Product]:
+        return [self._products[pid] for pid in product_ids if pid in self._products]
+
+
+@dataclass
+class Order:
+    """订单"""
+    id: int
+    customer: Customer
+    items: List[OrderItem]
+    shipping_address: str
+    payment_method: str
+    discount_code: Optional[str] = None
+    
+    @property
+    def subtotal(self) -&gt; float:
+        return sum(item.subtotal for item in self.items)
+    
+    @property
+    def shipping_cost(self) -&gt; float:
+        return ShippingCalculator.calculate_shipping(self.subtotal)
+    
+    @property
+    def total(self) -&gt; float:
+        discounted = sum(
+            DiscountStrategy.apply_discount(item.subtotal, self.discount_code)
+            for item in self.items
+        )
+        return discounted + self.shipping_cost
+
+
+class OrderService:
+    """订单服务（重构后）"""
+    
+    def __init__(self):
+        self.customer_repo = CustomerRepository()
+        self.product_repo = ProductRepository()
+        self.payment_processor = PaymentProcessor()
+        self.orders: List[Order] = []
+    
+    def create_order(
+        self,
+        customer_id: int,
+        items_data: List[Tuple[int, int]],  # (product_id, quantity)
+        shipping_address: str,
+        payment_method: str,
+        discount_code: Optional[str] = None
+    ) -&gt; Order:
+        """创建订单"""
+        # 获取客户
+        customer = self.customer_repo.get_by_id(customer_id)
+        if not customer:
+            raise ValueError("客户不存在")
+        
+        # 获取产品并创建订单项
+        product_ids = [item[0] for item in items_data]
+        products = self.product_repo.get_by_ids(product_ids)
+        
+        if len(products) != len(product_ids):
+            raise ValueError("部分产品不存在")
+        
+        order_items = [
+            OrderItem(product, qty)
+            for product, (_, qty) in zip(products, items_data)
+        ]
+        
+        # 创建订单
+        order = Order(
+            id=len(self.orders) + 1,
+            customer=customer,
+            items=order_items,
+            shipping_address=shipping_address,
+            payment_method=payment_method,
+            discount_code=discount_code
+        )
+        
+        # 处理支付
+        self.payment_processor.process_payment(order.total, payment_method)
+        
+        self.orders.append(order)
+        return order
+
+
+def demonstrate_refactoring():
+    """演示重构"""
+    print("="*60)
+    print("代码重构演示")
+    print("="*60)
+    
+    # 设置数据
+    service = OrderService()
+    
+    # 添加客户
+    service.customer_repo.add(Customer(1, "Alice", "alice@example.com"))
+    
+    # 添加产品
+    service.product_repo.add(Product(1, "Laptop", 999.99))
+    service.product_repo.add(Product(2, "Mouse", 29.99))
+    
+    # 创建订单
+    order = service.create_order(
+        customer_id=1,
+        items_data=[(1, 1), (2, 2)],
+        shipping_address="123 Main St",
+        payment_method="credit_card",
+        discount_code="SAVE10"
+    )
+    
+    print(f"\n订单ID: {order.id}")
+    print(f"客户: {order.customer.name}")
+    print(f"商品小计: ${order.subtotal:.2f}")
+    print(f"运费: ${order.shipping_cost:.2f}")
+    print(f"总计: ${order.total:.2f}")
+    
+    print("\n" + "="*60)
+    print("重构改进")
+    print("="*60)
+    print("1. 提取类: Customer, Product, OrderItem")
+    print("2. 提取方法: ShippingCalculator, PaymentProcessor")
+    print("3. 引入策略模式: DiscountStrategy")
+    print("4. 使用仓储模式: CustomerRepository, ProductRepository")
+    print("5. 减少参数: 使用对象封装参数")
+    print("="*60)
+
+
+def main():
+    """主函数"""
+    demonstrate_refactoring()
+
+
+if __name__ == "__main__":
+    main()</code></pre><h3>重构架构图</h3><pre style="display:none;"><code class="mermaid">flowchart TB
+    subgraph Before["重构前"]
+        B1[大类]
+        B2[长方法]
+        B3[重复代码]
+    end
+    
+    subgraph After["重构后"]
+        A1[小类]
+        A2[短方法]
+        A3[策略模式]
+    end
+    
+    subgraph Techniques["重构技巧"]
+        T1[提取方法]
+        T2[移动方法]
+        T3[引入参数对象]
+    end
+    
+    Before --&gt; Techniques --&gt; After</code></pre><h3>关键要点</h3><ol><li><strong>提取方法</strong>：将长方法拆分为小方法</li><li><strong>移动方法</strong>：将方法放到合适的类中</li><li><strong>引入参数对象</strong>：减少参数数量</li><li><strong>策略模式</strong>：替换条件语句</li><li><strong>单一职责</strong>：每个类只负责一件事</li></ol><p>重构是持续改进代码质量的重要实践。</p>]]></description></item><item>    <title><![CDATA[Python日志系统架构设计与ELK集成 逐梦AI ]]></title>    <link>https://segmentfault.com/a/1190000047615719</link>    <guid>https://segmentfault.com/a/1190000047615719</guid>    <pubDate>2026-02-21 21:02:06</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>Python日志系统架构设计与ELK集成</h2><p>日志是系统可观测性的重要组成部分。本文将介绍Python日志系统架构设计和ELK集成方案。</p><h3>日志系统核心组件</h3><ul><li><strong>Logger</strong>：日志记录器</li><li><strong>Handler</strong>：日志处理器</li><li><strong>Formatter</strong>：日志格式化器</li><li><strong>Filter</strong>：日志过滤器</li></ul><h3>日志系统核心实现</h3><pre><code class="python">"""
+Python日志系统架构设计与ELK集成
+包含结构化日志、多处理器、ELK集成等
+"""
+
+import logging
+import logging.handlers
+import json
+import sys
+from datetime import datetime
+from typing import Dict, Any, Optional
+from pythonjsonlogger import jsonlogger
+import queue
+import threading
+
+
+# ============ 结构化日志格式 ============
+class StructuredLogFormatter(jsonlogger.JsonFormatter):
+    """结构化日志格式化器"""
+    
+    def add_fields(self, log_record, record, message_dict):
+        super().add_fields(log_record, record, message_dict)
+        
+        # 添加时间戳
+        if not log_record.get('timestamp'):
+            log_record['timestamp'] = datetime.utcnow().isoformat()
+        
+        # 添加日志级别
+        if log_record.get('level'):
+            log_record['level'] = log_record['level'].upper()
+        else:
+            log_record['level'] = record.levelname
+        
+        # 添加源信息
+        log_record['source'] = {
+            'file': record.filename,
+            'line': record.lineno,
+            'function': record.funcName,
+            'module': record.module
+        }
+
+
+# ============ 自定义日志处理器 ============
+class AsyncHandler(logging.Handler):
+    """异步日志处理器"""
+    
+    def __init__(self, handler: logging.Handler, max_queue_size: int = 1000):
+        super().__init__()
+        self.handler = handler
+        self.queue = queue.Queue(maxsize=max_queue_size)
+        self.thread = threading.Thread(target=self._process, daemon=True)
+        self.thread.start()
+    
+    def emit(self, record):
+        try:
+            self.queue.put_nowait(record)
+        except queue.Full:
+            # 队列满时直接处理
+            self.handler.emit(record)
+    
+    def _process(self):
+        while True:
+            try:
+                record = self.queue.get()
+                if record is None:
+                    break
+                self.handler.emit(record)
+            except Exception:
+                pass
+    
+    def close(self):
+        self.queue.put(None)
+        self.thread.join(timeout=5)
+        self.handler.close()
+        super().close()
+
+
+class ContextFilter(logging.Filter):
+    """上下文过滤器"""
+    
+    def __init__(self, context: Dict[str, Any] = None):
+        super().__init__()
+        self.context = context or {}
+        self._local = threading.local()
+    
+    def filter(self, record):
+        # 添加上下文信息
+        for key, value in self.context.items():
+            setattr(record, key, value)
+        
+        # 添加线程本地上下文
+        if hasattr(self._local, 'request_id'):
+            record.request_id = self._local.request_id
+        
+        return True
+    
+    def set_request_id(self, request_id: str):
+        self._local.request_id = request_id
+
+
+# ============ 日志配置 ============
+def setup_logging(
+    level: str = "INFO",
+    log_file: Optional[str] = None,
+    json_format: bool = True
+) -&gt; logging.Logger:
+    """配置日志系统"""
+    
+    # 创建logger
+    logger = logging.getLogger("app")
+    logger.setLevel(getattr(logging, level.upper()))
+    logger.handlers = []  # 清除现有处理器
+    
+    # 创建格式化器
+    if json_format:
+        formatter = StructuredLogFormatter(
+            '%(timestamp)s %(level)s %(name)s %(message)s'
+        )
+    else:
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+    
+    # 控制台处理器
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+    
+    # 文件处理器
+    if log_file:
+        file_handler = logging.handlers.RotatingFileHandler(
+            log_file,
+            maxBytes=10*1024*1024,  # 10MB
+            backupCount=5
+        )
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+    
+    # 添加上下文过滤器
+    context_filter = ContextFilter({
+        'service': 'my-service',
+        'version': '1.0.0'
+    })
+    logger.addFilter(context_filter)
+    
+    return logger
+
+
+# ============ 日志记录器类 ============
+class StructuredLogger:
+    """结构化日志记录器"""
+    
+    def __init__(self, logger: logging.Logger):
+        self._logger = logger
+    
+    def _log(self, level: int, message: str, **kwargs):
+        """记录结构化日志"""
+        extra = {'structured_data': kwargs}
+        self._logger.log(level, message, extra=extra)
+    
+    def info(self, message: str, **kwargs):
+        self._log(logging.INFO, message, **kwargs)
+    
+    def error(self, message: str, **kwargs):
+        self._log(logging.ERROR, message, **kwargs)
+    
+    def debug(self, message: str, **kwargs):
+        self._log(logging.DEBUG, message, **kwargs)
+    
+    def warning(self, message: str, **kwargs):
+        self._log(logging.WARNING, message, **kwargs)
+
+
+# ============ 业务日志记录 ============
+class UserService:
+    """用户服务"""
+    
+    def __init__(self, logger: StructuredLogger):
+        self.logger = logger
+    
+    def create_user(self, username: str, email: str):
+        """创建用户"""
+        self.logger.info(
+            "创建用户",
+            action="create_user",
+            username=username,
+            email=email
+        )
+        # 业务逻辑...
+        return {"id": 1, "username": username}
+    
+    def get_user(self, user_id: int):
+        """获取用户"""
+        self.logger.info(
+            "获取用户",
+            action="get_user",
+            user_id=user_id
+        )
+        # 业务逻辑...
+        return {"id": user_id, "username": "alice"}
+
+
+# ============ ELK集成示例 ============
+class ELKHandler(logging.Handler):
+    """ELK日志处理器"""
+    
+    def __init__(self, host: str, port: int):
+        super().__init__()
+        self.host = host
+        self.port = port
+    
+    def emit(self, record):
+        """发送日志到ELK"""
+        log_entry = self.format(record)
+        # 实际实现中这里会发送到Logstash或Elasticsearch
+        print(f"[ELK] {log_entry}")
+
+
+def main():
+    """主函数"""
+    print("="*60)
+    print("Python日志系统架构设计")
+    print("="*60)
+    
+    # 配置日志
+    logger = setup_logging(
+        level="INFO",
+        log_file="app.log",
+        json_format=True
+    )
+    
+    structured_logger = StructuredLogger(logger)
+    
+    # 使用日志
+    print("\n【结构化日志示例】")
+    user_service = UserService(structured_logger)
+    user_service.create_user("alice", "alice@example.com")
+    user_service.get_user(1)
+    
+    # 记录异常
+    print("\n【异常日志示例】")
+    try:
+        1 / 0
+    except Exception as e:
+        structured_logger.error(
+            "发生错误",
+            error_type=type(e).__name__,
+            error_message=str(e)
+        )
+    
+    print("\n" + "="*60)
+    print("日志系统总结")
+    print("="*60)
+    print("1. 结构化日志: JSON格式便于解析")
+    print("2. 多处理器: 同时输出到控制台和文件")
+    print("3. 异步处理: 避免日志阻塞业务")
+    print("4. 上下文信息: 添加上下文便于追踪")
+    print("5. ELK集成: 集中化日志管理")
+    print("="*60)
+
+
+if __name__ == "__main__":
+    main()</code></pre><h3>日志系统架构图</h3><pre style="display:none;"><code class="mermaid">flowchart TB
+    subgraph App["应用程序"]
+        A1[业务代码]
+        A2[结构化日志]
+    end
+    
+    subgraph Logger["日志系统"]
+        L1[Logger]
+        L2[Handler]
+        L3[Formatter]
+        L4[Filter]
+    end
+    
+    subgraph Output["输出目标"]
+        O1[控制台]
+        O2[文件]
+        O3[ELK Stack]
+    end
+    
+    App --&gt; Logger --&gt; Output</code></pre><h3>关键要点</h3><ol><li><strong>结构化日志</strong>：JSON格式便于解析和分析</li><li><strong>多处理器</strong>：同时输出到多个目标</li><li><strong>异步处理</strong>：避免日志阻塞业务逻辑</li><li><strong>上下文信息</strong>：添加上下文便于问题追踪</li><li><strong>ELK集成</strong>：集中化日志管理和分析</li></ol><p>良好的日志系统是系统可观测性的基础。</p>]]></description></item><item>    <title><![CDATA[发现一个可以免费薅token对接OpenClaw的平台，一共450 channg ]]></title>    <link>https://segmentfault.com/a/1190000047615731</link>    <guid>https://segmentfault.com/a/1190000047615731</guid>    <pubDate>2026-02-21 21:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>白山云，新用户「注册并完成实名认证」即赠送 150元 体验金，调用api再给300元，一共450元</p><p>能用GLM-5，我测试一下，响应速度挺快的，额度给的也足够多。</p><p>认证先给150元，群友反馈，调用api后几个小时后就会再给300</p><p>注册链接是这个<a href="https://link.segmentfault.com/?enc=69Ns2ZNtsayrpWA4DlNi4Q%3D%3D.G40FLXCxfZhVLv9ZbRXxCd%2F4BN4X07gri2phPMbPmq1FrUG79jJAN54XwXSoIZwyRLCEcRrWwq7kGVtXWJmquw%3D%3D" rel="nofollow" target="_blank">https://ai.baishan.com</a></p><p>目前还没打算用，写了个node脚本先调用了一下api，把300拿到手</p><pre><code>const url = "https://api.edgefn.net/v1/chat/completions";
+const apiKey = "你的token";
+
+const headers = {
+  Authorization: `Bearer ${apiKey}`,
+  "Content-Type": "application/json",
+};
+
+const data = {
+  model: "Qwen2.5-72B-Instruct",
+  messages: [{ role: "user", content: "Hello, how are you?" }],
+};
+
+fetch(url, {
+  method: "POST",
+  headers,
+  body: JSON.stringify(data),
+})
+  .then((res) =&gt; res.json())
+  .then((json) =&gt; console.log(JSON.stringify(json, null, 2)))
+  .catch((err) =&gt; console.error("Error:", err));
+</code></pre><p>当然用curl调用一下也行，我只是顺便还要开发别的，直接写了个node的</p><p>那完了450代金券，直接在OpenClaw里用，真香。</p>]]></description></item><item>    <title><![CDATA[【节点】[ReflectionProbe节点]原理解析与实际应用 SmalBox ]]></title>    <link>https://segmentfault.com/a/1190000047615646</link>    <guid>https://segmentfault.com/a/1190000047615646</guid>    <pubDate>2026-02-21 20:02:12</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <blockquote><a href="https://link.segmentfault.com/?enc=kwiw1htnSJZ74iji3UBFcg%3D%3D.0YTRjM5R0Ed9bGwQ9b%2FQj8ekmPa2x8kJ4etyigoNBMGaPqmTXpzwDzgit1lzRUj6QZq930uk3j%2BZsegU1RCLcLk2UUuj6FeCL4RckmLHIIvnF5nWmw334sOyLuT8y4OYhJ%2BEyMLqCDPKLFPsWhW0bdCIYgTyc%2B%2FVobKt7UFAgteXRMm84q4ft9n%2BSMqolTWPXntpc5GUYcX1t58fHKw7HcWQovtl%2FQpWcL50futej8g%3D" rel="nofollow" target="_blank">【Unity Shader Graph 使用与特效实现】</a><strong>专栏-直达</strong></blockquote><h2>摘要</h2><p>Unity URP中的ReflectionProbe节点是实现环境反射效果的核心工具，通过采样场景反射探针的立方体贴图数据，为动态物体提供真实反射。该节点需要输入对象空间的法线和视图方向向量，支持LOD控制反射模糊度。技术实现上依赖Unity反射探针系统，在片元着色器中计算反射向量并进行立方体贴图采样。主要支持URP管线，与HDRP不兼容。典型应用包括金属材质、水面效果和动态反射，使用时需注意反射探针布置、坐标系匹配和性能优化。节点生成的HLSL代码调用SHADERGRAPH_REFLECTION_PROBE宏处理复杂反射计算，开发者可通过理解底层机制实现自定义扩展。</p><h2>描述</h2><p>Reflection Probe 节点是 Unity URP Shader Graph 中用于实现高质量反射效果的核心工具。该节点允许着色器访问场景中最近的反射探针（Reflection Probe）数据，为材质提供基于环境的真实反射信息。在现代实时渲染中，反射探针技术是模拟环境反射的关键手段，它通过预计算或实时捕获场景的立方体贴图，为动态对象提供准确的环境光照和反射细节。</p><p>反射探针的工作原理是在场景中的特定位置捕获周围环境的360度视图，并将其存储为立方体贴图。当使用 Reflection Probe 节点时，着色器会根据物体的表面法线和视图方向，从最近的反射探针中采样相应的反射颜色。这种机制使得移动的物体能够在不同环境中自动获得正确的反射效果，而无需为每个物体单独设置反射贴图。</p><p>该节点需要两个关键的输入参数才能正常工作：法线向量和视图方向向量。法线向量定义了表面的朝向，用于计算反射方向；视图方向向量则表示摄像机到表面点的方向，两者结合可以确定从哪个角度采样反射探针。此外，节点还提供了 LOD 输入参数，允许在不同的细节级别进行采样，这个功能特别有用于创建模糊反射效果或性能优化。</p><p>需要注意的是，Reflection Probe 节点的具体实现行为并非在全局范围内统一定义。Shader Graph 本身并不定义此节点的具体函数实现，而是由各个渲染管线为其定义要执行的 HLSL 代码。这意味着相同的节点在不同的渲染管线中可能会产生不同的结果，开发者在跨管线使用着色器时需要特别注意兼容性问题。</p><h3>技术实现原理</h3><p>从技术层面看，Reflection Probe 节点底层依赖于 Unity 的反射探针系统。当在场景中放置反射探针时，Unity 会在该位置捕获环境信息并生成立方体贴图。Shader Graph 中的 Reflection Probe 节点在着色器执行时，会执行以下关键步骤：</p><ul><li>首先确定物体表面点对应的最近反射探针</li><li>根据输入的法线和视图方向计算反射向量</li><li>使用反射向量在立方体贴图中进行采样</li><li>应用可能的LOD模糊处理</li><li>输出最终的反射颜色值</li></ul><p>这个过程在片元着色器中执行，为每个像素提供精确的反射计算。对于性能考虑，URP 通常会对反射探针采样进行优化，比如使用较低分辨率的立方体贴图或采用近似计算方法。</p><h3>支持的渲染管线</h3><p>Reflection Probe 节点目前主要支持以下渲染管线：</p><ul><li>通用渲染管线（Universal Render Pipeline, URP）</li></ul><p>需要注意的是，高清渲染管线（High Definition Render Pipeline, HDRP）并不支持此节点。HDRP 有自己专门的反射系统实现，使用不同的节点和方法来处理反射效果。这种差异源于两个渲染管线的设计目标和架构不同 - URP 更注重性能和跨平台兼容性，而 HDRP 则专注于高端图形效果。</p><p>如果开发者计划构建需要在多个渲染管线中使用的着色器，强烈建议在实际项目应用前，分别在目标管线中进行测试和验证。某些节点可能在一个渲染管线中已完整定义并正常工作，而在另一个管线中可能未实现或行为不一致。如果 Reflection Probe 节点在某个渲染管线中未定义，通常会返回 Vector3(0, 0, 0)，即黑色值，这可能导致反射效果完全丢失。</p><h2>端口</h2><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047615648" alt="" title=""/></p><p>Reflection Probe 节点包含多个输入和输出端口，每个端口都有特定的功能和数据类型要求。正确理解和使用这些端口是实现预期反射效果的关键。</p><h3>输入端口</h3><p>View Dir 端口是关键的输入参数之一，它要求提供 Vector 3 类型的视图方向数据。这个方向应该基于对象空间（Object Space）表示，即从当前表面点指向摄像机的方向向量。视图方向在反射计算中至关重要，因为它与表面法线共同决定了反射向量的计算。在实际应用中，这个端口通常连接到 Shader Graph 中的 View Direction 节点，该节点会自动提供正确的视图方向向量。</p><ul><li>数据类型：Vector 3</li><li>空间要求：对象空间（Object Space）</li><li>典型连接：View Direction 节点</li><li>功能说明：定义了从表面点到摄像机的方向，用于反射计算</li></ul><p>Normal 端口是另一个必需的输入参数，同样需要 Vector 3 类型的法线向量，基于对象空间。表面法线定义了面的朝向，是光学计算中的基础要素。在反射计算中，法线用于根据入射光方向（视图方向的逆方向）计算反射方向。这个端口通常连接到 Normal Vector 节点，或者连接到自定义法线贴图处理后的结果。</p><ul><li>数据类型：Vector 3</li><li>空间要求：对象空间（Object Space）</li><li>典型连接：Normal Vector 节点或法线贴图采样结果</li><li>功能说明：定义表面朝向，参与反射方向计算</li></ul><p>LOD 端口是一个可选的浮点数输入，用于控制采样反射探针的细节级别。LOD 技术允许在不同距离或根据不同性能需求使用不同精度的纹理。在 Reflection Probe 节点的上下文中，LOD 参数主要用于创建模糊反射效果 - 较高的 LOD 值会产生更模糊的反射，模拟粗糙表面的反射特性或创建特殊的视觉效果。</p><ul><li>数据类型：Float</li><li>取值范围：通常为 0 到最大 LOD 级别</li><li>特殊应用：通过动画或参数控制实现动态模糊效果</li><li>性能影响：较高的 LOD 值可能降低采样精度但提升性能</li></ul><h3>输出端口</h3><p>Out 端口是节点的唯一输出，提供 Vector 3 类型的反射颜色值。这个输出代表了根据输入参数从反射探针采样得到的 RGB 颜色值，可以直接用于着色器的最终输出或与其他颜色值进行混合。输出的颜色强度和质量取决于多个因素，包括反射探针的设置、场景光照环境以及输入的参数准确性。</p><ul><li>数据类型：Vector 3（RGB 颜色）</li><li>取值范围：通常为 HDR 颜色值，可能超过 [0,1] 范围</li><li>使用方式：可直接输出或与漫反射、其他效果混合</li><li>色彩空间：根据项目设置可能是线性或伽马空间</li></ul><h3>端口连接实践</h3><p>在实际的 Shader Graph 制作中，正确连接这些端口是实现高质量反射效果的关键。典型的连接方式包括：</p><ul><li>将 View Direction 节点连接到 View Dir 端口</li><li>将 Normal Vector 节点连接到 Normal 端口</li><li>使用 Float 参数或数学节点控制 LOD 端口</li><li>将 Out 端口连接到主着色器的相应输入，如 Emission 或反射颜色混合节点</li></ul><p>理解每个端口的空间要求特别重要 - 不匹配的空间坐标系会导致错误的反射计算。例如，如果提供了世界空间的法线方向但节点期望对象空间法线，反射方向将完全错误，导致反射效果不符合预期。</p><h2>生成的代码示例</h2><p>Reflection Probe 节点在 Shader Graph 背后生成的代码展示了其实际的工作原理和实现方式。通过理解这些生成的代码，开发者可以更深入地掌握节点的功能，并在需要时进行自定义扩展或优化。</p><h3>基础函数实现</h3><p>以下示例代码表示 Reflection Probe 节点的一种典型 HLSL 实现：</p><pre><code>void Unity_ReflectionProbe_float(float3 ViewDir, float3 Normal, float LOD, out float3 Out)
 {
     Out = SHADERGRAPH_REFLECTION_PROBE(ViewDir, Normal, LOD);
 }</code></pre><p>这段代码定义了一个名为 <code>Unity_ReflectionProbe_float</code> 的函数，这是 Shader Graph 为 Reflection Probe 节点生成的标准函数。函数接受三个输入参数：ViewDir（视图方向）、Normal（法线方向）和 LOD（细节级别），并通过输出参数 Out 返回反射颜色结果。</p><p>函数内部调用了 <code>SHADERGRAPH_REFLECTION_PROBE</code>宏，这是 URP 渲染管线为 Shader Graph 定义的专门用于反射探针采样的内部函数。这个宏封装了所有复杂的反射计算逻辑，包括：</p><ul><li>反射探针的选择和混合</li><li>反射向量的计算和变换</li><li>立方体贴图的采样和过滤</li><li>LOD 级别的应用</li></ul><h3>代码解析与技术细节</h3><p>从生成的代码中可以看出几个重要的技术细节：</p><ul><li>函数使用 <code>float</code> 精度变体（通过 <code>_float</code> 后缀标识），这表明节点支持多种精度模式，包括 half 和 fixed，以适应不同的性能需求和平台限制</li><li>所有向量参数都基于相同的坐标系，确保数学计算的一致性</li><li>LOD 参数直接传递给底层采样函数，实现细节级别的控制</li><li>输出是简单的 RGB 颜色值，易于集成到各种着色模型中</li></ul><p>在实际的着色器编译过程中，<code>SHADERGRAPH_REFLECTION_PROBE</code> 宏会被展开为具体的 HLSL 代码，这些代码会根据当前的渲染管线和平台进行优化。例如，在移动平台上，可能会使用更简化的数学计算或较低精度的数据类型以提升性能。</p><h3>自定义扩展可能性</h3><p>了解生成的代码结构为开发者提供了自定义反射效果的基础。虽然 Shader Graph 提供了便捷的视觉化编程方式，但在某些高级用例中，可能需要在自定义函数节点中直接编写类似的代码。例如，开发者可以：</p><ul><li>修改反射向量的计算方式以实现特殊效果</li><li>添加额外的后处理步骤，如色彩校正或对比度调整</li><li>实现多个反射探针的混合算法</li><li>添加基于距离或角度的反射强度衰减</li></ul><p>通过理解 Reflection Probe 节点的代码生成模式，开发者可以更好地调试着色器问题，优化性能，并在需要时突破 Shader Graph 可视化编程的限制，实现更复杂的反射效果。</p><h2>应用场景与实例</h2><p>Reflection Probe 节点在实时渲染中有广泛的应用场景，从基本的金属材质到复杂的视觉特效都可以见到它的身影。理解这些应用场景有助于在实际项目中更好地利用这一强大工具。</p><h3>金属与反射表面</h3><p>最常见的应用是为金属材质和反射表面添加环境反射。金属材质的特点是具有高度的镜面反射性，能够清晰地反射周围环境。使用 Reflection Probe 节点可以轻松实现这种效果：</p><ul><li>将 Reflection Probe 节点的输出直接连接到主着色器的 Emission 输入，创建明亮的金属反射</li><li>与基础的 PBR 材质结合，将反射输出与漫反射颜色混合，实现更自然的材质外观</li><li>通过 LOD 参数控制反射的清晰度，模拟不同粗糙度的金属表面</li></ul><p>例如，创建一个镀铬金属材质时，可以使用较低的 LOD 值获得清晰的反射，而创建 brushed metal（刷痕金属）时，则可以使用较高的 LOD 值产生模糊的反射效果。</p><h3>水面与透明材质</h3><p>水面、玻璃和其他透明/半透明材质也需要精确的反射效果来增强真实感。在这些材质中，反射通常与折射、透明度等效果结合使用：</p><ul><li>使用 Fresnel 效应控制反射强度，使在掠射角度反射更强</li><li>将反射颜色与折射效果混合，模拟水面的光学特性</li><li>通过透明度混合，使反射与背后的物体内容自然融合</li></ul><p>Reflection Probe 节点在这些应用中提供了基础的环境反射信息，与其他着色器效果结合可以创建出令人信服的透明材质。</p><h3>动态反射效果</h3><p>通过动画或脚本控制 Reflection Probe 节点的参数，可以创建各种动态反射效果：</p><ul><li>随时间变化的 LOD 值可以创建反射模糊度的动画，模拟焦点变化或视觉特效</li><li>基于物体速度或其他游戏参数调整反射强度</li><li>在特定事件触发时改变反射特性，如击中金属表面时增强反射</li></ul><p>这些动态效果大大增强了游戏的交互性和视觉冲击力，使反射不再是静态的表面属性，而是能够响应游戏状态变化的动态元素。</p><h3>性能优化技术</h3><p>在性能敏感的应用中，Reflection Probe 节点也需要适当的优化策略：</p><ul><li>使用较高的 LOD 值减少采样成本，特别是在远处物体上</li><li>根据物体与摄像机的距离动态调整反射质量</li><li>在移动平台上使用较低分辨率的反射探针</li><li>对不重要的小物体禁用反射或使用简化的反射计算</li></ul><p>理解这些应用场景和技巧可以帮助开发者在保证视觉效果的同时，维持良好的渲染性能。</p><h2>最佳实践与常见问题</h2><p>在使用 Reflection Probe 节点时，遵循一些最佳实践可以避免常见问题，并确保反射效果的质量和性能。</p><h3>反射探针设置建议</h3><p>Reflection Probe 节点的效果很大程度上依赖于场景中反射探针的正确设置：</p><ul><li>在关键区域放置足够多的反射探针，确保动态物体总能找到合适的探针</li><li>根据场景需求选择合适的探针类型：Baked（烘焙）用于静态环境，Realtime（实时）用于动态环境</li><li>设置适当的探针影响范围，避免探针之间不自然的切换</li><li>使用探针代理体积（Reflection Probe Proxy Volume）处理大型物体的反射</li></ul><p>正确的场景设置是获得高质量反射效果的前提，Shader Graph 中的节点配置只能在此基础上进行微调和优化。</p><h3>常见问题与解决方案</h3><p>在使用 Reflection Probe 节点时，开发者可能会遇到一些典型问题：</p><ul><li><strong>反射缺失或黑色输出</strong>：检查场景中是否有激活的反射探针；确认反射探针已正确烘焙；验证法线和视图方向输入是否正确</li><li><strong>反射方向错误</strong>：确认所有输入向量使用相同的坐标系；检查法线贴图是否正确应用；验证视图方向计算</li><li><strong>性能问题</strong>：减少实时反射探针的使用；增加 LOD 值降低采样质量；使用较低分辨率的立方体贴图</li><li><strong>平台间不一致</strong>：在不同目标平台上测试着色器；检查着色器变体是否正确生成；确认所有依赖功能在目标平台上可用</li></ul><h3>与其他节点的配合</h3><p>Reflection Probe 节点通常与其他 Shader Graph 节点结合使用，以实现更复杂的效果：</p><ul><li>与 Fresnel Effect 节点结合，实现基于视角的反射强度变化</li><li>使用 Math 节点对反射颜色进行后处理，如调整亮度、对比度或饱和度</li><li>通过 Lerp 节点将反射与其它纹理或颜色混合，创建自定义的材质表现</li><li>与 Time 节点结合，创建动态的反射动画效果</li></ul><hr/><blockquote><a href="https://link.segmentfault.com/?enc=OfJPjlXK6ngVFflVgG8b8Q%3D%3D.yNUMk3iavD99lUuxgcB15deTiPEqC0swNKoMTL62R%2BXN%2Bp2gi7rN9NaG15EflqlaehRzi5afiVP7Gl8BB27hl6esSYa5zYHq5eA3bRqwwWYrKXz8ppF8Nr10PEnTec4QJD8oA8AabEqHf2F5ljE2OFjwD9ccEBqo5hwgxOn9ZPfY1M8bIu2LOIUyNEZil9hwZRnNvGY6zInxjXQP5W5YZgejdBfCYIUmtlNN09ju%2FTs%3D" rel="nofollow" target="_blank">【Unity Shader Graph 使用与特效实现】</a><strong>专栏-直达</strong><br/>（欢迎<em>点赞留言</em>探讨，更多人加入进来能更加完善这个探索的过程，🙏）</blockquote>]]></description></item><item>    <title><![CDATA[数字游民 Hugo：我已退了10个群（还将继续），屏蔽 99% 的噪音，才能听见心力召唤 胡戈AI赋]]></title>    <link>https://segmentfault.com/a/1190000047615660</link>    <guid>https://segmentfault.com/a/1190000047615660</guid>    <pubDate>2026-02-21 20:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p><img referrerpolicy="no-referrer" src="/img/remote/1460000047615662" alt="" title=""/></p><blockquote>"注意力，是你最稀缺的资产。" —— 纳瓦尔（Naval Ravikant）</blockquote><p>早在战国时期，“亚圣”孟子也在《孟子·离娄下》有云：“人有不为也，而后可以有为。”只有对某些事情“不为”，才能集中精力在更重要的事情上“有为”</p><p>这其中蕴含深刻而辩证的工作与人生方法论：<br/>特别在当今AI时代，各种信息狂轰乱炸。“有所不为”更是彰显了高明的战略定力和智慧。绝不是不作为，而是强调要实事求是，懂得主动放弃和拒绝，不干不该干的事。</p><p>昨天，我在10个微信群里发了同一段告别留言：</p><blockquote><p>"各位好！我是 Hugo，数字游民一枚。</p><p>信息大爆炸的 AI 时代，最最重要的是保护好自己的注意力，把有限的时间用在自己的'第一要事'上。</p><p>经过反复探索后，我最终决定聚焦 AI 轻创&amp;Web3&amp;OPC，深耕 AI 编程应用开发实践，赋能个人蜕变成长&amp;组织迭代进化…"</p></blockquote><p>发完这段话，我退掉了10多个与核心目标无关的群。</p><hr/><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047615663" alt="" title="" loading="lazy"/></p><h2>一、我们正身处一个"注意力被抢劫"的时代</h2><p>你有没有过这样的体验：</p><ul><li>📱 早上拿起手机想查个资料，结果刷了半小时朋友圈</li><li>💬 微信群红点一响就忍不住点开，一聊就是半小时无关话题</li><li>📺 本想学习 AI 教程，却被算法推荐带进了短视频黑洞</li><li>🤔 晚上躺在床上，脑子里全是白天别人的评价和闲聊</li></ul><p><strong>明明忙了一整天，却好像什么正事都没做。</strong></p><p>这不是你的问题，这是设计好的。</p><p>每一个 APP 都在争夺你的眼球，每一条推送都在收割你的专注，每一个"为你好"的建议都在干扰你的判断。</p><p><strong>它们不杀人，却在慢性谋杀你的可能性。</strong></p><hr/><h2>二、为什么我选择"退群"？</h2><p>刘润说过一句话：</p><blockquote>"群体的热闹，常常是个体成长的坟墓。"</blockquote><p>深以为然。</p><p>我曾经的微信群列表里，有各种"资源对接群"、"行业交流群"、"学习打卡群"… 每天消息 999+，看起来人脉很广，信息很多。</p><p>但一年后回头看：</p><ul><li>❌ 没有促成任何实质性合作</li><li>❌ 没有学到任何系统性知识</li><li>❌ 没有推动任何项目进展</li><li>✅ 唯一收获的是：注意力碎片化、焦虑感倍增、时间被切割成渣</li></ul><p><strong>我意识到：我在用"社交勤奋"掩盖"战略懒惰"。</strong></p><p>于是我做了一个决定：</p><p><strong>只保留与核心目标高度一致的社群，其他全部退出或设置免打扰。</strong></p><p>这个决定带来的变化是惊人的——</p><p><strong>我省出了每天至少 2 小时的深度工作时间。</strong></p><hr/><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047615664" alt="" title="" loading="lazy"/></p><h2>三、AI 时代，专注力是第一生产力</h2><p>纳瓦尔在 2025 最新闭门分享中说：</p><blockquote>"生命中最稀缺的资源不是时间，而是注意力。人脑每天只有 2-3 小时深度专注能力，你把 99% 的注意力放到某件事上，你就在这件事上胜过 99% 的人。"</blockquote><p><strong>就比如AI 编程，其本质不是写代码，而是清晰表达你的想法。</strong></p><p>当你能够屏蔽干扰、保持专注时：</p><ul><li>你能更清晰地定义问题</li><li>你能更准确地描述需求</li><li>你能更有耐心地迭代优化</li><li>你能更敏锐地捕捉机会</li></ul><p><strong>技术门槛已经被 AI 填平，真正的门槛是：你能否专注到把事情做成。</strong></p><hr/><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047615665" alt="" title="" loading="lazy"/></p><h2>四、我的 5 条极简实操建议</h2><p>基于这段时间的实践，我总结了 5 条可立即执行的建议：</p><h3>1️⃣ 锁定"唯一核心目标"</h3><p>问自己："未来 30 天，哪件事不做，我的目标会崩盘？"</p><p>答案只有一个。其他事情，全部暂缓。</p><p>我的答案：深耕 AI 编程应用开发，做出能落地的产品。</p><h3>2️⃣ 清理消耗型社群</h3><p>清理超过 5 个活跃且与核心目标无关的微信群？</p><p><strong>退群，或者设置"消息免打扰 + 折叠"。</strong></p><p>真正的紧急事，会有人打电话找你。</p><h3>3️⃣ 守护清晨黄金时间</h3><p>每天留出 2 小时完全离线时间，用于处理最重要的事。</p><p>我选择的是清晨。这段时间不被世界打扰，效率是平时的 3 倍。</p><h3>4️⃣ 打破"必须立刻回复"的幻觉</h3><p>99% 的消息都能 2 小时后甚至明天回。</p><p><strong>真正的尊重，是理解你的节奏。</strong></p><h3>5️⃣ 用行动代替焦虑</h3><p>想学 AI 编程？别等"学完再开始"。</p><p><strong>现在就动手，用 AI 帮你写代码，边做边学。</strong></p><p>我那个 3 小时做出的小程序，就是这么来的。</p><hr/><h2>五、写在最后</h2><p>时间是一张大网，你屏蔽了什么，就会收获什么。</p><p><strong>屏蔽了噪音，才能听见内心的召唤。</strong><br/>\<br/><strong>屏蔽了干扰，才能聚焦真正重要的事。</strong><br/>\<br/><strong>屏蔽了内耗，才能积攒向前的力量。</strong></p><p>人生不过三万天，你无法控制世界有多吵，但可以决定自己听什么。</p><p>我选择屏蔽与核心目标无关的群聊，把时间留给 AI 编程、产品打磨、内容创作。</p><p><strong>你呢？</strong><br/>从当下开始，也即可行动吧：</p><p>当你能屏蔽 99% 的噪音，剩下的 1%，就是你通往卓越的窄门。</p><hr/><p><strong>我是Hugo，数字游民一枚，聚焦AI轻创&amp;Web3&amp;OPC，深耕AI编程应用开发实践，赋能个人蜕变成长&amp;组织迭代进化，助力构建可持续的智能化增长体系。</strong></p><p><strong>如果你也对 AI 轻创&amp;编程感兴趣，欢迎关注我，一起用 AI 把想法变成现实。</strong></p><p>👇 <strong>评论区告诉我：你准备退掉哪个群？</strong></p><hr/><p>本文由<a href="https://link.segmentfault.com/?enc=xN1NYtGogvCoOyrUcsWezg%3D%3D.KBWM1Nm1gtPNhpSusnOJ86M48ooBy1WSdfjS9JTYZ9s%3D" rel="nofollow" target="_blank">mdnice</a>多平台发布</p>]]></description></item><item>    <title><![CDATA[MCP彻底改变AI编程方式（附亲测必装工具） 程序员小崔日记 ]]></title>    <link>https://segmentfault.com/a/1190000047615596</link>    <guid>https://segmentfault.com/a/1190000047615596</guid>    <pubDate>2026-02-21 18:02:01</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <blockquote>如果你觉得AI只能写代码，那你只用了它10%的能力。\<br/>真正的高手，已经在用AI自动生成网站、自动部署项目、自动生成配图。\<br/>而实现这一切的核心，就是：<strong>MCP</strong></blockquote><hr/><h2>一、MCP是什么？为什么它这么重要</h2><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047615598" alt="" title=""/></p><p>MCP，全称：</p><p><strong>Model Context Protocol（模型上下文协议）</strong></p><p>你可以理解为：</p><blockquote>MCP = AI连接现实世界的接口</blockquote><p>没有MCP，AI只能：</p><ul><li>写代码</li><li>回答问题</li></ul><p>有了MCP，AI可以：</p><ul><li>操作浏览器</li><li>部署网站</li><li>读取设计稿</li><li>查询最新文档</li><li>生成图片</li><li>操作GitHub</li></ul><p>AI从"聊天机器人"，变成"真正开发者"。</p><hr/><h2>二、为什么MCP是AI开发的关键</h2><h3>传统开发流程：</h3><pre><code>写代码
@@ -2225,259 +3201,4 @@ class KVCache:
         self.k_cache[:, :, start_pos:end_pos] = key
         self.v_cache[:, :, start_pos:end_pos] = value
         return self.k_cache[:, :, :end_pos], self.v_cache[:, :, :end_pos]</code></pre><hr/><h3>🚀 快速开始</h3><h4>1. 克隆项目</h4><pre><code class="bash">git clone https://github.com/rixin2025/attention-from-scratch.git
-cd attention-from-scratch</code></pre><h4>2. 安装依赖</h4><pre><code class="bash">pip install -r requirements.txt</code></pre><h4>3. 运行 Notebooks</h4><pre><code class="bash">jupyter notebook notebooks/</code></pre><p>学习顺序建议：</p><ol><li><code>01_scaled_dot_product.ipynb</code> - 理解基础</li><li><code>02_multi_head_attention.ipynb</code> - 理解多头</li><li><code>03_grouped_query_attention.ipynb</code> - 理解 GQA</li><li><code>04_kv_cache.ipynb</code> - 理解优化</li></ol><h4>4. 运行测试</h4><pre><code class="bash">pytest tests/ -v</code></pre><hr/><h3>📚 参考资料</h3><ul><li><a href="https://link.segmentfault.com/?enc=aUhX5vU3TX8KsDuboiz19g%3D%3D.Zbs6OK%2FYOUl38pS%2FTInV8oTlh4dXymOEqWSXCqvYQ5Trbuy3TRMpFSkRLhoS5aBM" rel="nofollow" target="_blank">Attention Is All You Need</a> - Transformer 原始论文</li><li><a href="https://link.segmentfault.com/?enc=lUD0bqSfMy0dDKFstAdN6A%3D%3D.jX359N5dTQGAG1IQ7bENdzt5w%2Fa8yEpUPKr7%2BY%2FuqkjTNC%2BEpAzZQJvL6hqTTb5p" rel="nofollow" target="_blank">GQA: Training Generalized Multi-Query Transformer Models</a> - GQA 论文</li><li><a href="https://link.segmentfault.com/?enc=qJ2Mwd17qm68iD2i6ZuurA%3D%3D.ybcMz2Vzqf%2FCpseGxgBut%2FdW34irIB%2FL0dts72hDEVAJ59W1VvkmjfAN5iQCqVEHenGDA%2BfI0R1Qs2gLIb93vg%3D%3D" rel="nofollow" target="_blank">The Illustrated Transformer</a> - 可视化 Transformer</li><li><a href="https://link.segmentfault.com/?enc=K7e0PpT9ixJPqiHfUs1wZw%3D%3D.sLmvAL5JL4qJF6l9UlXmoAJlZo5%2BcNGV3OOWatdBJxIkF48QWazju3nO339%2FT21B" rel="nofollow" target="_blank">FlashAttention</a> - 内存高效的 Attention</li><li><a href="https://link.segmentfault.com/?enc=7XcbFoPinqUBdZhuemsYqw%3D%3D.KDhxPSxbEYhUxM1%2Fn8Il976T0YZMSo%2B0rh8dMmqwysuuY6m%2F0sYkjq7tGL75up93" rel="nofollow" target="_blank">vLLM</a> - 高效的 LLM 推理框架</li></ul><hr/><h3>🤝 贡献</h3><p>欢迎提交 Issue 和 Pull Request！</p><p>如果你觉得这个项目对你有帮助，请给一个 ⭐ Star，这是对我最大的鼓励！</p><hr/><h3>📝 总结</h3><p>Attention 机制是 Transformer 和大语言模型的核心。通过从零实现，我们不仅理解了原理，更掌握了实现细节和优化技巧。</p><p><strong>关键要点</strong>：</p><ol><li><strong>Scaled Dot-Product Attention</strong> 是基础，理解 scaling factor 的作用</li><li><strong>Multi-Head Attention</strong> 通过并行计算多个头，捕捉不同类型的信息</li><li><strong>Grouped Query Attention</strong> 在质量和效率间找到平衡，是工业界的主流选择</li><li><strong>KV Cache</strong> 将推理时间复杂度从 O(n²) 降到 O(n)，是加速的关键</li></ol><p><strong>下一步</strong>：</p><ul><li>深入学习 FlashAttention（python-cpp-cuda）</li><li>研究 PagedAttention</li><li>cuda内存模型优化技巧</li><li>探索 TensorRT-LLM XQA 模块原理及工程化</li><li>nv性能分析工具</li><li>实现自己的 Attention 变体</li></ul><hr/><h3>🔗 相关链接</h3><ul><li><strong>GitHub</strong>: [<a href="https://link.segmentfault.com/?enc=fLyVS6DtNxVGpDKqpE2zoQ%3D%3D.Kae5cZ%2B3NnDKmObMk7DJNJlt%2FJIslMBoD5gracZQV1kLSL%2BVGizLJ5GnyAqnvxeMiBYbryf6oMf0yupZiqSDNw%3D%3D" rel="nofollow" target="_blank">https://github.com/rixin2025/attention-from-scratch</a>]</li><li><strong>Issues</strong>: 欢迎提交问题和建议</li><li><strong>Discussions</strong>: 欢迎讨论和分享经验</li></ul><hr/><h3><strong>如果这篇文章对你有帮助，请给项目一个 ⭐ Star，让更多人看到！</strong></h3><p><strong>让更多人了解 Attention 机制，一起推动 AI 技术的发展！</strong></p><hr/><p><strong>作者</strong>: jensen.li  <br/><strong>创建时间</strong>: 2026-02-17  <br/><strong>License</strong>: MIT</p><hr/><p><em>后续将基于 TensorRT-LLM XQA 模块更加深入分析，添加更多优化手段和工程化技巧介绍；欢迎 star 和讨论！</em></p><p>本文由<a href="https://link.segmentfault.com/?enc=ltVcid9LNs0MQoQ5VI3QoQ%3D%3D.3j3agZ3%2ByIlM4L1slW8M9aAMYDHKIvb7tyWN8EZ7zFg%3D" rel="nofollow" target="_blank">mdnice</a>多平台发布</p>]]></description></item><item>    <title><![CDATA[gpt-5.3-codex实测：编程能力大幅提升，春节可领10刀测试额度 GPTMirrors ]]></title>    <link>https://segmentfault.com/a/1190000047613816</link>    <guid>https://segmentfault.com/a/1190000047613816</guid>    <pubDate>2026-02-19 19:05:07</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>随着大模型能力不断进化，编程领域的 AI 工具也迎来了新一轮升级。前几天 OpenAI 发布了 <strong>gpt-5.3-codex 模型</strong>，不少开发者都在讨论它在代码生成、理解和重构方面的提升。正好趁着春节假期有空，我也做了一轮实测，顺便整理了一些体验心得，给正在关注 <strong>codex 编程 AI</strong> 的朋友做个参考。</p><h2><img width="723" height="515" referrerpolicy="no-referrer" src="/img/bVdnWGV" alt="image.png" title="image.png"/></h2><h2>gpt-5.3-codex 实测体验：性能与能力的双提升</h2><p>这次更新最直观的感受有两个：<strong>速度更快，代码质量更稳</strong>。</p><h3>1️⃣ 响应速度明显提升</h3><p>在同样的网络环境下，对比旧版本模型，新版 codex 的：</p><ul><li>首 token 输出更快</li><li>长代码生成延迟明显缩短</li><li>多轮上下文理解更流畅</li></ul><p>尤其是在命令行环境中调用 API 生成脚本时，几乎可以做到“边想边出”，对日常开发效率影响很大。</p><hr/><h3>2️⃣ 编程能力接近 Claude 水平</h3><p>我重点测试了几类任务：</p><ul><li>大型函数重构</li><li>单元测试自动生成</li><li>跨文件项目结构分析</li><li>Python / Go / Node 混合项目优化</li></ul><p>整体来看：</p><ul><li>代码结构更清晰</li><li>变量命名更合理</li><li>边界条件考虑更全面</li><li>注释质量更自然</li></ul><p>客观讲，现在的 <strong>codex 编程 AI 能力已经可以和 Claude 正面竞争</strong>，在工程类任务上表现尤为稳定。</p><hr/><h2>官方春节活动：免费额度真的很充足</h2><p>最近官方确实放出了大量免费额度活动。<br/>春节假期闲着没事，我把官网的免费额度做了一次聚合整理，搭了一个便于测试的中转入口，主要是为了方便大家：</p><ul><li>不用复杂配置</li><li>不用折腾多账户</li><li>可以直接命令行体验</li></ul><p>整体目标很简单：<strong>降低体验门槛</strong>。</p><hr/><h2>使用方式（实测流程）</h2><p>整个过程其实非常简单：</p><h3>第一步：注册登录</h3><p>注册成功后会直接赠送 <strong>10 美元测试余额</strong>。</p><p>👉 地址：<br/><a href="https://link.segmentfault.com/?enc=qtBKgx8EhT8tC4BshEuQ8Q%3D%3D.Xcwz4aq%2BiVxVktL0%2B%2F4yapcty81X9TidBv4WqD3HDDqLGChs6N18cdBYnP1BeRCG" rel="nofollow" target="_blank">https://codex.dakeai.cc/register?promo=DKAI</a></p><hr/><h3>第二步：创建 API Key</h3><p>登录后台后进入：</p><blockquote>密钥管理 → 创建 Key</blockquote><p>生成后即可使用。</p><hr/><h3>第三步：一键部署 codex</h3><p>后台提供：</p><ul><li>一键部署 codex 命令</li><li>覆盖中转配置脚本</li></ul><p>只需要把命令复制到终端运行即可。</p><p>完成后就可以直接在本地通过 CLI 使用先进的 AI 编程助手，例如：</p><ul><li>自动生成项目结构</li><li>重构遗留代码</li><li>自动补全测试</li><li>解释复杂源码</li><li>写脚本工具</li></ul><p>整个过程基本 3 分钟搞定。</p><hr/><h2>适合哪些人？</h2><p>如果你属于以下类型，体验价值会比较高：</p><ul><li>后端工程师（Python / Go / Java）</li><li>独立开发者</li><li>做自动化脚本的人</li><li>想对比 GPT / Claude / Codex 的开发者</li><li>想在命令行里使用 AI 编程助手的人</li></ul><hr/><h2>实际体验建议</h2><p>如果你是第一次使用 codex 编程 AI，可以试试这些场景：</p><ul><li>把一个 500 行的旧函数贴进去要求重构</li><li>给一个项目目录结构，让它生成 README</li><li>让它为现有代码生成完整单元测试</li><li>要求写一个带异常处理的 CLI 工具</li></ul><p>你会更直观地感受到新版模型的进步。</p><hr/><h2>小结</h2><p>这次 gpt-5.3-codex 的升级确实不是“参数级别的小改动”，而是明显的实用层面提升：</p><ul><li>更快</li><li>更稳</li><li>更接近专业开发需求</li></ul><p>春节期间官方额度比较充足，加上现在注册还能送 10 刀余额，确实是个不错的测试窗口期。感兴趣的可以自己上手试试，对比一下目前主流的几款编程 AI，再决定长期方案。</p><p>毕竟，真正适合自己的工具，还是要亲自跑几轮项目才知道。</p>]]></description></item><item>    <title><![CDATA[Nexpose 8.36.0 for Linux & Windows - 漏洞扫描 sysin ]]></title>    <link>https://segmentfault.com/a/1190000047613901</link>    <guid>https://segmentfault.com/a/1190000047613901</guid>    <pubDate>2026-02-19 19:04:11</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>Nexpose 8.36.0 for Linux &amp; Windows - 漏洞扫描</p><p>Rapid7 on-prem Vulnerability Management, released February 2026</p><p>请访问原文链接：<a href="https://link.segmentfault.com/?enc=Nvc1BVN%2FdqfOFsShSnyPzQ%3D%3D.%2FGhj2h5Rz7TwppPgHPVNJEaeYBadhbHnHMGuzTHr2%2Bg%3D" rel="nofollow" target="_blank">https://sysin.org/blog/nexpose/</a> 查看最新版。原创作品，转载请保留出处。</p><p>作者主页：<a href="https://link.segmentfault.com/?enc=GRPljZOqiKNDgad6npgxTQ%3D%3D.b9Je59Bp2sYtBkUIUntYc%2BuSZpiQsgiONGq2OWuCzB4%3D" rel="nofollow" target="_blank">sysin.org</a></p><hr/><p>Nexpose Vulnerability Scanner</p><p>本地部署的漏洞扫描器</p><p>一款强大的漏洞管理解决方案，可在整个环境中提供全面的资产可见性，同时协助风险的优先级排序与修复。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000046832644" alt="Nexpose" title="Nexpose"/></p><h2>工作原理</h2><p><img referrerpolicy="no-referrer" src="/img/remote/1460000046832645" alt="Collect" title="Collect" loading="lazy"/></p><h3>收集</h3><p>通过对整个网络的实时覆盖，随时掌握风险情况。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000046832646" alt="Prioritize" title="Prioritize" loading="lazy"/></p><h3>优先级排序</h3><p>借助更具意义的风险评分，了解应优先关注哪些漏洞。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000046832647" alt="Remediate" title="Remediate" loading="lazy"/></p><h3>修复</h3><p>为 IT 提供快速高效修复问题所需的信息。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000046832648" alt="Quote Icon" title="Quote Icon" loading="lazy"/></p><p>评语：对于大型企业来说 —— 无论多大规模 —— 这款产品都非常值得考虑。它功能强大，具有可靠的历史表现与优秀的支持选项。</p><p>—— SC Magazine</p><h2>核心功能</h2><p><strong>助你在关键时刻采取行动的漏洞扫描软件</strong>。</p><h3>实际风险评分</h3><p>传统的 1-10 CVSS 分数往往会标记成千上万个“高危”漏洞。我们的漏洞扫描器采用实际风险评分（Real Risk Score），提供更具可操作性的洞见 (sysin)。该评分不仅考虑漏洞的存在时间，还包括公开利用代码或恶意软件工具包等因素，1-1000 的评分范围可突显最有可能被攻击者利用的漏洞，助你优先处理真正关键的问题。</p><p>结合强大的标签系统，还可自动优先处理对你的业务最关键的系统。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000046832649" alt="Real risk score" title="Real risk score" loading="lazy"/></p><h3>自适应安全</h3><p>“被动扫描”常伴随大量误报和陈旧数据，源自不频繁的数据导出。而借助 Nexpose 的自适应安全功能，一旦新设备或新漏洞访问你的网络，即可实现自动检测与评估。</p><p>结合与 VMware 和 AWS 的动态连接，以及与 Sonar 研究项目的集成，Nexpose 为你提供真正的实时环境监控。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000046832650" alt="Adaptive security" title="Adaptive security" loading="lazy"/></p><h3>策略评估</h3><p>加强系统防护与发现并修复漏洞同样重要。</p><p>Nexpose 提供内置的策略扫描，帮助你依据 CIS 和 NIST 等主流标准对系统进行基准评估 (sysin)。直观的修复报告提供逐步指导，说明哪些操作将最显著提升合规性。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000046832651" alt="Policy assessment" title="Policy assessment" loading="lazy"/></p><h3>修复报告</h3><p>修复报告列出可降低最大风险的前 25 项行动，并附有清晰的操作指南。</p><p>还可为管理层创建趋势报告，展示安全项目的投资回报与进展情况。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000046832652" alt="Remediation reporting" title="Remediation reporting" loading="lazy"/></p><h2>新增功能</h2><p>Nexpose 最新发布</p><p>Nexpose Version 8.36.0</p><p><strong>软件发布日期</strong>：2026 年 2 月 12 日 | <strong>发行说明发布日期</strong>：2026 年 2 月 9 日</p><p><strong>改进内容：</strong></p><ul><li>本次发布包含一项与 <a href="https://link.segmentfault.com/?enc=YzhG2ZGgRVmDJzsHsakXKw%3D%3D.5zgAkE%2FvirlAxIG0Lxvfm6yO%2B8AkQ8HlJO%2F9xcdmxrrYqyvEQlsg9eeY389LYsLv" rel="nofollow" target="_blank">CVE-2026-1814</a> 相关的安全加固更新。内部密钥库密码生成机制已通过显著增加支持的密码长度进行强化，从而提升了对 Security Console 所使用加密凭据的保护能力。该更新将以滚动方式逐步实施，预计将在 2 月 12 日（星期四）当天结束前完成全面部署。</li></ul><h2>下载地址</h2><p><strong>Rapid7 Vulnerability Management - Nexpose</strong> v8.36.0 for Linux x64, February 2026</p><ul><li>请访问：<a href="https://link.segmentfault.com/?enc=F3%2FxKiENLt8%2Fihl8WCzLSw%3D%3D.CF58AAQS7YD4C4s8nTXFnorHXG9Dwhga400bOWvqvNM%3D" rel="nofollow" target="_blank">https://sysin.org/blog/nexpose/</a></li></ul><p><strong>Rapid7 Vulnerability Management - Nexpose</strong> v8.36.0 for Windows x64, February 2026</p><ul><li>请访问：<a href="https://link.segmentfault.com/?enc=eUnPlTxb%2BH8m5cJjdaJu%2Fw%3D%3D.rwktg2VfFqU13aDumxCprVTD1Hh1C7kmtbjX6y3e4xE%3D" rel="nofollow" target="_blank">https://sysin.org/blog/nexpose/</a></li></ul><p>相关产品：</p><ul><li><a href="https://link.segmentfault.com/?enc=XVW5VDb7ErAzilo7Vo3kVA%3D%3D.XK0PeLOQEI2dPJkwLm8ybalbceBwwPsNJbm9UYdfAMJsIGyJ68LSttnYE8LgVyz1" rel="nofollow" target="_blank">Metasploit Pro 4.22 (Linux, Windows) - 专业渗透测试框架</a></li></ul><p>更多：<a href="https://link.segmentfault.com/?enc=xTJoyHMnq5%2BIqCYRiNVBZg%3D%3D.ZLCSqayWcICago0rF9RJEnzvpBhEU5rfnYmLWbXRcC8%3D" rel="nofollow" target="_blank">HTTP 协议与安全</a></p>]]></description></item><item>    <title><![CDATA[麒麟桌面V11【系统安装】 沙鱼 ]]></title>    <link>https://segmentfault.com/a/1190000047614187</link>    <guid>https://segmentfault.com/a/1190000047614187</guid>    <pubDate>2026-02-19 19:03:30</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <blockquote>麒麟桌面系统V11版本的安装和V10-SP1的过程基本一样，下面看看详细的步骤吧，有什么不懂的，可以评论区提问。</blockquote><h2>一、启动引导</h2><ol><li>将安装光盘或者放入光驱中，或者插入做好的U盘启动盘，重启机器。</li><li><p>根据固件启动时的提醒，进入固件管理界面。</p><ul><li>若使用的是内置光驱，“第一启动选项”选择“光驱”；</li><li>若使用的是USB或者USB外置光驱，“第一启动选项”选择“USB”。</li></ul></li><li>系统支持体验模式，可试用一个全功能的操作系统而不安装。</li></ol><h2>二、系统安装</h2><ol><li>选择系统语言。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047614190" alt="file" title="file"/></li><li>点击“下一步”，阅读许可协议，并勾选，我已阅读并同意&lt;&lt;试用免责协议&gt;&gt;和&lt;&lt;用户隐私协议&gt;&gt;。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047614191" alt="file" title="file" loading="lazy"/></li><li>点击“下一步”，选择所在时区，<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047614192" alt="file" title="file" loading="lazy"/></li><li><p>点击“下一步”，选择安装途径（选择默认的live安装即可）<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047614193" alt="file" title="file" loading="lazy"/><br/>点击“下一步”，进入选择安装方式界面，这里分两种方式安装（下面分别介绍两种方式安装的方法）</p><ul><li>全盘安装（快速安装）：系统将自动分区，自动格式化硬盘进行安装；</li><li>自定义安装：由用户自定义对硬盘进行分区，电脑里有资料未备份的，建议使用该方式自定义安装系统；</li></ul><h3>全盘安装（快速安装）</h3></li><li>选择“快速安装”将进行全盘安装，该选项将会格式化整个硬盘，并进行自动分区。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047614194" alt="file" title="file" loading="lazy"/></li><li>点击“下一步”，勾选上“格式化整个磁盘”<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047614195" alt="file" title="file" loading="lazy"/></li><li>点击“下一步”进入创建账户页面，创建账户可选择立即创建，或待系统安装完成后，再创建账户<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047614196" alt="file" title="file" loading="lazy"/></li><li>这里勾选“立即创建”点击“下一步”，进入创建用户界面<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047614197" alt="file" title="file" loading="lazy"/></li><li>创建用户需要注意：密码前后两次需保持一致，密码包含字符类型不得少于两种，长度不得少于八个字符，且密码不能包含用户名，否者无法创建账户<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047614198" alt="file" title="file" loading="lazy"/><br/>点击开始安装后，进入安装界面等待即可。<br/> </li></ol><h3>自定义安装</h3><ul><li>使用自定义安装可以自行设计各硬盘分区大小。<br/>在安装类型界面选择“自定义安装”出现硬盘分区界面。点击“创建分区表”，弹出提示窗口，选择“+添加”，即可创建硬盘分区。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047614199" alt="file" title="file" loading="lazy"/></li><li><code>/boot分区</code>（系统引导分区），/boot必须是主分区中的第一个分区，是必须创建的，如下图所示：<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047614200" alt="file" title="file" loading="lazy"/></li><li><code>swap分区</code>（交换分区），在创建交换分区时，交换分区大小一般设置为内存的2倍大小，“新分区的类型”选择“逻辑分区，“新分区的位置”保持默认，“用于”选择“linux-swap”，如下图所示：<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047614201" alt="file" title="file" loading="lazy"/></li><li>“<code>/分区</code>”也叫<code>根分区</code>，创建如下图所示，在创建根分区的时候，“新分区的类型”选择“主分区”，“新分区的位置”默认为“空间起始位置”，“用于”选择“ext4”；<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047614202" alt="file" title="file" loading="lazy"/></li><li><code>/backup分区</code>（备份还原分区），非必须，但只有创建了该分区，备份还原的功能才可以使用。</li><li><code>/data分区</code>（数据分区），可设置为剩下未分配空间的所有空间。/data分区就类似于Windows系统D盘，建议“自定义安装”创建。<br/><code>/backup分区</code>和<code>/data分区</code>分区创建时，“新分区的类型”选择“逻辑分区”，“新分区的位置”默认为“空间起始位置”，“用于”选择“Ext4”，挂载点选择对应的/backup，用于选择用户数据分区，挂载点选择对应的/data即可；<br/>建议/backup分区和根分区大小一致。/data分区大小根据用户实际情况填写即可<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047614203" alt="file" title="file" loading="lazy"/><br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047614204" alt="file" title="file" loading="lazy"/></li><li><p>若是中途需要改变已创建的分区，具体方式如下所示：</p><ul><li>添加分区：选中空闲分区所在行，点击“+”按钮。</li><li>编辑分区：选中已创建的分区，点击“更改”按钮。</li><li>删除分区：选中已创建的分区，点击“-”按钮。</li></ul></li><li>创建分区完成后如下图所示，点击“下一步”进入“确认自定义安装”如下图所示：<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047614205" alt="file" title="file" loading="lazy"/></li></ul><p>分区完成后，点击“开始安装”，开始安装系统。等待安装完成后，重启系统即可！</p><p>本文由<a href="https://link.segmentfault.com/?enc=rhTq3j7NbxSGAJF2PLnQ%2Fw%3D%3D.i7ThzYtdWMeGchJB0J3mk9ho3McflDH24mkAqEB2%2BlA%3D" rel="nofollow" target="_blank">mdnice</a>多平台发布</p>]]></description></item><item>    <title><![CDATA[深度解析：如何在浏览器端构建一个无限关卡的数独游戏 Tangchao ]]></title>    <link>https://segmentfault.com/a/1190000047614225</link>    <guid>https://segmentfault.com/a/1190000047614225</guid>    <pubDate>2026-02-19 19:02:52</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <blockquote>"There is no royal road to logic, and that acts as its formidable guardian."<br/>逻辑没有平坦的大道，而这正是它令人着迷之处。</blockquote><p>继“摸鱼助手”之后，<strong>豫唐工具集</strong> 再次推出重磅力作 —— <strong>数独挑战 (Sudoku Challenge)</strong>。这不仅是一个游戏，更是一次对经典逻辑谜题的现代化重构。</p><p>本文将从技术角度，剖析我们是如何在纯前端环境下，实现一个轻量级、高性能且具备无限关卡生成能力的数独引擎。</p><p><img width="500" height="632" referrerpolicy="no-referrer" src="/img/bVdnWNw" alt="image.png" title="image.png"/></p><h2>1. 核心算法：混沌与秩序的平衡</h2><p>告别千篇一律的死板题库。每一局游戏，都是后台算法在毫秒间的即兴创作。</p><h3>1.1 生成策略：回溯法 (Backtracking)</h3><p>传统的数独生成往往依赖预置题库，而我们选择了动态生成。核心算法采用了 <strong>"对角线先行 + 全局求解 + 随机挖洞"</strong> 的三步走策略：</p><ol><li><strong>对角线填充 (Diagonal Filling)</strong>：<br/>首先填充三个对角线上的 3x3 宫格。由于这三个宫格相互独立（行、列、宫均不重叠），我们可以随机填充 <code>1-9</code> 而无需担心冲突。这一步极大地减少了后续回溯的搜索空间。</li><li><strong>全局求解 (Solver)</strong>：<br/>利用递归回溯算法，填充剩余的空格。如果遇到死胡同，则回退一步，直到填满整个网格，生成一个完整的、有效的数独终局。</li><li><strong>随机挖洞 (Digging)</strong>：<br/>这是生成谜题的关键。我们随机移除棋盘上的数字（挖洞），每移除一个数字，都必须确保剩下的残局 <strong>仍然拥有唯一解</strong>。如果移除导致多解或无解，则回溯填回。</li></ol><h3>1.2 核心代码一览</h3><pre><code class="javascript">// 核心生成流程
-function generateNewLevel() {
-  // 1. 初始化空网格 (9x9)
-  let grid = Array(9)
-    .fill()
-    .map(() =&gt; Array(9).fill(0));
-
-  // 2. 种子填充：填充对角线上的 3x3 宫格
-  // 这一步是性能优化的关键，避免了从空盘开始回溯的最坏复杂度
-  fillDiagonal(grid);
-
-  // 3. 求解填充：生成一个完整的数独终局
-  solveSudoku(grid);
-  solutionBoard = JSON.parse(JSON.stringify(grid)); // 存档终局用于验证
-
-  // 4. 制造谜题：随机挖去约 45 个数字
-  // (实际难度可通过调整挖洞数量控制)
-  removeDigits(grid, 45);
-  originalBoard = grid;
-}</code></pre><h2>2. 交互体验：键盘与鼠标的双重奏</h2><p>好的工具应该适应用户，而不是让用户适应工具。我们在交互设计上做了细致的打磨：</p><ul><li><strong>双模输入</strong>：支持鼠标点击数字面板，也完全支持键盘操作（方向键导航、数字键填入、Backspace 删除）。</li><li><p><strong>智能高亮</strong>：</p><ul><li>选中一个单元格，所在的行、列、宫格自动高亮，辅助视觉定位。</li><li>选中一个数字，棋盘上所有相同的数字同步高亮，快速识别剩余分布。</li></ul></li><li><strong>实时反馈</strong>：填入错误数字时不会立即报错（保留试错的乐趣），只有点击“检查”按钮时，系统才会通过 DOM 操作高亮错误单元格。</li></ul><pre><code class="javascript">// 智能高亮逻辑片段
-function highlightRelated(row, col) {
-  $(".cell").each(function () {
-    const r = parseInt($(this).atrr("data-row"));
-    const c = parseInt($(this).atrr("data-col"));
-
-    // 判断是否属于同一行、同一列或同一 3x3 宫格
-    const sameBox =
-      Math.floor(r / 3) === Math.floor(row / 3) &amp;&amp;
-      Math.floor(c / 3) === Math.floor(col / 3);
-
-    if (r === row || c === col || sameBox) {
-      $(this).addClass("related"); // 添加高亮样式
-    }
-  });
-}</code></pre><h2>3. 打印友好：极致的“纸质感”</h2><p>我们深知，数独的最高境界往往发生在笔尖与纸面的摩擦之间。为此，我们利用 CSS3 的 <code>@media print</code> 特性，打造了极致的打印模式。</p><ul><li><strong>一键去噪</strong>：点击打印，<code>display: none</code> 自动隐去导航栏、按钮等所有干扰元素。</li><li><strong>墨水优化</strong>：强制重置背景色为纯白，边框调整为纯黑高对比度，确保打印出的盘面清晰、锐利，且节省打印机墨水。</li><li><strong>跨屏接力</strong>：纸质版右上角保留二维码，手机扫一扫即可回到线上继续挑战。</li></ul><pre><code class="css">@media print {
-  /* 核心打印样式 */
-  .noprint {
-    display: none !important;
-  }
-
-  .sudoku-board {
-    width: 14cm; /* 适配 A4 纸张宽度 */
-    height: 14cm;
-    border: 4px solid black; /* 加粗外边框 */
-    margin: 2cm auto;
-  }
-
-  .cell {
-    color: black !important;
-    background: white !important; /* 强制去底色 */
-    font-size: 24pt; /* 增大字号提升可读性 */
-  }
-}</code></pre><h2>4. 纯粹与安全</h2><p>秉承 <strong>豫唐工具集</strong> 一贯的理念：</p><ul><li><strong>Zero Server</strong>：0% 后端代码，所有逻辑完全由 JavaScript 在浏览器端完成。</li><li><strong>100% Privacy</strong>：没有数据上传，没有服务器窥探。这是一个完全属于你的、私密的逻辑训练场。</li></ul><hr/><h2>在线体验</h2><blockquote><strong>在线演示</strong>：<a href="https://link.segmentfault.com/?enc=M6sE0aDqDyo67O4ixDWSzw%3D%3D.P1uvkaaRlte7FUNas9UEbW0MvPoatydI%2B16WTOllubJ8km0g%2F7%2Fjuy%2FPprMpDIra" rel="nofollow" target="_blank">https://www.ytecn.com/dev/tool/sudoku.html</a>  <br/><strong>开源地址</strong>：<a href="https://link.segmentfault.com/?enc=PaUblkhYYENtGBDAAYNFLQ%3D%3D.OkScJLxVpWthB6s65AljLTleBqO8jAMkIgqPe5%2FQ2ryaQVOS2gCjtNjoeQT2j4Ke" rel="nofollow" target="_blank">https://gitee.com/ytecnsong/web-dev-toolkit</a></blockquote><p><strong>数独挑战 (Sudoku Challenge)</strong> 现已上线。<br/>这不只是代码的堆砌，这是逻辑之美。</p>]]></description></item><item>    <title><![CDATA[从零开始学Flink：实时数仓与维表时态Join实战 代码匠心 ]]></title>    <link>https://segmentfault.com/a/1190000047614292</link>    <guid>https://segmentfault.com/a/1190000047614292</guid>    <pubDate>2026-02-19 19:02:17</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>在前一篇 <a href="https://link.segmentfault.com/?enc=8isQKJiALNov%2BxVRMy3Rlg%3D%3D.cIaxmepDYG1hf%2FYvhKvaqlh19Hlln7ZSwXoUIf8TPScbQmtiPv1Rwlv%2BMzZJ1M4sDhiu0BYmdySA%2FyqVx%2F9fVw%3D%3D" rel="nofollow" target="_blank">《Flink 双流 JOIN 实战详解》</a> 中，我们用「订单流 + 支付流」搞懂了事实双流之间的时间关联。</p><p>但在真实的实时数仓项目里，光有事实流还不够，业务同学更关心的是：</p><ul><li>下单用户是新客还是老客</li><li>用户当前的等级、城市、渠道</li><li>商品所属品类、类目层级</li></ul><p>这些信息通常存放在 <strong>维度表</strong>（维表）中，例如 MySQL 的 <code>dim_user</code>、<code>dim_product</code> 等。我们希望在实时计算时，能把「事实流」和「维表」在时间维度上正确地关联起来，构建一张带有完整业务属性的<strong>明细宽表</strong>。</p><p>这就是 <strong>维表时态 Join（Temporal Table Join）</strong> 要解决的问题。</p><p>本文我们就以「订单事实流 + 用户维表」为例，完成一个从 Kafka 到 MySQL 的简易实时数仓 Demo，并重点理解 Flink SQL 中维表时态 Join 的语法和注意事项。</p><h2>一、业务场景与数仓目标</h2><p>设想一个简化的电商业务场景：</p><ul><li>Kafka 中有实时写入的 <code>orders</code> 订单事实流</li><li>MySQL 中维护一张 <code>dim_user</code> 用户维表，包含用户等级、所属城市、注册渠道等信息</li></ul><p>我们想要在 Flink 中构建一张「<strong>订单明细宽表</strong>」，字段大致包括：</p><ul><li>订单信息：订单号、下单用户、下单金额、下单时间</li><li>用户属性：用户昵称、等级、城市、注册渠道</li></ul><p>并且要求：</p><ul><li>当我们回看 10 分钟前的某条订单时，看到的是 <strong>当时</strong> 用户的等级和城市，而不是被后续变更“冲掉”的最新值</li></ul><p>这正是 <strong>时态 Join</strong> 和「实时数仓」的关键：<strong>按事件发生时刻回放维度视图</strong>。</p><h2>二、环境前提与依赖准备</h2><h3>1. 基础组件</h3><p>本篇默认你已经完成前几篇中的环境准备：</p><ul><li>Flink 1.20.1（WSL2 Ubuntu 下部署）</li><li>Kafka 集群已启动，且能正常写入 / 读取 Topic</li><li>Flink SQL Client 可以正常连接集群</li></ul><p>在此基础上，我们还需要：</p><ul><li>一套可访问的 MySQL（本地或远程均可）</li><li>Flink 的 JDBC Connector JAR 包</li></ul><h3>2. 安装 Flink JDBC Connector</h3><p>和 Kafka 一样，JDBC 连接器也需要以 JAR 包形式放到 Flink 的 <code>lib</code> 目录中。</p><p>以 Flink 1.20.x 对应的 <code>flink-connector-jdbc</code> 为例：</p><ol><li><p>确认 Flink 安装目录（假设为 <code>/opt/flink</code>）：</p><pre><code class="bash">export FLINK_HOME=/opt/flink</code></pre></li></ol><ol start="2"><li><p>下载 JDBC Connector JAR 到 Flink 的 <code>lib</code> 目录：</p><pre><code class="bash">cd $FLINK_HOME/lib
-wget https://repo1.maven.org/maven2/org/apache/flink/flink-connector-jdbc/3.3.0-1.20/flink-connector-jdbc-3.3.0-1.20.jar</code></pre></li><li><p>如果你使用的是独立集群或远程集群，需要重启 Flink 集群，让新 JAR 在 JobManager/TaskManager 上生效：</p><pre><code class="bash">cd $FLINK_HOME
-bin/stop-cluster.sh
-bin/start-cluster.sh</code></pre></li><li><p>重启 Flink SQL Client，使用新 Connector：</p><pre><code class="bash">cd $FLINK_HOME
-bin/sql-client.sh</code></pre></li></ol><p>如果你在 Windows + WSL2 上部署，只需在 WSL2 内执行上述命令即可；或者手动下载 JAR 后拷贝到 <code>lib</code> 目录，步骤完全一致。</p><h2>三、准备 MySQL 用户维度表 dim_user</h2><p>首先在 MySQL 中准备一张简单的用户维度表，用来存用户的基础属性。</p><p>在 MySQL 中执行：</p><pre><code class="sql">CREATE DATABASE IF NOT EXISTS realtime_dwh;
-USE realtime_dwh;
-
-CREATE TABLE dim_user (
-  user_id      VARCHAR(32)  PRIMARY KEY,
-  user_name    VARCHAR(64),
-  user_level   VARCHAR(16),
-  city         VARCHAR(64),
-  register_time DATETIME
-);
-
-INSERT INTO dim_user (user_id, user_name, user_level, city, register_time) VALUES
-('u_1', '张三', 'VIP1', '北京', '2025-12-01 10:00:00'),
-('u_2', '李四', 'VIP2', '上海', '2025-12-05 11:00:00'),
-('u_3', '王五', 'VIP1', '广州', '2025-12-10 12:00:00');</code></pre><p>为了演示「时态」效果，你可以在后续实验中手动更新某个用户的等级或城市，例如：</p><pre><code class="sql">UPDATE dim_user
-SET user_level = 'VIP3'
-WHERE user_id = 'u_2';</code></pre><p>这样我们在 Flink 里做时态 Join 时，就能观察“变更前后”的区别。</p><h2>四、在 Flink 中注册事实流与维表</h2><p>接下来回到 Flink SQL Client，把 Kafka 中的订单事实流和 MySQL 中的维表都注册成 Flink 表。</p><h3>1. Kafka 订单事实表 orders</h3><p>和上一篇双流 JOIN 类似，我们假设 Kafka 中有一个 <code>orders</code> Topic，写入订单事实数据。</p><p>在 Flink SQL Client 中执行：</p><pre><code class="sql">CREATE TABLE orders (
-  order_id     STRING,
-  user_id      STRING,
-  order_amount DECIMAL(10, 2),
-  order_time   TIMESTAMP_LTZ(3),
-  WATERMARK FOR order_time AS order_time - INTERVAL '5' SECOND,
-  proc_time AS PROCTIME()
-) WITH (
-  'connector' = 'kafka',
-  'topic' = 'orders',
-  'properties.bootstrap.servers' = '127.0.0.1:9092',
-  'properties.group.id' = 'flink-orders-dim',
-  'scan.startup.mode' = 'earliest-offset',
-  'format' = 'json',
-  'json.timestamp-format.standard' = 'ISO-8601'
-);</code></pre><p>你可以沿用上一篇中 Kafka 造数的方式，用 <code>kafka-console-producer.sh</code> 发送 JSON 订单数据，只需要保证字段名一致。</p><h3>2. MySQL 用户维表 dim_user（JDBC Lookup 表）</h3><p>然后把刚才在 MySQL 中建好的 <code>dim_user</code> 注册为 Flink 的 JDBC 表：</p><pre><code class="sql">CREATE TABLE dim_user (
-  user_id       STRING,
-  user_name     STRING,
-  user_level    STRING,
-  city          STRING,
-  register_time TIMESTAMP(3),
-  PRIMARY KEY (user_id) NOT ENFORCED
-) WITH (
-  'connector' = 'jdbc',
-  'url' = 'jdbc:mysql://127.0.0.1:3306/realtime_dwh',
-  'table-name' = 'dim_user',
-  'driver' = 'com.mysql.cj.jdbc.Driver',
-  'username' = 'root',
-  'password' = '1qaz@WSX'
-);</code></pre><p>注意几点：</p><ul><li><code>PRIMARY KEY (user_id) NOT ENFORCED</code> 告诉 Flink 这是一张以 <code>user_id</code> 为主键的表，是做时态 Join 的前提</li><li>这里使用的是典型的 JDBC Lookup 模式，Flink 会在 Join 时按需去 MySQL 查维度信息</li></ul><p>在生产环境中，你可以把 MySQL 作为维度存储，或者通过 CDC 把维表变更同步到 Kafka，构造成 changelog 流，这些都可以和 Temporal Join 结合使用。</p><h2>五、维表时态 Join：把订单打上用户维度</h2><p>有了订单事实表 <code>orders</code> 和维度表 <code>dim_user</code>，就可以通过时态 Join 来构建订单明细宽表。</p><h3>1. 基础时态 Join 语法</h3><p>Flink SQL 中的 Temporal Table Join 对于 JDBC 这类 <strong>外部维表</strong>，通常采用「处理时间（Processing Time）」语义来做 Lookup Join，典型写法如下：</p><pre><code class="sql">SELECT
-  o.order_id,
-  o.user_id,
-  d.user_name,
-  d.user_level,
-  d.city,
-  o.order_amount,
-  o.order_time
-FROM orders AS o
-LEFT JOIN dim_user FOR SYSTEM_TIME AS OF o.proc_time AS d
-ON o.user_id = d.user_id;</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047614295" alt="FlinkJoin" title="FlinkJoin"/><br/>这里有几个关键点：</p><ul><li><code>proc_time AS PROCTIME()</code> 是在 <code>orders</code> 上定义的处理时间字段</li><li><code>FOR SYSTEM_TIME AS OF o.proc_time</code> 表示“以 Flink 处理这条订单记录的当前时间，去查维表的一个快照”，这是 JDBC Lookup 支持的典型用法</li><li>Join 条件依然是 <code>user_id</code> 等值关联</li><li>使用 <code>LEFT JOIN</code> 可以保留找不到维度的订单，并用空值来表示“维度缺失”</li></ul><p>在 SQL Client 中执行这段查询，会看到实时流式刷新的结果，每一行订单都带上了对应的用户属性。</p><h3>2. 验证时态效果：修改维表再观察 Join</h3><p>为了验证这是“时态 Join”而不是“始终查最新维度”，可以按下面步骤操作：</p><ol><li>先往 Kafka 的 <code>orders</code> Topic 写入几条订单数据，例如用户 <code>u_2</code> 下单的记录</li><li>观察 Flink SQL 中 Join 后的结果，此时 <code>u_2</code> 的等级是 <code>VIP2</code></li><li><p>回到 MySQL，执行：</p><pre><code class="sql">UPDATE dim_user
-SET user_level = 'VIP3'
-WHERE user_id = 'u_2';</code></pre></li><li>再写入一批新的订单，仍然是用户 <code>u_2</code></li></ol><pre><code class="bash">bin/kafka-console-producer.sh --bootstrap-server 127.0.0.1:9092 --topic orders</code></pre><p>在命令行中输入一条 JSON 数据（按回车发送一条）：</p><pre><code class="json">{"order_id":"o_3","user_id":"u_2","order_amount":200.00,"order_time":"2026-02-19T14:42:00Z"}</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047614296" alt="FlinkJoin" title="FlinkJoin" loading="lazy"/><br/>这时你会看到：</p><ul><li>变更前的订单，维度字段仍然显示 <code>VIP2</code></li><li>变更后的订单，维度字段变成了 <code>VIP3</code></li></ul><p>这就说明 Flink 的时态 Join 确实是“按订单发生时刻去回放维度视图”的，而不是简单查当前最新值。</p><h2>六、把结果写回 Kafka 或 MySQL，形成实时数仓明细层</h2><p>在真实项目中，我们不会只在 SQL Client 里 <code>SELECT</code> 一下就结束，而是要把 Join 后的订单明细宽表，写回到下游存储，形成实时数仓的一个层级。</p><p>例如，可以把结果写回 Kafka，作为 DWD 层的订单宽表：</p><pre><code class="sql">CREATE TABLE dwd_order_user_wide (
-  order_id     STRING,
-  user_id      STRING,
-  user_name    STRING,
-  user_level   STRING,
-  city         STRING,
-  order_amount DECIMAL(10, 2),
-  order_time   TIMESTAMP_LTZ(3),
-  WATERMARK FOR order_time AS order_time - INTERVAL '5' SECOND
-) WITH (
-  'connector' = 'kafka',
-  'topic' = 'dwd_order_user_wide',
-  'properties.bootstrap.servers' = '127.0.0.1:9092',
-  'properties.group.id' = 'flink-dwd-order-wide',
-  'scan.startup.mode' = 'earliest-offset',
-  'format' = 'json',
-  'json.timestamp-format.standard' = 'ISO-8601'
-);
-
-INSERT INTO dwd_order_user_wide
-SELECT
-  o.order_id,
-  o.user_id,
-  d.user_name,
-  d.user_level,
-  d.city,
-  o.order_amount,
-  o.order_time
-FROM orders AS o
-LEFT JOIN dim_user FOR SYSTEM_TIME AS OF o.proc_time AS d
-ON o.user_id = d.user_id;</code></pre><p>这样，下游的实时应用或 BI 查询就可以直接订阅 <code>dwd_order_user_wide</code> 这个 Topic，拿到已经打好用户标签的订单明细数据。</p><p>你也可以把结果同步到 MySQL、ClickHouse 等分析型数据库中，构建实时明细表，为报表和可视化提供数据。</p><h2>七、小结与下一步建议</h2><p>通过这篇文章，我们完成了这样一件事：</p><ul><li>在 Kafka 中维护订单事实流 <code>orders</code></li><li>在 MySQL 中维护用户维度表 <code>dim_user</code></li><li>使用 Flink SQL 的 JDBC Connector 把 MySQL 注册为维表</li><li>利用 <code>FOR SYSTEM_TIME AS OF</code> 语法做维表时态 Join</li><li>将 Join 结果写回 Kafka，形成实时数仓中的一张订单明细宽表</li></ul><p>这背后有几个非常重要的实时数仓设计理念：</p><ul><li>事实流是不断追加的事件序列，维表是相对缓慢变更的业务视图</li><li>时态 Join 让你能够“按事件发生的时间点”，回看当时的维度快照</li><li>实时数仓的 DWD 层，往往就是「事实表 + 多个维表时态 Join」后形成的明细宽表</li></ul><p>在后续的文章中，我们可以继续沿着这个方向深入：</p><ul><li>在一个任务里同时关联多张维表，构建更宽的明细表</li><li>引入 CDC，把维表变更实时同步到 Kafka，再在 Flink 中构建 changelog 维表</li><li>把实时数仓的明细层、汇总层（DWS）、指标主题层（ADS）串起来，做一个端到端的实时数仓小项目</li></ul><p>如果你已经跑通了本文的 Demo，不妨试着自己设计一张商品维表 <code>dim_product</code>，再给订单打上商品品类维度，体验一下“事实 + 多维表时态 Join”在 Flink SQL 里的完整味道。</p><hr/><p><a href="https://link.segmentfault.com/?enc=FvMxAyVAwnycFpJ6ILS1mw%3D%3D.X10YSCvHBCmv%2FE9vECWsa7IaHdTYeQwGStnYhm1ft6iHmo5lSRbWNKaWfqH%2FTCkn" rel="nofollow" target="_blank">原文来自:http://blog.daimajiangxin.com.cn</a></p>]]></description></item><item>    <title><![CDATA[HarmonyOS APP开发中ohos.permission.LOCATION_IN_BACKGR]]></title>    <link>https://segmentfault.com/a/1190000047614365</link>    <guid>https://segmentfault.com/a/1190000047614365</guid>    <pubDate>2026-02-19 19:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>一、一起来看看啥是啥吧</h2><p><code>ohos.permission.LOCATION_IN_BACKGROUND</code>是HarmonyOS中用于实现后台持续定位的核心权限哦</p><h3>1.1 权限定位场景</h3><table><thead><tr><th>场景类型</th><th>典型应用案例</th><th>技术要求</th></tr></thead><tbody><tr><td>后台轨迹追踪</td><td>运动健康类APP</td><td>需配合<code>KEEP_BACKGROUND_RUNNING</code>长时任务</td></tr><tr><td>紧急位置上报</td><td>安全类应用</td><td>支持GNSS+网络混合定位</td></tr><tr><td>智能设备联动</td><td>家居自动化场景</td><td>低功耗定位模式</td></tr></tbody></table><h3>1.2 权限特性对比一下下</h3><pre><code class="typescript">// 权限声明对比（module.json5）
-{
-  "permissions": [
-    {
-      "name": "ohos.permission.LOCATION_IN_BACKGROUND",
-      "reason": "后台位置服务",
-      "usedScene": {
-        "abilities": ["MainAbility"],
-        "when": "always" // 鸿蒙6+新增字段
-      }
-    }
-  ]
-}</code></pre><ul><li><strong>鸿蒙5特性</strong>：需单独声明长时任务权限<code>KEEP_BACKGROUND_RUNNING</code></li><li><strong>鸿蒙6优化</strong>：支持动态权限状态监听接口<code>on('permissionStateChange')</code></li></ul><hr/><h2>二、走进小案例</h2><h3>2.1 基础实现方案</h3><h4>2.1.1 前台的定位（对比基准）</h4><pre><code class="typescript">// 前台定位实现（内存峰值约12MB）
-const locationRequest = {
-  scenario: LocationRequestScenario.NAVIGATION,
-  interval: 1000 // 1秒间隔
-};
-
-geoLocationManager.on('locationChange', locationRequest, (location) =&gt; {
-  console.log(`前台定位：${JSON.stringify(location)}`);
-});</code></pre><h4>2.1.2 后台定位实现</h4><pre><code class="typescript">// 后台定位实现（这个得长时任务支持）
-const startBackgroundLocation = async () =&gt; {
-  // 1. 申请长时任务权限
-  const taskPerm = await abilityAccessCtrl.requestPermissionsFromUser(
-    [KEEP_BACKGROUND_RUNNING],
-    { usedScene: { when: "always" } }
-  );
-
-  // 2. 启动后台任务模式
-  if (taskPerm[KEEP_BACKGROUND_RUNNING] === PERMISSION_GRANTED) {
-    await backgroundTaskManager.startBackgroundRunning(
-      context,
-      BackgroundMode.LOCATION,
-      new WantAgentInfo()
-    );
-  }
-
-  // 3. 订阅后台定位数据
-  geoLocationManager.on('locationChange', {
-    scenario: LocationRequestScenario.BACKGROUND_TRACKING,
-    interval: 5000 // 5秒间隔
-  }, handleBackgroundLocation);
-};</code></pre><h3>2.2 关键的API差异</h3><table><thead><tr><th>API版本</th><th>后台定位支持</th><th>最小间隔</th><th>功耗模式</th><th>异常处理</th></tr></thead><tbody><tr><td>鸿蒙5</td><td>得长时任务</td><td>1秒</td><td>高精度</td><td>需手动重试</td></tr><tr><td>鸿蒙6</td><td>原生支持</td><td>500ms</td><td>智能调节</td><td>自动降级</td></tr></tbody></table><hr/><h2>三、性能对比小实验</h2><h3>3.1 测试环境</h3><pre><code class="text">设备配置：
-- 型号：HUAWEI MatePad Pro 2025 13.2
-- 系统：HarmonyOS 5.1/6.0
-- 定位模式：高精度（GNSS+网络）
-
-测试场景：
-- 持续定位时长：2小时
-- 数据采集频率：每分钟记录一次</code></pre><h3>3.2 性能指标对比</h3><table><thead><tr><th>指标</th><th>鸿蒙5前台定位</th><th>鸿蒙5后台定位</th><th>鸿蒙6后台定位</th><th>提升幅度</th></tr></thead><tbody><tr><td>内存占用（MB）</td><td>12.3</td><td>18.7 (+52%)</td><td>14.2 (-24%)</td><td>-29.4%</td></tr><tr><td>CPU峰值（%）</td><td>5-8</td><td>15-20 (+194%)</td><td>8-12 (-27%)</td><td>-33.3%</td></tr><tr><td>电池消耗（mAh/h）</td><td>2.1</td><td>4.8 (+129%)</td><td>3.2 (+52%)</td><td>-33.3%</td></tr><tr><td>定位精度（米）</td><td>3.5</td><td>4.1 (+17%)</td><td>3.2 (-22%)</td><td>-21.9%</td></tr></tbody></table><p><em>数据来源：内部性能测试工具（2026Q1版本）</em></p><h3>3.3 一起来看看内存管理机制</h3><pre style="display:none;"><code class="mermaid">graph TD
-    A[应用启动] --&gt; B{权限检查}
-    B --&gt;|已授权| C[创建定位会话]
-    B --&gt;|未授权| D[请求权限]
-    C --&gt; E[初始化定位引擎]
-    E --&gt; F[启动数据采集]
-    F --&gt; G[内存缓冲区管理]
-    G --&gt;|鸿蒙5| H[环形缓冲区]
-    G --&gt;|鸿蒙6| I[智能分页缓存]</code></pre><hr/><h2>四、实际开发小案例</h2><h3>案例1：物流轨迹记录</h3><pre><code class="typescript">// 鸿蒙6后台定位优化方案
-const configureBackgroundTracking = () =&gt; {
-  const request = {
-    scenario: LocationRequestScenario.BACKGROUND_TRACKING,
-    powerMode: LocationPowerMode.LOW_POWER, // 鸿蒙6新增低功耗模式
-    distanceFilter: 50 // 50米过滤阈值
-  };
-
-  geoLocationManager.on('locationChange', request, (location) =&gt; {
-    if (location.accuracy &gt; 30) return; // 过滤低精度数据
-    uploadToServer(location);
-  });
-};</code></pre><p><strong>优化点</strong>：</p><ul><li>动态调整定位策略（鸿蒙6支持）</li><li>自动丢弃低精度数据（节省带宽）</li></ul><h3>案例2：紧急救援定位</h3><pre><code class="typescript">// 鸿蒙5紧急定位实现
-const emergencyTracking = async () =&gt; {
-  try {
-    const permStatus = await abilityAccessCtrl.checkAccessToken(
-      LOCATION_IN_BACKGROUND
-    );
-    
-    if (permStatus === PERMISSION_GRANTED) {
-      geoLocationManager.setPriority(LocationPriority.HIGH_ACCURACY);
-      startContinuousLocation(sendEmergencyData);
-    }
-  } catch (err) {
-    fallbackToLocalCache(); // 鸿蒙5需手动处理
-  }
-};</code></pre><hr/><h2>五、鸿蒙版本适配</h2><h3>5.1 API差异矩阵</h3><table><thead><tr><th>功能</th><th>鸿蒙5实现</th><th>鸿蒙6改进</th></tr></thead><tbody><tr><td>权限声明</td><td>需单独声明长时任务权限</td><td>原生集成后台任务支持</td></tr><tr><td>定位策略配置</td><td>手动设置间隔/距离过滤</td><td>支持动态策略调整API</td></tr><tr><td>错误处理</td><td>需手动监听服务状态</td><td>自动重连机制</td></tr><tr><td>电量优化</td><td>无智能调度</td><td>基于使用场景的功耗模型</td></tr></tbody></table><h3>5.2 举个例子</h3><pre><code class="typescript">// 鸿蒙版本检测与适配
-const initLocationService = () =&gt; {
-  const osVersion = getOSVersion();
-  
-  if (compareVersion(osVersion, '6.0.0') &gt;= 0) {
-    // 鸿蒙6+使用新特性
-    startBackgroundTask(LocationMode.NAVIGATION);
-  } else {
-    // 鸿蒙5兼容方案
-    requestBackgroundPermission().then(() =&gt; {
-      startContinuousLocation(handleLocation);
-    });
-  }
-};</code></pre><hr/><h2>六、数据处理流程一图就知道</h2><pre style="display:none;"><code class="mermaid">graph TB
-    A[应用启动] --&gt; B{权限检查}
-    B --&gt;|已授权| C[选择定位模式]
-    B --&gt;|未授权| D[请求权限]
-    C --&gt; E[鸿蒙5:创建长时任务]
-    C --&gt; F[鸿蒙6:启用后台模式]
-    E --&gt; G[启动定位服务]
-    F --&gt; G
-    G --&gt; H[数据采集]
-    H --&gt; I{数据处理}
-    I --&gt;|实时导航| J[高精度模式]
-    I --&gt;|轨迹记录| K[低功耗模式]
-    J --&gt; L[数据上传]
-    K --&gt; M[数据缓存]</code></pre><hr/><h2>七、性能优化笑建议</h2><ol><li><strong>策略选择</strong>：非关键的一些场景使用<code>LocationPowerMode.LOW_POWER</code></li><li><strong>数据过滤</strong>：结合<code>distanceFilter</code>减少无效数据传输</li><li><p><strong>生命周期管理</strong>：</p><pre><code class="typescript">// 鸿蒙6生命周期监听
-lifecycle.on('background', () =&gt; {
-  geoLocationManager.adjustPriority(LocationPriority.BACKGROUND);
-});</code></pre></li><li><strong>异常监控</strong>：实现<code>on('locationError')</code>回调处理</li></ol><hr/><h2>八、结论一下下</h2><p><code>ohos.permission.LOCATION_IN_BACKGROUND</code>的合理使用怎么得重点关注：</p><ul><li><strong>权限生命周期</strong>：鸿蒙6+支持动态权限状态监听</li><li><strong>功耗平衡</strong>：鸿蒙6的智能调度算法降低30%能耗</li><li><strong>兼容方案</strong>：通过条件编译处理版本差异</li></ul><p>未来随着HarmonyOS分布式能力的增强，后台定位将更注重：</p><ul><li>跨设备定位数据同步</li><li>基于AI的定位策略优化</li><li>隐私保护增强（如差分隐私）</li></ul>]]></description></item>  </channel></rss>
+cd attention-from-scratch</code></pre><h4>2. 安装依赖</h4><pre><code class="bash">pip install -r requirements.txt</code></pre><h4>3. 运行 Notebooks</h4><pre><code class="bash">jupyter notebook notebooks/</code></pre><p>学习顺序建议：</p><ol><li><code>01_scaled_dot_product.ipynb</code> - 理解基础</li><li><code>02_multi_head_attention.ipynb</code> - 理解多头</li><li><code>03_grouped_query_attention.ipynb</code> - 理解 GQA</li><li><code>04_kv_cache.ipynb</code> - 理解优化</li></ol><h4>4. 运行测试</h4><pre><code class="bash">pytest tests/ -v</code></pre><hr/><h3>📚 参考资料</h3><ul><li><a href="https://link.segmentfault.com/?enc=aUhX5vU3TX8KsDuboiz19g%3D%3D.Zbs6OK%2FYOUl38pS%2FTInV8oTlh4dXymOEqWSXCqvYQ5Trbuy3TRMpFSkRLhoS5aBM" rel="nofollow" target="_blank">Attention Is All You Need</a> - Transformer 原始论文</li><li><a href="https://link.segmentfault.com/?enc=lUD0bqSfMy0dDKFstAdN6A%3D%3D.jX359N5dTQGAG1IQ7bENdzt5w%2Fa8yEpUPKr7%2BY%2FuqkjTNC%2BEpAzZQJvL6hqTTb5p" rel="nofollow" target="_blank">GQA: Training Generalized Multi-Query Transformer Models</a> - GQA 论文</li><li><a href="https://link.segmentfault.com/?enc=qJ2Mwd17qm68iD2i6ZuurA%3D%3D.ybcMz2Vzqf%2FCpseGxgBut%2FdW34irIB%2FL0dts72hDEVAJ59W1VvkmjfAN5iQCqVEHenGDA%2BfI0R1Qs2gLIb93vg%3D%3D" rel="nofollow" target="_blank">The Illustrated Transformer</a> - 可视化 Transformer</li><li><a href="https://link.segmentfault.com/?enc=K7e0PpT9ixJPqiHfUs1wZw%3D%3D.sLmvAL5JL4qJF6l9UlXmoAJlZo5%2BcNGV3OOWatdBJxIkF48QWazju3nO339%2FT21B" rel="nofollow" target="_blank">FlashAttention</a> - 内存高效的 Attention</li><li><a href="https://link.segmentfault.com/?enc=7XcbFoPinqUBdZhuemsYqw%3D%3D.KDhxPSxbEYhUxM1%2Fn8Il976T0YZMSo%2B0rh8dMmqwysuuY6m%2F0sYkjq7tGL75up93" rel="nofollow" target="_blank">vLLM</a> - 高效的 LLM 推理框架</li></ul><hr/><h3>🤝 贡献</h3><p>欢迎提交 Issue 和 Pull Request！</p><p>如果你觉得这个项目对你有帮助，请给一个 ⭐ Star，这是对我最大的鼓励！</p><hr/><h3>📝 总结</h3><p>Attention 机制是 Transformer 和大语言模型的核心。通过从零实现，我们不仅理解了原理，更掌握了实现细节和优化技巧。</p><p><strong>关键要点</strong>：</p><ol><li><strong>Scaled Dot-Product Attention</strong> 是基础，理解 scaling factor 的作用</li><li><strong>Multi-Head Attention</strong> 通过并行计算多个头，捕捉不同类型的信息</li><li><strong>Grouped Query Attention</strong> 在质量和效率间找到平衡，是工业界的主流选择</li><li><strong>KV Cache</strong> 将推理时间复杂度从 O(n²) 降到 O(n)，是加速的关键</li></ol><p><strong>下一步</strong>：</p><ul><li>深入学习 FlashAttention（python-cpp-cuda）</li><li>研究 PagedAttention</li><li>cuda内存模型优化技巧</li><li>探索 TensorRT-LLM XQA 模块原理及工程化</li><li>nv性能分析工具</li><li>实现自己的 Attention 变体</li></ul><hr/><h3>🔗 相关链接</h3><ul><li><strong>GitHub</strong>: [<a href="https://link.segmentfault.com/?enc=fLyVS6DtNxVGpDKqpE2zoQ%3D%3D.Kae5cZ%2B3NnDKmObMk7DJNJlt%2FJIslMBoD5gracZQV1kLSL%2BVGizLJ5GnyAqnvxeMiBYbryf6oMf0yupZiqSDNw%3D%3D" rel="nofollow" target="_blank">https://github.com/rixin2025/attention-from-scratch</a>]</li><li><strong>Issues</strong>: 欢迎提交问题和建议</li><li><strong>Discussions</strong>: 欢迎讨论和分享经验</li></ul><hr/><h3><strong>如果这篇文章对你有帮助，请给项目一个 ⭐ Star，让更多人看到！</strong></h3><p><strong>让更多人了解 Attention 机制，一起推动 AI 技术的发展！</strong></p><hr/><p><strong>作者</strong>: jensen.li  <br/><strong>创建时间</strong>: 2026-02-17  <br/><strong>License</strong>: MIT</p><hr/><p><em>后续将基于 TensorRT-LLM XQA 模块更加深入分析，添加更多优化手段和工程化技巧介绍；欢迎 star 和讨论！</em></p><p>本文由<a href="https://link.segmentfault.com/?enc=ltVcid9LNs0MQoQ5VI3QoQ%3D%3D.3j3agZ3%2ByIlM4L1slW8M9aAMYDHKIvb7tyWN8EZ7zFg%3D" rel="nofollow" target="_blank">mdnice</a>多平台发布</p>]]></description></item><item>    <title><![CDATA[gpt-5.3-codex实测：编程能力大幅提升，春节可领10刀测试额度 GPTMirrors ]]></title>    <link>https://segmentfault.com/a/1190000047613816</link>    <guid>https://segmentfault.com/a/1190000047613816</guid>    <pubDate>2026-02-19 19:05:07</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>随着大模型能力不断进化，编程领域的 AI 工具也迎来了新一轮升级。前几天 OpenAI 发布了 <strong>gpt-5.3-codex 模型</strong>，不少开发者都在讨论它在代码生成、理解和重构方面的提升。正好趁着春节假期有空，我也做了一轮实测，顺便整理了一些体验心得，给正在关注 <strong>codex 编程 AI</strong> 的朋友做个参考。</p><h2><img width="723" height="515" referrerpolicy="no-referrer" src="/img/bVdnWGV" alt="image.png" title="image.png"/></h2><h2>gpt-5.3-codex 实测体验：性能与能力的双提升</h2><p>这次更新最直观的感受有两个：<strong>速度更快，代码质量更稳</strong>。</p><h3>1️⃣ 响应速度明显提升</h3><p>在同样的网络环境下，对比旧版本模型，新版 codex 的：</p><ul><li>首 token 输出更快</li><li>长代码生成延迟明显缩短</li><li>多轮上下文理解更流畅</li></ul><p>尤其是在命令行环境中调用 API 生成脚本时，几乎可以做到“边想边出”，对日常开发效率影响很大。</p><hr/><h3>2️⃣ 编程能力接近 Claude 水平</h3><p>我重点测试了几类任务：</p><ul><li>大型函数重构</li><li>单元测试自动生成</li><li>跨文件项目结构分析</li><li>Python / Go / Node 混合项目优化</li></ul><p>整体来看：</p><ul><li>代码结构更清晰</li><li>变量命名更合理</li><li>边界条件考虑更全面</li><li>注释质量更自然</li></ul><p>客观讲，现在的 <strong>codex 编程 AI 能力已经可以和 Claude 正面竞争</strong>，在工程类任务上表现尤为稳定。</p><hr/><h2>官方春节活动：免费额度真的很充足</h2><p>最近官方确实放出了大量免费额度活动。<br/>春节假期闲着没事，我把官网的免费额度做了一次聚合整理，搭了一个便于测试的中转入口，主要是为了方便大家：</p><ul><li>不用复杂配置</li><li>不用折腾多账户</li><li>可以直接命令行体验</li></ul><p>整体目标很简单：<strong>降低体验门槛</strong>。</p><hr/><h2>使用方式（实测流程）</h2><p>整个过程其实非常简单：</p><h3>第一步：注册登录</h3><p>注册成功后会直接赠送 <strong>10 美元测试余额</strong>。</p><p>👉 地址：<br/><a href="https://link.segmentfault.com/?enc=qtBKgx8EhT8tC4BshEuQ8Q%3D%3D.Xcwz4aq%2BiVxVktL0%2B%2F4yapcty81X9TidBv4WqD3HDDqLGChs6N18cdBYnP1BeRCG" rel="nofollow" target="_blank">https://codex.dakeai.cc/register?promo=DKAI</a></p><hr/><h3>第二步：创建 API Key</h3><p>登录后台后进入：</p><blockquote>密钥管理 → 创建 Key</blockquote><p>生成后即可使用。</p><hr/><h3>第三步：一键部署 codex</h3><p>后台提供：</p><ul><li>一键部署 codex 命令</li><li>覆盖中转配置脚本</li></ul><p>只需要把命令复制到终端运行即可。</p><p>完成后就可以直接在本地通过 CLI 使用先进的 AI 编程助手，例如：</p><ul><li>自动生成项目结构</li><li>重构遗留代码</li><li>自动补全测试</li><li>解释复杂源码</li><li>写脚本工具</li></ul><p>整个过程基本 3 分钟搞定。</p><hr/><h2>适合哪些人？</h2><p>如果你属于以下类型，体验价值会比较高：</p><ul><li>后端工程师（Python / Go / Java）</li><li>独立开发者</li><li>做自动化脚本的人</li><li>想对比 GPT / Claude / Codex 的开发者</li><li>想在命令行里使用 AI 编程助手的人</li></ul><hr/><h2>实际体验建议</h2><p>如果你是第一次使用 codex 编程 AI，可以试试这些场景：</p><ul><li>把一个 500 行的旧函数贴进去要求重构</li><li>给一个项目目录结构，让它生成 README</li><li>让它为现有代码生成完整单元测试</li><li>要求写一个带异常处理的 CLI 工具</li></ul><p>你会更直观地感受到新版模型的进步。</p><hr/><h2>小结</h2><p>这次 gpt-5.3-codex 的升级确实不是“参数级别的小改动”，而是明显的实用层面提升：</p><ul><li>更快</li><li>更稳</li><li>更接近专业开发需求</li></ul><p>春节期间官方额度比较充足，加上现在注册还能送 10 刀余额，确实是个不错的测试窗口期。感兴趣的可以自己上手试试，对比一下目前主流的几款编程 AI，再决定长期方案。</p><p>毕竟，真正适合自己的工具，还是要亲自跑几轮项目才知道。</p>]]></description></item>  </channel></rss>
