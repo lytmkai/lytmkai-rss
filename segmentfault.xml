@@ -1,4 +1,538 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[AutoGen 架构演进全梳理：从 v0.4 到 Microsoft Agent Framework]]></title>    <link>https://segmentfault.com/a/1190000047639655</link>    <guid>https://segmentfault.com/a/1190000047639655</guid>    <pubDate>2026-03-07 22:01:24</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>Microsoft AutoGen 曾是构建 LLM 多智能体系统的标杆性开源框架。2023 年末由 Microsoft Research 发布后迅速成为研究人员和开发者的默认选择：智能体之间可以互相对话、调用工具、编写并执行代码、在流程中引入人类审批，以对话式的协调方式取代了单条长 Prompt 链条。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047639657" alt="" title=""/></p><p>到 2026 年初，AutoGen v0.4（2025 年初重新设计的版本）是其技术上的巅峰之作。但是 2025 年末 Microsoft 正式把 AutoGen 与 Semantic Kernel 合并，统一为 Microsoft Agent Framework（MAF）。不过，很多人在谈到源自 AutoGen 的多智能体编排风格时依然习惯说"AutoGen"。本文梳理 AutoGen 的来龙去脉：它是什么、为什么重要、哪些核心设计在 2026 年仍然存续、v0.4/v0.7 时代的架构与典型用法、代码示例、利弊，以及当前的整体现状。</p><h2>AutoGen 为什么在 2023–2024 年迅速走红</h2><p>AutoGen 出现之前，LLM 的主流用法只有两种：单线程链式调用（LangChain 风格）和简单的工具调用智能体（ReAct 循环）。</p><p>AutoGen 带来了一套完全不同的心智模型——智能体是对话的参与者，整个系统就是一个群聊，有时有结构，有时自由发挥。智能体之间可以委派任务、互相批评与纠正、调用工具、编写并执行代码、向人类发起询问，在目标达成后自行终止。没有任何一个中央控制器需要提前知晓完整计划。</p><p>这套流程和人类解决复杂问题的方式高度吻合：分工、讨论、审查输出。早期几个病毒式传播的 demo（编码者 + 评审者 + 执行者联合解数学题、网络研究小组、股票分析团队）在许多任务上展现出比单智能体高 2–10 倍的表现。</p><h2>AutoGen v0.4——大改版（2025）</h2><p>v0.4（2025 年初发布）本质上是 AutoGen 2.0。旧的阻塞式同步 GroupChat 被三层新架构取代：autogen-core 负责底层事件驱动原语（RoutedAgent、订阅、发布/订阅消息传递）；autogen-agentchat 是大多数人实际使用的高层 API（AssistantAgent、UserProxyAgent、GroupChat、initiate_chat）；autogen-ext 则是可插拔的扩展层（OpenAI Assistant API、MCP 工作台、gRPC 分布式智能体等）。</p><p>核心改进包括完全异步化带来的更好可扩展性与可观测性、模块化的自定义组件（内存、模型、编排）、改进的错误恢复与检查点机制，以及跨语言支持的尝试——当然 Python 始终是主力。</p><p>2025 年末 / 2026 年初的典型安装方式：</p><pre><code> 
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[[大模型实战 07 额外篇] 从 ReAct 到 Workflow：基于云端 API 构建事件驱动的]]></title>    <link>https://segmentfault.com/a/1190000047639126</link>    <guid>https://segmentfault.com/a/1190000047639126</guid>    <pubDate>2026-03-07 23:06:27</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <blockquote><p><strong>核心摘要 (TL;DR)</strong></p><ul><li><strong>架构进阶</strong>：从传统的 ReAct 循环升级为 LlamaIndex Workflow，掌握基于“事件驱动”的现代智能体编排范式。</li><li><strong>算力自由</strong>：摆脱本地 GPU 显存与运行时间的限制，实战接入 Groq 与硅基流动的高性能免费大模型 API。</li><li><strong>实战目标</strong>：利用 Workflow 重构博客监控程序，将其拆解为“检查员 (Checker)”与“通知官 (Notifier)”，实现多智能体的解耦与协作。</li></ul></blockquote><h2>前言</h2><p>在<a href="https://link.segmentfault.com/?enc=6%2Fp2pA7KFcUMGEc4P%2BYJRg%3D%3D.H2F2k%2FG1KXKWHRVxCxYk2DPbVy%2BGKc64Op7OeLVW4%2BDSxlyDuHLxzlITuov0%2BAZ9Iew01q80AcbdcIwY4iuQuA%3D%3D" rel="nofollow" target="_blank">上一篇博客</a>，我们用本地加载的huggingface模型来定义的ReActAgent完成了任务。其实对于LlamaIndex而言，更规范的用法是用WorkFlow来定义Agent，用API来调用而不是用本地加载模型，所以本篇博客的主要内容就是介绍一下LlamaIndex的workflow流程。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047639129" alt="前言" title="前言"/></p><h2>1. 什么是WorkFlow</h2><p>之前咱们的用法是一种<code>QueryEngine</code>的用法，就是将大模型当成一个查询的工具在使用，而workflow是LlmaIndex的<strong>新一代编排引擎</strong>。</p><h3>1.1 核心逻辑</h3><p>LlamaIndex的workflow，本质上是一个<strong>事件驱动</strong>（Event-driven）的状态机，如果各位友人们经常做开发的话，一定一下就理解。 咱们可以将其流程想象成一场"接力赛":</p><ul><li><strong>选手（Steps）</strong>： 我们会在代码里用<code>@step</code>装饰函数，这个函数就是<code>step</code>，负责具体的逻辑。</li><li><strong>接力棒（Events）</strong>：我们会用来判断状态的自定义类，继承自<code>Event</code>，用于在Step间传递数据。</li><li><strong>终点线（StopEvent）</strong>： 和普通的<code>Event</code>一样，只是作为最后一棒，某个Step返回<code>StopEvent</code>就意味着"接力赛"结束了，咱们将结果返回给用户。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047639130" alt="LlmaIndex的Workflow" title="LlmaIndex的Workflow" loading="lazy"/></li></ul><h3>1.2 核心组件</h3><ol><li><strong>Event</strong><br/>是Workflow的灵魂，咱们可以定义各种Event,其决定了数据流向何处。</li></ol><pre><code class="python">from llama_index.core.workflow import Event
+
+class NewsExtractedEvent(Event):
+    content: str  # 这里可以随便定义内容
+    xxx: int # 多少条都可以</code></pre><ol start="2"><li><p><strong>@step</strong><br/>是逻辑处理单元。一个Step可以通过返回值来“发射”事件。</p><ul><li><strong>生产者</strong>： 返回一个<code>Event</code>实例。</li><li><strong>消费者</strong>： 在接收的下一步Step函数的函数声明参数中加上对应的<code>Event</code>实例。</li></ul></li><li><strong>StartEvent &amp; StopEvent</strong><br/>是流程的"起跑线"和"终点线"。一般我们只用定义<code>StopEvent</code>，当调用workflow.run()自动会触发<code>StartEvent</code>，任何Step只要返回了<code>StopEvent</code>，整个workflow就会停止并输出结果。</li></ol><p>结合起来，就是这样一个极简的Workflow模板</p><pre><code class="python">from llama_index.core.workflow import Workflow, step, StartEvent, StopEvent, Event
+
+class ProcessedDataEvent(Event):
+    data: str
+
+class MyWorkflow(Workflow):
+    @step
+    async def ingest(self, ev: StartEvent) -&gt; ProcessedDataEvent:
+        # 1. 接收初始输入
+        input_data = ev.get("input")
+        return ProcessedDataEvent(data=input_data.upper())
+
+    @step
+    async def finish(self, ev: ProcessedDataEvent) -&gt; StopEvent:
+        # 2. 接收上一步处理后的数据
+        return StopEvent(result=f"处理完成: {ev.data}")
+
+# 运行
+wf = MyWorkflow()
+await wf.run(input="hello world") # -&gt; "处理完成: HELLO WORLD"</code></pre><p>通常来讲，咱们会把step定义给一个调用llm处理的函数. 我们待会儿就用Workflow重写咱们上一篇中的Agent。</p><h2>2. API获取</h2><p>咱们这次给大家换换口味，不用本地加载模型，而是用API的方式去调用大模型，所以本篇博客的代码可以在没有显卡的电脑上运行，可以脱离Kaggle的显卡环境。<br/><strong>PS</strong>: 虽然调用API更方便，但是本地加载或者本地部署更安全<br/>（阿尔周末也尝试过在kaggle上直接去用vllm/ollama部署，然后调用，但是遇到了太多没法解决的问题，本次就直接用现成的API了。如果能解决，到时候再出一篇教程吧，如果还记得这个事儿的话，哈哈哈）<br/>接下来介绍两个可以用免费模型的API： <strong>Groq</strong>和<strong>硅基流动</strong>。</p><h3>2.1 Groq</h3><p>Groq并不是模型开发者，只是大模型的搬运工，是一个推理加速平台，其核心是自研的LPU(Language Processing Unit),所以它的推理速度那是相当惊人，这也是阿尔推荐它的很重要的一个理由。</p><ul><li><strong>Groq模型矩阵</strong></li></ul><table><thead><tr><th align="left">模型系列</th><th align="left">模型 ID (API 调用名)</th><th align="left">厂商</th><th align="left">上下文窗口</th><th align="left">特点与优势</th></tr></thead><tbody><tr><td align="left"><strong>Llama 3.3</strong></td><td align="left"><code>llama-3.3-70b-versatile</code></td><td align="left">Meta</td><td align="left">128k</td><td align="left"><strong>最强逻辑</strong>，性能对标 GPT-4o</td></tr><tr><td align="left"><strong>Llama 3.1</strong></td><td align="left"><code>llama-3.1-8b-instant</code></td><td align="left">Meta</td><td align="left">128k</td><td align="left"><strong>极速响应</strong>，适合简单逻辑与翻译</td></tr><tr><td align="left"><strong>Llama 3.2</strong></td><td align="left"><code>llama-3.2-11b-vision-preview</code></td><td align="left">Meta</td><td align="left">128k</td><td align="left"><strong>多模态支持</strong>，可识别并理解图片</td></tr><tr><td align="left"><strong>Gemma 2</strong></td><td align="left"><code>gemma2-9b-it</code></td><td align="left">Google</td><td align="left">8k</td><td align="left"><strong>指令遵循强</strong>，结构化输出更稳定</td></tr><tr><td align="left"><strong>Mixtral</strong></td><td align="left"><code>mixtral-8x7b-32768</code></td><td align="left">Mistral</td><td align="left">32k</td><td align="left">经典的混合专家模型，长文本表现好</td></tr><tr><td align="left"><strong>Whisper</strong></td><td align="left"><code>whisper-large-v3</code></td><td align="left">OpenAI</td><td align="left">-</td><td align="left">极速语音转文字 (STT)</td></tr></tbody></table><ul><li><strong>Groq的限制</strong><br/>Groq的免费层级给的非常慷慨，堪称大善人，但是为了防止滥用，还是设置了很多限制。<strong>通常对每个模型独立计算</strong><br/>通常从RPM(Requets Per Minute)每分钟请求数，RPD（Requests Per Day）每天请求数，TPM（Tokens Per Minute）每分钟消耗Token数三个维度限制，当然对于咱们来说是完全够用的</li><li><p><strong>注册Groq Api Key</strong></p><ul><li>进入<a href="https://link.segmentfault.com/?enc=WVkHCEDWej4Y1z9Igj28Kw%3D%3D.jcDCH%2FgKbtIcezItPh7BAP%2Bn667Ey2TawCwSpHSrAKU%3D" rel="nofollow" target="_blank">Groq官网</a>，点击右上角的<code>Start Building</code></li><li>用谷歌账号登录即可</li><li>点击最上面菜单栏的<code>API KEYS</code><br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047639131" alt="Groq点击API Keys申请API" title="Groq点击API Keys申请API" loading="lazy"/></li><li>点击 <strong>Create API Key</strong>，可以设置一个过期日期，然后保存下来，待会儿咱们配置到kaggle的Secrets中即可</li></ul></li><li>生成API Key</li></ul><h3>2.2 硅基流动</h3><p>硅基流动是咱们要介绍的二号大模型的搬运工，国内开发者使用比较多，可以在上面找到很多便宜大碗的模型，也有不少免费的模型可以用，咱们今天就要用它的免费模型。</p><ul><li><strong>硅基流动模型矩阵</strong></li></ul><table><thead><tr><th align="left">模型系列</th><th align="left">最新代表型号 (API 调用名)</th><th align="left">核心优势</th><th align="left">上下文窗口</th><th align="left">状态</th></tr></thead><tbody><tr><td align="left"><strong>DeepSeek</strong></td><td align="left"><code>deepseek-ai/DeepSeek-V3.2</code></td><td align="left">性能对标顶级闭源模型，极强逻辑</td><td align="left">128k</td><td align="left">旗舰收费</td></tr><tr><td align="left"><strong>DeepSeek</strong></td><td align="left"><code>deepseek-ai/DeepSeek-R1</code></td><td align="left">推理增强模型，擅长复杂数学与逻辑</td><td align="left">64k</td><td align="left">部分免费</td></tr><tr><td align="left"><strong>Qwen</strong></td><td align="left"><code>Qwen/Qwen3-30B-A3B</code></td><td align="left">阿里最新一代模型，中文语境指令遵循极强</td><td align="left">128k</td><td align="left">免费/收费</td></tr><tr><td align="left"><strong>Qwen-VL</strong></td><td align="left"><code>Qwen/Qwen3-VL-72B</code></td><td align="left">顶级视觉理解能力，支持视频分析</td><td align="left">32k</td><td align="left">旗舰收费</td></tr><tr><td align="left"><strong>GLM</strong></td><td align="left"><code>Z.ai/GLM-5</code></td><td align="left">智谱旗舰，专注于长周期 Agent 任务</td><td align="left">205k</td><td align="left">旗舰收费</td></tr><tr><td align="left"><strong>Kimi</strong></td><td align="left"><code>moonshotai/Kimi-K2.5</code></td><td align="left">原生多模态智能体模型，长文本处理极佳</td><td align="left">262k</td><td align="left">旗舰收费</td></tr><tr><td align="left"><strong>Step</strong></td><td align="left"><code>stepfun-ai/Step-3.5-Flash</code></td><td align="left">极高性价比的轻量模型，推理速度极快</td><td align="left">262k</td><td align="left">低成本/免费</td></tr><tr><td align="left"><strong>MiniMax</strong></td><td align="left"><code>MiniMaxAI/MiniMax-M2.5</code></td><td align="left">擅长角色扮演与情感交互</td><td align="left">197k</td><td align="left">旗舰收费</td></tr><tr><td align="left"><strong>Llama 3</strong></td><td align="left"><code>meta-llama/Llama-3.3-70B-Instruct</code></td><td align="left">国际最强开源模型，适配各类 Agent 框架</td><td align="left">128k</td><td align="left">旗舰收费</td></tr></tbody></table><ul><li><strong>硅基流动的限制</strong><br/>硅基流动有着比Groq更多的可用模型，有不少永久免费的模型, 甚至还有推广（阿尔这里就不贴推广码了，大家自行注册即可）和新用户赠金，但是其免费版的并发数很低，具体的模型也有RPM和TPM限制。</li><li><p><strong>注册硅基流动API Key</strong></p><ul><li>进入<a href="https://link.segmentfault.com/?enc=3FVNCb2FK5UmKiKzv2AtMg%3D%3D.OJCGQa3cpcqEwXbAwWNiZ%2B03OlImh%2FCwt7jfE%2FPtO88%3D" rel="nofollow" target="_blank">硅基流动</a>官网，用手机号或者微信号注册</li><li>点击左侧侧边栏的<strong>API密钥</strong>, 点击<strong>新建API密钥</strong></li><li><img referrerpolicy="no-referrer" src="/img/remote/1460000047639132" alt="硅基流动Api密钥" title="硅基流动Api密钥" loading="lazy"/><br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047639133" alt="硅基流动创建api密钥" title="硅基流动创建api密钥" loading="lazy"/></li></ul></li></ul><p>我们待会儿使用<code>Qwen/Qwen3-8B</code>这个免费模型</p><h2>3. 代码实战</h2><h3>3.1 环境准备</h3><p>这次和此前不同，诶，咱们今天用API不用自己加载模型，不用开GPU加速，<strong>Accelerator</strong>选择<strong>None</strong>即可。</p><p>然后老样子，先装依赖库</p><pre><code class="python"># 1. 确保安装最新版 uv
+!pip install -U uv
+
+# 2. 使用修正后的包名进行安装
+# llama-index 包含核心组件
+# llama-index-llms-groq 是 Groq 的适配器
+# llama-index-llms-llms-openai-like 是 所有适配openai接口的适配器
+!uv pip install llama-index llama-index-llms-groq llama-index-llms-openai-like feedparser requests transformers</code></pre><p>注意，这里咱们硅基流动其实也是有专门的定制库的，<code>llama-index-llms-siliconflow</code>，只是这里咱们为了通用性用了<strong>llama-index-llms-openai-like</strong>。（实际上是因为最开始试了Groq效果不好，觉得换中文模型会好一点，然鹅效果也不好，这次主要还是介绍这个WorkFlow架构吧）</p><h3>3.2 配置密钥</h3><p>和<a href="https://link.segmentfault.com/?enc=cEdXnXJnpj0N%2B9juE%2F5jCg%3D%3D.4gAxXn16yafNoW4aPY5K0LNPJvhn67kMp34tshnnU5NMivRm%2BJBihXchGMuR3lXhee8%2FHrJSD6oyiDiyrtj3hA%3D%3D" rel="nofollow" target="_blank">上篇博客</a>一样，咱们在<strong>Add-ons</strong>-&gt;<strong>Secrets</strong>中添加上<strong>Groq</strong>和<strong>硅基流动</strong>的API Key，命名为<strong>GROQ_API_KEY</strong>和<strong>SILICON-API_KEY</strong>（当然，名字无所谓，和代码匹配就好）</p><h3>3.3 使用API来示例llm</h3><p>Tools和之前一样，咱们就不赘述了。</p><ul><li><strong>定义Groq的模型</strong></li></ul><pre><code class="python">import os
+from llama_index.llms.groq import Groq
+from llama_index.core import Settings
+
+os.environ["GROQ_API_KEY"] = user_secrets.get_secret("GROQ_API_KEY")
+
+# 推荐使用 llama-3.3-70b，它的逻辑推理能力足以应对多智能体协作
+Settings.llm = Groq(model="llama-3.3-70b-versatile")</code></pre><ul><li><strong>定义硅基流动的Qwen模型</strong></li></ul><pre><code class="python">from llama_index.llms.openai_like import OpenAILike
+
+Settings.llm = OpenAILike(
+    model="Qwen/Qwen3-8B",
+    api_key=user_secrets.get_secret("SILICON-API_KEY"),
+    api_base="https://api.siliconflow.cn/v1",
+    is_chat_model=True
+)</code></pre><p>可以看出来，定制的接口只用定义对应的API KEY在环境变量里，通用的接口需要补充清楚模型名，api-key，api的url等等。</p><h3>3.4 整体流程</h3><p>我们打算定义两个Agent</p><ul><li><strong>Checker</strong>: 负责去调用获取最新博客以及解析</li><li><strong>Notifier</strong>: 负责向我们发送通知</li></ul><p>当有新的博客的时候，Checker向Notifer发送事件，告知notifier新博客的标题和链接。然后结束。</p><p>整体流程如下：<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047639134" alt="整体流程图" title="整体流程图" loading="lazy"/></p><h3>3.5 定义Event</h3><pre><code class="python">from llama_index.core.workflow import Workflow, step, StartEvent, StopEvent, Context, Event
+
+class NewBlogPostEvent(Event):
+    title: str
+    link: str</code></pre><p>由于Checker流转向Notifer的时候，只需要给它标题和链接即可，咱们的<code>NewBlogPostEvent</code>只用包含<code>title</code>和<code>link</code>字段。</p><h3>3.6 定义两个合作的Agent</h3><p>我们先定义<strong>Checker</strong></p><ul><li>交代好它的<strong>角色（ROLE）</strong>，<strong>任务（TASK）</strong>和<strong>输出要求（OUTPUT_FORMAT）</strong></li><li>将checker需要调用的工具给它</li></ul><pre><code class="python">from llama_index.core.agent.workflow import ReActAgent
+
+CHECKER_SYSTEM_PROMPT = """
+### ROLE
+咱们是一个极其精准的数据提取专家。
+
+### TASK
+1. 调用工具获取最新博客文章。
+2. 提取其标题和链接。
+3. **必须**以 JSON 格式输出。
+
+### OUTPUT_FORMAT
+{"title": "文章标题", "link": "文章链接"}
+"""
+checker = ReActAgent(
+            name="checker",
+            system_prompt=CHECKER_SYSTEM_PROMPT,
+            tools=[tool_get_blog],
+            llm=Settings.llm
+        )</code></pre><p>然后咱们再来定义<strong>Notifier</strong></p><pre><code class="python">NOTIFIER_SYSTEM_PROMPT = """
+### ROLE
+咱们是一个通知官。
+
+### TASK
+请根据提供的信息发送通知。
+直接调用工具发送，不要解释咱们的行为。发送成功后回复“已发出”即可。
+"""
+notifier = ReActAgent(
+            name="notifier",
+            system_prompt=NOTIFIER_SYSTEM_PROMPT,
+            tools=[tool_send_all],
+            llm=Settings.llm
+        )</code></pre><h3>3.7 定义Workflow</h3><ul><li>从<strong>Workflow</strong>类派生出我们的workflow类</li><li>定义<strong>step</strong>，从<code>StartEvent</code>开始到<code>StopEvent</code>结束</li></ul><p>这里因为模型的指令跟随能力比较差，格式化输出不了，咱们用了一个正则来兜底。</p><pre><code class="python">import os
+import re
+import json
+
+global_last_title = ""
+
+
+
+class DemoBlogMonitor(Workflow):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.checker = checker
+
+        self.notifier = notifier
+
+    @step
+    async def check_step(self, ev: StartEvent) -&gt; NewBlogPostEvent | StopEvent:
+        global global_last_title
+        rss_url = ev.get("rss_url")
+
+        print(f"--- [Checker] 目标: {rss_url} ---")
+        print(f"--- [Checker] 基准: '{global_last_title}' ---")
+
+        response = await self.checker.run(user_msg=f"请提取此 RSS 的最新数据：{rss_url}")
+        res_text = str(response)
+        print(f"DEBUG [Agent Output]: {res_text}")
+
+        try:
+            json_match = re.search(r"(\{.*\})", res_text, re.DOTALL)
+            if not json_match:
+                raise ValueError("未在回复中找到 JSON 块")
+
+            data = json.loads(json_match.group(1))
+            current_title = data.get("title", "").strip()
+            current_link = data.get("link", "").strip()
+
+            if not current_title or not current_link:
+                raise ValueError("JSON 数据缺失字段")
+
+            # 在 Python 侧进行确定性比对
+            if current_title != global_last_title:
+                print(f"发现新动态: {current_title}")
+                # 注意：这里我们只在成功触发通知时更新状态
+                return NewBlogPostEvent(title=current_title, link=current_link)
+            else:
+                return StopEvent(result=f"判定：内容未更新")
+
+        except Exception as e:
+            # 如果 JSON 解析失败，尝试最后的正则兜底
+            print(f"WARN: JSON 解析失败 ({e}), 尝试正则兜底...")
+            link_match = re.search(r"(https?://\S+)", res_text)
+            if link_match:
+                link = link_match.group(1).strip(" ”\"。")
+                # 假设引号中间的内容是标题
+                title_match = re.search(r"[是“\"'](.*?)[”\"']", res_text)
+                title = title_match.group(1) if title_match else "未识别标题"
+
+                if title != global_last_title:
+                    return NewBlogPostEvent(title=title, link=link)
+
+            return StopEvent(result=f"解析彻底失败。原文: {res_text}")
+
+    @step
+    async def notify_step(self, ev: NewBlogPostEvent) -&gt; StopEvent:
+        global global_last_title
+        print(f"--- [Notifier] 正在发送: {ev.title} ---")
+
+        await self.notifier.run(user_msg=f"发送通知：标题《{ev.title}》，链接 {ev.link}")
+
+        # 只有通知成功发出后，才真正更新全局基准
+        global_last_title = ev.title
+        return StopEvent(result=f"完成。新基准已设为: {ev.title}")</code></pre><h3>3.8 运行</h3><pre><code class="python">async def main():
+    monitor = DemoBlogMonitor(timeout=120)
+
+    print("\n&gt;&gt;&gt; Run #1")
+    await monitor.run(rss_url="https://blog.algieba12.cn/atom.xml")
+
+    print("\n&gt;&gt;&gt; Run #2")
+    await monitor.run(rss_url="https://blog.algieba12.cn/atom.xml")
+await main()</code></pre><p>这里咱们运行两遍，确认全局变量会同步更新到新状态，咱们实际使用的时候，可以将其持久化存储下来，而不是用变量<code>global_last_title</code>将状态保存在内存中</p><h2>4. 代码</h2><p>本篇博客代码示例可在<a href="https://link.segmentfault.com/?enc=LxGCoB3X9aNGcPwmi2bKqQ%3D%3D.gYyVqnCglkt%2Bs%2BRzI%2BJQkgSbHX9T%2B2rCGhFPPI67rLcY9XQMhuN42YHJV%2Ft1pIGFpOR2%2FmjsjS1ljNDkdm%2FF0IWHmTRCvTAhlWJUWxDv1Ag%3D" rel="nofollow" target="_blank">Kaggle笔记本</a></p><h2>5. 常见问题 (Q&amp;A)</h2><p><strong>Q1: 为什么不让 Agent 直接判断是否有更新，而是要在 Python 代码里写 <code>if current_title != global_last_title:</code>？</strong><br/><strong>A:</strong> <strong>为了系统的绝对稳定性！(划重点)</strong><br/>大模型在 ReAct 模式下有时会产生“幻觉”或者表现得过于“客气”。</p><ul><li><strong>现象</strong>：最开始的设计是让模型自己比对已知标题和新标题，结果模型看到传进去的旧标题占位符，误以为这是一道“填空题”，不仅没有进行比对，还很有礼貌地让我把真实标题填进去。</li><li><strong>结论</strong>：最佳实践是<strong>逻辑解耦</strong>。让 Agent 专注于它最擅长的事情（从杂乱网页中精准提取非结构化数据），而将确定性的逻辑判断（字符串比对）交还给传统的 Python 代码来做。</li></ul><p><strong>Q2: 为什么一定要强制模型输出 JSON 格式？之前用 <code>|</code> 这种自定义分隔符不行吗？</strong><br/><strong>A:</strong> <strong>因为自然语言的边界太模糊，且极易与真实数据冲突。</strong><br/>这是本次开发多智能体协作时遇到的最大痛点！</p><ul><li><strong>表达欲失控</strong>：高级模型（比如 Llama-3.3 或 Qwen）即使在 Prompt 里千叮咛万嘱咐只输出数据，也极大概率会在结果前后加上“好的，最新文章是…”之类的废话，导致 <code>split("|")</code> 直接报错。</li><li><strong>特殊符号冲突</strong>：碰巧咱们博客的标题里本身就带有 <code>|</code> 符号。正则匹配遇到这种情况会产生严重的边界歧义。</li><li><strong>JSON 的优势</strong>：JSON 拥有明确的边界标识（花括号和双引号）。再配合 Python 正则 <code>re.search(r"(\{.*\})")</code> 专门抓取大括号之间的内容，就能彻底免疫模型的“废话”。</li></ul><p><strong>Q3: 运行 Workflow 时碰到了 <code>WorkflowValidationError: The following events are produced but never consumed</code> 报错是怎么回事？</strong><br/><strong>A:</strong> <strong>这是 LlamaIndex 工作流引擎的一种“管道安全检查”机制。</strong><br/>它的意思是：咱们的 <code>check_step</code> 辛辛苦苦生产了一个 <code>NewBlogPostEvent</code>，但是工作流里没有任何一个 Step 声明要接收并处理这个事件，导致事件“无家可归”。</p><ul><li><strong>排查方法</strong>：检查咱们的消费者函数（在这个例子中是 <code>notify_step</code>）。</li><li><strong>解决方案</strong>：确保其参数严格加上了对应的类型注解，写成 <code>async def notify_step(self, ev: NewBlogPostEvent)</code>。这样引擎就能自动把上一步产生的数据路由到这里，完成闭环。</li></ul><p><strong>Q4: 调用 Groq 或硅基流动 API 时，频繁遇到 <code>429 Too Many Requests</code> 怎么办？</strong><br/><strong>A:</strong> <strong>这是因为多智能体循环请求过快，触发了并发限制。</strong><br/>在开发 ReAct Agent 时，模型需要反复执行“思考-行动-观察”的循环，短时间内会产生高密度的 API 请求。</p><ul><li><strong>冷却机制</strong>：如果是演示项目，可以在每次检测循环之间或者 Step 之间加一个简单的 <code>await asyncio.sleep(2)</code> 进行冷却。</li><li><strong>精简上下文</strong>：尽量精简 Prompt 和工具返回的数据量，避免单次请求打满 TPM（Tokens Per Minute）限制。如果是生产环境，建议使用硅基流动的付费版以获取更高的并发额度。</li></ul><p><strong>Q5: 在生产环境中，我还应该使用 <code>global global_last_title</code> 这种全局变量来管理状态吗？</strong><br/><strong>A:</strong> <strong>非常不建议。</strong><br/>本教程使用全局变量仅为了降低代码阅读门槛和方便演示。</p><ul><li><strong>状态污染</strong>：在实际生产环境中，Workflow 往往是高并发运行的（比如同时监控 10 个不同的 RSS 链接）。如果用全局变量，不同的任务会互相覆盖状态。</li><li><strong>正确做法</strong>：LlamaIndex Workflow 提供了内置的 <code>Context</code> 对象。咱们应该在 <code>@step</code> 中通过 <code>ctx.set("last_title", title)</code> 和 <code>ctx.get("last_title")</code> 来在不同的步骤之间安全地传递状态，或者引入外部数据库（如 Redis、本地 JSON 文件）进行持久化。</li></ul><hr/><p><strong>本文作者：</strong> Algieba<br/><strong>本文链接：</strong> <a href="https://link.segmentfault.com/?enc=b1qIz9MDUdBPkx%2FJvbNf3Q%3D%3D.ZIW1Ccf3jQDlnDgnAUmDdUbApbofIbaTTWiCnhrywscHyO0mmjSj34JTQLf0kBi%2B%2FnvBs2V7Cn7iA8wksfeulw%3D%3D" rel="nofollow" target="_blank">https://blog.algieba12.cn/llm07-1-llama-index-workflow-groq/</a><br/><strong>版权声明：</strong> 本博客所有文章除特别声明外，均采用 BY-NC-SA 许可协议。转载请注明出处！</p>]]></description></item><item>    <title><![CDATA[【爬虫JS逆向实战】某点数据参数 “k” 加密逆向 喵欧巫 ]]></title>    <link>https://segmentfault.com/a/1190000047639164</link>    <guid>https://segmentfault.com/a/1190000047639164</guid>    <pubDate>2026-03-07 23:05:31</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p><em>这是一次非常有意思的 JS 逆向，从不知所以到拨云见日的感觉真的很爽，或许这就是我们热爱这项技术的理由。-- 笔者</em></p><hr/><h3>✍ 前言</h3><p>​<strong>特别声明</strong>​，本文所提供的逆向思路及代码仅供学习参考使用，请勿使用 <code>爬虫脚本</code> 对网站进行 <code>高频率</code> 以及 <code>高并发</code> 数据抓取操作，若对网站造成损失的，后果自负！！！</p><h3>📧 网址</h3><pre><code class="bash">aHR0cHM6Ly93d3cuZGlhbmRpYW4uY29tL25ld3M=</code></pre><h3>📝 正文</h3><p><strong>​步骤一：​</strong>​<em>加密位置寻找</em></p><p>依旧 <code>网络</code> 查看 api 请求，这篇文章的主人公闪亮登场</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639167" alt="" title=""/></p><p>嗯，简单，却耐人寻味，看来 <code>关键字搜索大法</code> 不管用了，<code>堆栈</code> 走起，点开 <code>启动器</code></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639168" alt="" title="" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639169" alt="" title="" loading="lazy"/></p><p>直接点第一个，然后点击 <code>翻页</code> 断在这个位置</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639170" alt="" title="" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639171" alt="" title="" loading="lazy"/></p><p>没结果？往下找 <code>堆栈</code> 即可</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639172" alt="" title="" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639173" alt="" title="" loading="lazy"/></p><p>这不就找到了，但是该程序存在 <code>异步</code> 调用</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639174" alt="" title="" loading="lazy"/></p><p>别慌，直接点到 <code>异步</code> 栈里面去，打上断点</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639175" alt="" title="" loading="lazy"/></p><p>点击 <code>翻页</code> 触发之后，点入 <code>n</code> 的第二个方法中，如果你要问为什么不点其它的方法，你尽管试试，定叫你大败而归</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639176" alt="" title="" loading="lazy"/></p><p>进入这个方法之后，打上 <code>断点</code> ，接着之前的断点就可以取消了，避免我们调试麻烦</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639177" alt="" title="" loading="lazy"/></p><p>接着重新点击 <code>翻页</code> ，会停到我们断住的位置，查看 <code>作用域</code> ，看 <code>k</code> 值有没有生成</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639178" alt="" title="" loading="lazy"/></p><p>里面只有翻页信息，看来这一步 <code>k</code> 值还未生成，别急，下一步看看</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639179" alt="" title="" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639180" alt="" title="" loading="lazy"/></p><p>还没有生成，再下一步？思路打开，盆油！既然 <code>k</code> 最终会出现在 <code>params</code> 中，那么是不是有可能在这段函数中会有类似于添加值的代码段，像 <code>params.k</code> 这样的形式，往下找找看，也花不了多少时间</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639181" alt="" title="" loading="lazy"/></p><p>这不就找到了疑似 <code>k</code> 值添加的代码段，都打上断点，以免漏掉</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639182" alt="" title="" loading="lazy"/></p><p>第一个不是，看第二个</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639183" alt="" title="" loading="lazy"/></p><p>柳暗花明又一村，找到了！！！</p><p><strong>​步骤二：​</strong>​<em>代码分析</em></p><p>重要的是 <code>o</code> 值的生成，往上看很容易就能找到</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639184" alt="" title="" loading="lazy"/></p><p><code>参数</code> 我们可以先固定，等下再去逆向，先点进 <code>Object(D.a)</code> 这个方法中去看看</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639185" alt="" title="" loading="lazy"/></p><p>我们先看这个函数的 <code>返回值</code> 是什么</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639186" alt="" title="" loading="lazy"/></p><p>目标明确，这是我们需要分析的，先看参数 <code>A</code></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639187" alt="" title="" loading="lazy"/></p><p>嗯，奇奇怪怪的字符串，它的 <code>初始位置</code> 如下</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639188" alt="" title="" loading="lazy"/></p><p>好家伙，有够长的，看不懂的听我分析：<code>A</code> 接收的是一个 <code>自执行</code> 函数返回的结果，这段代码中的自执行函数是这样的格式</p><pre><code class="javascript">function(content, n, e) { 主要执行的函数 }(参数1, 参数2, 参数3);</code></pre><p>也就是说我们首先需要明确 <code>参数1</code> ，<code>参数2</code> ，<code>参数3</code> 这三个参数是什么，于是我把代码折叠，如下</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639189" alt="" title="" loading="lazy"/></p><p>这样就看的比较清晰，传递的三个参数分别为：<code>自执行</code> 函数，<code>Object(v.c)(s, c, l)</code> ，<code>h</code> ，三个参数以 <code>逗号</code> 分开</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639190" alt="" title="" loading="lazy"/></p><p>其实有意思的一点是，参数 <code>自执行</code> 函数的参数中又传入了一个 <code>自执行</code> 函数，套娃了属于是。</p><pre><code class="javascript">function(content, n, e) { 主要执行的函数 }(function(s, n, path, e) { 主要执行的函数 }(
+  function(n, e) {}(e, r),
+  参数4,
+  参数5,
+  参数6
+), 参数2, 参数3);</code></pre><p>先把断点断在第一个 <code>自执行</code> 函数的代码段中，至少我们先搞清楚，它究竟要传入什么样的值</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639191" alt="" title="" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639192" alt="" title="" loading="lazy"/></p><p>知道了传递的值大概的 <code>格式</code> 之后，我们就知道第二个 <code>自执行</code> 函数需要生成什么样的的值才算达标，接着再看到第二个 <code>自执行</code> 函数的代码段</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639193" alt="" title="" loading="lazy"/></p><p>嗯，对传递过来的参数作一个拼接处理，那重要的就是传过来的是什么值，依旧 <code>断点</code> 触发</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639194" alt="" title="" loading="lazy"/></p><p>主要不清楚的是 <code>s</code> 和，其它的参数其实都不需要分析，因为 <code>n</code> 是时间戳，<code>path</code> 和 <code>e</code> 是我们固定的值，于是一样的，不清楚的我们就把断点打上看结果就行</p><ul><li>首先看传递的参数</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639195" alt="" title="" loading="lazy"/></p><ul><li><code>n</code> 是翻页信息， <code>e</code> 也是固定值，主要看 <code>r</code> 的值</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639196" alt="" title="" loading="lazy"/></p><ul><li>可以看出，<code>r</code> 就是将 <code>n</code> 以列表的形式返回，知道了主要的代码逻辑之后，我们其实在后续的扣代码环节中将如下代码改写就行了，返回的值一模一样</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639197" alt="" title="" loading="lazy"/></p><ul><li>你可以测试一下，传入 <code>{"business":1,"genre_id":"","sub_genre":"","word":"","page":4,"pagesize":10}</code> ，看生成的结果</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639198" alt="" title="" loading="lazy"/></p><p>好，<code>content</code> 的值逆向分析完毕，现在就是 <code>n</code> 了</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639199" alt="" title="" loading="lazy"/></p><p><code>n</code> 的主要生成位置主要是在 <code>第二个参数</code></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639200" alt="" title="" loading="lazy"/></p><p>参数我们之前说了暂时固定</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639201" alt="" title="" loading="lazy"/></p><p>主要先分析 <code>Object(v.c)</code> 这个函数，打上断点之后，点进去</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639202" alt="" title="" loading="lazy"/></p><p>一步一步来，这个 <code>n.from</code> 我们不知道是什么，可看它生成的值，有种熟悉的感觉</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639203" alt="" title="" loading="lazy"/></p><p>兄弟们，<code>AI</code> 是个好东西</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639204" alt="" title="" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639205" alt="" title="" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639206" alt="" title="" loading="lazy"/></p><pre><code class="javascript">// Node.js 环境下直接运行
+const buf = Buffer.from("89b133d52caef302", "utf8");
+
+// 输出和你看到的结构完全一致的对象
+const result = {
+  type: "Buffer",
+  data: Array.from(buf) // 把 Buffer 转成普通数组
+};
+
+console.log(result);</code></pre><p>做个测试，重新拿一个值生成 <code>Buffer</code> 数组，对比一下</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639207" alt="" title="" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639208" alt="" title="" loading="lazy"/></p><p>一致！<code>n.from</code> 的问题解决，接下来是 <code>Object(r.createDecipheriv)</code></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639209" alt="" title="" loading="lazy"/></p><p>其实最终结果是一个 <code>对象</code></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639210" alt="" title="" loading="lazy"/></p><p>我们暂且看后面的代码，因为对象中有许多方法，逆向起来很麻烦，看后面用到对象中的某个方法就逆向哪个会比较简单，可以看到，会用到对象中的 <code>update</code> 方法和 <code>final</code> 方法</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639211" alt="" title="" loading="lazy"/></p><p>先看 <code>update</code> 方法，进到函数里面，<code>r.from</code> 我们前面已经有现成的，所以不用管</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639212" alt="" title="" loading="lazy"/></p><p>主要是这个 <code>this._updata</code> 方法分析出来先，由于后续操作过于 <code>繁杂</code> ，再次我只讲一些 <code>扣代码</code> 的注意点</p><ul><li>首先 <code>data</code> 的生成我在前面已经介绍过了，直接用封装的代码即可，后续如果遇到类似的代码可直接替换</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639213" alt="" title="" loading="lazy"/></p><ul><li>在补 <code>_update</code> 方法的时候，下图标记的 <code>for</code> 循环需要改掉，不然程序会陷入 <code>无限循环</code></li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639214" alt="" title="" loading="lazy"/></p><ul><li>遇到问题，多问 <code>AI</code> ，一些常规的 <code>Buffer</code> 方法，我都是通过 <code>AI</code> 解决的</li><li>这里提供我的 <code>JS代码</code> 结构</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639215" alt="" title="" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639216" alt="" title="" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639217" alt="" title="" loading="lazy"/></p><ul><li>生成结果</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639218" alt="" title="" loading="lazy"/></p><p>不过这里生成的值有个 <code>坑点</code> ，在控制台看上去好像没什么问题，不过在我使用 <code>python</code> 脚本执行这段 <code>JS</code> 代码将这个字符串保存在文件中时，看我发现了什么</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639219" alt="" title="" loading="lazy"/></p><p>后面竟然加了一串乱起八糟的东西，查一查这是什么</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639220" alt="" title="" loading="lazy"/></p><p>那么在后续替换过程中需要注意将这些值删掉，也很简单，观察字符串，生成的总是长度为 <code>10</code> 的字符串，用 <code>python</code> 的切片操作就可以了</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639221" alt="" title="" loading="lazy"/></p><p>如果你做任何操作将这种值代入代码中运行的话，请求结果会一直显示如下图的内容</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639222" alt="" title="" loading="lazy"/></p><p>这也算是一种网站的 <code>反爬</code> 手段吧，逆向的时候要细心。</p><p>至此，<code>content</code> 和 <code>n</code> 值逆向出来了，接下来就是主函数</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639223" alt="" title="" loading="lazy"/></p><p>看了一下，其实也不需要逆向，我直接运行就出了结果</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639224" alt="" title="" loading="lazy"/></p><p><strong>​步骤三：​</strong>​<em>参数获取</em></p><p>接下来就是参数问题了，还记得之前的函数需要传入的参数吗，其实这些参数是需要变化的</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639225" alt="" title="" loading="lazy"/></p><p>这里就有意思了，我们随便拿一个值</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639226" alt="" title="" loading="lazy"/></p><p>然后 <code>全局搜索</code></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639227" alt="" title="" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639228" alt="" title="" loading="lazy"/></p><p>我们只要请求这个网址，它返回的信息中就携带了 <code>s</code> ，<code>k</code> ，<code>l</code> 的信息。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639229" alt="" title="" loading="lazy"/></p><p>至于如何将这些数据提取出来，那就有各种各样的方法了，本人推荐 <code>正则</code> ，是真的好用。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639230" alt="" title="" loading="lazy"/></p><p>这些都搞定之后，还有个生成最终值的 <code>n.from</code> 方法，根据测试，直接将 <code>n</code> 改为 <code>Buffer</code> 即可，效果是一样的</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639231" alt="" title="" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639232" alt="" title="" loading="lazy"/></p><p><strong>​步骤四：​</strong>​<em>编写代码</em></p><p>一切完毕，编写请求代码</p><pre><code class="python">import re
+import json
+import execjs
+import requests
+
+# 获取 n 值
+def get_n():
+    with open('./4.js', 'r', encoding='utf-8') as f:
+        js_code = f.read()
+    u = re.findall(r',u:(.*?),activeNav', requests.get('https://www.diandian.com/news').text)[0].replace(',t:b,d:b}', '}').replace('s', '"s"').replace('k', '"k"').replace('l', '"l"')
+    u_ = json.loads(u)
+    n = execjs.compile(js_code).call('get_n', u_['s'], u_['k'], u_['l'])
+    return n
+
+# 获取 k 值
+def get_k(page, word):
+    if page == 1:
+        py = '1110' + word
+    elif page &gt; 1:
+        py = '110' + str(page) + word
+    with open('./A.js', 'r', encoding='utf-8') as f:
+        js_code = f.read()
+    js_code_1 = js_code.replace('test1223', get_n()[0:10]) # 替换 n 值
+    k = execjs.compile(js_code_1).call("get_k", py)
+    return k
+
+def get_result(page, word):
+    cookies = {} # 替换自己的cookie
+
+    headers = {
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'zh-CN,zh;q=0.9',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Origin': 'https://www.diandian.com',
+        'Pragma': 'no-cache',
+        'Referer': 'https://www.diandian.com/',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-site',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+        'language': 'zh',
+        'sec-ch-ua': '"Chromium";v="128", "Not;A=Brand";v="24", "Google Chrome";v="128"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+    }
+
+    params = {
+        'business': '1',
+        'genre_id': '',
+        'sub_genre': '',
+        'word': word,
+        'page': str(page),
+        'pagesize': '10',
+        'k': get_k(page, word),
+    }
+
+    response = requests.get('https://api.diandian.com/pc/app/v1/info/search', params=params, cookies=cookies, headers=headers)
+    print(response.json())
+    return response.json()
+
+if __name__ == '__main__':
+    page = 1 # 页码
+    word = '' # 关键词
+    get_result(page, word)</code></pre><p>请求成功！</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639233" alt="" title="" loading="lazy"/></p><hr/><p><strong>更多有趣内容，可关注 wx 公众号“​</strong>小恰学逆向<strong>​”，分享一些爬虫 JS 逆向技术以及有趣的工具。(●´ω｀●)ゞ</strong></p>]]></description></item><item>    <title><![CDATA[PostgreSQL 技术日报 (3月7日)｜生态更新与内核性能讨论 IvorySQL ]]></title>    <link>https://segmentfault.com/a/1190000047639330</link>    <guid>https://segmentfault.com/a/1190000047639330</guid>    <pubDate>2026-03-07 23:04:49</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639333" alt="pg每日新闻封面.png" title="pg每日新闻封面.png"/></p><h2>⚙️ PostgreSQL 技术文章</h2><h3>🧩 Admin 4 v9.13 版本发布</h3><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639334" alt="1.png" title="1.png" loading="lazy"/></p><p>pgAdmin 4 v9.13已发布，包含15个错误修复和新功能。主要新增功能包括Core LLM集成基础设施，具备AI驱动的安全、架构和性能分析报告，以及Query Tool的AI聊天功能和EXPLAIN的AI Insights操作。ERD Tool现在支持用户选择表的拖拽功能并显示表间关系，而Index创建对话框新增对'ONLY'子句的支持。错误修复解决了引号字符串配置、工具设置恢复、共享服务器修改、ERD节点中长表名以及物化视图列注释显示等问题。</p><p><strong><em><a href="https://link.segmentfault.com/?enc=mXYey8xg0cueq2xHja428w%3D%3D.sIUr4e%2BMqqgAtVH7F4GFT64clJ%2FiZ3Q%2BAtoKcwE0IW%2FtARE5k4dFM4rcfXnCiU3GQ0ylcNpZrQHcxZFqUuEuVtRvjGOL6IXumaYoN9hNqR4%3D" rel="nofollow" target="_blank">https://www.postgresql.org/about/news/pgadmin-4-v913-released...</a></em></strong></p><h3>🧩 Swiss PGDay 2026: 宣布和征稿</h3><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639335" alt="1.png" title="1.png" loading="lazy"/></p><p>Swiss PGDay 2026将于2026年6月25-26日在苏黎世附近Rapperswil的OST Eastern Switzerland University of Applied Sciences举办。这个为期两天的会议设有两个分会场，演讲主要使用英语，部分使用德语。第一天会议结束时将举办社交网络活动。演讲者征集开放至2026年4月7日，预计4月底公布日程安排。闪电演讲提交将在会议前一周开放，海报提交截止日期为2026年6月8日。为希望与Swiss PostgreSQL社区建立联系的公司提供赞助机会。参会者注册将于2026年3月开放。</p><p><strong><em><a href="https://link.segmentfault.com/?enc=bSOS3DBKTOVY6%2FaNPsrTaw%3D%3D.WdWAp8A%2Bvdmq0Yh2Rn4b3siuCVZFP48lbHIQhmWLmSkcAKKeGD%2Bv1qsHepPZfsCYb0RHMfc6za7wbwt7Jl9CClacY8A5yld4evGGeHjUj4KP%2FTwSjudIuVPALs2YWGkA" rel="nofollow" target="_blank">https://www.postgresql.org/about/news/swiss-pgday-2026-announ...</a></em></strong></p><h2>📨 PostgreSQL Hacker 电子邮件讨论精选</h2><h3>🧩  索引预取使用 rdtsc 减少 EXPLAIN ANALYZE 的计时开销？</h3><p>讨论的重点是实现rdtsc（读取时间戳计数器）来减少EXPLAIN ANALYZE的计时开销。主要挑战是确定不同环境下的TSC频率。Lukas Fittl测试了使用/sys/devices/system/cpu/cpu0/cpufreq/base_frequency，但发现在Azure/HyperV等虚拟化环境中，CPU频率与TSC频率不匹配，因为TSC是虚拟化的。Andres Freund建议放弃基于MSR的方法，认为不实用，并提出一个更简单的校准方法：通过将tsc_via_rdtsc除以转换为纳秒的clock_gettime(CLOCK_BOOTTIME)来计算ns_to_cycles。Fittl指出较新的AMD CPU也不通过CPUID提供TSC频率，需要MSR访问或针对其他时间源进行校准。两人都认为手动GUC配置不值得。讨论倾向于实现基于校准的方法，而不是依赖系统提供的频率值。</p><p><strong><em><a href="https://link.segmentfault.com/?enc=qbO2PiYgil2URb4yk1lDYA%3D%3D.bZ8hUDgvhZgxEFyn%2B8JXmTL%2BLVy3lpMRKbuab%2BBiJYMrAXfr9y3cpVAFYQQZxBoATv0HacuLCdC14FW4HF%2BmO8U62XBIMKQ9Y8lC17KhukQpVzwQ00i352%2BLKzSNIjptkCQQ9Xeh%2Ff7pepDzN2KCRw%3D%3D" rel="nofollow" target="_blank">https://www.postgresql.org/message-id/caqgbsn6mbkmtqnencdaim7...</a></em></strong></p><h3>🧩 修复 multixact Oldest MXactId 初始化和访问中的错误</h3><p>讨论跟进了最近推送的一个与OldestMemberMXactId初始化和预备事务处理相关的multixact错误修复。Sami Imseih建议添加一个测试用例来验证对预备事务虚拟进程的正确处理，因为添加的断言不会覆盖这种情况。Yura Sokolov支持为已修复的错误添加测试。Heikki Linnakangas创建了Sami复现案例的简化版本，不需要并发会话，并将其移至主回归测试套件的'prepared_xacts'测试中。Tom Lane建议了一个不相关的改进，通过在禁用预备事务时添加早期退出来减少prepared_xacts_1.out的维护工作。Heikki同意并为此优化提供了补丁，计划将其反向移植到所有支持的版本，以便于将来的测试反向移植。</p><p><strong><em><a href="https://link.segmentfault.com/?enc=uHqJ1VXxEnqG20l2g2Sb8g%3D%3D.sQOkO4miExPzcqmFLZ5bcmGrPOOFsZz6URwto8RZspg6zplZYhyEdcIWRpakUKg3iu7%2FyvjcX3PwnntvDL0%2BZAg0bF7oy%2FQu59ZaZ3teLEeZq5qxrWbqUHZbYUCmUuym" rel="nofollow" target="_blank">https://www.postgresql.org/message-id/120550bf-ca50-4a07-91b1...</a></em></strong></p><h3>🧩 消除 xl_heap_visible 以减少 WAL（最终设置 VM on-access）</h3><p>讨论围绕Melanie Plageman的补丁系列展开，该系列旨在消除xl_heap_visible WAL记录并实现访问时可见性映射设置。Chao Li对多个补丁版本进行了详细代码审查，发现了许多问题，包括函数参数类型、未初始化变量、错误消息格式问题以及heap_page_prune_opt函数调用中的潜在错误。主要关注点包括不必要地使用Buffer指针类型、缺少BlockNumber字段初始化、注释中错误的函数名引用，以及heap_insert()和heap_multi_insert()之间选项检查不一致。Melanie发布了v36版本回应，解决了大部分反馈并提供了性能基准测试结果。微基准测试显示在每个缓冲区都有单个元组的最坏情况下会出现预期的性能下降，但证明了由于使用组合WAL记录方法，vacuum操作变得更快。这些补丁旨在通过在访问时修剪操作期间仔细管理可见性映射来减少WAL量，同时保持正确性。</p><p><strong><em><a href="https://link.segmentfault.com/?enc=LwuGCC%2BPiU16GBVOKtaHdQ%3D%3D.NVXEd%2BE6OhBhXTRHJK7oVXJRL9DdRn89VfPcMPJGe8tIYrJkK3SXuau2LI8YlHVjCDNNlieuMY0mgDsh%2BKf3fNt5uSTO%2B5%2FK1JX2bZxPbVsUPBGcLNSfgQozVbQw8tSm" rel="nofollow" target="_blank">https://www.postgresql.org/message-id/F5CDD1B5-628C-44A1-9F85...</a></em></strong></p><h3>🧩 在发布中跳过架构更改</h3><p>讨论重点是完善PostgreSQL发布EXCEPT TABLE功能的语法和错误消息。正在解决的关键问题包括通过删除"before attaching the table"等不必要短语来缩短提示消息，将文档顺序从"tables/except tables/schemas"更正为更易读的格式，以及修复解析器验证中无法到达的错误条件。围绕ALTER PUBLICATION语法替代方案出现了重要争议。与其使用"ALTER PUBLICATION pub1 DROP EXCEPT TABLE t1"来重置异常列表，提出了两个选项：Option-1使用"ALTER PUBLICATION pub1 SET ALL TABLES"清除异常或"ALTER PUBLICATION pub1 SET ALL TABLES EXCEPT TABLE (t1)"设置新列表；Option-2引入"ALTER PUBLICATION pub1 SET EXCEPT TABLE DEFAULT"用于空列表。贡献者倾向于Option-1，因为它与现有CREATE PUBLICATION语法保持一致，维护统一的用户体验。其他反馈涉及文档格式、错误消息大小写以及需要为新支持的命令更新语法文件注释。</p><p><strong><em><a href="https://link.segmentfault.com/?enc=2W%2FOYnGLrSujEsfAkImsQQ%3D%3D.7U4IwddNhVqVCMMlJ2p6CQqNB7NjXnPGSl3SuHXwuW%2B%2Bnl8w5AklXHAUTrMEsAbqIera6Y30Ns6YCSGa4raEUlFfMdSBR33HPh6Zu4gZF8%2BO96D6Q%2FJ6Kf%2Ft6ZfvUq7pLp1POIfwMVBspfkuKPL70g%3D%3D" rel="nofollow" target="_blank">https://www.postgresql.org/message-id/CAA4eK1KAq+4aQjyOgzD3hB...</a></em></strong></p><h2>🗞️ 行业新闻</h2><h3>🧩 City Detect 利用AI帮助城市保持安全和清洁，融资1300万美元A轮</h3><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639336" alt="2.png" title="2.png" loading="lazy"/></p><p>City Detect 是一家利用人工智能帮助地方政府预防城市衰退的公司，已成功筹集了 1300 万美元的 A 轮融资。该平台通过 AI 驱动的监控和分析系统协助市政当局维护公共安全和清洁。City Detect 目前在美国至少 17 个城市运营，包括 Dallas 和 Miami 等主要大都市区，为城市管理挑战提供自动化解决方案。</p><p><strong><em><a href="https://link.segmentfault.com/?enc=CgHP8BLTejqhql8%2F4AXjJw%3D%3D.vIwf274tC%2FUAix2b7yUxOs9OfleRo3UTssZKYgnNHoZw2z%2BKtjlCsphztedJo3ukDgauGwR7%2FCO0FfHQISdVjQ1dzh7USd8uhO9RPY3zN4APc3n2bukw5we9wF2AItfnbA3EJbxZsan6tve09AdLfg%3D%3D" rel="nofollow" target="_blank">https://techcrunch.com/2026/03/06/city-detect-uses-ai-to-help...</a></em></strong></p><h3>🧩 Claude在五角大楼交易失败后消费者增长激增继续</h3><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639337" alt="3.png" title="3.png" loading="lazy"/></p><p>尽管最近围绕 Anthropic 与 Pentagon 合作失败的争议不断，Claude 的消费者应用程序仍在经历显著的增长势头。这款 AI 聊天机器人应用现在的新安装量超过了 ChatGPT，并在日活跃用户数量方面显示出显著增长。这种消费者成功表明，国防部门的争议并未对 Claude 在普通用户中的吸引力产生负面影响，用户继续在移动和网络平台上以加速的步伐采用这款 AI 助手。</p><p><strong><em><a href="https://link.segmentfault.com/?enc=ysWDYf%2F69dvFndY4jrvZdg%3D%3D.YpYOFGhRWSbt0voB4rHC02E6IvnxQL4%2FBtoWQGrd0Rkd8oBNrmzK3PGPVersIzXRITFoK1wwLQnHyk8JRMQ0KhATBgCVvZwCDt3kKLcsRvGiVllpmh1E3fwD3ZA2RqmJk6Rx4uGeoB6ajnejGB4RhIptplfrNfaJx7Fw2uJ5N3I%3D" rel="nofollow" target="_blank">https://techcrunch.com/2026/03/06/claudes-consumer-growth-sur...</a></em></strong></p><h3>🧩 Microsoft、Google、Amazon表示Anthropic Claude仍可供非国防客户使用</h3><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639338" alt="41.png" title="41.png" loading="lazy"/></p><p>Microsoft、Google 和 Amazon 确认，在 Trump 的战争部与 Anthropic 发生争议后，Anthropic 的 Claude AI 助手仍可供其客户使用。这场冲突专门影响国防部门的访问，但不会影响通过这些主要云服务提供商平台使用 Claude 的其他企业客户。在人们担心 Claude 在不同行业和客户群体中可能面临更广泛限制的情况下，这一澄清显得尤为重要。</p><p><strong><em><a href="https://link.segmentfault.com/?enc=j2jleh2tMnVLvs0xH6rTGA%3D%3D.agQdm1H0S2g2fenXw0RsmyiwhaDDsAYgYlVOWmLqOJRwtfRbQK%2FlmiFh0haEKJbcozk9OS%2B20ffffWAlrPbHgYCf15WfkS5hJpFW11Nc9YwiJygL2WYZDEXTkdZ1JPKeHcD7wmdbqFKbD7lzkdWCUQ%3D%3D" rel="nofollow" target="_blank">https://techcrunch.com/2026/03/05/its-official-the-pentagon-h...</a></em></strong></p><h2>🌐 社交媒体动态</h2><h3>🧩 我们的团队成员Jimmy Angelakos将参加#SCALE23x大会！</h3><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639339" alt="4.jpeg" title="4.jpeg" loading="lazy"/></p><p>我们的团队成员Jimmy Angelakos将于3月6日星期五上午11:15至12:15（太平洋标准时间）在SCALE23x大会上发表演讲。他的演讲主题是使用开源CloudNativePG operator在Kubernetes上运行稳健的、自愈的PostgreSQL。与会者可以前往了解PostgreSQL on K8s以及用于Postgres的Cloud…</p><p><strong><em><a href="https://link.segmentfault.com/?enc=Mkl0PMBLNuTYmucCT26qvg%3D%3D.rlPktYVNY8VYatMYu%2Fmcqg8nnswU1I6QRTiO0Xb20kGMMqcDKNScZJojHlHorpCZPwznm6CCQ%2BQjK326812GA9eDquJV0%2F0XXJNyQj9xHjq6pP9PTJDD2wswxd0h73otoEFmtb7XZxCRocpiz0SHrFGDQhAG1ttluSNICzRK4gI%3D" rel="nofollow" target="_blank">https://www.linkedin.com/posts/pgedge_cloudnativepg-robust-se...</a></em></strong></p><h3>🧩 PG Phridays 深度回归：全新技术文章</h3><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639340" alt="5.jpeg" title="5.jpeg" loading="lazy"/></p><p>PG Phridays 携全新深度技术文章回归。本教程通过实际操作演示如何使用 Patroni 构建高可用 PostgreSQL 集群，重点介绍 etcd 在协调集群状态和领导者选举中的作用。Patroni 等工具依赖分布式配置存储（如 etcd）来管理复制、监控节点健康状况，并在主节点故障时自动执行故障切换。本指南面向需要在生产环境中构建可靠 Postg…</p><p><strong><em><a href="https://link.segmentfault.com/?enc=oAtQuVqhF972YtAR4IeFRw%3D%3D.Eg96Z4%2Bsi0CdzKx4QH76Z25uJ1%2FTKIMjOKRzJfnEWbKG8HudAw3ntPQC8w9FIidzj%2FmGEKCMu8RcffmUeZEs9it%2B6aEg5aPWdkri9lN18ToTMeG8ZZp99kFlTsZVGchOJJnz%2BUwzlMrgsEvf5QGvxA%3D%3D" rel="nofollow" target="_blank">https://www.linkedin.com/posts/pgedge_postgresql-postgres-hig...</a></em></strong></p><h3>🧩 将企业数据和AI应用投入生产意味着从第一天起就处理身份验证、治理和部署问题</h3><p>构建企业数据和AI应用需要从一开始就处理身份验证、治理和部署问题。Databricks Apps和新的AppKit通过使用TypeScript和可投入生产的模式进行构建，并让应用程序直接在受治理的数据旁边运行来简化这一过程。Replit集成允许开发者使用自然语言创建数据感知应用程序，并在保持现有身份验证和Unity Catalog控制的同时将其直接部署到D…</p><p><strong><em><a href="https://link.segmentfault.com/?enc=buvTvCKP5yf5z6CRZ0fKkw%3D%3D.aOrNi3CDhoc08cW%2B9gzpB0K7z%2F03zVesFB58F%2FMWdT%2B5oHS3wjY1tIzbmmVU19RX38aUJdSlOHIXcgzMg4RIxiCEP%2Fhxyk3Q694hoa%2B9GLVZ6Si8YOPdMMTRc17bSKzPXvYBd8gWeS%2FMGtfgL5QlK9MXb%2Bf2WsUZRR7kdBFdWYY%3D" rel="nofollow" target="_blank">https://www.linkedin.com/posts/databricks_shipping-enterprise...</a></em></strong></p><hr/><h2><a href="https://link.segmentfault.com/?enc=Edi%2Fb0VFVzwu7rTnYyxYvQ%3D%3D.e9UeF%2Bf0GVoZ24nMfrXMz15RD77CFw260vqaNPuK5K8%3D" rel="nofollow" target="_blank">HOW 2026 议题招募中</a></h2><p>2026 年 4 月 27-28 日，由 IvorySQL 社区联合 PGEU（欧洲 PG 社区）、PGAsia（亚洲 PG 社区）共同打造的 HOW 2026（IvorySQL &amp; PostgreSQL 技术峰会） 将再度落地济南。届时，PostgreSQL 联合创始人 Bruce Momjian 等顶级大师将亲临现场。</p><p>自开启征集以来，HOW 2026 筹备组已感受到来自全球 PostgreSQL 爱好者的澎湃热情。为了确保大会议题的深度与广度，我们诚邀您提交前沿技术实践与洞见，共同打造高质量议题内容。</p><p>投递链接：<a href="https://link.segmentfault.com/?enc=NA1Z3oogIg9AU2Kdv3jjNQ%3D%3D.LhhbUAvOZ85O7tkq1KvC2syPJfrYArzMSOYUpFGPNGc%3D" rel="nofollow" target="_blank">https://jsj.top/f/uebqBc</a></p>]]></description></item><item>    <title><![CDATA[VTJ.PRO 双向代码转换原理揭秘 开心的凉面 ]]></title>    <link>https://segmentfault.com/a/1190000047639352</link>    <guid>https://segmentfault.com/a/1190000047639352</guid>    <pubDate>2026-03-07 23:04:08</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>在低代码平台层出不穷的今天，如何平衡可视化开发的便利性与代码的灵活性、可控性，一直是行业难题。VTJ.PRO 作为一个<strong>面向 Vue 3 开发者的 AI 驱动开发平台</strong>，给出了一个独特的答案：<strong>双向代码转换</strong>。它不仅支持从 Vue 源码到低代码 DSL 的“向上”转换，也支持从 DSL 到标准 Vue 源码的“向下”生成，并且两个方向可以反复进行，实现了真正意义上的“代码双向自由”。</p><p>本文将深入剖析 VTJ.PRO 双向代码转换系统的核心原理，揭开其如何实现 Vue SFC（单文件组件）与平台内部 DSL 之间无损、可逆转换的技术面纱。</p><h2>1. 双向转换系统架构总览</h2><p>VTJ.PRO 的代码转换系统由两大核心模块构成：</p><ul><li><strong>Parser（解析器）</strong>：将 Vue SFC 源码解析为平台内部的 <code>BlockSchema</code> DSL 对象。</li><li><strong>Generator（生成器）</strong>：将 <code>BlockSchema</code> DSL 对象重新生成为标准 Vue SFC 源码。</li></ul><p>这两个模块共同构成了一个闭环，使得开发者可以在“源码编辑”与“可视化设计”两种模式间无缝切换，且任意一方的修改都能被另一方完整理解和承载。</p><p>整体工作流程如下图所示：</p><pre style="display:none;"><code class="mermaid">flowchart TD
+    A[Vue SFC 源码] --&gt;|输入| B[Parser 解析器]
+    B --&gt;|输出| C[BlockSchema DSL]
+    C --&gt;|输入| D[Generator 生成器]
+    D --&gt;|输出| E[Vue SFC 源码]
+
+    B -.-&gt;|验证/修复| A
+    D -.-&gt;|格式化/平台适配| E</code></pre><h2>2. 解析器：从 Vue SFC 到 DSL</h2><p>解析器的入口是 <code>parseVue</code> 函数，它接收 Vue 源码，经过多阶段处理，最终输出一个结构化的 <code>BlockSchema</code> 对象。整个过程可以分为：<strong>输入验证与自动修复</strong>、<strong>SFC 拆分</strong>、<strong>脚本解析</strong>、<strong>模板解析</strong>、<strong>上下文跟踪与代码修补</strong>五个主要阶段。</p><h3>2.1 输入验证与自动修复</h3><p>在解析之前，系统会使用 <code>ComponentValidator</code> 对源码进行质量检查，确保其符合平台的预期格式。验证规则包括：</p><ul><li><strong>SFC 结构完整性</strong>：必须包含 <code>&lt;template&gt;</code>、<code>&lt;script&gt;</code> 和 <code>&lt;style&gt;</code> 块。</li><li><strong>JavaScript 语法正确性</strong>：使用 Babel 检查脚本部分是否有语法错误。</li><li><strong>setup 函数格式</strong>：<code>setup()</code> 必须恰好包含三句代码（provider 初始化、state 声明、return）。</li><li><strong>图标名称合法性</strong>：检查 Vant 和 VTJ 图标库的图标名是否在白名单内。</li></ul><p>如果检测到可自动修复的问题（如非法的图标名、模板中缺少 <code>state.</code> 前缀），<code>AutoFixer</code> 会介入修正。例如，<code>checkAndFixStatePrefix</code> 函数会遍历模板中的插值、绑定、指令，自动为响应式变量添加 <code>state.</code> 前缀：</p><pre><code class="javascript">// 修复前
+&lt;div&gt;{{ username }}&lt;/div&gt;
+&lt;button @click="count++"&gt;Click&lt;/button&gt;
+
+// 修复后
+&lt;div&gt;{{ state.username }}&lt;/div&gt;
+&lt;button @click="state.count++"&gt;Click&lt;/button&gt;</code></pre><h3>2.2 SFC 解析</h3><p>通过 Vue 官方编译器将源码拆分为 <code>&lt;template&gt;</code>、<code>&lt;script&gt;</code> 和 <code>&lt;style&gt;</code> 三部分。<code>parseSFC</code> 函数会优先识别 <code>&lt;script setup&gt;</code>，并收集所有样式块（支持多 <code>&lt;style&gt;</code>）。</p><h3>2.3 脚本解析：Babel 提取</h3><p><code>parseScripts</code> 函数利用 Babel 对脚本代码进行 AST 遍历，提取组件逻辑元数据。关键提取点包括：</p><ul><li><strong>状态（State）</strong>：识别 <code>const state = reactive({...})</code> 语句，提取初始状态对象。</li><li><strong>方法（Methods）</strong>：收集 <code>methods</code> 对象中的函数。</li><li><strong>事件处理器（Event Handlers）</strong>：方法名若匹配特定后缀模式（如 <code>click_abc123</code>），会被归类为事件处理器，并生成唯一 ID。</li><li><strong>计算属性（Computed）</strong>：提取 <code>computed</code> 对象中的函数。</li><li><strong>侦听器（Watchers）</strong>：方法名以 <code>watcher_</code> 开头则视为侦听器源。</li><li><strong>数据源（Data Sources）</strong>：识别调用 <code>provider.apis</code> 或 <code>createMock</code> 的方法，并解析其 <code>transform</code> 逻辑。</li><li><strong>生命周期（LifeCycles）</strong>：提取 <code>mounted</code>、<code>created</code> 等方法。</li></ul><p>这些提取出的信息将分别存入 <code>BlockSchema</code> 的 <code>state</code>、<code>methods</code>、<code>computed</code>、<code>watch</code> 等字段。</p><h3>2.4 模板解析：AST 转换</h3><p>模板解析是核心中的核心，<code>parseTemplate</code> 函数将 Vue 模板 AST 转换为平台内部的 <code>NodeSchema</code> 节点树。转换过程中，每个 AST 节点都会调用 <code>transformNode</code>，生成对应的 <code>NodeSchema</code> 对象，并递归处理子节点。</p><p>关键转换规则：</p><ul><li><strong>属性（Props）</strong>：静态属性直接转为键值对；动态绑定（<code>v-bind</code>）转换为 <code>JSExpression</code> 类型；同时处理 class/style 的合并。</li><li><strong>事件（Events）</strong>：<code>v-on</code> 指令转换为 <code>events</code> 对象，事件表达式会被包装成函数，并与脚本中提取的事件处理器 ID 关联。</li><li><strong>指令（Directives）</strong>：<code>v-if</code>、<code>v-for</code>、<code>v-model</code>、<code>v-show</code> 等都被提取为 <code>directives</code> 数组，保留其表达式和参数。</li><li><strong>插槽（Slots）</strong>：识别 <code>&lt;template #slotName&gt;</code> 和组件上的 <code>v-slot</code>，生成 <code>slot</code> 元数据。</li></ul><p>模板解析流程图如下：</p><pre style="display:none;"><code class="mermaid">flowchart TD
+    A[模板源码] --&gt;|Vue Compiler| B[AST]
+    B --&gt; C[transformNode 递归转换]
+    C --&gt; D{节点类型}
+    D --&gt;|元素节点| E[getProps 提取属性]
+    D --&gt;|元素节点| F[getEvents 提取事件]
+    D --&gt;|元素节点| G[getDirectives 提取指令]
+    D --&gt;|文本节点| H[生成文本节点]
+    E --&gt; I[创建NodeSchema]
+    F --&gt; I
+    G --&gt; I
+    H --&gt; I
+    I --&gt; J[递归处理子节点]
+    J --&gt; K[输出NodeSchema树]</code></pre><h3>2.5 上下文跟踪与代码修补</h3><p>在模板中，变量可能来自多个作用域：组件状态（<code>state</code>）、计算属性（<code>computed</code>）、<code>v-for</code> 循环变量、插槽作用域变量等。为了保证在运行时能正确访问这些变量，解析器必须记录每个节点的<strong>上下文</strong>。</p><p><code>pickContext</code> 函数在遍历 AST 时动态维护一个上下文映射：遇到 <code>v-for</code> 时，将迭代变量（如 <code>item</code>, <code>index</code>）加入当前上下文；遇到具名插槽时，将插槽参数加入子节点上下文。</p><p>随后，系统调用 <code>patchCode</code> 对所有 JavaScript 表达式（如 <code>JSExpression</code> 和 <code>JSFunction</code>）进行<strong>上下文注入</strong>。注入的核心是 <code>replacer</code> 函数，它通过一个状态机逐字符扫描表达式，智能地决定哪些标识符需要添加前缀（如 <code>this.context.</code> 或 <code>this.</code>）。判断规则包括：</p><ul><li><strong>字符串字面量内</strong>：不替换。</li><li><strong>对象属性访问</strong>：<code>.key</code> 形式不替换，<code>[key]</code> 形式替换。</li><li><strong>变量声明</strong>：不替换。</li><li><strong>函数参数</strong>：不替换。</li><li><strong>展开运算符</strong>：<code>...key</code> 替换。</li><li><strong>正则表达式内</strong>：不替换。</li></ul><p>这种精细的替换策略确保了修补后的代码既能正确引用上下文，又不会破坏原有的语法结构。</p><h3>2.6 输出 BlockSchema</h3><p>经过上述所有阶段，解析器最终组装出一个完整的 <code>BlockSchema</code> 对象。该对象包含了组件的所有信息：ID、名称、状态、方法、计算属性、侦听器、数据源、生命周期、节点树以及 CSS 样式。这个 DSL 对象可以被可视化设计器直接消费，也可以存入数据库或文件。</p><h2>3. 代码生成器：从 DSL 到 Vue SFC</h2><p>代码生成器是解析器的逆过程，其核心函数 <code>generator()</code> 接收 <code>BlockSchema</code> 对象，输出格式化的 Vue SFC 源码。生成过程分为<strong>模板生成</strong>、<strong>脚本生成</strong>、<strong>样式生成</strong>和<strong>格式化</strong>四个阶段，并支持多平台适配。</p><h3>3.1 生成器架构</h3><pre style="display:none;"><code class="mermaid">flowchart TD
+    A[BlockSchema] --&gt; B[模板生成]
+    A --&gt; C[脚本生成]
+    A --&gt; D[样式生成]
+    B --&gt; E[组合SFC]
+    C --&gt; E
+    D --&gt; E
+    E --&gt; F[Prettier格式化]
+    F --&gt; G[平台适配转换]
+    G --&gt; H[最终Vue源码]</code></pre><h3>3.2 模板生成</h3><p>模板生成器遍历 <code>BlockSchema.nodes</code> 树，为每个 <code>NodeSchema</code> 节点生成对应的 Vue 模板标签。生成规则如下：</p><ul><li><strong>标签名</strong>：根据节点 <code>name</code> 和 <code>from</code>（组件来源）决定标签名。</li><li><strong>静态属性</strong>：直接输出 <code>key="value"</code>。</li><li><strong>动态属性</strong>：<code>v-bind:key="表达式"</code> 或 <code>:key="表达式"</code>。</li><li><strong>事件</strong>：<code>v-on:click="handler"</code> 或 <code>@click="handler"</code>。</li><li><strong>指令</strong>：将 <code>directives</code> 数组还原为 <code>v-if</code>、<code>v-for</code>、<code>v-model</code> 等指令。</li><li><strong>插槽</strong>：为带有 <code>slot</code> 元数据的节点生成 <code>&lt;template #slotName&gt;</code> 包裹。</li></ul><p>特别地，<code>v-for</code> 指令需要根据其 <code>iterator</code> 结构还原出 <code>(item, index) in list</code> 的语法。</p><h3>3.3 脚本生成</h3><p>脚本生成的目标是输出一个符合 Vue 3 选项式 API 或组合式 API 的 <code>&lt;script&gt;</code> 块。VTJ.PRO 默认采用组合式 API 风格，但最终输出会根据配置选择。</p><p>脚本生成的步骤包括：</p><ol><li><strong>导入语句生成</strong>：根据组件使用的物料（UI 库、自定义组件）生成 <code>import</code> 语句，并处理平台依赖（如 <code>@element-plus/icons-vue</code> 可能被映射为 <code>@vtj/icons</code>）。</li><li><p><strong>setup 函数构造</strong>：</p><ul><li>调用 <code>useProvider</code> 初始化 provider。</li><li>声明 <code>reactive</code> 的 <code>state</code> 对象。</li><li>定义计算属性、方法、侦听器、生命周期函数。</li><li>返回需要暴露给模板的变量（<code>state</code>、<code>props</code>、<code>provider</code> 等）。</li></ul></li><li><strong>方法体生成</strong>：<code>methods</code>、<code>computed</code>、<code>watch</code> 等字段中的 <code>JSFunction</code> 对象会被还原为函数代码，并经过 <code>patchCode</code> 的逆过程（移除上下文前缀）吗？实际上，生成器不再需要逆向 patch，因为 DSL 中的表达式已经是经过上下文修补的，生成器只需直接输出这些表达式即可，但在输出前会确保它们符合 Vue 运行时的要求（例如，模板中访问 <code>state.xxx</code> 是合法的，而在 <code>methods</code> 中可能需要通过 <code>this.state.xxx</code> 访问，这取决于最终代码的结构）。生成器会依据上下文适当调整引用方式。</li></ol><h3>3.4 样式生成</h3><p>样式生成最简单：直接将 <code>BlockSchema.css</code> 字符串插入 <code>&lt;style scoped&gt;</code> 块中。若存在多个样式块，则会合并或分别输出。</p><h3>3.5 格式化与平台适配</h3><p>所有生成的代码都会通过 Prettier 进行格式化，确保缩进、引号、分号等风格一致。VTJ.PRO 内置了 <code>vueFormatter</code>、<code>tsFormatter</code>、<code>htmlFormatter</code>、<code>cssFormatter</code>，分别处理不同类型的代码块。</p><p>最后，根据目标平台（<code>web</code>、<code>h5</code>、<code>uniapp</code>）对标签和依赖进行适配转换。例如，在 UniApp 平台下，<code>&lt;div&gt;</code> 会被转换为 <code>&lt;view&gt;</code>，<code>&lt;span&gt;</code> 转换为 <code>&lt;text&gt;</code>，并且只导入支持该平台的依赖包。</p><h2>4. 关键数据结构与设计哲学</h2><p>理解双向转换，必须掌握几个核心数据结构：</p><ul><li><strong><code>BlockSchema</code></strong>：整个组件的 DSL 表示，包含元数据、逻辑、节点树和样式。</li><li><strong><code>NodeSchema</code></strong>：单个节点的 DSL 表示，包含标签名、属性、事件、指令、子节点等。</li><li><strong><code>JSExpression</code> / <code>JSFunction</code></strong>：包裹 JavaScript 表达式的类型，带有 <code>type</code> 和 <code>value</code> 字段，便于序列化和解析。</li></ul><p>VTJ.PRO 的双向转换设计遵循以下哲学：</p><ul><li><strong>无平台锁定</strong>：生成的是标准 Vue 源码，开发者可以随时脱离平台手工修改，修改后的代码仍可被平台重新解析利用。</li><li><strong>可逆性</strong>：<code>parseVue</code> 和 <code>genVueCode</code> 构成一对可逆操作，多次转换后语义保持不变（通过测试用例保证）。</li><li><strong>开发者友好</strong>：所有转换都尽可能保留原代码的格式和注释，生成的代码可读性强，符合开发者的编码习惯。</li></ul><h2>5. 总结与展望</h2><p>VTJ.PRO 的双向代码转换系统，通过在抽象语法树层面的精细操作，实现了低代码 DSL 与标准 Vue 源码之间的双向映射。它不仅为可视化设计器提供了数据基础，也确保了开发者随时可以“下车”手写代码，享受完整的开发自由度。</p><p>未来，随着 AI 能力的进一步集成（如通过自然语言生成代码片段），这种双向转换能力将成为连接人类开发者与 AI 助手的桥梁，让软件开发进入“随心所欲、不逾矩”的新时代。</p><hr/><p><strong>参考文档</strong></p><ul><li>VTJ.PRO 源码仓库：<a href="https://link.segmentfault.com/?enc=Cgtt4Y7Q8nIKHmkAodK1Pw%3D%3D.C2wmWuxum6yrUEjw%2B5Rzi7CeFEL1jgfsbuiDBIkb2c5VnZroAhNiNLxf15ByDemX" rel="nofollow" target="_blank">https://gitee.com/newgateway/vtj</a></li><li>《Code Transformation System》</li><li>《Parser: Vue SFC to DSL》</li><li>《Code Generator: DSL to Vue》</li></ul>]]></description></item><item>    <title><![CDATA[我受够了写一篇文章粘贴11遍，所以写了个插件自动搞定！现在3分钟发布10+平台 左右用AI ]]></title>    <link>https://segmentfault.com/a/1190000047639368</link>    <guid>https://segmentfault.com/a/1190000047639368</guid>    <pubDate>2026-03-07 23:03:08</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>起因</h2><p>我平时写技术文章用 Markdown，写完之后要往十几个平台搬运。</p><p>知乎粘贴一遍，公众号粘贴一遍，掘金再贴一遍……每个平台的编辑器还不一样：知乎不认 GitHub Alerts，公众号只吃富文本，B站和头条的图片得手动传。</p><p>同样的内容，光搬运就得花半小时以上。</p><p>后来我写了个 Chrome 插件来干这件事—— <strong>Markdown Paste Helper</strong>，把粘贴和格式转换的活儿全自动化了。</p><h2>怎么用</h2><h3>智能粘贴</h3><p>在支持的平台编辑器里直接 <code>Ctrl+V</code>（Mac 是 <code>Cmd+V</code>），插件自动识别剪贴板里的 Markdown，转成对应平台能用的格式，然后替你粘进去。</p><p>不用改操作习惯，该怎么粘贴还怎么粘贴。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047639371" alt="image" title="image"/></p><h3>一键分发</h3><p>点插件图标 → 选「一键分发」→ 把 Markdown 贴进去 → 勾上要发的平台 → 点「开始分发」。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047639372" alt="image" title="image" loading="lazy"/></p><p>插件会依次打开每个平台的编辑器，自动转换格式并粘贴进去。右下角有个悬浮按钮显示当前进度。</p><p>每个平台你扫一眼内容没问题，点发布就行。</p><h3>公众号样式配置</h3><p>公众号对排版要求高，插件内置了 4 种主题：</p><ul><li><strong>简约</strong> — 无衬线字体，干净</li><li><strong>醒目</strong> — 大标题，强对比</li><li><strong>精致</strong> — Georgia 衬线，典雅</li><li><strong>聚焦</strong> — Optima 字体，紧凑</li></ul><p>字体、字号、行间距、主题色都能自己调。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047639373" alt="image" title="image" loading="lazy"/><br/>样式直接内联到 HTML 里，粘贴到公众号编辑器就是最终效果。下方是一种效果示例：<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047639374" alt="image" title="image" loading="lazy"/></p><h2>支持的平台</h2><table><thead><tr><th>平台</th><th>适配方式</th><th>亮点</th></tr></thead><tbody><tr><td>知乎</td><td>预处理 Markdown</td><td>GitHub Alerts、task lists 自动转换</td></tr><tr><td>微信公众号</td><td>带样式 HTML</td><td>4 种主题预设、代码高亮</td></tr><tr><td>飞书</td><td>HTML 合成粘贴</td><td>完整语法支持</td></tr><tr><td>X Articles</td><td>HTML + 自动插入</td><td>代码块/图片自动通过原生对话框插入</td></tr><tr><td>B站专栏</td><td>HTML + 图片上传</td><td>图片自动下载并上传</td></tr><tr><td>头条号</td><td>HTML + 图片上传</td><td>图片自动下载并上传</td></tr><tr><td>SegmentFault</td><td>原生 Markdown</td><td>无缝粘贴</td></tr><tr><td>51CTO</td><td>直接 HTML</td><td>格式完美保留</td></tr><tr><td>掘金</td><td>原生 Markdown</td><td>无缝粘贴</td></tr><tr><td>CSDN</td><td>原生 Markdown</td><td>无缝粘贴</td></tr><tr><td>博客园</td><td>原生 Markdown</td><td>无缝粘贴</td></tr></tbody></table><h2>图片处理</h2><p>B站、头条号这些平台不支持外链图片。插件碰到图片链接会自动下载图片，再模拟粘贴操作触发平台的原生上传。</p><p>Markdown 里的图片只要是在线 URL（比如图床链接）就能自动处理。</p><blockquote>我自己用 PicGo + Cloudflare R2 搭了个免费图床，截图后自动上传、生成链接，配合这个插件刚好形成闭环。</blockquote><h2>技术细节</h2><p>每个平台的编辑器框架都不一样，得逐个适配：</p><ul><li><strong>知乎</strong> — 自研 Markdown 编辑器，拦截 <code>Ctrl+V</code>，预处理后写回剪贴板</li><li><strong>公众号</strong> — 自研富文本编辑器，keydown 阶段把带 inline styles 的 HTML 塞进剪贴板</li><li><strong>飞书</strong> — Slate.js，合成 ClipboardEvent 注入 HTML</li><li><strong>B站</strong> — Tiptap/ProseMirror，HTML 粘贴加图片异步上传</li><li><strong>X Articles</strong> — Draft.js，代码块和图片没法直接粘贴，改成自动操作原生插入对话框</li></ul><p>每个平台都是单独写的适配逻辑。Content Script 注入页面后，拦截粘贴事件，根据平台选不同的转换策略。</p><h2>安装</h2><p>还没上 Chrome 商店（免费项目，暂时没预算交开发者账号的钱），开发者模式装一下就行：</p><ol><li>GitHub 下载项目：<code>https://github.com/zuogl/Markdown-Paste-Helper</code></li><li>Chrome 地址栏输入 <code>chrome://extensions/</code></li><li>右上角打开「开发者模式」</li><li>点「加载已解压的扩展程序」</li><li>选 <code>browser-extension</code> 文件夹</li></ol><h2>最后</h2><p>项目开源，MIT 协议，免费用。</p><p>GitHub：<code>https://github.com/zuogl/Markdown-Paste-Helper</code></p><p>多平台发文的朋友可以试试，有问题直接提 Issue。觉得有用的话，Star 一下。</p>]]></description></item><item>    <title><![CDATA[怎么一步步实现小米智能家居之玄关篇 BugShare ]]></title>    <link>https://segmentfault.com/a/1190000047639516</link>    <guid>https://segmentfault.com/a/1190000047639516</guid>    <pubDate>2026-03-07 23:02:18</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>随着家里智能设备越来越多，智能家居系统也逐渐成熟，我决定从最常出入的玄关开始，把家里的灯光控制变得更智能、更省心。</p><p>目标很简单：<strong>一开门进家，玄关筒灯和书房灯自动亮起</strong>。至于为什么不亮客厅灯？因为我回家第一件事就是去书房学习😎。</p><p>要实现这个效果，核心离不开几个关键设备。下面是我踩过坑、试过方案后总结出的完整搭建过程。</p><hr/><h2>小米中枢网关（必须）</h2><h3>为什么需要它？</h3><p>中枢网关是整个小米智能家居系统的“大脑”。不同类型的智能设备通过它进行通信、联动和统一调度。没有它，很多高级自动化根本没法实现。</p><p>它内置了 <strong>小米 Mesh 2.0 网关模块</strong>，蓝牙设备配网更快，连接更稳。官方数据说能同时连 <strong>200 个蓝牙 Mesh 设备 + 100 个普通蓝牙设备</strong>，对于普通家庭完全够用。</p><p>目前小米官网发布了四款带网关功能的产品：</p><ul><li>小米中枢网关（推荐）</li><li>小米智能多模网关2（商城搜索不到了）</li><li>Xiaomi 路由器 BE6500 Pro（集成网关）</li><li>Xiaomi 路由器 BE10000 Pro（集成网关）</li></ul><p>我的建议是：<strong>别选路由器集成网关的型号</strong>。万一路由器坏了，等于网关也瘫了，得不偿失。</p><p>最关键的是，<strong>中枢网关支持“米家自动化极客版”</strong>。这个功能开放了所有设备的底层属性、事件和方法，还能做逻辑判断、条件查询、复杂流程控制——很多原生米家做不到的联动，靠它都能搞定。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639519" alt="PixPin_2026-03-06_23-16-45.png" title="PixPin_2026-03-06_23-16-45.png"/></p><h3>接入建议</h3><p>包装盒里自带一根扁平网线，<strong>强烈建议用网线把中枢网关接到路由器上</strong>。我实测过，有线连接比 Wi-Fi 稳定太多，尤其在执行自动化时几乎零延迟。</p><hr/><h2>小米智能中控屏（可选，但很香）</h2><blockquote>⚠️ 注意：安装位置的底盒<strong>必须有零线</strong>，否则无法使用。</blockquote><p>如果你预算有限，也可以用 <strong>人体传感器 + 智能开关</strong> 的组合来替代，成本更低，但折腾起来要麻烦些。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639520" alt="PixPin_2026-03-06_23-47-40.png" title="PixPin_2026-03-06_23-47-40.png" loading="lazy"/></p><h3>它能做什么？</h3><ul><li><strong>安防联动</strong>：接入小米摄像头后，有人异常移动时可以直接在屏幕上查看实时画面。</li><li><p><strong>场景模式一键切换</strong>：</p><ul><li>阅读模式：关窗帘、开阅读灯</li><li>睡眠模式：灯光渐暗、营造氛围</li><li>离家模式：关闭所有灯光电器，扫地机开始工作</li></ul></li><li><strong>墙面也能变艺术</strong>：内置 45 款动态屏保，支持天气、家庭照片、文字标签等，让开关面板不再只是工具。</li><li><strong>智能感应</strong>：采用 24GHz 毫米波雷达，人靠近自动亮屏；屏幕亮度还能根据环境光自动调节。</li><li><strong>语音交互更自然</strong>：支持小爱同学多轮对话，可以连续提问、随时打断、自由切换话题。</li><li><strong>安装方便</strong>：适配标准 86 型底盒，内置三路继电器，能直接控制三盏灯，也可以当“虚拟开关”控制其他智能设备。</li></ul><p>目前小米有三款中控屏：</p><ul><li>小米智能家庭面板（不支持 Mesh 2.0，不推荐）</li><li>小米智能中控屏（主力型号）</li><li>小米智能中控屏 Max（更大屏，功能更强）</li></ul><p>我选的是 <strong>小米智能中控屏</strong>。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639521" alt="PixPin_2026-03-06_23-50-32.jpg" title="PixPin_2026-03-06_23-50-32.jpg" loading="lazy"/></p><h3>我的安装经历</h3><p>我把中控屏装在了<strong>玄关筒灯原来的开关位置</strong>。但问题来了：原底盒只有两根线——一根火线，一根灯控线，<strong>没有零线</strong>。</p><p>为了能让中控屏正常工作，我不得不重新穿一根零线。最简单的办法是从筒灯那边的零线引过来。但实际操作非常折腾：筒灯开孔太小，手伸不进去，穿线神器的牵引头卡在管子里出不来。最后靠一个<strong>钩子+内窥镜</strong>才勉强把线拉出来。</p><p>⚠️ <strong>重要提醒</strong>：接线前务必拉闸断电！安全第一。</p><p>接线很简单：火线、灯控线、零线分别对应接入中控屏的端子，拧紧螺丝就行，一定压紧不要虚接。</p><blockquote>拆筒灯的时候千万小心卡扣别打到手！别问我手疼不疼……😭</blockquote><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639522" alt="PixPin_2026-03-07_01-03-16.jpg" title="PixPin_2026-03-07_01-03-16.jpg" loading="lazy"/></p><h3>无线开关功能很实用</h3><p>我家玄关只有一路灯控线，所以中控屏只接了一盏筒灯（最多支持三路）。但它的“无线开关”功能弥补了这个限制。</p><p>我在屏幕上设置了三个虚拟按钮：</p><ul><li><strong>客厅灯</strong>（装修时没做双控，现在终于能玄关开客厅灯了）</li><li><strong>离家模式</strong>（一键关闭指定设备）</li><li><strong>筒灯</strong>（本地物理控制）</li></ul><p>出门前点一下“离家模式”，所有该关的灯和电器自动关闭，省心又节能。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639523" alt="PixPin_2026-03-07_02-22-23.png" title="PixPin_2026-03-07_02-22-23.png" loading="lazy"/></p><hr/><h2>小米智能开关（可选，强烈推荐）</h2><blockquote>有句话说得好：<strong>家里的灯可以不是智能的，但开关一定要能被智能控制。</strong></blockquote><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639524" alt="PixPin_2026-03-07_10-14-18.png" title="PixPin_2026-03-07_10-14-18.png" loading="lazy"/></p><h3>优势在哪？</h3><ul><li><strong>单火/零火都兼容</strong>：就算你家底盒没零线，也能用。功耗极低，基本不会出现“关灯后灯微亮”的问题。</li><li><strong>支持 Mesh 2.0</strong>：响应更快，信号更稳，和中枢网关配合默契。</li></ul><h3>安装很简单</h3><p>同样要<strong>先断电</strong>。把火线和灯控线接入对应端子就行，一定要压紧。有零线更好，没零线也能用，对老房子特别友好。</p><hr/><h2>米家极客版自动化配置（核心逻辑）</h2><blockquote>补充说明：我家一厅三室的灯当初装的是欧普智能灯，所以在部分自动化里直接用了“智能灯”作为执行对象。如果你用的是普通灯+智能开关，把动作对象换成对应的开关即可。</blockquote><h3>1. 用中控屏无线开关控制客厅灯</h3><p>我把中控屏的左键设为“无线开关”，通过中枢网关触发客厅智能灯的开启/关闭。</p><p>这样即使客厅灯没做双控，也能在玄关一键控制。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639525" alt="PixPin_2026-03-07_16-58-14.png" title="PixPin_2026-03-07_16-58-14.png" loading="lazy"/></p><h3>2. 人在时自动开灯（带时间段限制）</h3><p>为了避免半夜或白天误触发，我加了时间条件：</p><ul><li><strong>17:00 ~ 次日 08:30</strong>：检测到有人，自动打开玄关筒灯</li><li><strong>17:00 ~ 22:00</strong>：检测到有人，自动打开北卧灯</li></ul><blockquote>中控屏右键物理控制的就是玄关筒灯，所以这里直接调用设备状态。</blockquote><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639526" alt="PixPin_2026-03-07_17-00-14.png" title="PixPin_2026-03-07_17-00-14.png" loading="lazy"/></p><h3>3. 无人时自动关灯</h3><p>配合人体存在传感器（或中控屏自带的毫米波雷达），一旦检测到<strong>玄关区域长时间无人</strong>，就自动关闭筒灯，避免浪费电。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047639527" alt="PixPin_2026-03-07_17-05-30.png" title="PixPin_2026-03-07_17-05-30.png" loading="lazy"/></p><hr/><h2>总结</h2><p>这套玄关智能化方案核心是 <strong>中枢网关 + 中控屏（或人体传感器+智能开关）</strong>，配合 <strong>米家极客版自动化</strong>，实现了“进门即亮灯、离家一键关、按需智能控”的体验。</p><p>虽然前期穿线、调试花了不少时间，但用起来真的方便。尤其是下班回家，门一开灯就亮，不用摸黑找开关——这种细节带来的幸福感，只有用过才知道。</p><p>后续我还会继续改造其他区域，洗手间浴霸、厨房、卧室无线开关等等，欢迎关注更新！</p>]]></description></item><item>    <title><![CDATA[每日一Go-34、Go深入-泛型高阶实战--泛型工具库、泛型容器、泛型算法 codeejun ]]></title>    <link>https://segmentfault.com/a/1190000047639537</link>    <guid>https://segmentfault.com/a/1190000047639537</guid>    <pubDate>2026-03-07 23:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p><img referrerpolicy="no-referrer" src="https://image-static.segmentfault.com/337/755/3377558683-699ea7bee92ac" alt="图片" title="图片"/></p><p>***文末有源码下载链接***</p><p>一、为什么需要泛型高阶实战？</p><p>写泛型不难，难的是写”好“泛型。</p><p>你会遇到如下情况：</p><ul><li>如何设计一个真正可复用的约束？</li><li>一个泛型容器应该如何实现并发安全、零拷贝、友好API？</li><li>如何抽象出可复用算法而不是写一堆if/else？</li><li>如何让泛型代码不慢？</li></ul><p>今天的内容旧让你做到：能写工具库、能写自己的容器、能写可复用的算法。</p><p>二、构建泛型工具库</p><p>    工具库是泛型最适合发挥的地方：类型无关、逻辑可复用</p><p>    2.1 Maybe[T]:一个常用的函数式泛型工具</p><p>        类似Option类型，避免nil</p><pre><code class="bash">type Maybe[T any] struct {
+    v  T
+    ok bool
+}
+func Some[T any](v T) Maybe[T] { return Maybe[T]{v, true} }
+func None[T any]() Maybe[T]    { return Maybe[T]{ok: false} }
+func (m Maybe[T]) Get() (T, bool) { return m.v, m.ok }
+func (m Maybe[T]) Or(defaultV T) T {
+    if m.ok {
+        return m.v
+    }
+    return defaultV
+}
+// 查找map中是否存在key
+func lookupMaybe[T comparable, U any](m map[T]U, k T) Maybe[U] {
+    if v, ok := m[k]; ok {
+        return Some(v)
+    }
+    return None[U]()
+}</code></pre><pre><code class="bash">users := map[int]string{
+        100: "Codee君",
+        200: "詹姆斯邦德",
+        300: "乔治华盛顿",
+    }
+    res1 := lookupMaybe(users, 100)
+    if name, ok := res1.Get(); ok {
+        fmt.Println(name)
+    }
+    res2 := lookupMaybe(users, 011)
+    nameOrDefault := res2.Or("未知")
+    fmt.Println(nameOrDefault)
+    nameOrDefault2 := res1.Or("未知")
+    fmt.Println(nameOrDefault2)
+// 输出
+Codee君
+未知
+Codee君</code></pre><p>    Maybe[T] 类型的主要优势在于它使代码流更清晰，特别是通过 Or() 这样的方法，将 缺失值处理逻辑（提供默认值）与操作逻辑（查找） 优雅地结合起来，避免了每次查找后都写 if ok { ... } else { ... } 这样的样板代码。</p><p>    2.2  转换函数与过滤器</p><pre><code class="bash">package main
+// 切片A转切片B
+func SliceA2B[A any, B any](a []A, f func(A) B) []B {
+    b := make([]B, len(a))
+    for i, v := range a {
+        b[i] = f(v)
+    }
+    return b
+}
+// 切片过滤
+func Filter[T any](in []T, f func(T) bool) []T {
+    out := make([]T, 0)
+    for _, v := range in {
+        if f(v) {
+            out = append(out, v)
+        }
+    }
+    return out
+}</code></pre><pre><code class="bash">func main() {
+    fmt.Println("Hello, Codee君!")
+    numbers := []int{1, 2, 3, 4, 5}
+    // 转换成字符串
+    strings := SliceA2B(numbers, func(i int) string {
+        return fmt.Sprintf("ID=%d", i)
+    })
+    fmt.Println(strings)
+    // 过滤出偶数
+    even := Filter(numbers, func(i int) bool {
+        return i%2 == 0
+    })
+    fmt.Println(even)
+}
+//输出
+Hello, Codee君!
+[ID=1 ID=2 ID=3 ID=4 ID=5]
+[2 4]</code></pre><p>三、泛型容器</p><p>    容器是泛型最能发挥威力的地方。</p><p>    3.1 泛型栈：并发安全，零拷贝，API友好</p><pre><code class="bash">type Stack[T any] struct {
+    data []*T
+    mu   sync.Mutex
+    len  atomic.Int64
+}
+func NewStack[T any]() *Stack[T] {
+    return &amp;Stack[T]{
+        data: make([]*T, 0),
+    }
+}
+func (s *Stack[T]) Push(v *T) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    // 避免元素复制：直接存储指针*T
+    s.data = append(s.data, v)
+    s.len.Add(1)
+}
+func (s *Stack[T]) Pop() *T {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    if s.len.Load() == 0 {
+        return nil
+    }
+    v := s.data[len(s.data)-1]
+    s.data = s.data[:len(s.data)-1]
+    s.len.Add(-1)
+    return v
+}
+// 辅助API
+// 返回栈当前元素数量
+func (s *Stack[T]) Len() int64 {
+    return s.len.Load()
+}</code></pre><pre><code class="bash">// 栈
+    stack := NewStack[string]()
+    wg := sync.WaitGroup{}
+    for i := 0; i &lt; 100; i++ {
+        wg.Add(1)
+        go func(i int) {
+            defer wg.Done()
+            value := fmt.Sprintf("value-%d", i)
+            stack.Push(&amp;value)
+        }(i)
+    }
+    wg.Wait()
+    fmt.Println("栈元素数量:", stack.Len())
+    if itm, ok := stack.Pop(); ok {
+        fmt.Println(*itm)
+        fmt.Println("栈元素数量:", stack.Len())
+    }
+// 输出
+栈元素数量: 100
+value-99
+栈元素数量: 99</code></pre><p><img width="687" height="190" referrerpolicy="no-referrer" src="/img/bVdn3nM" alt="" title="" loading="lazy"/></p><p>     3.2 并发安全的泛型Map</p><pre><code class="bash">type CodeeMap[K comparable, V any] struct {
+    data map[K]V
+    mu   sync.RWMutex
+}
+func NewCodeeMap[K comparable, V any]() *CodeeMap[K, V] {
+    return &amp;CodeeMap[K, V]{
+        data: make(map[K]V),
+    }
+}
+func (m *CodeeMap[K, V]) Set(k K, v V) {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+    m.data[k] = v
+}
+func (m *CodeeMap[K, V]) Get(k K) (V, bool) {
+    m.mu.RLock()
+    defer m.mu.RUnlock()
+    v, ok := m.data[k]
+    return v, ok
+}</code></pre><pre><code class="bash">// 映射
+    m := NewCodeeMap[int, string]()
+    m.Set(1, "ID=1")
+    m.Set(2, "ID=2")
+    m.Set(3, "ID=3")
+    fmt.Println(m.Get(1))
+    fmt.Println(m.Get(2))
+    fmt.Println(m.Get(3))
+    fmt.Println(m.Get(4)) 
+// 输出
+ID=1 true
+ID=2 true
+ID=3 true
+ false</code></pre><p>四、泛型算法</p><p>    4.1 定制可排序泛型函数</p><pre><code class="bash">// 需要导入内置包golang.org/x/exp/constraints
+// 定制可排序约束
+func Max[T constraints.Ordered](a, b T) T {
+    if a &gt; b {
+        return a
+    }
+    return b
+}
+// Ordered的意义：支持数字、string、rune等，只要是可用比大小的类型都可以</code></pre><p>    4.2 泛型二分查找</p><pre><code class="bash">// 泛型二分查找
+func BinarySearch[T constraints.Ordered](arr []T, target T) int {
+    left, right := 0, len(arr)-1
+    for left &lt;= right {
+        mid := left + (right-left)/2
+        if arr[mid] == target {
+            return mid
+        } else if arr[mid] &lt; target {
+            left = mid + 1
+        } else {
+            right = mid - 1
+        }
+    }
+    return -1
+}</code></pre><p>4.3 泛型归约运算</p><pre><code class="bash">// 泛型归约算法
+func Reduce[T any, R any](arr []T, init R, f func(R, T) R) R {
+    acc := init
+    for _, v := range arr {
+        acc = f(acc, v)
+    }
+    return acc
+}</code></pre><pre><code class="bash">sum := Reduce([]int{1, 2, 3, 4}, 0, func(a, b int) int { return a + b })
+    fmt.Println(sum)
+    mult := Reduce([]int{1, 2, 3, 4}, 1, func(a, b int) int { return a * b })
+    fmt.Println(mult)
+//输出
+10
+24</code></pre><p>   4.4 泛型优先队列</p><pre><code class="bash">// 泛型优先队列
+type Item[T any] struct {
+    value    T
+    Priority int
+}
+type PriorityQueue[T any] []*Item[T]
+func (pq PriorityQueue[T]) Len() int {
+    return len(pq)
+}
+func (pq PriorityQueue[T]) Less(i, j int) bool {
+    return pq[i].Priority &lt; pq[j].Priority
+}
+func (pq PriorityQueue[T]) Swap(i, j int) {
+    pq[i], pq[j] = pq[j], pq[i]
+}
+func (pq *PriorityQueue[T]) Push(x interface{}) {
+    item := x.(*Item[T])
+    *pq = append(*pq, item)
+}
+func (pq *PriorityQueue[T]) Pop() interface{} {
+    old := *pq
+    n := len(old)
+    if n == 0 {
+        var zero T
+        return zero
+    }
+    item := old[n-1]
+    *pq = old[0 : n-1]
+    return item
+}
+func NewPriorityQueue[T any]() *PriorityQueue[T] {
+    return &amp;PriorityQueue[T]{}
+}
+type Task struct {
+    Name    string
+    DueDate time.Time
+}</code></pre><pre><code class="bash">import "container/heap"
+// 优先队列
+    pq := make(PriorityQueue[Task], 0)
+    tasks := []Task{
+        {
+            Name:    "任务1",
+            DueDate: time.Now(),
+        },
+        {
+            Name:    "任务2",
+            DueDate: time.Now().AddDate(0, 0, 2),
+        },
+        {
+            Name:    "任务3",
+            DueDate: time.Now().AddDate(0, 0, 1),
+        },
+    }
+    for _, task := range tasks {
+        // 将Task包装在Item中，并根据DueDate设置优先级（时间越早优先级越高）
+        priority := int(time.Since(task.DueDate).Milliseconds())
+        if priority &lt; 0 {
+            priority = -priority // 确保过期时间越早，优先级越高
+        }
+        heap.Push(&amp;pq, &amp;Item[Task]{
+            value:    task,
+            Priority: priority,
+        })
+    }
+    for pq.Len() &gt; 0 {
+        item := heap.Pop(&amp;pq).(*Item[Task])
+        fmt.Println(item.value)
+    }
+//输出
+{任务1 2025-12-02 11:01:56.3726019 +0800 CST m=+0.001558601}
+{任务3 2025-12-03 11:01:56.4072894 +0800 CST}
+{任务2 2025-12-04 11:01:56.3726019 +0800 CST}</code></pre><p>五、性能：泛型是不是会变慢？</p><p>    泛型不会让性能变差，通常比空接口更快。原因是：</p><ul><li>泛型是编译期静态展开的</li><li>没有运行时类型断言</li><li>没有接口装箱</li><li>编译器能内联</li></ul><p>    在容器、工具库中几乎都是净性能收益。</p><p>六、总结</p><p>    以上这些模式广泛应用于：微服务框架、数据库驱动、ORM、业务工具库、缓存系统、并发数据结构，掌握这些方法，对你今后的工作和学习有巨大帮助！</p><p>*源码地址*</p><p>1、公众号“Codee君”回复“每日一Go”获取源码</p><p>2、<a href="https://link.segmentfault.com/?enc=00HRXDZLg8O0RKrUedUAHg%3D%3D.RSagfrosp4d1SElnK9Hj9ab7k87b4a0cxF5f2LTNHs82%2FJijFevPPIF0Tbfk%2BiiPAEL%2BlFXLXll1jqJ%2FOH1MUg%3D%3D" rel="nofollow" target="_blank">https://pan.baidu.com/s/1B6pgLWfSgMngVeFfSTcPdg?pwd=jc1s</a> </p><hr/><p>如果您喜欢这篇文章，请您（点赞、分享、亮爱心），万分感谢！</p>]]></description></item><item>    <title><![CDATA[AutoGen 架构演进全梳理：从 v0.4 到 Microsoft Agent Framework]]></title>    <link>https://segmentfault.com/a/1190000047639655</link>    <guid>https://segmentfault.com/a/1190000047639655</guid>    <pubDate>2026-03-07 22:01:24</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>Microsoft AutoGen 曾是构建 LLM 多智能体系统的标杆性开源框架。2023 年末由 Microsoft Research 发布后迅速成为研究人员和开发者的默认选择：智能体之间可以互相对话、调用工具、编写并执行代码、在流程中引入人类审批，以对话式的协调方式取代了单条长 Prompt 链条。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047639657" alt="" title=""/></p><p>到 2026 年初，AutoGen v0.4（2025 年初重新设计的版本）是其技术上的巅峰之作。但是 2025 年末 Microsoft 正式把 AutoGen 与 Semantic Kernel 合并，统一为 Microsoft Agent Framework（MAF）。不过，很多人在谈到源自 AutoGen 的多智能体编排风格时依然习惯说"AutoGen"。本文梳理 AutoGen 的来龙去脉：它是什么、为什么重要、哪些核心设计在 2026 年仍然存续、v0.4/v0.7 时代的架构与典型用法、代码示例、利弊，以及当前的整体现状。</p><h2>AutoGen 为什么在 2023–2024 年迅速走红</h2><p>AutoGen 出现之前，LLM 的主流用法只有两种：单线程链式调用（LangChain 风格）和简单的工具调用智能体（ReAct 循环）。</p><p>AutoGen 带来了一套完全不同的心智模型——智能体是对话的参与者，整个系统就是一个群聊，有时有结构，有时自由发挥。智能体之间可以委派任务、互相批评与纠正、调用工具、编写并执行代码、向人类发起询问，在目标达成后自行终止。没有任何一个中央控制器需要提前知晓完整计划。</p><p>这套流程和人类解决复杂问题的方式高度吻合：分工、讨论、审查输出。早期几个病毒式传播的 demo（编码者 + 评审者 + 执行者联合解数学题、网络研究小组、股票分析团队）在许多任务上展现出比单智能体高 2–10 倍的表现。</p><h2>AutoGen v0.4——大改版（2025）</h2><p>v0.4（2025 年初发布）本质上是 AutoGen 2.0。旧的阻塞式同步 GroupChat 被三层新架构取代：autogen-core 负责底层事件驱动原语（RoutedAgent、订阅、发布/订阅消息传递）；autogen-agentchat 是大多数人实际使用的高层 API（AssistantAgent、UserProxyAgent、GroupChat、initiate_chat）；autogen-ext 则是可插拔的扩展层（OpenAI Assistant API、MCP 工作台、gRPC 分布式智能体等）。</p><p>核心改进包括完全异步化带来的更好可扩展性与可观测性、模块化的自定义组件（内存、模型、编排）、改进的错误恢复与检查点机制，以及跨语言支持的尝试——当然 Python 始终是主力。</p><p>2025 年末 / 2026 年初的典型安装方式：</p><pre><code> 
  pip install -U"autogen-agentchat""autogen-ext[openai]"
  </code></pre><h2>经典双智能体模式（2026 年仍在使用和教学中）</h2><pre><code> 
 from autogen import AssistantAgent, UserProxyAgent, config_list_from_json
@@ -1243,136 +1777,4 @@ def create_presentation_viewer(pptx_file, output_folder):
 
 # 使用示例
 result = create_presentation_viewer("quarterly_report.pptx", "viewer_output")
-print(f"已处理 {result['total_slides']} 张幻灯片")</code></pre><p>这个函数可以用于自动生成培训材料、产品文档或会议记录的在线版本。结合简单的前端导航，就能创建一个功能完备的演示文稿查看器。</p><h3>与其他格式的对比</h3><p>除了 HTML，PowerPoint 还可以转换为 PDF、图片等格式。各种格式有其适用场景：</p><table><thead><tr><th>格式</th><th>优势</th><th>适用场景</th></tr></thead><tbody><tr><td>HTML</td><td>可在浏览器直接查看，支持超链接</td><td>在线分享、网页嵌入</td></tr><tr><td>PDF</td><td>格式精确，打印友好</td><td>正式文档、打印输出</td></tr><tr><td>PNG/JPG</td><td>兼容性好，易于编辑</td><td>社交媒体、图片展示</td></tr></tbody></table><p>选择转换格式时，应根据最终用途来决定。如果需要在线访问和交互，HTML 是最佳选择；如果需要精确打印，则 PDF 更合适。</p><h3>总结</h3><p>使用 Python 将 PowerPoint 演示文稿转换为 HTML，是实现演示内容在线展示和自动化处理的一种高效方式。通过程序化转换，不仅可以将完整演示文稿导出为网页形式，还能够根据实际需求灵活处理单张或多张幻灯片，从而满足不同的应用场景。</p><p>在实际项目中，这种技术非常适合用于构建在线演示系统、企业培训平台或自动化报告发布流程。借助 HTML 输出格式，演示文稿可以更方便地集成到网站、学习管理系统（LMS）或内部知识平台中，实现无需 PowerPoint 即可浏览内容的效果。</p><p>掌握 PowerPoint 到 HTML 的自动化转换方法，可以显著提升文档处理效率，并为构建更复杂的文档管理或内容分发系统提供基础能力。无论是分享会议资料，还是部署在线培训内容，这一技术都具有很高的实用价值。</p><p>更多 PowerPoint 演示文稿处理技巧，请前往 <a href="https://link.segmentfault.com/?enc=%2BQ1w5lOE%2BK1GaF82MYN%2BUw%3D%3D.dgOY11X0ua8CdPDpuqzouU5WU3FTbwW816yV3yintrgBhpOle3CoVYzLes6DVn98LaUb09INjVUiXqbVEqIIj1EJfwjPkndHV%2BV4zYcv6x4I4%2BP8c2agDG7%2FNhqK4wUXibcyi46ZYYe5TWFx8TcXtw%3D%3D" rel="nofollow" target="_blank">Spire.Presentation for Python 官方教程</a>查看。</p>]]></description></item><item>    <title><![CDATA[零配置部署顶级模型！函数计算一键解锁 Qwen3.5 阿里云云原生 ]]></title>    <link>https://segmentfault.com/a/1190000047638322</link>    <guid>https://segmentfault.com/a/1190000047638322</guid>    <pubDate>2026-03-06 19:02:57</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>作者：西流</p><p>就在最近，大模型圈再次迎来重磅炸弹！<strong>阿里巴巴开源了全新一代大模型——千问 Qwen3.5-397B-A17B</strong>，直接登顶全球最强开源模型宝座。</p><p>面对如此强大的模型，开发者们最关心的问题莫过于： <strong>“这么强的模型，部署起来会不会很麻烦？”</strong></p><p>今天，我们就为大家带来一个 <strong>“神器级”解决方案</strong>——通过函数计算 FC 实现一键部署 Qwen3.5，让顶级模型的计算力触手可及！</p><h2>模型介绍</h2><p>这次开源的 Qwen3.5-397B-A17B 可不是普通的模型升级，它在架构和性能上都实现了质的飞跃：</p><ul><li>性能超过万亿参数的 Qwen3-Max 模型，是目前全球最强开源模型，总参数 3970 亿，但<strong>激活参数仅 170 亿</strong>。采用创新的混合架构（线性注意力 Gated Delta Networks + 稀疏混合专家 MoE），在保持能力的同时优化了速度与成本。</li><li><strong>成本降低</strong>：部署显存占用降低 60%，推理效率大幅提升，最大推理吞吐量可提升至 19 倍！</li><li><strong>全能选手</strong> ：作为原生视觉 - 语言模型，在推理、编程、智能体能力与多模态理解上表现优异。语言支持从 119 种扩展至 201 种，全球通用。</li></ul><h2>函数计算解决方案</h2><p>传统部署大模型，你通常需要面对：</p><ul><li>复杂的 GPU 环境配置</li><li>繁琐的运维监控工作</li><li>弹性伸缩困难</li></ul><p><strong>现在，有了函数计算 FC，一切变得如此简单！</strong></p><p>函数计算 FC 已同步接入 Qwen3.5 本次开源的模型，提供<strong>企业级部署方案</strong>。基于 <strong>Serverless GPU</strong> 架构，你无需关心底层基础设施，只需专注于模型本身的应用与调试。</p><h2>一键部署 Qwen3.5-397B-A178</h2><ol><li>准备一个 OSS Bucket，使用 <a href="https://link.segmentfault.com/?enc=KN%2F0A7%2BRtfkeQJlR8RFMtQ%3D%3D.0chSFk8N8qIAmMWurGc31okRKqA2EQMHNvnuZIT1tSFKNSGQluYJg9Ht6S%2FJy%2BGiLLTqQ7ZTLGRQ%2BsVQNIa0Iw5jWqxy1MHaFTNQbNhTO1w%3D" rel="nofollow" target="_blank">https://functionai.console.aliyun.com/old/template-detail?tem...</a> 这个白屏化工具，将 Qwen/Qwen3.5-397B-A17B 下载到 bucket 的一定目录中，比如 Qwen/Qwen3.5-397B-A17B。</li></ol><p>a. 先将这个白屏化工具部署起来，等待部署成功</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047638324" alt="image" title="image"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047638325" alt="image" title="image" loading="lazy"/></p><p>b. 编辑后端配置完毕以后，将 Qwen/Qwen3.5-397B-A17B 下载对应 bucket 中的指定目录，开始下载任务（注：模型很大，请耐心等待下载）</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047638326" alt="image" title="image" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047638327" alt="image" title="image" loading="lazy"/></p><ol start="2"><li>在 FunModel 的自定义部署（<a href="https://link.segmentfault.com/?enc=dANPHOYJpMuBRc2Y8V%2FAdw%3D%3D.Y1kTUVzQvMnxGyam3X6GGyof2tcf739kQerMxEn1NcTnM0JWcpg4Ef70z2Z8yod%2BBYbmHnUV7%2BPG9qP00Sga4cdT%2FEn4IqFOarENBTwxHjM%3D" rel="nofollow" target="_blank">https://functionai.console.aliyun.com/fun-model/cn-hangzhou/c...</a> ），选择好镜像以及计算资源，填写好对应的启动命令，既可以完成一键部署。</li></ol><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047638328" alt="image" title="image" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047638329" alt="image" title="image" loading="lazy"/></p><p>启动命令：</p><pre><code>vllm serve /mnt/my-model-scope/models/Qwen/Qwen3.5-397B-A17B --served-model-name Qwen/Qwen3.5-397B-A17B --port 9000 --trust-remote-code --gpu-memory-utilization 0.9 --max-model-len 262144 --tensor-parallel-size 16 --enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3 </code></pre><ol start="3"><li>耐心等待部署，部署成功后，即可以进行推理服务的调试。</li></ol><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047638330" alt="image" title="image" loading="lazy"/></p><h2>qwen3.5 模型市场</h2><p>更多 qwen3.5 模型一键部署方案请参考。（模型持续补充中）</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047638331" alt="image" title="image" loading="lazy"/></p><h2>总结</h2><table><thead><tr><th align="left"><strong>维度</strong></th><th align="left"><strong>传统方案</strong></th><th align="left"><strong>FunModel</strong></th></tr></thead><tbody><tr><td align="left">部署时间</td><td align="left">以天计</td><td align="left">5分钟</td></tr><tr><td align="left">技术门槛</td><td align="left">高</td><td align="left">低</td></tr><tr><td align="left">运维以及迭代成本</td><td align="left">高</td><td align="left">低</td></tr></tbody></table><p>依托 Serverless + GPU，天然提供了简单，轻量，0 门槛的模型集成方案，给个人开发者良好的玩转模型的体验，也让企业级开发者快速高效的部署、运维和迭代模型。</p><p>在阿里云函数计算，开发者可以做到：</p><ul><li><strong>模型的快速部署上线</strong>：从原来的以周为单位的模型接入周期降低到 5 分钟，0 开发，无排期。</li><li><strong>一键扩缩容，让运维不再是负担</strong>：多种扩缩容策略高度适配业务流量，实现“无痛运维”。</li></ul><p>在 AI 的时代浪潮下，模型作为 AI 的载体必然会不断迭代，开发者对模型部署的需求也会日益增多，函数计算 FC 为模型部署和集成提供新范式，也会朝着“让人人成为开发者”的目标演进下去。</p><p><strong>更多内容请参考：</strong></p><p>[1] FunModel 快速入门</p><p><a href="https://link.segmentfault.com/?enc=nOxYknWwfUKlAVn7zPArEg%3D%3D.sYZMDAn71SDpY8ACyBRCvaWkmQAO%2B4FJaQBsMH96edw2ZkGRnyE0achyweo%2B8ZavHUHw3iFK1r%2BrC5Pn3R5r3A%3D%3D" rel="nofollow" target="_blank">https://fun-model-docs.devsapp.net/getting-started/</a></p><p>[2] FunModel 自定义部署</p><p><a href="https://link.segmentfault.com/?enc=ByeglzXuiP50y%2F9l6Wl7vw%3D%3D.KrKY7aQdlM9LNmV0H8v8urSI%2FPn5bH0F23dW8aszLVE1T1%2F1l6b1xUgNo%2FDznKqGZRUImdj6NqnSqgyEY4JeFd2mgQOpWi5DlOI4%2F76nuO4%3D" rel="nofollow" target="_blank">https://fun-model-docs.devsapp.net/user-guide/custom-model-de...</a></p>]]></description></item><item>    <title><![CDATA[低代码平台如何实现一键部署？宏天Docker实践 宏天软件 ]]></title>    <link>https://segmentfault.com/a/1190000047638355</link>    <guid>https://segmentfault.com/a/1190000047638355</guid>    <pubDate>2026-03-06 19:02:06</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>低代码平台一键部署实战：宏天软件基于 Docker 的容器化交付方案</h2><blockquote><strong>摘要</strong>：一键部署是低代码平台提升交付效率、降低运维成本的核心能力。本文将深入拆解宏天低代码如何基于 Docker 容器化技术，通过科学的方案设计、镜像优化、服务编排和仓库管理，构建一套完整的企业级一键部署体系，解决传统部署中的环境不一致、步骤繁琐、兼容性差等痛点。</blockquote><hr/><h3>一、背景：为什么低代码平台必须拥抱容器化？</h3><p>传统低代码平台部署常面临三大挑战：</p><table><thead><tr><th>痛点</th><th>具体表现</th><th>容器化解决方案</th></tr></thead><tbody><tr><td><strong>环境不一致</strong></td><td>开发环境正常，生产环境报错</td><td>Docker 镜像封装完整运行环境</td></tr><tr><td><strong>部署步骤繁琐</strong></td><td>手动配置数据库、中间件、应用服务</td><td>Docker Compose 一键编排多容器</td></tr><tr><td><strong>版本管理混乱</strong></td><td>回滚困难，无法追溯历史版本</td><td>私有镜像仓库实现版本化管控</td></tr></tbody></table><p>宏天低代码基于 <strong>DevOps 理念</strong>，采用"一组件一容器"的架构设计，将前端、后端、数据库、中间件完全解耦，实现了<strong>开发-测试-生产</strong>环境的高度一致性。</p><hr/><h3>二、容器化架构设计：一键部署的基石</h3><h4>2.1 整体架构</h4><h4>2.2 核心设计原则</h4><ul><li><strong>单一职责</strong>：每个容器只运行一个主进程（Nginx/Java/MySQL/Redis）</li><li><strong>数据持久化</strong>：数据库使用 Docker Volume 挂载宿主机目录，防止容器重启数据丢失</li><li><strong>配置外部化</strong>：敏感信息（数据库密码、JWT密钥）通过环境变量注入，不硬编码在镜像中</li><li><strong>健康检查</strong>：每个服务配置 <code>HEALTHCHECK</code> 指令，确保依赖服务就绪后才启动应用</li></ul><hr/><h3>三、Dockerfile 优化：构建精益镜像</h3><p>镜像质量直接影响部署速度和运行稳定性。宏天低代码通过<strong>多阶段构建</strong>和<strong>层缓存优化</strong>，将后端镜像体积从 1.2GB 压缩至 180MB，构建时间缩短 60%。</p><h4>3.1 优化策略</h4><ol><li><strong>多阶段构建</strong>：分离编译环境与运行环境，仅保留 JRE 和构建产物</li><li><strong>依赖缓存</strong>：先复制 <code>pom.xml</code> 下载依赖，再复制源码，充分利用 Docker 层缓存</li><li><strong>基础镜像精选</strong>：使用 <code>eclipse-temurin:11-jre-alpine</code> 替代 <code>openjdk:11</code>，体积减少 50%</li><li><strong>非 Root 运行</strong>：创建专用用户运行应用，提升安全性</li></ol><h4>3.2 Dockerfile</h4><pre><code class="dockerfile"># ==================== 构建阶段 ====================
-FROM maven:3.8-eclipse-temurin-11-alpine AS builder
-
-WORKDIR /build
-# 先复制 pom 文件，利用层缓存
-COPY pom.xml .
-RUN mvn dependency:go-offline -B
-
-# 再复制源码编译
-COPY src ./src
-RUN mvn clean package -B -DskipTests &amp;&amp; \
-    mkdir -p target/dependency &amp;&amp; \
-    cd target/dependency &amp;&amp; \
-    jar -xf ../*.jar
-
-# ==================== 运行阶段 ====================
-FROM eclipse-temurin:11-jre-alpine
-
-# 创建非 root 用户
-RUN addgroup -S hongtian &amp;&amp; adduser -S hongtian -G hongtian
-WORKDIR /app
-
-# 从构建阶段复制产物
-COPY --from=builder --chown=hongtian:hongtian /build/target/dependency/BOOT-INF/lib ./lib
-COPY --from=builder --chown=hongtian:hongtian /build/target/dependency/META-INF ./META-INF
-COPY --from=builder --chown=hongtian:hongtian /build/target/dependency/BOOT-INF/classes ./
-
-# 健康检查
-HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
-  CMD wget --quiet --tries=1 --spider http://localhost:8080/actuator/health || exit 1
-
-USER hongtian
-EXPOSE 8080
-
-# 使用 exec 格式确保正确接收 SIGTERM 信号
-ENTRYPOINT ["java", "-cp", ".:./lib/*", "com.hongtian.lowcode.Application"]</code></pre><h3>四、Docker Compose 编排：一键启停实战</h3><h4>4.1 完整配置示例</h4><pre><code class="yml">version: "3.8"
-services:
-  # MySQL 数据库
-  mysql:
-    image: mysql:8.0.32
-    container_name: hongtian-mysql
-    environment:
-      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
-      MYSQL_DATABASE: lowcode_platform
-      MYSQL_USER: ${DB_USER}
-      MYSQL_PASSWORD: ${DB_PASSWORD}
-    volumes:
-      - mysql_data:/var/lib/mysql
-      - ./init-scripts:/docker-entrypoint-initdb.d
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - hongtian-network
-
-  # Redis 缓存
-  redis:
-    image: redis:7-alpine
-    container_name: hongtian-redis
-    volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-    networks:
-      - hongtian-network
-
-  # 后端服务
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: hongtian-backend
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/lowcode_platform?useSSL=false&amp;serverTimezone=Asia/Shanghai
-      SPRING_DATASOURCE_USERNAME: ${DB_USER}
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
-      SPRING_REDIS_HOST: redis
-      SPRING_REDIS_PASSWORD: ${REDIS_PASSWORD}
-    depends_on:
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    ports:
-      - "8080:8080"
-    networks:
-      - hongtian-network
-    restart: unless-stopped
-
-  # 前端 Nginx
-  frontend:
-    image: nginx:alpine
-    container_name: hongtian-frontend
-    volumes:
-      - ./frontend/dist:/usr/share/nginx/html:ro
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    ports:
-      - "80:80"
-    depends_on:
-      - backend
-    networks:
-      - hongtian-network
-
-volumes:
-  mysql_data:
-  redis_data:
-
-networks:
-  hongtian-network:
-    driver: bridge</code></pre><h4>4.2 一键部署命令</h4><pre><code class="bash"># 1. 准备环境变量文件
-cp .env.example .env &amp;&amp; vim .env
-
-# 2. 构建并启动（后台运行）
-docker-compose up -d --build
-
-# 3. 查看服务状态
-docker-compose ps
-
-# 4. 查看实时日志
-docker-compose logs -f backend
-
-# 5. 版本升级（零停机部署）
-docker-compose pull backend
-docker-compose up -d --no-deps --build backend
-
-# 6. 一键停止并清理
-docker-compose down -v  # -v 参数同时清理数据卷，生产环境慎用</code></pre><h3>结语</h3><p>宏天低代码通过 Docker 容器化技术，将原本需要数小时的部署流程压缩至 10分钟内完成，环境一致性达到 100%，回滚时间从小时级降至分钟级。这套方案不仅适用于低代码平台，也可为其他企业级应用提供参考。</p>]]></description></item><item>    <title><![CDATA[OPPO 如何构建“全球一张网”，让 PB 级非结构化数据成为业务引擎？ TiDB干货传送门 ]]></title>    <link>https://segmentfault.com/a/1190000047638381</link>    <guid>https://segmentfault.com/a/1190000047638381</guid>    <pubDate>2026-03-06 19:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p><img referrerpolicy="no-referrer" src="https://image-static.segmentfault.com/363/664/3636642545-69aab235c3ae2" alt="" title=""/></p><p>在数字化转型的深水区，企业数据资产的“冰山”之下，沉睡着海量的非结构化数据。对于 OPPO 这样业务遍及全球 50 多个国家、拥有数万名员工的科技巨头而言，设计图纸、研发文档、高清影音等非结构化数据占据了总量的 80%，且正以每年 80% 的速度爆发式增长。</p><p>如何高效管理这些 PB 级的数据资产，关乎<strong>研发效率、全球供应链协同以及核心资产安全</strong>。鸿翼战略客户副总监张琳深度分享了鸿翼与 TiDB 联合助力 OPPO 打造 PB 级文档管理平台的实战经验。OPPO 成功破解了海量非结构化数据的治理难题，为全球业务筑起了一套敏捷的数字底座。</p><h3>当“传统网盘”成为全球业务的“减速带”</h3><p>在项目初期，OPPO 面临着日益严峻的数据管理压力。随着全球用户超过 7 亿，企业内部产生的文件数量迅速攀升至 10 亿级别。传统的文档管理架构在应对如此庞大的体量时，逐渐成为了业务发展的瓶颈：</p><ul><li><strong>研发创新的摩擦力</strong>：“光靠一个文件名称，是没有办法快速得知的。”海量元数据（如版本、权限、索引）的检索迟滞，意味着研发人员需要花费大量时间寻找资料。目录加载甚至长达 2 分钟，直接拉低了数万名员工的办公效率。</li><li><strong>全球协同的断点</strong>：OPPO 的研发、市场及售后部门遍布世界各地。跨国传输带宽资源有限，导致大文件（如售后 ROM 包）的分发效率难以保障，影响了全球业务的响应速度。同时，欧盟 GDPR 等区域性法律法规的合规要求，也给数据的跨境流动带来了严峻挑战。</li><li><strong>核心资产的风险暴露</strong>：文件分发难以追踪、权限粒度不足，使得企业核心资产面临泄露风险。如何在保障数据安全的前提下，实现内外部的高效协作，成为了亟待解决的难题。</li></ul><p><img referrerpolicy="no-referrer" src="https://image-static.segmentfault.com/388/150/3881500713-69aab238b57bf" alt="" title="" loading="lazy"/></p><h3>构建非结构化数据的“超级索引”</h3><p>正如鸿翼战略客户副总监张琳所比喻的：<strong>“文档是图书馆里的书籍，存放在成本廉价的仓库中；而文档元数据则是图书馆的超级索引卡片系统。当书籍数量达到千亿级别时，必须拥有一个分布式的、可无限扩展的、能瞬间完成复杂检索的‘超级索引系统’来支撑业务的瞬间调取。”</strong></p><p>为了解决上述痛点，OPPO 引入 TiDB 分布式数据库，对底层架构进行了彻底的重构。这一重构并非简单的数据库替换，而是基于“业务对象+元数据索引”的分层治理思想。</p><p><img referrerpolicy="no-referrer" src="https://image-static.segmentfault.com/292/849/2928491197-69aab23c0d2a7" alt="" title="" loading="lazy"/></p><ol><li><strong>用弹性伸缩支撑业务爆发</strong></li></ol><p>OPPO 的数据增长曲线是陡峭的。传统 MySQL 架构的单机瓶颈限制了业务的扩展空间。TiDB 凭借其<strong>在线水平弹性扩展</strong>的能力，让 OPPO 能够从容应对从 10 亿到 50 亿文件量的平滑演进。业务部门不再需要担心数据库容量，也不再需要为了扩容而进行复杂的停机维护，实现了业务的“零感知”增长。</p><ol start="2"><li><strong>“全球一张网”的架构布局</strong></li></ol><p>为了解决跨国协同难题，新架构采用了“总分结合”的全球化部署策略。</p><ul><li><strong>总部：</strong>部署核心 TiDB 集群，作为全球数据的“大脑”，统一管理所有元数据与核心文档。</li><li><strong>海外节点：</strong>通过专线或云资源进行本地化部署，实现数据的<strong>就近存取与合规驻留</strong>。</li><li><strong>价值点</strong>：这种架构既满足了集团层面“全球一张网”的统一管控需求，又通过 CDN 加速解决了跨国传输的效率问题，确保了全球供应链的实时协同。</li></ul><ol start="3"><li><strong>权限模型的重构与解耦</strong></li></ol><p>针对海量文件权限判断导致的性能损耗，新系统将复杂的权限计算从数据库层面剥离，在内存中建立“权限树”。TiDB 负责底层元数据的强一致性存储，而计算层负责快速过滤。这种<strong>存算分离</strong>的设计思路，极大地释放了数据库压力，确保了高并发下的系统响应速度。</p><h3>实战成效：PB 级数据的敏捷与安全</h3><p>经过架构升级，OPPO 的文档管理平台不仅成功承载了 PB 级的数据体量，更将数据资产转化为业务增长的动力：</p><ul><li><strong>极致的业务响应</strong>：在 20 亿文件量、2TB 数据库大小的高压测试下，所有核心接口（如搜索、列表加载）响应时间均控制在 <strong>500ms 以内</strong>。这意味着，全球数万名员工拥有了一个“零等待”的研发协作环境。</li><li><strong>刚性的合规防线</strong>：针对 GDPR 等合规要求，系统实现了基于 SCC 的跨境合规存储与传输层加密。配合“权限自助中心”与敏感操作实时提醒，构建了一道既灵活又严密的资产安全防线，保障了业务在全球市场的准入资格。</li><li><strong>供应链效率跃升</strong>：新的平台深度集成了办公与即时通讯工具，实现了文件收发与协同编辑的无缝衔接。跨国研发资料和市场物料的传输速度大幅提升，真正实现了“全球协同，本地体验”。</li></ul><h3>结语</h3><p>从 MySQL 到 TiDB，从单点存储到全球多活，通过 TiDB 提供的强大算力与无限扩展性，OPPO 成功将海量的非结构化数据转化为<strong>可管理、可检索、可增值</strong>的企业核心资产，更为未来企业知识沉淀与 AI 智能化应用储备了无限可能。</p>]]></description></item><item>    <title><![CDATA[PostgreSQL 技术日报 (3月6日)｜为什么 Ctrl-C 在 psql 里让人不安？ Iv]]></title>    <link>https://segmentfault.com/a/1190000047637978</link>    <guid>https://segmentfault.com/a/1190000047637978</guid>    <pubDate>2026-03-06 18:04:40</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p><img referrerpolicy="no-referrer" src="/img/remote/1460000047637981" alt="pg每日新闻封面.png" title="pg每日新闻封面.png"/></p><h2>⚙️ PostgreSQL 技术文章</h2><h3>🧩 Ctrl-C 在 psql 中让我感到不安</h3><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047637982" alt="1.png" title="1.png" loading="lazy"/></p><p>George MacKerron讨论了在psql中使用Ctrl-C中断PostgreSQL查询的复杂性。文章解释了用户可能需要停止正在运行查询的各种场景，比如查询耗时过长、意识到需要创建索引以获得更好性能，或者不再需要查询结果。MacKerron探讨了尝试取消查询时出现的技术挑战和潜在问题，强调了为什么这个常见操作会有问题并让数据库用户感到焦虑。</p><p><strong><em><a href="https://link.segmentfault.com/?enc=VrOEf0O5vJV1DzZ6WpgvNw%3D%3D.6Ka3cTlHt9e%2FmGNIrRDdHVnSUKd2%2FzBGIAbnzj3dPEfl14HqjEBYYbqqemXV%2FFSJu7%2BIb8o%2Fyt1CKc6cPSRjzTkkJdwmsdccF5E29a6UQVc%3D" rel="nofollow" target="_blank">https://neon.com/blog/ctrl-c-in-psql-gives-me-the-heebie-jeebies</a></em></strong></p><h3>🧩 Postgres 分布式：OpenAI 数据库层的原生前进之路</h3><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047637983" alt="2.png" title="2.png" loading="lazy"/></p><p>EDB讨论了PostgreSQL在为数亿用户提供服务时面临的扩展挑战，特别是单主架构遇到的"Write Wall"问题，这需要人工干预并产生运营债务。文章探讨了EDB Postgres Distributed (PGD)作为解决方案，提供原生的active-active架构来消除这些扩展瓶颈和多语言数据库碎片化问题。PGD旨在用具有韧性的自愈数据平台取代复杂的变通方案，能够处理大规模负载而无需传统PostgreSQL部署的运营开销。</p><p><strong><em><a href="https://link.segmentfault.com/?enc=mcKdm6aR9KLHq1EcHkUBhg%3D%3D.li9Wpy3FTSWsAM2MnQ4VdjOPRtvl1hTELBlYz%2B4f5yo85n%2FwgkpbFQO0b%2FeQ%2Bla7lRDiv1YpNNI65oXo2Q9wTAOkC4J2OfFWb2Lk1mdj%2FJrWVLNppsq2SXkC0o3C7OIsQPEahrRTY6Mw05cXAf%2FPLw%3D%3D" rel="nofollow" target="_blank">https://www.enterprisedb.com/blog/postgres-distributed-native...</a></em></strong></p><h3>🧩 大规模表分区的隐性成本</h3><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047637984" alt="3.png" title="3.png" loading="lazy"/></p><p>PostgreSQL中的表分区通过分区修剪和高效的DROP TABLE操作（而非昂贵的DELETE）为时间范围查询和数据保留提供了显著优势。然而，它引入了大量运维复杂性，包括可能静默失败的强制分区自动化、需要分区感知程序的扩展运维手册，以及增加的监控面。性能提升主要是针对窄时间范围的读取优化，而写入性能保持不变。长范围查询受到随分区数量线性增长的规划时间影响，影响季度报告和历史分析。分区最适合具有可预测保留需求的中等写入负载，但对于高频摄取场景仅是延缓问题，并未解决底层MVCC开销。</p><p><strong><em><a href="https://link.segmentfault.com/?enc=fwfftP%2BTN6qgGDu6tnaSRQ%3D%3D.1t6YTVHiVvTRB5%2F6LL%2BcvtfH82Hkr%2Bx5HZgGpquiw6IPQ7XWnyhRciCwXgPNY%2BaRo49LBqNHUzM1DNuXEpli46C4oHgNbgSMoDx9tojk3mY%3D" rel="nofollow" target="_blank">https://www.tigerdata.com/blog/hidden-costs-table-partitionin...</a></em></strong></p><h2>📨 PostgreSQL Hacker 电子邮件讨论精选</h2><h3>🧩  索引预取</h3><p>Alexandre Felipe 讨论了 PostgreSQL 索引预取功能的优化，回应了 Andres 关于引用计数跟踪改进的建议。当前实现使用混合方法，对少量缓冲区使用数组，对大量缓冲区使用哈希表。Alexandre 测试了多达90个缓冲区的场景，注意到在特定阈值处存在性能悬崖。他发现最近的一次提交改变了缓冲区固定顺序，可能影响 pin/unpin 序列的性能。关键问题包括昂贵的资源所有者管理在缓冲区被多次固定时产生开销，以及 ResOwnerReleaseBuffer 错误地解锁它不拥有的缓冲区。建议的解决方案包括将 REFCOUNT_ARRAY_ENTRIES 增加到16，用 simplehash 替换 dynahash，或完全移除引用计数数组。Alexandre 建议资源所有者问题值得单独讨论。</p><p><strong><em><a href="https://link.segmentfault.com/?enc=msTxucMa2OI7GbIqDGkS%2Bw%3D%3D.6lCBW0ChVKZoV4prLju9XXuq2TZ2HRs1rWlhkt7wUVQRpqQ%2FPrKUetCG0tKC%2FuCeb7LiOOMmXqnh4eEAUlPDuAoGk1OAViWAbZuVRKdDQcybh00tUoUK5KtCL6SdGQSji7GtRdaozOqA0b0q2cploQ%3D%3D" rel="nofollow" target="_blank">https://www.postgresql.org/message-id/CAE8JnxNPK1T79gpS3PTPbF...</a></em></strong></p><h3>【补丁】 支持自动序列复制</h3><p>这个补丁讨论专注于在PostgreSQL逻辑复制中实现自动序列复制。该功能将使用持久的序列同步工作器在发布者和订阅者之间持续同步序列，替代之前的一次性同步方法。正在解决的关键技术问题包括GetSequence()函数中的权限处理、序列的适当状态管理（INIT与READY状态）以及漂移检测以避免不必要的同步。识别并修复了几个错误，包括copy_sequences循环中错误的查询构建和检查本地值是否超前于发布者值时对降序序列的不当处理。代码评审反馈涵盖了文档更新、函数命名清晰度、等待事件的适当性以及各种代码风格改进。关于缓存序列信息的性能考虑进行了讨论，但推迟到后续评估。</p><p><strong><em><a href="https://link.segmentfault.com/?enc=14ngFeG55Z%2FLrg4dlcAhbw%3D%3D.SFxiwBcIXADdzWtqsVtEeI%2Fbw9ktHpGbaSKfIg4zD3E%2FDmhWjHIEIZZjS%2FRvnTWOxND2X5WFJjpEpP0UUYL7uyqwWOaUdTF8sBKShG5XnGa4d59FQOxAJN4rbidaXoIBX1a3HGJzUEqBIAwxnrPMuPddufEePhtYdEFEbiqEvv0%3D" rel="nofollow" target="_blank">https://www.postgresql.org/message-id/TY4PR01MB16907262C55085...</a></em></strong></p><h3>🧩 在发布中跳过模式更改</h3><p>Vignesh C在Amit Kapila推送了第56版本后，为"跳过发布中的模式更改"补丁系列中的剩余项目提交了重新基于的补丁。Shveta Malik对重新基于的补丁提供了详细反馈，识别出几个问题：alter_publication.sgml中的文档排序问题，其中子句序列应该是"tables/schemas/except-tables"以提高可读性，过于冗长的HINT消息可以缩短，以及代码中不可达的错误条件。具体来说，Malik注意到错误"EXCEPT TABLE clause allowed only for ALL TABLES PUBLICATION"似乎不可达，并且几个测试用例有不匹配的注释和实际错误——原本用于验证'FOR TABLE'发布上EXCEPT TABLE限制的测试实际上触发了关于ADD/DROP子句不支持EXCEPT的不同错误。Malik要求验证其他测试用例是否存在类似的注释-错误不匹配，并询问不可达错误场景的澄清。</p><p><strong><em><a href="https://link.segmentfault.com/?enc=Us8tKxT%2FjOp0yVWvZNRTuw%3D%3D.IaITf%2FxXYfWEgFj9glY6XaU28KQC7kQKJsQhfy2Wo0jqK1UvkXBYsNkjKpBwv0MmaNrE9HsVOGsqqsicPeCkMnjQJ51MGNMqclHijcjHRI%2Bc2CmtGsHiyZ7K3i4A%2FnkkyMjAgkEm6lskmow9mXK5KA%3D%3D" rel="nofollow" target="_blank">https://www.postgresql.org/message-id/CALDaNm1ALHQwkXBcDALA1M...</a></em></strong></p><h2>🗞️ 行业新闻</h2><h3>🧩 AWS 推出 Amazon Connect Health AI agent 平台</h3><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047637985" alt="4.png" title="4.png" loading="lazy"/></p><p>Amazon Web Services推出了Amazon Connect Health，这是专为医疗保健提供者设计的专业AI代理平台。这个新平台为患者预约、文档记录和患者验证流程提供全面解决方案。该服务代表着AWS向医疗保健领域的战略扩张，利用人工智能简化传统上消耗大量时间和资源的医疗环境管理任务。Amazon Connect Health旨在提高运营效率，同时保持医疗保健环境所需的安全和合规标准。该平台专注于核心医疗保健管理功能，为寻求现代化患者互动系统的医疗机构带来潜在的革命性变化。</p><p><strong><em><a href="https://link.segmentfault.com/?enc=kavkwZXwwB5NayxI94tztQ%3D%3D.v4q5E3lrBmMNBb5B1xXL5t3zs6BzYeUh1rf%2F9nyPZQk14LVIe2rDXJuhVlzz%2F1Ax1AVEBh5RcpkgahrLkzP34IvGWMOcQqmIhakAQjb8dBB6qj7YjhHCZF2vB7xmsjmManmY129tshFGnBpHsmfp%2Bg%3D%3D" rel="nofollow" target="_blank">https://techcrunch.com/2026/03/05/aws-amazon-connect-health-a...</a></em></strong></p><h3>🧩 OpenAI 推出 GPT-5.4，包括 Pro 和 Thinking 版本</h3><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047637986" alt="5.png" title="5.png" loading="lazy"/></p><p>OpenAI发布了GPT-5.4，将其定位为专门为专业应用设计的最先进、最高效的前沿模型。新版本包含Pro和Thinking两个版本，为不同用例提供增强的定制功能。GPT-5.4代表了OpenAI模型阵容的重大进步，在为专业工作环境提供增强性能的同时强调提高效率。双版本方法表明OpenAI致力于满足多样化的专业需求，Thinking版本可能针对复杂推理任务进行了优化。此次发布延续了OpenAI快速迭代的周期，展示了他们在竞争激烈的AI模型市场中保持领先地位的承诺，同时满足特定的专业用户需求。</p><p><strong><em><a href="https://link.segmentfault.com/?enc=I7Zw0gK%2FX9YJ5IjoZnIN2g%3D%3D.Xlypb5kUr%2BBOqJW8NazClnQKS0I0kfYfUeCLn%2FLN1%2FUapssTY2LLoRFbfpWJqiqLduewVhEdzyhUKw2UWMuE86wO%2FFMWKdQK7DFTEb4tsirlB5uHUd9Qeid33c4KfHVO" rel="nofollow" target="_blank">https://techcrunch.com/2026/03/05/openai-launches-gpt-5-4-wit...</a></em></strong></p><h3>🧩 Pentagon将Anthropic列为供应链风险</h3><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047637987" alt="6.png" title="6.png" loading="lazy"/></p><p>美国国防部正式将Anthropic列为供应链风险，这是首次有美国AI公司获得此类分类。尽管五角大楼继续在伊朗行动中使用Anthropic的AI技术，但仍做出了这一前所未有的决定。这一指定引发了关于AI公司及其技术国家安全担忧的重要问题。这种双重关系——将Anthropic标记为风险的同时继续使用其AI能力——凸显了AI公司在国防应用中面临的复杂监管环境。这一发展可能为联邦机构如何评估和分类其他美国AI公司树立重要先例。</p><p><strong><em><a href="https://link.segmentfault.com/?enc=hU69pqSWXFqJUcTVKm9big%3D%3D.xxdzS5CHRwPDf%2Bf4EiHMTOr3iDockDmnbl43brRCLURvsIXz1OPETHknE9sOeVotQIakJjeqE2Sx6DQ8hOcj4jxVLLH5SkzvUYum%2B59hKAmR34Pge5Ue%2FuD3tkJysANOHOKSpqKKF54L621hPiearA%3D%3D" rel="nofollow" target="_blank">https://techcrunch.com/2026/03/05/its-official-the-pentagon-h...</a></em></strong></p><h2>🌐 社交媒体动态</h2><h3>🧩 来自首席执行官汉斯-尤尔根·舍尼格的消息，现场直击伦敦科技展!</h3><p>公司首席执行官汉斯-尤尔根·舍尼格正在伦敦科技展的现场直播发布消息。这似乎是一个公告或更新，直接来自在伦敦举行的大型科技展览活动。</p><p><strong><em><a href="https://link.segmentfault.com/?enc=xxfpjGwc8zT1MtK8KIsuag%3D%3D.uO%2Ba94up77ZWo6IGBT%2Bc1rDA4TLKaEUe01I2XKZAtaNiiCxbWjvpr1zUlCiUPRv%2F6oEa%2FRyY%2BgWWbjacnk5pQP6B3x3O%2Baa98CjsDe1J2jX3PyDR%2BOFbx6e%2FNlLgKd%2FxzRdepjkcezMBBOaLelwQ4tao52TQo1%2FMNHmPAF0W1Tw%3D" rel="nofollow" target="_blank">https://www.linkedin.com/posts/cybertec-postgresql_tech-show-...</a></em></strong></p><h3>🧩 在 pgEdge，我们致力于确保用户对我们开源项目的体验，比如用于PostgreSQL的pgEdge MCP 服务器</h3><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047637988" alt="7.jpeg" title="7.jpeg" loading="lazy"/></p><p>pgEdge 邀请用户尝试他们的开源 pgEdge MCP Server for PostgreSQL 项目并提供反馈。下载、安装并测试该项目的参与者可以参加 CanaKit Raspberry Pi 5 Starter Kit PRO（128GB，8GB RAM）的抽奖活动。抽奖截止时间为美国东部时间 3 月 31 日晚上 11:59，获奖者将于 202…</p><p><strong><em><a href="https://link.segmentfault.com/?enc=4devbUVgtW0JthlRO15n3g%3D%3D.AB%2BdXcexJoe9HiFFGW01s3Q01CISiKH8e4VyiBpDSSkcZKbeIM2sGYzTJwRayUrkxD5L9PRSctDdcLNOj2QUfYDrD1DL3U5EPR6i62Mktlt3W0QobfDH8JA8r7epQSVA9aq8G6V6h%2FDpIk7pn9TRtg%3D%3D" rel="nofollow" target="_blank">https://www.linkedin.com/posts/pgedge_github-pgedgepgedge-pos...</a></em></strong></p><h3>🧩 OpenAI GPT-5.4 现已在 Databricks 上开放第一天访问！</h3><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047637989" alt="8.jpeg" title="8.jpeg" loading="lazy"/></p><p>OpenAI GPT-5.4 现已在 Databricks 上开放第一天访问。用户可以使用 GPT-5.4 在企业数据上构建和扩展 GenAI 应用程序，并获得生产所需的治理和运营工具。GPT-5.4 在 OfficeQA 上实现了显著的准确性改进，这是一个针对真实企业文档的推理基准，得益于更强的工具使用和多步推理。它还比同类前沿级代理系统快约 2 倍，从…</p><p><strong><em><a href="https://link.segmentfault.com/?enc=AsRfUxJ0aW5YOtAa1ja74A%3D%3D.s0BK%2FXZTXNIVqYiWE%2BYnJO3sNcwbYVCozuS0dXsJDC7apRv%2F79rJzYsmLpV9KepWY3CmvLxH4EvWXvHR4VD9tfkoGskVD9YPRHqTHTjujv3pdWwLR1CoDlAZAvEdvYPX3xxZXo%2BfVGMZ5rdoxQ5f50RgQMLqf4%2BPCveZLzZNblo%3D" rel="nofollow" target="_blank">https://www.linkedin.com/posts/databricks_day-one-access-to-o...</a></em></strong></p><hr/><h2><a href="https://link.segmentfault.com/?enc=NcKnano0CiT5ErIpkizyuQ%3D%3D.qFp2QQoSpFjzKUZFXH4bjJUR9JO6dOAxTetNrmoLfwE%3D" rel="nofollow" target="_blank">HOW 2026 议题招募中</a></h2><p>2026 年 4 月 27-28 日，由 IvorySQL 社区联合 PGEU（欧洲 PG 社区）、PGAsia（亚洲 PG 社区）共同打造的 HOW 2026（IvorySQL &amp; PostgreSQL 技术峰会） 将再度落地济南。届时，PostgreSQL 联合创始人 Bruce Momjian 等顶级大师将亲临现场。</p><p>自开启征集以来，HOW 2026 筹备组已感受到来自全球 PostgreSQL 爱好者的澎湃热情。为了确保大会议题的深度与广度，我们诚邀您提交前沿技术实践与洞见，共同打造高质量议题内容。</p><p>投递链接：<a href="https://link.segmentfault.com/?enc=Jk6c48q2w92D%2Ft0EwI%2FoaQ%3D%3D.pv%2Bhku%2F1QTcOTn8aTlC3yw8%2B%2FBAtUFr4u0f18f%2BN7dw%3D" rel="nofollow" target="_blank">https://jsj.top/f/uebqBc</a></p>]]></description></item><item>    <title><![CDATA[6款热门APP设计工具推荐，新手也能快速上手 UXbot ]]></title>    <link>https://segmentfault.com/a/1190000047638200</link>    <guid>https://segmentfault.com/a/1190000047638200</guid>    <pubDate>2026-03-06 18:04:05</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>做APP设计的朋友都懂，选对工具比画得好更关键。一款好用的移动端UI设计工具，不光能让你画图速度翻倍，还能让产品想法更快落地，团队沟通也能少走很多弯路。不知道做APP设计该用什么软件？今天就给大家整理了6款当下最火的移动端UI设计工具，帮你精准找到适合自己的那一个。</p><ol><li>UXbot<br/>UXbot从产品需求、流程规划，到原型制作、界面设计、预览分享、前端代码生成，一套流程全搞定，是国内比较热门的APP设计工具之一。UXbot主要依赖自然语言需求，让你只需要输入一个简短的需求，就能在几十秒内就可以直接生成可视化PRD文档、交互说明等核心产品资产。关键是界面做得干净直观，新手也能快速上手。内置AI助手和专业编辑器，页面元素大小、颜色、图片、排版等都能按照自己的需求进行修改。彻底打破设计与文档割裂的传统壁垒。大幅降低重复性工作内耗。<br/>设计稿可直接生成为iOS（Swift）、Android（Kotlin）代码，支持编译成APK文件，安装至真机测试使用。这大大缩短了从设计到开发的周期，降低了出错风险。<br/>UXbot素材模板也很丰富，电商、社交、教育、金融、旅游等行业都有覆盖，从页面框架到交互逻辑，现成模板直接套用，不需要从零搭建，一键复用快速出稿。<br/>推荐评级：⭐⭐⭐⭐⭐<br/><img width="723" height="415" referrerpolicy="no-referrer" src="/img/bVdn211" alt="image.png" title="image.png"/></li><li>Figma<br/>Figma在全球范围内都很火，也是很多设计师常用的移动端UI设计工具。它最大的亮点就是基于网页的实时协作功能，能让多个设计师在同一个画布上同时工作，不用反复同步文件。<br/>对于需要跨国协作，或者团队规模比较大的设计团队来说，Figma的组件变体和自动布局功能很实用，能很好地适配不同尺寸手机屏幕的响应式设计需求。不过有个小缺点，国内用户用的时候，偶尔会遇到网络不稳定的问题，影响操作体验。<br/>推荐评级：⭐⭐⭐⭐⭐<br/><img width="723" height="408" referrerpolicy="no-referrer" src="/img/bVdn213" alt="image.png" title="image.png" loading="lazy"/></li><li>Sketch<br/>Sketch是很多资深设计师都熟悉的工具，主打视觉设计和组件系统，在很长一段时间里，几乎就是UI设计的代名词。它是专门为macOS打造的，最大的特点就是轻便、插件丰富。<br/>Sketch有庞大的第三方插件生态，不管是图标管理、数据填充，还是色彩校正，几乎所有需求都能找到对应的插件解决。虽然它只支持Mac系统，而且协作功能起步比较晚，但在高保真界面设计的细腻度上，依然有很多设计师偏爱它。<br/>推荐评级：⭐⭐⭐⭐<br/><img width="723" height="408" referrerpolicy="no-referrer" src="/img/bVdn215" alt="image.png" title="image.png" loading="lazy"/></li><li>Adobe XD<br/>如果你的工作中经常用到PS、AI，那Adobe XD会很适合你。它最大的优势就是速度快、性能稳，哪怕处理几百个画板的大型APP项目，也不会出现卡顿的情况。<br/>XD的“重复网格”功能特别实用，是处理列表型APP界面的神器，能快速批量生成相似的列表元素。而且它能直接导入PS和AI的文件，对于需要大量处理图片素材的移动端设计项目来说，能省不少事。<br/>推荐评级：⭐⭐⭐<br/><img width="723" height="408" referrerpolicy="no-referrer" src="/img/bVdn218" alt="image.png" title="image.png" loading="lazy"/></li><li>Principle<br/>如果你的APP设计需要复杂的转场动画和微交互，普通的绘图工具可能就满足不了需求了。Principle就是专门做交互动效的移动端UI设计工具，操作逻辑和Flash、After Effects有点像，但更简单易懂，不用掌握复杂的操作技巧。<br/>用它制作的交互Demo特别细腻，适合用来打磨那些对体验要求极高的APP头部应用，平时大多配合Sketch或Figma一起使用，互补短板。<br/>推荐评级：⭐⭐<br/><img width="723" height="408" referrerpolicy="no-referrer" src="/img/bVdn219" alt="image.png" title="image.png" loading="lazy"/></li><li>ProtoPie<br/>ProtoPie也是一款值得关注的移动端UI设计工具，主打无代码高保真交互，和Principle不一样的是，它更擅长处理需要调用手机传感器的交互设计，比如陀螺仪、麦克风、3D Touch这些功能。<br/>如果你的APP设计需要用到手机的硬件功能，或者需要验证复杂的逻辑判断，用ProtoPie能做出最接近真实APP开发效果的原型，帮你提前规避后期开发中的问题。<br/>推荐评级：⭐⭐<br/><img width="723" height="408" referrerpolicy="no-referrer" src="/img/bVdn22a" alt="image.png" title="image.png" loading="lazy"/></li></ol><p>其实选哪款软件，最终还是看你的团队规模、常用的操作系统，以及具体的项目需求。如果看重海外生态和复杂动效，Figma或Sketch会是不错的选择；但如果更看重国内网络环境的稳定性、全中文社区支持，还有“设计+原型+开发”的一站式高效体验，UXbot性价比会比较高、也极易上手的移动端UI设计工具，适合小白以及想要项目快速落地的团队。</p>]]></description></item><item>    <title><![CDATA[面试大师好用么？对比面试精灵呢，程序员该选哪个？ 职场大飞 ]]></title>    <link>https://segmentfault.com/a/1190000047638226</link>    <guid>https://segmentfault.com/a/1190000047638226</guid>    <pubDate>2026-03-06 18:03:33</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>在竞争激烈的程序员求职市场中，AI面试助手已成为求职者的重要技术辅助工具。<a href="https://link.segmentfault.com/?enc=Vkz02XeGAZy0PD2xn5HIAA%3D%3D.xUilIKRRx31eBzD03LHUu%2BipITc6fMQpG6lCqD3PVj0%3D" rel="nofollow" target="_blank">面试大师</a>和<a href="https://link.segmentfault.com/?enc=1JF%2Fj%2BhpYinw8cySEDapRw%3D%3D.piyHkxNbYEUPi440Qh46zdk9qn4pPhJhR4VsciDWtq8%3D" rel="nofollow" target="_blank">面试精灵</a>都是这类工具中的热门选择，但它们的实际技术表现和使用体验却有很大差异。</p><p>面试精灵在语音识别、简历定制化回复等技术环节表现出色；面试大师则支持多种输入输出模式和多端协同，但存在语音识别错误率高、性价比低等问题。</p><p><img referrerpolicy="no-referrer" src="https://image-static.segmentfault.com/141/615/1416153938-f95969e488b1bab2" alt="面试精灵操作页面" title="面试精灵操作页面"/></p><h2>功能特性全面对比</h2><p>根据我们对AI面试助手的技术评测，以下是面试精灵和面试大师的功能特性详细对比：</p><table><thead><tr><th>功能特性</th><th>面试精灵</th><th>面试大师</th></tr></thead><tbody><tr><td>面试助手</td><td>√</td><td>√</td></tr><tr><td>笔试助手</td><td>√</td><td>X</td></tr><tr><td>简历优化</td><td>√</td><td>X</td></tr><tr><td>模拟面试</td><td>X</td><td>X</td></tr><tr><td>面试记录/分析</td><td>√</td><td>√</td></tr><tr><td>交流社群</td><td>X</td><td>X</td></tr><tr><td>界面美观度</td><td>4</td><td>2</td></tr><tr><td>操作简单/可访问性</td><td>4</td><td>4</td></tr><tr><td>功能强大</td><td>4</td><td>3</td></tr><tr><td>价格（元/小时）</td><td>10</td><td>128</td></tr><tr><td>性价比</td><td>4.5</td><td>2</td></tr><tr><td>免客户端下载</td><td>√</td><td>√</td></tr><tr><td>多语言支持</td><td>√</td><td>X</td></tr><tr><td>语音识别优化</td><td>X</td><td>√</td></tr><tr><td>自动说话人识别</td><td>√</td><td>X</td></tr><tr><td>隐蔽模式（多机互联）</td><td>√</td><td>√</td></tr><tr><td>简历输入</td><td>√</td><td>√</td></tr><tr><td>个人知识库</td><td>X</td><td>X</td></tr><tr><td>大厂面经库</td><td>X</td><td>X</td></tr><tr><td>联网搜索</td><td>X</td><td>X</td></tr><tr><td>多种回复模式</td><td>X</td><td>√</td></tr><tr><td>回复结果显示增强</td><td>√</td><td>X</td></tr></tbody></table><h2>核心技术指标深度解析</h2><h3>语音识别能力对比</h3><p>这是两款工具最显著的技术差异。</p><p>面试大师的语音识别错误率较高，实测中经常出现识别错误的情况。例如将"Transformer模型"识别成"模型相比RnB"，这种基础技术环节的错误会直接影响后续回复的准确性。</p><p>面试精灵在语音识别上更可靠，特别是在英文术语识别方面表现出色。对于"Transformer"、"DeepSeek"这类技术术语，它能准确识别和处理，这对技术面试至关重要。</p><p><img referrerpolicy="no-referrer" src="https://image-static.segmentfault.com/547/922/547922434-344d31d6e8555413" alt="面试大师操作界面" title="面试大师操作界面" loading="lazy"/></p><h3>回复质量对比</h3><p>回复质量是面试助手的核心指标，两款工具在这方面的差距较为明显。</p><h4>简历定制化能力</h4><p>两款工具都支持简历解析，但实际效果不同。</p><p>面试大师在处理简历相关问题时表现不佳，回复内容空洞，甚至会出现追问面试官的情况，无法提供有效信息。</p><p>面试精灵通过RAG技术检索简历内容，将项目细节、技能要求自然融入回答中，使得自我介绍、项目描述等问题的回复更加贴合实际。</p><h4>时效性问题处理</h4><p>对于"DeepSeek最近很火爆"这类时效性技术问题，两款工具的处理方式不同。</p><p>面试大师不支持联网搜索，只能依赖模型内置知识，且受限于语音识别错误率，回复准确性难以保证。</p><p>面试精灵支持联网搜索，英文术语识别准确，能够通过搜索获取最新信息并给出正确回答，这对关注技术趋势的求职者非常重要。</p><h2>功能特性深入对比</h2><h3>输入输出模式</h3><p>面试大师支持多种输入输出模式，这是它的一个技术特色。</p><ul><li><strong>共享屏幕模式</strong>：通过设置分享标签页或视频软件窗口的音频作为输入。</li><li><strong>语音模式</strong>：通过麦克风识别面试官语音，适合面试官要求分享屏幕的场景。</li></ul><p>输出模式支持质量优先、速度优先、代码模式三种。这种多模式设计虽然全面，但由于语音识别错误率较高，整体体验受到影响。</p><h3>多端协同和笔试功能</h3><p>两款工具都支持多端协同和笔试功能，但实现方式有差异。</p><p>面试大师支持二维码扫描连接，但需要先安装应用并在相同局域网下连接。笔试模式通过三击选择截图区域，操作相对简单。</p><p>面试精灵的笔试助手通过多设备互联实现跨设备远程截图，利用视觉大模型自动识别题目并生成答案，纯网页操作无需安装，使用更便捷。</p><p><img referrerpolicy="no-referrer" src="https://image-static.segmentfault.com/360/236/3602368331-67da1aee7f9af" alt="面试精灵笔试助手功能" title="面试精灵笔试助手功能" loading="lazy"/></p><h2>界面和操作体验</h2><p>面试大师的界面设计一般，美观度不高，操作逻辑虽然清晰但整体体验不够现代化。</p><p>面试精灵的界面简洁美观，对代码块、公式、图表等技术内容的显示效果更好。前端支持LaTeX公式、流程图、泳道图，特别适合技术岗位的面试场景。</p><h2>价格对比</h2><p>面试大师的价格约为128元/小时，在同类产品中属于较高价位，性价比不理想。</p><p>面试精灵基础版约10元/小时，精英版约25元/小时，即使使用最高配置，价格也仅为面试大师的几分之一。</p><p>两款工具都提供新用户免费额度，建议先试用再做决定。</p><h2>回复效果实测对比</h2><p>为了更直观地展示两款工具的回复效果差异，我们来看几个技术相关的实测案例。</p><h3>实测案例：英文术语问题</h3><p><strong>问题</strong>："Transformer模型相比RNN的优势是什么？"</p><p>这个题目测试的是英文术语识别能力。</p><p>面试大师将"Transformer模型"识别为"模型相比RnB"，英文术语识别错误，但通过大模型的纠错能力，回复内容仍具有一定参考价值。</p><p>面试精灵语音识别正确，回复条理清晰，内容准确完整，详细分析了Transformer模型的优势。</p><h3>实测案例：系统设计问题</h3><p><strong>问题</strong>："设计一个支持高并发的短网址生成系统。"</p><p>这个题目测试的是系统设计能力以及架构图绘制显示效果。</p><p>两款工具都能给出正确的系统设计思路，但面试精灵在架构图显示上更有优势，能够帮助面试者快速抓住重点。</p><p><img referrerpolicy="no-referrer" src="https://image-static.segmentfault.com/682/111/68211192-69a41d61011e6" alt="面试精灵系统设计问题回复" title="面试精灵系统设计问题回复" loading="lazy"/></p><h3>实测案例：金融行业问题</h3><p><strong>问题</strong>："解释贴现现金流（DCF）模型的计算步骤。"</p><p>这个题目测试的是多行业模型应用能力和数学公式显示效果。</p><p>两款工具在本题中都能给出正确回复，说明大模型内置知识广博。面试精灵在公式显示上更清晰，对这类跨领域问题的支持更好。</p><p><img referrerpolicy="no-referrer" src="https://image-static.segmentfault.com/935/758/935758551-69aa9b02411e8" alt="面试精灵金融行业问题回复" title="面试精灵金融行业问题回复" loading="lazy"/></p><h2>评测数据对比</h2><p>以下是两款工具在各评测维度的平均得分对比（满分5分）：</p><table><thead><tr><th>评测维度</th><th>面试精灵</th><th>面试大师</th></tr></thead><tbody><tr><td>帮助性</td><td>4.78</td><td>3.67</td></tr><tr><td>语音识别准确率</td><td>4.44</td><td>2.67</td></tr><tr><td>意图识别正确率</td><td>5</td><td>3.6</td></tr><tr><td>内容深度及个性化</td><td>4.78</td><td>3.8</td></tr><tr><td>沟通技巧</td><td>4.67</td><td>4.6</td></tr><tr><td>准确性</td><td>4.78</td><td>2.8</td></tr><tr><td>全面性</td><td>4.78</td><td>3.6</td></tr><tr><td>直观性</td><td>4.89</td><td>4.4</td></tr></tbody></table><p>从评测数据可以看出，面试大师在沟通技巧上表现不错，但在语音识别准确率、回复准确性等核心指标上明显弱于面试精灵。面试精灵整体表现更均衡，在帮助性、内容深度等方面优势显著。</p><h2>总结和建议</h2><p>两款工具都具有一定的功能覆盖，但实际技术表现差异明显。</p><p>面试大师支持多种输入输出模式，适配各种面试场景，还提供多端协同和笔试功能。但它的语音识别错误率过高，这是一个致命缺陷。此外，界面设计一般，价格偏高，性价比不理想。</p><p>面试精灵在语音识别上更可靠，特别是英文术语识别能力出色。通过RAG技术实现的简历定制化回复更贴合实际，联网搜索功能能有效处理时效性问题。自动说话人识别让操作更隐蔽，纯网页访问无需安装，价格也更实惠。</p><p>从整体评测数据来看，面试精灵在帮助性、内容深度、准确性等方面有明显优势，尤其是在语音识别准确率和回复准确性上差距较大。结合其高性价比和更稳定的技术表现，面试精灵可能更符合大多数程序员和开发者的需求。</p>]]></description></item><item>    <title><![CDATA[积木报表多源报表：打破数据孤岛，让多表数据完美融合 JEECG低代码平台 ]]></title>    <link>https://segmentfault.com/a/1190000047638238</link>    <guid>https://segmentfault.com/a/1190000047638238</guid>    <pubDate>2026-03-06 18:02:53</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>在企业的日常运营中，数据往往分散在不同的数据库表中。订单信息在订单表，商品明细在订单商品表...... 这些表之间虽然存在关联关系，但在传统的报表制作中，想要将这些分散的数据整合到一张报表中，往往需要复杂的 SQL 关联查询，或者需要开发人员编写大量的代码来实现数据关联。</p><p><strong>积木报表（JimuReport）</strong>  推出的<strong>多源报表</strong>功能，完美解决了这一痛点。通过简单的配置，就能将来自不同数据表的数据有机整合到一张报表中，让数据关联变得简单高效。</p><h2>一、积木报表</h2><blockquote>积木报表，是一款免费的数据可视化报表，含报表、打印、大屏和仪表盘，像搭建积木一样完全在线设计！功能涵盖：复杂报表、打印设计、图表报表、门户设计、大屏设计等！ 分两大模块：JimuReport 侧重传统复杂报表和打印、 JimuBI 侧重数据大屏和仪表盘可视化设计！</blockquote><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047638240" alt="" title=""/></p><h3>代码下载</h3><ul><li><a href="https://link.segmentfault.com/?enc=ZQrn7k1nBqJ3Uk%2B21jC6ew%3D%3D.J3r92vFv46ti0ANJUFNSiTfdiCTnEzhN7FpfybPalNZeSNg0EBna5zBfi8r4WJUC" rel="nofollow" target="_blank">https://github.com/jeecgboot/JimuReport</a></li></ul><h3>技术文档</h3><ul><li>快速集成 ：<a href="https://link.segmentfault.com/?enc=XL46xJrVHZzkIkS15BM%2FBQ%3D%3D.%2BcQwEm3TzG9BTrAYhQYGdBDUWAisYryqQYgMLCQRU377JbAlYehfPeqpWaPz0eGc" rel="nofollow" target="_blank">https://help.jimureport.com/quick.html</a></li><li>官方网站： <a href="https://link.segmentfault.com/?enc=ijaE0wURjJRMx%2BrDxYmX6A%3D%3D.%2B3JtXxzfDiR33KTUYQpPR2CznliChc%2BI3WLKgij5zCI%3D" rel="nofollow" target="_blank">http://jimureport.com</a></li><li>报表示例： <a href="https://link.segmentfault.com/?enc=Y5YaPT1DuN%2B13oWrf%2FDlFQ%3D%3D.0X1Nz42GBuUCQSu1GS1QA2THjgFUGice%2BfQqFs%2BcVIU2zYsmgjpx8LxB2wiJz6rK" rel="nofollow" target="_blank">http://jimureport.com/reportDemo</a></li><li>在线体验： <a href="https://link.segmentfault.com/?enc=9yNjJOV15HzZCEDLps5aBw%3D%3D.4QkvtgLVCDHd2Jfq8aW5NgsUW%2BuAbUbtnDChUAgR5uQ%3D" rel="nofollow" target="_blank">http://jimureport.com/login</a></li></ul><h2>二、什么是多源报表？</h2><p>多源报表是积木报表的一项重要功能，它允许在一张报表中使用多个数据集的数据。这些数据集可以来自不同的数据库表，只要这些表之间存在数据关系（即拥有共同的关联字段），就可以通过配置实现数据的自动关联和展示。</p><h3>效果展示</h3><ul><li>如下设计示例中表格有两个数据集的数据，<code>aa</code> 来自<code>订单</code>表，<code>bb</code> 来自于<code>订单商品</code>表，它们都有一个共同字段：<code>订单Id</code>，也就是说它们的数据之间有关系。</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047638241" alt="" title="" loading="lazy"/></p><ul><li>预览效果如下</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047638242" alt="" title="" loading="lazy"/></p><p>与传统的单源报表相比，多源报表具有以下特点：</p><ul><li><strong>数据来源多样化</strong>：支持多个数据集同时作为报表数据源</li><li><strong>自动关联</strong>：通过配置关联参数，系统自动处理表间数据关联</li><li><strong>灵活展示</strong>：可以将主表和子表的数据同时展示在一张报表中</li><li><strong>配置简单</strong>：无需编写复杂的 SQL 语句，通过可视化配置即可完成</li></ul><h2>三、配置简单，四步完成</h2><p>积木报表的多源报表配置过程非常简单，只需四个步骤即可完成：</p><h3>第一步：创建数据库表</h3><p>根据业务需求创建相关的数据库表，确保表之间存在关联字段（如订单表的订单 ID 和订单商品表的订单 ID）。</p><ul><li>订单表</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047638243" alt="" title="" loading="lazy"/></p><ul><li>订单商品表</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047638244" alt="" title="" loading="lazy"/></p><h3>第二步：创建数据源</h3><p>分别为每个数据表创建对应的数据源。</p><ul><li>订单表</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047638245" alt="" title="" loading="lazy"/></p><ul><li>订单商品表</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047638246" alt="" title="" loading="lazy"/></p><blockquote><p>注意：</p><ol><li>订单表（主表）与订单商品表（子表）都需要设置为集合。</li><li>订单商品表（子表）一定要设置参数。</li></ol></blockquote><h3>第三步：配置主子表参数</h3><ul><li>点击设计页面右侧主子报表参数设置 - 新增按钮：</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047638247" alt="" title="" loading="lazy"/></p><ul><li>配置主子表关联参数</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047638248" alt="" title="" loading="lazy"/></p><h3>第四步：配置表格字段</h3><p>将需要展示的字段从数据源拖拽到报表设计区域，完成报表布局设计。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047638249" alt="" title="" loading="lazy"/></p><p>配置完成后，预览报表即可看到来自多个数据表的数据已经完美融合在一起。</p><h2>四、多源报表的核心优势</h2><ul><li><ol><li>打破数据孤岛，实现数据融合</li></ol></li><li><ol start="2"><li>简化开发流程，提升效率</li></ol></li><li><ol start="3"><li>支持主子表关联，满足复杂业务场景</li></ol></li><li><ol start="4"><li>配置灵活，易于维护</li></ol></li></ul><h2>五、典型应用场景</h2><h3>场景一：订单管理报表</h3><p>在电商或订单管理系统中，订单信息和订单商品信息分别存储在不同的表中。通过多源报表，可以将订单的基本信息（订单号、客户名称、订单金额等）和订单商品明细（商品名称、数量、单价等）同时展示在一张报表中，让订单信息一目了然。</p><h3>场景二：客户关系管理报表</h3><p>在 CRM 系统中，客户基本信息、客户订单、客户服务记录等数据分布在不同的表中。使用多源报表，可以将这些关联数据整合展示，形成完整的客户视图。</p><h3>场景三：项目管理报表</h3><p>在项目管理系统中，项目信息、任务列表、资源分配等数据通常存储在不同的表中。多源报表可以将项目概览和详细任务信息整合展示，帮助管理者全面了解项目进展。</p><p><strong>积木报表（JimuReport）</strong>  是一款免费的数据可视化报表工具，致力于为企业提供简单、高效、强大的报表解决方案。多源报表只是积木报表众多强大功能中的一个，还有更多实用功能等待您去探索。</p>]]></description></item><item>    <title><![CDATA[为电子文档烙上法律印章 JoySSL梳理文档签名证书的典型应用场景与核心作用 完美的铁板烧 ]]></title>    <link>https://segmentfault.com/a/1190000047638257</link>    <guid>https://segmentfault.com/a/1190000047638257</guid>    <pubDate>2026-03-06 18:01:55</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>在各行业积极拥抱数字化转型的当下，合同、投标文件、财务报表、公务文书以及资质证明等重要文件，正迅速由传统的纸质形式向电子化形态转变。这一改变不仅显著提升了工作效率，降低了成本，同时也引发出一个核心问题，也就是如何确保电子文档的来源真实可信？如何保证电子文档在传输和存储过程中，未遭恶意篡改？是否能够赋予电子文件与传统纸质盖章文件同等的法律效力？须知在互联网时代，伪造PDF合同和恶意篡改电子协议金额的行为，已经变得愈加频繁猖獗。企业不仅面临复杂的运营问题，还可能因此陷入法律纠纷，导致财务损失，甚至还有损品牌声誉。JoySSL首席安全顾问指出，若要真正实现无纸化办公，不仅仅是格式的电子化替代，更在于将信任机制无缝迁移到数字环境中。文档签名证书正是为电子文档提供法律效力、保障数据完整性和提供可信身份认证的专业解决方案。</p><p><img width="723" height="471" referrerpolicy="no-referrer" src="/img/bVdn225" alt="" title=""/></p><p><strong>核心作用 为数字文件添加信任保障</strong></p><p>文档签名证书通过密码学技术，彻底解决电子文件在身份核验、完整性保护和法律效力等方面的问题。通过权威验证，嵌入经审核的数字身份标识，让发布者身份清晰可信，避免身份伪造或文件造假等问题。而通过签名者独有的私钥，文件内容会被生成专属数字签名，相当于电子领域中的“指纹”，哪怕是最细微的篡改，都会使签名验证无法通过，并发出“文档已被篡改”提醒，使得内容的真实性和完整性始终得以保障。</p><p>文档签名证书凭借各项严谨的验证机制，达到 “可靠电子签名”的核心标准，可使经其签名的电子合同及审计报告等文件能作为重要的电子证据，简化举证和存证的复杂性，为企业带来了稳固的法律支持。同时结合权威时间戳服务，能够精确记录文件的签署时间。即便证书因过期而失效，签名依旧可以被验证真实性。对于合同、档案及医疗记录等需长期保存的文件而言，具有不可忽视的重要价值。</p><p><img width="723" height="480" referrerpolicy="no-referrer" src="/img/bVdn226" alt="" title="" loading="lazy"/></p><p><strong>适用场景 可信电子文档覆盖全行业</strong></p><p>文档签名证书凭借显著的适用性，为众多领域的文档处理流程带来变革。普通企业应用于合同签署、商务通信及财务文档；政务及公共服务普遍用于公文处理、行政审批和数字证照；司法领域通常用于法律文件、证据存档与数字化送达；医疗健康领域常见于电子病历、检查报告和健康记录；金融保险行业适用于电子保单、信贷资料和对账单。</p><p><strong>解决方案 签名证书为文档保驾护航</strong></p><p>为充分保障文档的可信与安全，JoySSL市场部门经过多年调研，深刻洞察各行业对文档安全性与法律效力的严谨要求，提出专业解决方案。首先以严格的身份核验机制，确保身份真实且合法，从根本上建立信任基础。其次文档签名证书需覆盖国际与国密标准，满足全球化业务及国内合规的双重需求。</p><p><img width="723" height="479" referrerpolicy="no-referrer" src="/img/bVdn227" alt="" title="" loading="lazy"/></p><p>批量自动化签名可轻松实现合同及报表的批量签署，提升业务效率。搭建证书生命周期管理平台，可集中处理文档签名证书的申请、部署、监控与续展，确保签名服务的持续可用性。</p><p><strong>数字签名 赋予数字文件可信的力量</strong></p><p>尽管文件已摆脱了纸质媒介的限制，其承载的信任依然至关重要。数字化时代，信任需要依赖更先进、更严谨的技术来确保，文档签名证书正是这种理念的最佳体现，让每一次文件交互都成为建立信任、提升效率和保护权益的契机。</p>]]></description></item>  </channel></rss>
+print(f"已处理 {result['total_slides']} 张幻灯片")</code></pre><p>这个函数可以用于自动生成培训材料、产品文档或会议记录的在线版本。结合简单的前端导航，就能创建一个功能完备的演示文稿查看器。</p><h3>与其他格式的对比</h3><p>除了 HTML，PowerPoint 还可以转换为 PDF、图片等格式。各种格式有其适用场景：</p><table><thead><tr><th>格式</th><th>优势</th><th>适用场景</th></tr></thead><tbody><tr><td>HTML</td><td>可在浏览器直接查看，支持超链接</td><td>在线分享、网页嵌入</td></tr><tr><td>PDF</td><td>格式精确，打印友好</td><td>正式文档、打印输出</td></tr><tr><td>PNG/JPG</td><td>兼容性好，易于编辑</td><td>社交媒体、图片展示</td></tr></tbody></table><p>选择转换格式时，应根据最终用途来决定。如果需要在线访问和交互，HTML 是最佳选择；如果需要精确打印，则 PDF 更合适。</p><h3>总结</h3><p>使用 Python 将 PowerPoint 演示文稿转换为 HTML，是实现演示内容在线展示和自动化处理的一种高效方式。通过程序化转换，不仅可以将完整演示文稿导出为网页形式，还能够根据实际需求灵活处理单张或多张幻灯片，从而满足不同的应用场景。</p><p>在实际项目中，这种技术非常适合用于构建在线演示系统、企业培训平台或自动化报告发布流程。借助 HTML 输出格式，演示文稿可以更方便地集成到网站、学习管理系统（LMS）或内部知识平台中，实现无需 PowerPoint 即可浏览内容的效果。</p><p>掌握 PowerPoint 到 HTML 的自动化转换方法，可以显著提升文档处理效率，并为构建更复杂的文档管理或内容分发系统提供基础能力。无论是分享会议资料，还是部署在线培训内容，这一技术都具有很高的实用价值。</p><p>更多 PowerPoint 演示文稿处理技巧，请前往 <a href="https://link.segmentfault.com/?enc=%2BQ1w5lOE%2BK1GaF82MYN%2BUw%3D%3D.dgOY11X0ua8CdPDpuqzouU5WU3FTbwW816yV3yintrgBhpOle3CoVYzLes6DVn98LaUb09INjVUiXqbVEqIIj1EJfwjPkndHV%2BV4zYcv6x4I4%2BP8c2agDG7%2FNhqK4wUXibcyi46ZYYe5TWFx8TcXtw%3D%3D" rel="nofollow" target="_blank">Spire.Presentation for Python 官方教程</a>查看。</p>]]></description></item><item>    <title><![CDATA[零配置部署顶级模型！函数计算一键解锁 Qwen3.5 阿里云云原生 ]]></title>    <link>https://segmentfault.com/a/1190000047638322</link>    <guid>https://segmentfault.com/a/1190000047638322</guid>    <pubDate>2026-03-06 19:02:57</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>作者：西流</p><p>就在最近，大模型圈再次迎来重磅炸弹！<strong>阿里巴巴开源了全新一代大模型——千问 Qwen3.5-397B-A17B</strong>，直接登顶全球最强开源模型宝座。</p><p>面对如此强大的模型，开发者们最关心的问题莫过于： <strong>“这么强的模型，部署起来会不会很麻烦？”</strong></p><p>今天，我们就为大家带来一个 <strong>“神器级”解决方案</strong>——通过函数计算 FC 实现一键部署 Qwen3.5，让顶级模型的计算力触手可及！</p><h2>模型介绍</h2><p>这次开源的 Qwen3.5-397B-A17B 可不是普通的模型升级，它在架构和性能上都实现了质的飞跃：</p><ul><li>性能超过万亿参数的 Qwen3-Max 模型，是目前全球最强开源模型，总参数 3970 亿，但<strong>激活参数仅 170 亿</strong>。采用创新的混合架构（线性注意力 Gated Delta Networks + 稀疏混合专家 MoE），在保持能力的同时优化了速度与成本。</li><li><strong>成本降低</strong>：部署显存占用降低 60%，推理效率大幅提升，最大推理吞吐量可提升至 19 倍！</li><li><strong>全能选手</strong> ：作为原生视觉 - 语言模型，在推理、编程、智能体能力与多模态理解上表现优异。语言支持从 119 种扩展至 201 种，全球通用。</li></ul><h2>函数计算解决方案</h2><p>传统部署大模型，你通常需要面对：</p><ul><li>复杂的 GPU 环境配置</li><li>繁琐的运维监控工作</li><li>弹性伸缩困难</li></ul><p><strong>现在，有了函数计算 FC，一切变得如此简单！</strong></p><p>函数计算 FC 已同步接入 Qwen3.5 本次开源的模型，提供<strong>企业级部署方案</strong>。基于 <strong>Serverless GPU</strong> 架构，你无需关心底层基础设施，只需专注于模型本身的应用与调试。</p><h2>一键部署 Qwen3.5-397B-A178</h2><ol><li>准备一个 OSS Bucket，使用 <a href="https://link.segmentfault.com/?enc=KN%2F0A7%2BRtfkeQJlR8RFMtQ%3D%3D.0chSFk8N8qIAmMWurGc31okRKqA2EQMHNvnuZIT1tSFKNSGQluYJg9Ht6S%2FJy%2BGiLLTqQ7ZTLGRQ%2BsVQNIa0Iw5jWqxy1MHaFTNQbNhTO1w%3D" rel="nofollow" target="_blank">https://functionai.console.aliyun.com/old/template-detail?tem...</a> 这个白屏化工具，将 Qwen/Qwen3.5-397B-A17B 下载到 bucket 的一定目录中，比如 Qwen/Qwen3.5-397B-A17B。</li></ol><p>a. 先将这个白屏化工具部署起来，等待部署成功</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047638324" alt="image" title="image"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047638325" alt="image" title="image" loading="lazy"/></p><p>b. 编辑后端配置完毕以后，将 Qwen/Qwen3.5-397B-A17B 下载对应 bucket 中的指定目录，开始下载任务（注：模型很大，请耐心等待下载）</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047638326" alt="image" title="image" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047638327" alt="image" title="image" loading="lazy"/></p><ol start="2"><li>在 FunModel 的自定义部署（<a href="https://link.segmentfault.com/?enc=dANPHOYJpMuBRc2Y8V%2FAdw%3D%3D.Y1kTUVzQvMnxGyam3X6GGyof2tcf739kQerMxEn1NcTnM0JWcpg4Ef70z2Z8yod%2BBYbmHnUV7%2BPG9qP00Sga4cdT%2FEn4IqFOarENBTwxHjM%3D" rel="nofollow" target="_blank">https://functionai.console.aliyun.com/fun-model/cn-hangzhou/c...</a> ），选择好镜像以及计算资源，填写好对应的启动命令，既可以完成一键部署。</li></ol><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047638328" alt="image" title="image" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047638329" alt="image" title="image" loading="lazy"/></p><p>启动命令：</p><pre><code>vllm serve /mnt/my-model-scope/models/Qwen/Qwen3.5-397B-A17B --served-model-name Qwen/Qwen3.5-397B-A17B --port 9000 --trust-remote-code --gpu-memory-utilization 0.9 --max-model-len 262144 --tensor-parallel-size 16 --enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3 </code></pre><ol start="3"><li>耐心等待部署，部署成功后，即可以进行推理服务的调试。</li></ol><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047638330" alt="image" title="image" loading="lazy"/></p><h2>qwen3.5 模型市场</h2><p>更多 qwen3.5 模型一键部署方案请参考。（模型持续补充中）</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047638331" alt="image" title="image" loading="lazy"/></p><h2>总结</h2><table><thead><tr><th align="left"><strong>维度</strong></th><th align="left"><strong>传统方案</strong></th><th align="left"><strong>FunModel</strong></th></tr></thead><tbody><tr><td align="left">部署时间</td><td align="left">以天计</td><td align="left">5分钟</td></tr><tr><td align="left">技术门槛</td><td align="left">高</td><td align="left">低</td></tr><tr><td align="left">运维以及迭代成本</td><td align="left">高</td><td align="left">低</td></tr></tbody></table><p>依托 Serverless + GPU，天然提供了简单，轻量，0 门槛的模型集成方案，给个人开发者良好的玩转模型的体验，也让企业级开发者快速高效的部署、运维和迭代模型。</p><p>在阿里云函数计算，开发者可以做到：</p><ul><li><strong>模型的快速部署上线</strong>：从原来的以周为单位的模型接入周期降低到 5 分钟，0 开发，无排期。</li><li><strong>一键扩缩容，让运维不再是负担</strong>：多种扩缩容策略高度适配业务流量，实现“无痛运维”。</li></ul><p>在 AI 的时代浪潮下，模型作为 AI 的载体必然会不断迭代，开发者对模型部署的需求也会日益增多，函数计算 FC 为模型部署和集成提供新范式，也会朝着“让人人成为开发者”的目标演进下去。</p><p><strong>更多内容请参考：</strong></p><p>[1] FunModel 快速入门</p><p><a href="https://link.segmentfault.com/?enc=nOxYknWwfUKlAVn7zPArEg%3D%3D.sYZMDAn71SDpY8ACyBRCvaWkmQAO%2B4FJaQBsMH96edw2ZkGRnyE0achyweo%2B8ZavHUHw3iFK1r%2BrC5Pn3R5r3A%3D%3D" rel="nofollow" target="_blank">https://fun-model-docs.devsapp.net/getting-started/</a></p><p>[2] FunModel 自定义部署</p><p><a href="https://link.segmentfault.com/?enc=ByeglzXuiP50y%2F9l6Wl7vw%3D%3D.KrKY7aQdlM9LNmV0H8v8urSI%2FPn5bH0F23dW8aszLVE1T1%2F1l6b1xUgNo%2FDznKqGZRUImdj6NqnSqgyEY4JeFd2mgQOpWi5DlOI4%2F76nuO4%3D" rel="nofollow" target="_blank">https://fun-model-docs.devsapp.net/user-guide/custom-model-de...</a></p>]]></description></item>  </channel></rss>
