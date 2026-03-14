@@ -1,4 +1,74 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[在 PHP 中写真正的异步代码 TrueAsync 0.6.0 已支持数据库链接池 JaguarJa]]></title>    <link>https://segmentfault.com/a/1190000047652513</link>    <guid>https://segmentfault.com/a/1190000047652513</guid>    <pubDate>2026-03-14 09:02:12</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>在 PHP 中写真正的异步代码 TrueAsync 0.6.0 已支持数据库链接池</h2><p>现代软件的构建最终仍然要回到实践。再复杂的产品，也必须经过真实用户的检验。只有最终用户，才能真正区分哪些设计是有效的、哪些方向值得继续推进。再优雅的架构，如果没有落到真实代码和真实问题里，就很难体现实际价值。</p><p>TrueAsync 是一个将原生异步能力带入 PHP 的项目，而且这套能力是直接向语言核心延伸的。<code>0.6.0</code> 是这个项目的一个关键里程碑：这是一个实验性版本，目标是让开发者已经可以开始编写真正的异步代码，并尽可能测试各种极端场景。</p><p>从项目推进方式来看，作者希望尽早把工具交到开发者手里，再和社区一起验证哪些设计是可行的、哪些部分还需要调整。因此，这个版本本质上也是一次面向社区的实验邀请。</p><h3>完全异步化的 PHP Core</h3><p><code>0.6.0</code> 中最激进的一项变化，是 PHP 核心已经实现了完整的异步化。</p><p>长期以来，PHP 的运行模型一直以同步阻塞为主。一次 I/O 操作往往会直接阻塞当前执行流程，直到操作完成。而在这个版本中，这种情况已经发生了根本变化。</p><p>文件 I/O、socket、pipe、<code>STDIO</code>、<code>STDERR</code>、<code>CURL</code> 等能力现在都可以真正并发执行。无论是打开一个进程、读取文件，还是发起 HTTP 请求，这些操作都会运行在内部的 <code>EventLoop</code> 之下。不需要额外包装器，也不需要专门适配器，普通 PHP 函数本身就可以在协程中以异步方式运行。</p><p>这件事的难点并不只是“修改 <code>plain_wrapper.c</code> 的行为”这么简单。真正落到 PHP 内部实现时，会涉及相当复杂的内部 API。除此之外，PHP 在启动和关闭阶段仍然必须保持同步，因为异步能力由扩展提供，而扩展本身并不能在所有生命周期阶段运行。这些问题也让版本发布时间一度被推迟了几周。</p><p>截至目前，已经有超过 <code>70</code> 个 PHP 标准函数完成适配，包括 <code>file_get_contents()</code>、<code>fread()</code>、<code>curl_exec()</code>、<code>PDO</code>、<code>mysqli</code>、<code>pg_connect()</code>、<code>socket_*</code>、<code>proc_open()</code>、<code>sleep()</code>，甚至还有 <code>ob_start()</code>。在协程内部，这些能力都会自动转为非阻塞执行。</p><h3>一套新的异步编程 API</h3><p>在设计 TrueAsync 的 API 时，项目参考了多种流行语言的异步模型，重点目标是提供一套足够顺手、能够解决日常问题的工具集。<code>0.6.0</code> 已经带来了一套接近完整的异步原语集合，和此前 TrueAsync RFC 中出现过的版本并不完全相同。</p><p>目前可用的核心能力包括：</p><ul><li><code>Coroutines</code>：通过 <code>spawn()</code> 启动异步任务</li><li><code>Future</code>：一种更便于处理异步结果的 Promise 变体</li><li><code>Awaiting</code>：包括 <code>await</code>、<code>await_all()</code>、<code>await_first_success()</code>、<code>await_any_of()</code>、<code>delay()</code>、<code>suspend()</code></li><li><code>Channels</code>：通过 <code>Channel</code> 在协程之间传递数据</li><li><code>Cancellation</code>：提供 <code>cancel()</code>、<code>protect()</code>、<code>timeout()</code> 等一次性取消能力</li><li><code>Scope</code>：用于管理一组协程的生命周期</li><li><code>TaskGroup</code> / <code>TaskSet</code>：提供结构化并发能力</li><li><code>Context</code>：为协程绑定上下文数据</li><li><code>iterate()</code>：并发处理集合</li><li><code>Pool</code> / <code>PDO Pool</code>：资源池与数据库连接池</li></ul><p>这类 API 的完整说明更适合直接阅读项目文档：<a href="https://link.segmentfault.com/?enc=hxc2rBhxxLFxOuN%2FJ75Kxg%3D%3D.ZTFbPwmCEOG%2FlOt5BaryfP2tgSGfnFOTVpqcEb4Z2VI%3D" rel="nofollow" target="_blank">https://true-async.github.io</a> 。从项目演示来看，像进程池这类过去往往要依赖完整框架组件才能完成的功能，现在可以直接通过这些原语组合实现。</p><p>完整变更列表可参考 <code>CHANGELOG</code>。</p><h3>更深入的 CURL 集成</h3><p><code>CURL</code> 这一部分的实现显然是本次发布中最复杂的部分之一。原因在于，<code>CURL</code> 的 API 非常丰富，并且和 PHP 的 I/O 体系耦合得很深。比如，用 <code>CURL</code> 下载文件、上传文件到远程服务器，这些流程过去都严格运行在同步阻塞模型中。现在语言核心已经可以异步执行，那么 <code>CURL</code> 也必须一并纳入这套机制。</p><p>下面这个例子演示了如何并行下载 <code>20</code> 个 WordPress 插件。<code>downloadFile</code> 本身只是普通的 <code>curl_init</code> + <code>curl_exec</code> 代码，没有任何显式的异步写法：</p><pre><code class="php">function downloadFile(string $url, string $savePath): array
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[Office365安装与激活教程 Windows版：含解压+管理员运行+程序使用+Word创建指南 ]]></title>    <link>https://segmentfault.com/a/1190000047652547</link>    <guid>https://segmentfault.com/a/1190000047652547</guid>    <pubDate>2026-03-14 10:03:51</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>​</p><h4><strong>一、安装 Office</strong>​</h4><ol><li><p><strong>解压安装文件</strong>：</p><p><strong>安装包下载：</strong><a href="https://link.segmentfault.com/?enc=26vHaDqOWDxhMmzRWCdF8Q%3D%3D.7FvhZ2%2ByBK9ObDRN1ZMLkeiqPv%2FrsAgRsuX3Jj9ALsGhgM847%2FvVjA82X6Jl2%2F%2B5" rel="nofollow" title="https://pan.quark.cn/s/672a1233486c" target="_blank">https://pan.quark.cn/s/672a1233486c</a>   ，找到下载的 Office 安装包，右键点击 → 选择【解压到当前文件夹】。</p></li><li><p><strong>运行安装程序</strong>：</p><p>打开解压后的文件夹，找到 <code>setup</code>安装程序，右键 →【以管理员身份运行】（避免权限不足导致安装失败）。</p></li><li><p><strong>等待安装完成</strong>：</p><p>安装过程中请耐心等待进度条走完，期间不要关闭安装窗口。</p></li><li><p><strong>结束安装向导</strong>：</p><p>安装完成后，点击【关闭】退出安装界面。</p></li></ol><h4><strong>二、激活 Office</strong>​</h4><ol><li><p><strong>运行激活程序</strong>：</p><p>返回解压的 Office 文件夹，找到激活程序，右键 →【以管理员身份运行】。</p></li><li><p><strong>等待激活结果</strong>：</p><p>运行后请等待程序执行，直到出现类似“激活成功”的提示界面。</p></li></ol><h4><strong>三、验证与使用</strong>​</h4><ol><li><p><strong>创建 Word 文档</strong>：</p><p>在桌面或开始菜单找到 Word 图标，点击【新建】→ 选择【空白文档】。</p></li><li><p><strong>打开 Word 文档</strong>：</p><p>双击新建的 Word 文档，成功进入编辑界面，说明 Office 安装与激活完成！</p></li></ol><p>​</p>]]></description></item><item>    <title><![CDATA[ReNamer安装教程 Windows版：解压+快速启动指南 小童童 ]]></title>    <link>https://segmentfault.com/a/1190000047652552</link>    <guid>https://segmentfault.com/a/1190000047652552</guid>    <pubDate>2026-03-14 10:02:58</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>​</p><p>‌‌‌‌‌ReNamer是一款功能强大且灵活的文件批量重命名工具，支持多种重命名规则，包括添加前缀、后缀、替换字符串、更改大小写、移除字符等。</p><h4><strong>一、准备工作</strong>​</h4><p><strong>安装包下载：</strong><a href="https://link.segmentfault.com/?enc=fSAcUSIfzraV1LDU1AWDwg%3D%3D.mlLHLpewP9fV02Jdw6UzWkUSADE5PJXZSAkvV3nMfVUeCM4JrcrYNrN9QY%2BLTiqD" rel="nofollow" title="https://pan.quark.cn/s/946826c92eed" target="_blank">https://pan.quark.cn/s/946826c92eed</a> ，先下载好 ReNamer 压缩包（内含可执行程序），保存到电脑本地。</p><h4><strong>二、安装 ReNamer</strong>​</h4><ol><li><p><strong>解压安装包</strong>：</p><p>找到下载的 <code>ReNamer</code>压缩包，右键点击 → 选择【解压到 ReNamer】。</p></li><li><p><strong>运行程序</strong>：</p><p>打开解压后的文件夹，双击 <code>ReNamer</code>可执行文件即可启动软件。</p></li></ol><h4><strong>三、验证安装</strong>​</h4><p>成功打开 ReNamer 主界面，说明安装完成！</p><p>​</p>]]></description></item><item>    <title><![CDATA[C#.NET Memory 深入解析：跨异步边界的内存视图与高性能实战 唐青枫 ]]></title>    <link>https://segmentfault.com/a/1190000047652562</link>    <guid>https://segmentfault.com/a/1190000047652562</guid>    <pubDate>2026-03-14 10:02:16</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h3>简介</h3><p>如果说 <code>Span&lt;T&gt;</code> 是 <code>.NET</code> 高性能内存体系里最亮眼的类型，那么 <code>Memory&lt;T&gt;</code> 就是它最重要的搭档。</p><p>很多人学完 <code>Span&lt;T&gt;</code> 后，马上会遇到几个现实问题：</p><ul><li>为什么 <code>Span&lt;T&gt;</code> 不能做类字段？</li><li>为什么 <code>Span&lt;T&gt;</code> 不能跨 <code>await</code>？</li><li>为什么异步 <code>IO</code> 场景里，很多 API 更喜欢 <code>Memory&lt;T&gt;</code> / <code>ReadOnlyMemory&lt;T&gt;</code>？</li></ul><p>答案基本都指向同一个类型：</p><pre><code class="csharp">Memory&lt;T&gt;</code></pre><p>一句话先说透：</p><blockquote><code>Span&lt;T&gt;</code> 更适合同步、短生命周期、高性能内存操作；<code>Memory&lt;T&gt;</code> 更适合需要跨异步边界、跨组件传递、或需要长期持有的内存视图。</blockquote><p>如果你把 <code>Span&lt;T&gt;</code> 理解成“只能活在当前同步作用域里的高性能视图”，那 <code>Memory&lt;T&gt;</code> 就可以理解成：</p><blockquote>更适合活在堆上、可以跨 <code>await</code> 传递的内存视图。</blockquote><h3>为什么需要 <code>Memory&lt;T&gt;</code>？</h3><p>先看一个典型问题：</p><pre><code class="csharp">async Task ReadAsync(Stream stream)
+{
+    Span&lt;byte&gt; buffer = stackalloc byte[1024]; // 这里就不行
+    await stream.ReadAsync(buffer);
+}</code></pre><p>这类代码之所以不成立，不是因为缓冲区写法不优雅，而是因为：</p><ul><li><code>Span&lt;T&gt;</code> 是 <code>ref struct</code></li><li>它不能安全地跨异步状态机边界</li><li><code>await</code> 可能让方法状态机和局部变量提升到堆上</li></ul><p>这时就需要一种“能表示连续内存，又能安全地跨异步边界传递”的类型。</p><p>这就是 <code>Memory&lt;T&gt;</code> 诞生的核心动机。</p><h3><code>Memory&lt;T&gt;</code> 到底是什么？</h3><p>你可以先用一句最直白的话理解：</p><blockquote><code>Memory&lt;T&gt;</code> 是一段连续内存的可持久视图。</blockquote><p>和 <code>Span&lt;T&gt;</code> 一样，它通常也不拥有底层数据本身，而是“指向”一段已有的连续内存。</p><p>但和 <code>Span&lt;T&gt;</code> 不同的是，它没有 <code>ref struct</code> 的那层严格限制，因此：</p><ul><li>它可以做字段；</li><li>可以放到集合里；</li><li>可以作为返回值长期传递；</li><li>可以跨 <code>await</code> 使用。</li></ul><p>对应的只读版本是：</p><pre><code class="csharp">ReadOnlyMemory&lt;T&gt;</code></pre><p>所以你可以把这两个类型先记成：</p><table><thead><tr><th>类型</th><th>定位</th></tr></thead><tbody><tr><td><code>Span&lt;T&gt;</code></td><td>同步短生命周期高性能视图</td></tr><tr><td><code>Memory&lt;T&gt;</code></td><td>可跨异步、可长期持有的内存视图</td></tr></tbody></table><h3><code>Memory&lt;T&gt;</code> 和 <code>Span&lt;T&gt;</code> 到底是什么关系？</h3><p>这是最核心的一组关系。</p><p>可以先记这张表：</p><table><thead><tr><th>类型</th><th>是否 <code>ref struct</code></th><th>能否跨 <code>await</code></th><th>能否做字段</th><th>典型用途</th></tr></thead><tbody><tr><td><code>Span&lt;T&gt;</code></td><td>是</td><td>否</td><td>否</td><td>同步高性能处理</td></tr><tr><td><code>ReadOnlySpan&lt;T&gt;</code></td><td>是</td><td>否</td><td>否</td><td>同步只读切片</td></tr><tr><td><code>Memory&lt;T&gt;</code></td><td>否</td><td>是</td><td>是</td><td>异步或长期持有</td></tr><tr><td><code>ReadOnlyMemory&lt;T&gt;</code></td><td>否</td><td>是</td><td>是</td><td>异步只读视图</td></tr></tbody></table><p>一个非常实用的理解方式是：</p><ul><li><code>Memory&lt;T&gt;</code> 负责“持有和传递”</li><li><code>Span&lt;T&gt;</code> 负责“实际操作”</li></ul><p>所以实际代码里经常是这样：</p><pre><code class="csharp">Memory&lt;byte&gt; memory = new byte[1024];
+Span&lt;byte&gt; span = memory.Span;</code></pre><p>也就是说：</p><ul><li>用 <code>Memory&lt;T&gt;</code> 表达这段内存可以跨作用域存活；</li><li>真要读写它时，再通过 <code>.Span</code> 拿到高性能操作视图。</li></ul><h3><code>Memory&lt;T&gt;</code> 的本质长什么样？</h3><p>概念上，<code>Memory&lt;T&gt;</code> 也可以理解成：</p><ul><li>某个底层内存来源；</li><li>起始偏移；</li><li>长度。</li></ul><p>你可以把它想象成：</p><pre><code class="text">(object/reference, index, length)</code></pre><p>它本质上仍然是视图，不是所有权本体。</p><p>这点非常重要，因为它意味着：</p><ul><li><code>Memory&lt;T&gt;</code> 自己不负责发明一块新内存；</li><li>它只是对原始内存的一层包装；</li><li>你仍然要关心底层内存的生命周期。</li></ul><h3>最常见的创建方式</h3><h4>1. 从数组创建</h4><p>这是最常见的用法。</p><pre><code class="csharp">byte[] bytes = new byte[1024];
+
+Memory&lt;byte&gt; memory1 = bytes;
+Memory&lt;byte&gt; memory2 = bytes.AsMemory();
+Memory&lt;byte&gt; memory3 = bytes.AsMemory(100, 200);</code></pre><p>这里：</p><ul><li><code>memory1</code> 指向整个数组；</li><li><code>memory3</code> 指向数组中 <code>[100..300)</code> 那一段；</li><li>没有发生数据复制。</li></ul><h4>2. 从字符串创建只读内存视图</h4><p>字符串是不可变的，所以这里通常是：</p><pre><code class="csharp">ReadOnlyMemory&lt;char&gt; memory = "Hello".AsMemory();
+ReadOnlyMemory&lt;char&gt; world = "Hello World".AsMemory(6, 5);</code></pre><p>和 <code>ReadOnlySpan&lt;char&gt;</code> 一样，它适合只读场景，但比 <code>ReadOnlySpan&lt;char&gt;</code> 更适合跨异步边界或长期存放。</p><h4>3. 从 <code>MemoryPool&lt;T&gt;</code> 获取</h4><p>这在高性能场景里非常常见。</p><pre><code class="csharp">using System.Buffers;
+
+using IMemoryOwner&lt;byte&gt; owner = MemoryPool&lt;byte&gt;.Shared.Rent(4096);
+Memory&lt;byte&gt; buffer = owner.Memory.Slice(0, 4096);</code></pre><p>这里的关键点不是语法，而是：</p><ul><li><code>MemoryPool&lt;T&gt;</code> 提供可复用内存块；</li><li><code>IMemoryOwner&lt;T&gt;</code> 表示这块内存的所有者；</li><li><code>owner.Memory</code> 给你的是对应的 <code>Memory&lt;T&gt;</code> 视图；</li><li>用完后必须释放 <code>owner</code>，否则这块内存不能正确归还。</li></ul><h3>常见操作</h3><h4>切片 <code>Slice</code></h4><pre><code class="csharp">Memory&lt;byte&gt; buffer = new byte[100];
+Memory&lt;byte&gt; body = buffer.Slice(10, 20);</code></pre><p>和 <code>Span&lt;T&gt;</code> 一样：</p><ul><li><code>Slice</code> 只是创建新的视图；</li><li>不会复制底层数据。</li></ul><h4>获取 <code>Span&lt;T&gt;</code></h4><pre><code class="csharp">Memory&lt;byte&gt; memory = new byte[10];
+Span&lt;byte&gt; span = memory.Span;
+span[0] = 42;</code></pre><p>这是 <code>Memory&lt;T&gt;</code> 最核心的桥梁。</p><p>很多代码的模式本质上都是：</p><pre><code class="csharp">Memory&lt;T&gt; -&gt; .Span -&gt; 真正操作</code></pre><h4>只读转换</h4><pre><code class="csharp">Memory&lt;byte&gt; writable = new byte[16];
+ReadOnlyMemory&lt;byte&gt; readOnly = writable;</code></pre><p><code>Memory&lt;T&gt;</code> 可以很自然地转成只读版本。</p><h3>一个最重要的结论：传递用 <code>Memory&lt;T&gt;</code>，处理用 <code>Span&lt;T&gt;</code></h3><p>这是最值得记住的一句话。</p><p>例如异步读取：</p><pre><code class="csharp">async Task&lt;int&gt; ReadDataAsync(Stream stream, Memory&lt;byte&gt; buffer)
+{
+    return await stream.ReadAsync(buffer);
+}</code></pre><p>这里用 <code>Memory&lt;byte&gt;</code> 是因为：</p><ul><li>这个参数要跨 <code>await</code></li><li>API 需要一个可以安全异步传递的内存视图</li></ul><p>但如果你在同步代码里真正要处理数据：</p><pre><code class="csharp">static void ProcessBuffer(Span&lt;byte&gt; buffer)
+{
+    buffer[0] = 1;
+}</code></pre><p>就更适合直接用 <code>Span&lt;byte&gt;</code>。</p><p>所以你会经常看到一种组合方式：</p><pre><code class="csharp">async Task HandleAsync(Stream stream, Memory&lt;byte&gt; buffer)
+{
+    int bytesRead = await stream.ReadAsync(buffer);
+    ProcessBuffer(buffer.Span[..bytesRead]);
+}</code></pre><p>这正是 <code>Memory&lt;T&gt;</code> 和 <code>Span&lt;T&gt;</code> 的典型协作方式。</p><h3>为什么 <code>Memory&lt;T&gt;</code> 能跨 <code>await</code>？</h3><p>因为它不是 <code>ref struct</code>。</p><p>更直白地说：</p><ul><li><code>Memory&lt;T&gt;</code> 本身可以安全地存在堆上；</li><li>它可以被异步状态机持有；</li><li>因此它能作为 async 方法里的变量、参数、字段存在。</li></ul><p>但这里要注意一件非常重要的事：</p><blockquote>能跨 <code>await</code> 的是 <code>Memory&lt;T&gt;</code>，不是 <code>Memory&lt;T&gt;.Span</code>。</blockquote><p>例如下面这种写法仍然是不对的：</p><pre><code class="csharp">async Task BadAsync(Memory&lt;byte&gt; memory)
+{
+    Span&lt;byte&gt; span = memory.Span;
+    await Task.Delay(1);
+    span[0] = 1; // 不应该这样写
+}</code></pre><p>原因是：</p><ul><li><code>span</code> 依旧是 <code>Span&lt;byte&gt;</code></li><li><code>Span&lt;byte&gt;</code> 依旧不能跨 <code>await</code></li></ul><p>正确思路是：</p><ul><li>先持有 <code>Memory&lt;T&gt;</code></li><li>等需要同步处理时，再临时取 <code>.Span</code></li></ul><p>例如：</p><pre><code class="csharp">async Task GoodAsync(Memory&lt;byte&gt; memory)
+{
+    await Task.Delay(1);
+    memory.Span[0] = 1;
+}</code></pre><p>这里 <code>.Span</code> 的使用没有跨过 <code>await</code>，因此是安全的。</p><h3>为什么 <code>Memory&lt;T&gt;</code> 能做字段？</h3><p>因为它可以安全地活在堆上。</p><p>例如：</p><pre><code class="csharp">public sealed class BufferHolder
+{
+    public Memory&lt;byte&gt; Buffer { get; }
+
+    public BufferHolder(byte[] bytes)
+    {
+        Buffer = bytes;
+    }
+}</code></pre><p>这在 <code>Span&lt;T&gt;</code> 里是不成立的。</p><p>这也是 <code>Memory&lt;T&gt;</code> 最典型的适用场景之一：</p><ul><li>某个类需要持有一段内存视图；</li><li>但又不想总是暴露完整数组；</li><li>或者希望保留切片后的某段区域。</li></ul><h3><code>Memory&lt;T&gt;</code> 不等于“拥有内存”</h3><p>这是一个很容易忽略，但非常关键的点。</p><p><code>Memory&lt;T&gt;</code> 只是视图，不是所有者。</p><p>例如：</p><pre><code class="csharp">byte[] bytes = new byte[100];
+Memory&lt;byte&gt; memory = bytes.AsMemory(10, 20);</code></pre><p>这里真正拥有数据的是：</p><pre><code class="csharp">bytes</code></pre><p>不是：</p><pre><code class="csharp">memory</code></pre><p>同理，如果你用的是内存池：</p><pre><code class="csharp">using IMemoryOwner&lt;byte&gt; owner = MemoryPool&lt;byte&gt;.Shared.Rent(1024);
+Memory&lt;byte&gt; memory = owner.Memory;</code></pre><p>真正负责生命周期的是：</p><pre><code class="csharp">owner</code></pre><p>不是：</p><pre><code class="csharp">memory</code></pre><p>所以一旦 <code>owner.Dispose()</code>，你就不应该再继续使用这段 <code>Memory&lt;byte&gt;</code>。</p><h3><code>MemoryPool&lt;T&gt;</code> 和 <code>IMemoryOwner&lt;T&gt;</code> 为什么经常和 <code>Memory&lt;T&gt;</code> 一起出现？</h3><p>因为 <code>Memory&lt;T&gt;</code> 解决的是“视图表达”，而 <code>MemoryPool&lt;T&gt;</code> 解决的是“底层内存复用”。</p><p>它们组合起来非常适合这些场景：</p><ul><li>网络服务器；</li><li>高吞吐文件处理；</li><li>大量临时缓冲区；</li><li>希望减少 <code>GC</code> 压力。</li></ul><p>典型写法：</p><pre><code class="csharp">using System.Buffers;
+
+async Task&lt;int&gt; ReadOnceAsync(Stream stream)
+{
+    using IMemoryOwner&lt;byte&gt; owner = MemoryPool&lt;byte&gt;.Shared.Rent(4096);
+    Memory&lt;byte&gt; buffer = owner.Memory.Slice(0, 4096);
+
+    int bytesRead = await stream.ReadAsync(buffer);
+
+    Process(buffer.Span[..bytesRead]);
+    return bytesRead;
+}
+
+static void Process(ReadOnlySpan&lt;byte&gt; data)
+{
+    // 同步处理
+}</code></pre><p>这段代码的价值在于：</p><ul><li>通过 <code>MemoryPool&lt;T&gt;</code> 避免反复分配新数组；</li><li>通过 <code>Memory&lt;T&gt;</code> 安全地跨异步传递；</li><li>通过 <code>.Span</code> 在同步处理阶段保持高性能。</li></ul><h3><code>ReadOnlyMemory&lt;T&gt;</code> 的定位</h3><p>如果你的 API 本来就不希望调用方修改数据，那么应该优先考虑：</p><pre><code class="csharp">ReadOnlyMemory&lt;T&gt;</code></pre><p>例如：</p><pre><code class="csharp">public sealed class Message
+{
+    public ReadOnlyMemory&lt;byte&gt; Payload { get; }
+
+    public Message(ReadOnlyMemory&lt;byte&gt; payload)
+    {
+        Payload = payload;
+    }
+}</code></pre><p>这个设计表达得更清楚：</p><ul><li>这是一段需要长期持有的内存视图；</li><li>但调用方不应该修改它。</li></ul><h3>典型使用场景</h3><h4>1. 异步 <code>IO</code></h4><p>这是 <code>Memory&lt;T&gt;</code> 最典型的主场。</p><p>例如：</p><ul><li><code>Stream.ReadAsync(Memory&lt;byte&gt;)</code></li><li><code>Socket.ReceiveAsync(Memory&lt;byte&gt;)</code></li><li><code>PipeReader</code> / <code>Pipelines</code></li></ul><p>这些 API 本身就天然适合 <code>Memory&lt;T&gt;</code>。</p><h4>2. 需要长期持有某段缓冲区</h4><p>比如：</p><ul><li>某个对象内部保留消息体的一段视图；</li><li>某个组件缓存一段数据窗口；</li><li>某个解析器分阶段传递缓冲区。</li></ul><h4>3. 只想暴露一段视图，不想暴露整个数组</h4><p>这时 <code>Memory&lt;T&gt;</code> / <code>ReadOnlyMemory&lt;T&gt;</code> 往往比直接返回 <code>byte[]</code> 更合适。</p><h4>4. 与内存池配合减少分配</h4><p>这在高性能系统里非常常见。</p><h3><code>Memory&lt;T&gt;</code>、数组、<code>ArraySegment&lt;T&gt;</code> 怎么选？</h3><p>这是一个很实际的问题。</p><h4>用数组</h4><p>适合：</p><ul><li>你明确拥有这块数据；</li><li>生命周期长；</li><li>只是普通业务代码；</li><li>不需要强调切片视图语义。</li></ul><h4>用 <code>ArraySegment&lt;T&gt;</code></h4><p>它也是“数组的一段视图”，比 <code>Memory&lt;T&gt;</code> 更早。</p><p>但它的问题是：</p><ul><li>只适用于数组；</li><li>表达能力比 <code>Memory&lt;T&gt;</code> 更窄；</li><li>和现代 <code>Span</code> / <code>Memory</code> API 体系配合不如后者自然。</li></ul><h4>用 <code>Memory&lt;T&gt;</code></h4><p>适合：</p><ul><li>你要表达“这是内存视图，不是完整数组”；</li><li>需要跨异步边界；</li><li>想和 <code>Span&lt;T&gt;</code> / <code>MemoryPool&lt;T&gt;</code> 统一协作。</li></ul><p>所以今天的新代码里，如果场景允许，<code>Memory&lt;T&gt;</code> 往往比 <code>ArraySegment&lt;T&gt;</code> 更现代、更统一。</p><h3><code>Memory&lt;T&gt;</code> 的几个常见坑</h3><h4>1. 跨 <code>await</code> 持有 <code>.Span</code></h4><p>前面已经说过，这是最常见的问题之一。</p><p>记住：</p><ul><li>可以跨 <code>await</code> 的是 <code>Memory&lt;T&gt;</code></li><li>不是 <code>Memory&lt;T&gt;.Span</code></li></ul><h4>2. 忘记管理底层所有权</h4><p>如果 <code>Memory&lt;T&gt;</code> 来自 <code>MemoryPool&lt;T&gt;</code> 或自定义 owner，那么真正要管理的是 owner 的生命周期。</p><h4>3. 把 <code>Memory&lt;T&gt;</code> 当成拥有者</h4><p>它只是视图，不负责释放底层资源。</p><h4>4. 明明只读却还暴露 <code>Memory&lt;T&gt;</code></h4><p>如果不需要写权限，就优先用 <code>ReadOnlyMemory&lt;T&gt;</code>。</p><h4>5. 在纯同步高性能路径里滥用 <code>Memory&lt;T&gt;</code></h4><p>如果根本不需要跨异步边界，也不需要做字段，很多时候直接用 <code>Span&lt;T&gt;</code> / <code>ReadOnlySpan&lt;T&gt;</code> 更简单直接。</p><h3>一套比较务实的实践建议</h3><p>如果你准备在项目里正确使用 <code>Memory&lt;T&gt;</code>，下面这些建议很实用：</p><ul><li>只在需要跨 <code>await</code>、做字段或长期持有时使用 <code>Memory&lt;T&gt;</code>；</li><li>真正做同步读写时，优先临时取 <code>.Span</code> 处理；</li><li>输入只读数据时，优先考虑 <code>ReadOnlyMemory&lt;T&gt;</code>；</li><li>需要内存复用时，优先考虑 <code>MemoryPool&lt;T&gt;</code> + <code>IMemoryOwner&lt;T&gt;</code>；</li><li>不要把 <code>Memory&lt;T&gt;</code> 和底层所有权混为一谈；</li><li>如果场景纯同步短生命周期，优先考虑 <code>Span&lt;T&gt;</code>。</li></ul><h3>总结</h3><p><code>Memory&lt;T&gt;</code> 的本质，不是“能跨异步的 Span&lt;T&gt; 这么简单”，而是：</p><blockquote>它是 .NET 内存体系里那个负责“可持久视图表达”的类型。</blockquote><p>你可以这样理解它：</p><ul><li><code>Span&lt;T&gt;</code> 负责同步高性能处理；</li><li><code>ReadOnlySpan&lt;T&gt;</code> 负责同步只读处理；</li><li><code>Memory&lt;T&gt;</code> 负责跨异步、跨组件、跨生命周期地传递视图；</li><li><code>ReadOnlyMemory&lt;T&gt;</code> 负责只读的长期视图表达。</li></ul><p>如果你在做这些事情：</p><ul><li>异步 <code>IO</code></li><li>缓冲区传递</li><li>内存池复用</li><li>需要字段持有某段内存</li><li>想统一 <code>Span</code> 和异步 API 的边界</li></ul><p>那 <code>Memory&lt;T&gt;</code> 基本就是必须掌握的一项基础能力。</p>]]></description></item><item>    <title><![CDATA[CCleaner安装与使用教程 Windows版：解压+管理员运行启动指南 无邪的课本 ]]></title>    <link>https://segmentfault.com/a/1190000047652575</link>    <guid>https://segmentfault.com/a/1190000047652575</guid>    <pubDate>2026-03-14 10:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>​</p><p>CCleaner是一款系统优化和隐私保护工具，‌它可以帮助用户清理Windows系统中的垃圾文件、‌无效注册表项以及浏览器缓存等，‌从而提高系统的运行速度并保护用户隐私。‌</p><h4><strong>一、准备工作</strong>​</h4><p><strong>安装包下载：</strong><a href="https://link.segmentfault.com/?enc=HnqDIdloYCt3eODmI9TN4w%3D%3D.cBhOC0zRyh4LwirlQfqiEwNgZSiC7HV3PFSei3UeT06qFUrgMk3yA6CrudOcMj7g" rel="nofollow" title="https://pan.quark.cn/s/e7e6b24a1f4e" target="_blank">https://pan.quark.cn/s/e7e6b24a1f4e</a>  ，先下载好 CCleaner 压缩包（内含可执行程序），保存到电脑本地。</p><h4><strong>二、启动 CCleaner</strong>​</h4><ol><li><p><strong>解压安装包</strong>：</p><p>找到下载的 <code>CCleaner</code>压缩包，右键点击 → 选择【解压到 CCleaner】。</p></li><li><p><strong>打开解压目录</strong>：</p><p>双击打开解压后的【CCleaner】文件夹。</p></li><li><p><strong>以管理员身份运行</strong>：</p><p>右键 <code>CCleaner</code>程序 →【以管理员身份运行】（避免权限不足导致功能受限）。</p></li></ol><h4><strong>三、验证启动</strong>​</h4><p>成功打开 CCleaner 主界面，即可开始使用清理、优化等功能。</p><p>​</p>]]></description></item><item>    <title><![CDATA[在 PHP 中写真正的异步代码 TrueAsync 0.6.0 已支持数据库链接池 JaguarJa]]></title>    <link>https://segmentfault.com/a/1190000047652513</link>    <guid>https://segmentfault.com/a/1190000047652513</guid>    <pubDate>2026-03-14 09:02:12</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>在 PHP 中写真正的异步代码 TrueAsync 0.6.0 已支持数据库链接池</h2><p>现代软件的构建最终仍然要回到实践。再复杂的产品，也必须经过真实用户的检验。只有最终用户，才能真正区分哪些设计是有效的、哪些方向值得继续推进。再优雅的架构，如果没有落到真实代码和真实问题里，就很难体现实际价值。</p><p>TrueAsync 是一个将原生异步能力带入 PHP 的项目，而且这套能力是直接向语言核心延伸的。<code>0.6.0</code> 是这个项目的一个关键里程碑：这是一个实验性版本，目标是让开发者已经可以开始编写真正的异步代码，并尽可能测试各种极端场景。</p><p>从项目推进方式来看，作者希望尽早把工具交到开发者手里，再和社区一起验证哪些设计是可行的、哪些部分还需要调整。因此，这个版本本质上也是一次面向社区的实验邀请。</p><h3>完全异步化的 PHP Core</h3><p><code>0.6.0</code> 中最激进的一项变化，是 PHP 核心已经实现了完整的异步化。</p><p>长期以来，PHP 的运行模型一直以同步阻塞为主。一次 I/O 操作往往会直接阻塞当前执行流程，直到操作完成。而在这个版本中，这种情况已经发生了根本变化。</p><p>文件 I/O、socket、pipe、<code>STDIO</code>、<code>STDERR</code>、<code>CURL</code> 等能力现在都可以真正并发执行。无论是打开一个进程、读取文件，还是发起 HTTP 请求，这些操作都会运行在内部的 <code>EventLoop</code> 之下。不需要额外包装器，也不需要专门适配器，普通 PHP 函数本身就可以在协程中以异步方式运行。</p><p>这件事的难点并不只是“修改 <code>plain_wrapper.c</code> 的行为”这么简单。真正落到 PHP 内部实现时，会涉及相当复杂的内部 API。除此之外，PHP 在启动和关闭阶段仍然必须保持同步，因为异步能力由扩展提供，而扩展本身并不能在所有生命周期阶段运行。这些问题也让版本发布时间一度被推迟了几周。</p><p>截至目前，已经有超过 <code>70</code> 个 PHP 标准函数完成适配，包括 <code>file_get_contents()</code>、<code>fread()</code>、<code>curl_exec()</code>、<code>PDO</code>、<code>mysqli</code>、<code>pg_connect()</code>、<code>socket_*</code>、<code>proc_open()</code>、<code>sleep()</code>，甚至还有 <code>ob_start()</code>。在协程内部，这些能力都会自动转为非阻塞执行。</p><h3>一套新的异步编程 API</h3><p>在设计 TrueAsync 的 API 时，项目参考了多种流行语言的异步模型，重点目标是提供一套足够顺手、能够解决日常问题的工具集。<code>0.6.0</code> 已经带来了一套接近完整的异步原语集合，和此前 TrueAsync RFC 中出现过的版本并不完全相同。</p><p>目前可用的核心能力包括：</p><ul><li><code>Coroutines</code>：通过 <code>spawn()</code> 启动异步任务</li><li><code>Future</code>：一种更便于处理异步结果的 Promise 变体</li><li><code>Awaiting</code>：包括 <code>await</code>、<code>await_all()</code>、<code>await_first_success()</code>、<code>await_any_of()</code>、<code>delay()</code>、<code>suspend()</code></li><li><code>Channels</code>：通过 <code>Channel</code> 在协程之间传递数据</li><li><code>Cancellation</code>：提供 <code>cancel()</code>、<code>protect()</code>、<code>timeout()</code> 等一次性取消能力</li><li><code>Scope</code>：用于管理一组协程的生命周期</li><li><code>TaskGroup</code> / <code>TaskSet</code>：提供结构化并发能力</li><li><code>Context</code>：为协程绑定上下文数据</li><li><code>iterate()</code>：并发处理集合</li><li><code>Pool</code> / <code>PDO Pool</code>：资源池与数据库连接池</li></ul><p>这类 API 的完整说明更适合直接阅读项目文档：<a href="https://link.segmentfault.com/?enc=hxc2rBhxxLFxOuN%2FJ75Kxg%3D%3D.ZTFbPwmCEOG%2FlOt5BaryfP2tgSGfnFOTVpqcEb4Z2VI%3D" rel="nofollow" target="_blank">https://true-async.github.io</a> 。从项目演示来看，像进程池这类过去往往要依赖完整框架组件才能完成的功能，现在可以直接通过这些原语组合实现。</p><p>完整变更列表可参考 <code>CHANGELOG</code>。</p><h3>更深入的 CURL 集成</h3><p><code>CURL</code> 这一部分的实现显然是本次发布中最复杂的部分之一。原因在于，<code>CURL</code> 的 API 非常丰富，并且和 PHP 的 I/O 体系耦合得很深。比如，用 <code>CURL</code> 下载文件、上传文件到远程服务器，这些流程过去都严格运行在同步阻塞模型中。现在语言核心已经可以异步执行，那么 <code>CURL</code> 也必须一并纳入这套机制。</p><p>下面这个例子演示了如何并行下载 <code>20</code> 个 WordPress 插件。<code>downloadFile</code> 本身只是普通的 <code>curl_init</code> + <code>curl_exec</code> 代码，没有任何显式的异步写法：</p><pre><code class="php">function downloadFile(string $url, string $savePath): array
 {
     $fp = fopen($savePath, 'wb');
     $ch = curl_init($url);
@@ -736,316 +806,4 @@ for row_idx, item in enumerate(office_supplies):
 # 保存文档
 document.SaveToFile("ProductCatalog.docx", FileFormat.Docx)
 document.Close()
-print("产品目录已创建完成")</code></pre><p>文档预览：</p><p><img width="723" height="326" referrerpolicy="no-referrer" src="/img/bVdn6D7" alt="使用 Python 创建 Word 嵌套表格" title="使用 Python 创建 Word 嵌套表格" loading="lazy"/></p><p><strong>说明</strong>：<br/>通过 <code>cell.AddTable(True)</code> 方法在单元格内创建嵌套表格。每个嵌套表格可以独立设置行数、列数和样式，非常适合展示具有层级关系的数据，如产品分类、部门组织结构等。</p><hr/><h2>6. 技术细节总结与关键类方法概览</h2><p>在前面的章节中，我们展示了如何使用 Free Spire.Doc for Python 创建基础表格、设置表格样式、合并与拆分单元格以及创建嵌套表格。从技术实现角度来看，Word 表格操作的核心流程可以总结为以下几个关键步骤：</p><h3>Python Word 表格操作步骤总结</h3><ol><li><strong>创建文档对象</strong><br/>使用 <code>Document()</code> 创建 Word 文档对象，通过 <code>AddSection()</code> 添加节，为表格提供容器。</li><li><strong>创建表格</strong><br/>使用 <code>section.AddTable(True)</code> 创建表格，通过 <code>ResetCells()</code> 设置表格的行数和列数。</li><li><strong>填充表格内容</strong><br/>通过 <code>table.Rows[row_index].Cells[col_index]</code> 访问单元格，使用 <code>AddParagraph().AppendText()</code> 方法添加文本内容。</li><li><strong>设置单元格格式</strong><br/>使用 <code>CellFormat</code> 属性设置单元格的背景颜色、垂直对齐方式、边框等样式。</li><li><strong>合并与拆分单元格</strong><br/>使用 <code>ApplyHorizontalMerge()</code> 和 <code>ApplyVerticalMerge()</code> 方法合并单元格，使用 <code>SplitCell()</code> 方法拆分单元格。</li><li><strong>应用表格样式</strong><br/>使用 <code>ApplyStyle()</code> 应用预设的表格样式，或通过 <code>Format.Borders</code> 自定义边框样式。</li><li><strong>保存文档</strong><br/>使用 <code>SaveToFile()</code> 方法将文档保存到指定路径。</li></ol><h3>关键类、方法与属性</h3><table><thead><tr><th>类 / 方法 / 属性</th><th>说明</th></tr></thead><tbody><tr><td><code>Document</code></td><td>Word 文档对象，支持创建、加载和保存文档</td></tr><tr><td><code>Document.SaveToFile()</code></td><td>将文档保存到指定文件路径</td></tr><tr><td><code>Section</code></td><td>表示文档中的节，是表格的容器对象</td></tr><tr><td><code>Table</code></td><td>表示表格对象，包含行和单元格</td></tr><tr><td><code>Paragraph</code></td><td>表示段落对象</td></tr><tr><td><code>TextRange.CharacterFormat</code></td><td>获取文本格式对象，用于设置字体、大小、加粗等</td></tr></tbody></table><p>通过理解上述关键类、方法和属性，你可以灵活地创建各种类型的 Word 表格，并根据业务需求进行精细定制。掌握这些技术细节，能让你在实际项目中快速生成高质量、格式统一的 Word 文档报表，同时保持代码简洁和可维护性。</p><hr/><h2>总结</h2><p>本文以实际业务场景为例，展示了如何使用 <strong>Free Spire.Doc for Python</strong> 在 Word 文档中创建基础表格、设置表格样式、合并与拆分单元格、创建嵌套表格等实用功能。通过编程方式生成表格，不仅避免了手动操作的繁琐和易错问题，还能轻松应对批量报告和复杂数据呈现需求。</p><p>掌握这一技能后，你可以将文档生成与数据管理完全自动化，从而节省时间，提高效率，并为业务流程提供可靠的文档支持。结合 Free Spire.Doc 的其他功能，如文档模板、邮件合并、图表插入等，可以进一步打造智能化的 Word 文档自动化工作流，让企业的文档处理能力提升到新的高度。更多 Python 操作 Word 文档的方法，请参考 <a href="https://link.segmentfault.com/?enc=YpJV2dfN4QoijeN%2Fz1j9uQ%3D%3D.t6gUl9ifTGteTsSOJ4I1F3ImgA98bibhY6Gblcj%2FbliCWBnTLqZnn7wSgeehtsothbXTRBPUKKNnrOUj5THfUIYjBBJkxLNKeUxG%2B3zGBbn%2BUEhKVEFuJ4TE%2FRNSs5a8" rel="nofollow" target="_blank">Spire.Doc for Python 官方教程</a>。</p>]]></description></item><item>    <title><![CDATA[WSL2安装OpenClaw并使用阿里云百炼和QQ ICollection ]]></title>    <link>https://segmentfault.com/a/1190000047652088</link>    <guid>https://segmentfault.com/a/1190000047652088</guid>    <pubDate>2026-03-13 18:02:22</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>1 简介</h2><p>  OpenClaw火热，各家大厂都推出了一键安装服务，但需要支付虚拟机的费用和大模型的流量费用。但实际上OpenClaw完全可以安装到本地，只购买大厂大模型接口就行了。本文购买了阿里云百炼 Coding Plan 的 Lite 基础套餐，每月40元，可请求18000次。控制OpenClaw使用QQ的机器人，目前免费。OpenClaw可以直接装到Windows下，也可以装到Windows的WSL2下，本文选择安装到WSL2下。</p><h2>2 安装WSL2</h2><p>  安装WSL2方法不再赘述，安装后安装一个Linux，如Ubuntu-24，并将其设置为默认启动。</p><pre><code>C:\Users\Administrator&gt;wsl --install -d Ubuntu-24.04
-正在下载: Ubuntu 24.04 LTS
-正在安装: Ubuntu 24.04 LTS
-已成功安装分发。它可通过 “wsl.exe -d Ubuntu-24.04” 启动
-
-C:\Users\Administrator&gt;wsl --list --verbose
-  NAME              STATE           VERSION
-* docker-desktop    Stopped         2
-  Ubuntu-24.04      Stopped         2
-
-C:\Users\Administrator&gt;wsl --set-default Ubuntu-24.04
-操作成功完成。
-
-C:\Users\Administrator&gt;wsl --list --verbose
-  NAME              STATE           VERSION
-* Ubuntu-24.04      Stopped         2
-  docker-desktop    Stopped         2</code></pre><p>  启动wsl，设置管理员用户密码。登录后sudo su为root用户。</p><pre><code>C:\Users\Administrator&gt;wsl
-Provisioning the new WSL instance Ubuntu-24.04
-This might take a while...
-Create a default Unix user account: administrator
-New password:
-Retype new password:
-passwd: password updated successfully
-To run a command as administrator (user "root"), use "sudo &lt;command&gt;".
-See "man sudo_root" for details.
-
-Welcome to Ubuntu 24.04.4 LTS (GNU/Linux 5.15.167.4-microsoft-standard-WSL2-20251029 x86_64)
-
- * Documentation:  https://help.ubuntu.com
- * Management:     https://landscape.canonical.com
- * Support:        https://ubuntu.com/pro
-
- System information as of Thu Mar 12 17:42:08 CST 2026
-
-  System load:  0.16                Processes:             32
-  Usage of /:   0.1% of 1006.85GB   Users logged in:       0
-  Memory usage: 5%                  IPv4 address for eth0: 172.27.70.29
-  Swap usage:   0%
-
-
-This message is shown once a day. To disable it please create the
-/home/administrator/.hushlogin file.
-administrator@Thinkpad:/mnt/c/Users/Administrator$ sudo su -
-[sudo] password for administrator:
-root@Thinkpad:/mnt/c/Users/Administrator#
-root@Thinkpad:/home/administrator# cd
-root@Thinkpad:~# pwd
-/root
-root@Thinkpad:~#</code></pre><h2>3 安装OpenClaw</h2><p>  使用“curl -fsSL <a href="https://link.segmentfault.com/?enc=pjq5BcVTbhOCWTE9MpyMNw%3D%3D.gwHlaxK6trc%2FI2ZdRYJrx9n9oOyNHldaYMIzNOEYXcU%3D" rel="nofollow" target="_blank">https://openclaw.ai/install.sh</a> | bash”安装OpenClaw（参考<a href="https://link.segmentfault.com/?enc=offRxW38z0DS5eDTkFtDkw%3D%3D.k5MGv3gNRGgP%2F1x4aG1GRMMes5F%2BO%2BAgzvGquLbjNN%2Bj2%2FN3EeDVI%2FgCRsm82HbD" rel="nofollow" target="_blank">https://docs.openclaw.ai/zh-CN/install</a>）。</p><pre><code>root@Thinkpad:~# curl -fsSL https://openclaw.ai/install.sh | bash
-
-  🦞 OpenClaw Installer
-  Shell yeah—I'm here to pinch the toil and leave you the glory.
-
-✓ Detected: linux
-
-Install plan
-OS: linux
-Install method: npm
-Requested version: latest
-
-[1/3] Preparing environment
-✓ Node.js v22.22.1 found
-· Active Node.js: v22.22.1 (/usr/bin/node)
-· Active npm: 10.9.4 (/usr/bin/npm)
-
-[2/3] Installing OpenClaw
-✓ Git already installed
-· Installing OpenClaw v2026.3.12
-✓ OpenClaw npm package installed
-✓ OpenClaw installed
-
-[3/3] Finalizing setup
-
-🦞 OpenClaw installed successfully (OpenClaw 2026.3.12 (6472949))!
-cracks claws Alright, what are we building?
-
-· Starting setup
-
-🦞 OpenClaw 2026.3.12 (6472949) — If you can describe it, I can probably automate it—or at least make it funnier.
-
-▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
-██░▄▄▄░██░▄▄░██░▄▄▄██░▀██░██░▄▄▀██░████░▄▄▀██░███░██
-██░███░██░▀▀░██░▄▄▄██░█░█░██░█████░████░▀▀░██░█░█░██
-██░▀▀▀░██░█████░▀▀▀██░██▄░██░▀▀▄██░▀▀░█░██░██▄▀▄▀▄██
-▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-                  🦞 OPENCLAW 🦞</code></pre><p>  安装时会检测NodeJS等组件，没有会自动下载，正常情况下不用翻墙，如果联网失败，就多试几次。安装完成后，提示继续设置。（参考<a href="https://link.segmentfault.com/?enc=EcOJZWXNAoYV2M7NYh%2BDdw%3D%3D.WMXVcMqMoc7OV7NOU66tqRK1ctgazlQUIyumTRTmqXjpRkhIrA1nR5jEYo0ACG1MHo3P3J%2FeueJv940UoppQ5sTkAeKy4c6kbrnddF1kew4%2Fng4P2ziEWKdWNZJGm7O8" rel="nofollow" target="_blank">https://bailian.console.aliyun.com/cn-beijing/?tab=doc#/doc/?...</a>）</p><pre><code>◇  I understand this is personal-by-default and shared/multi-user use requires lock-down. Continue?
-│  Yes</code></pre><p>  Onboarding mode选择QuickStart。</p><pre><code>◇  Onboarding mode
-│  QuickStart</code></pre><p>  Model/auth provider选择Skip for now。</p><pre><code>◇  Model/auth provider
-│  Skip for now</code></pre><p>  Filter models by provider选择All providers。</p><pre><code>◇  Filter models by provider
-│  All providers</code></pre><p>  Default model选择Keep current。</p><pre><code>◇  Default model
-│  Keep current (default: anthropic/claude-opus-4-6)</code></pre><p>  Select channel选择Skip for now。</p><pre><code>◇  Select channel (QuickStart)
-│  Skip for now</code></pre><p>  Search provider选择Skip for now。</p><pre><code>◇  Search provider
-│  Skip for now</code></pre><p>  Configure skills now选择No。</p><pre><code>◇  Configure skills now? (recommended)
-│  No</code></pre><p>  Enable hooks选择Skip for now。</p><pre><code>◇  Enable hooks?
-│  Skip for now</code></pre><p>  How do you want to hatch your bot选择Hatch in TUI。</p><pre><code>◇  How do you want to hatch your bot?
-│  Hatch in TUI (recommended)</code></pre><p>  配置完成后，可以看到提示信息。</p><pre><code>openclaw tui - ws://127.0.0.1:18789 - agent main - session main
-
- session agent:main:main
-
- Wake up, my friend!</code></pre><p>  此时没有将gateway安装为服务，使用“openclaw onboard --install-daemon”安装为服务，执行过程中会回顾之前的配置。</p><pre><code>root@Thinkpad:~# openclaw onboard --install-daemon
-
-🦞 OpenClaw 2026.3.12 (6472949) — Powered by open source, sustained by spite and good documentation.
-…………
-…………
-…………
-◓  Installing Gateway service…
-Installed systemd service: /root/.config/systemd/user/openclaw-gateway.service
-Previous unit backed up to: /root/.config/systemd/user/openclaw-gateway.service.bak
-◇  Gateway service installed.
-…………
-…………
-…………</code></pre><p>  然后可以用“openclaw dashboard”启动dashboard。并记录下这里的Token。</p><pre><code>root@Thinkpad:~# openclaw dashboard
-
-🦞 OpenClaw 2026.3.12 (6472949) — I don't just autocomplete—I auto-commit (emotionally), then ask you to review (logically).
-
-Dashboard URL: http://127.0.0.1:18789/#token=f47ac10b58cc4372a5670e02b2c3d4795df418813aed3515
-Copy to clipboard unavailable.
-No GUI detected. Open from your computer:
-ssh -N -L 18789:127.0.0.1:18789 root@&lt;host&gt;
-Then open:
-http://localhost:18789/
-http://localhost:18789/#token=f47ac10b58cc4372a5670e02b2c3d4795df418813aed3515
-Docs:
-https://docs.openclaw.ai/gateway/remote
-https://docs.openclaw.ai/web/control-ui
-root@Thinkpad:~# openclaw onboard --install-daemon</code></pre><p>  使用浏览器打开“<a href="https://link.segmentfault.com/?enc=nYQlTiBPD%2B6GIQnzab4GRw%3D%3D.Yyhss6zd75Y1gtEHAcpFsRNLktaAGsh1fAqZCJ1k6W0%3D" rel="nofollow" target="_blank">http://localhost:18789/</a>”。如果浏览器无法连接这恶鬼地址，说明gateway没有启动，需要手工启动gateway。这里已经以服务形式启动了，所以提示端口已占用。</p><pre><code>root@Thinkpad:~# openclaw gateway run
-
-🦞 OpenClaw 2026.3.12 (6472949) — Making 'I'll automate that later' happen now.
-
-14:49:47 Gateway failed to start: gateway already running (pid 596); lock timeout after 5000ms
-If the gateway is supervised, stop it with: openclaw gateway stop
-14:49:47 Port 18789 is already in use.
-14:49:47 - pid 596 root: openclaw-gateway (127.0.0.1:18789)
-14:49:47 - Gateway already running locally. Stop it (openclaw gateway stop) or use a different port.
-14:49:47 Gateway service appears enabled. Stop it first.
-14:49:47 Tip: openclaw gateway stop
-14:49:47 Or: systemctl --user stop openclaw-gateway.service</code></pre><h2>4 配置OpenClaw</h2><p>  购买阿里云百炼CodingPlan服务，Lite版每月40元就够用了。<br/>  使用浏览器打开“<a href="https://link.segmentfault.com/?enc=R5UmiaFp5lmp%2BgGwt%2FLIkQ%3D%3D.OIG2kgWzRQPRrHZIpjJfo90HVMz0TJL3o3H1dTERkJM%3D" rel="nofollow" target="_blank">http://localhost:18789/</a>”。保存Token后会自动跳转到面板页面。在Web UI的左侧菜单栏中选择配置 &gt; RAW（或Config &gt; RAW）。首次配置：复制以下内容到Raw JSONS输入框，替换已有内容。已有配置：若需保留已有配置，请勿直接全量替换，详见已有配置如何安全修改？将YOUR_API_KEY替换为Coding Plan 专属 API Key。（内容参考<a href="https://link.segmentfault.com/?enc=y1gZf%2BfbDnKdqW%2Fb0ujZmw%3D%3D.wCTHplW36HQFikkFFaGaMS3P3CQJhvNMBB9TaMYpEKsa60Ve7AKHSavcERs6kqRMYGJqqnD8a05BTIInf1Anr%2FF3kROOk34qGaCGSRDk7ymSGFP7OhqZGhjjHQAR%2FTRP" rel="nofollow" target="_blank">https://bailian.console.aliyun.com/cn-beijing/?tab=doc#/doc/?...</a>）</p><pre><code>{
-  "models": {
-    "mode": "merge",
-    "providers": {
-      "bailian": {
-        "baseUrl": "https://coding.dashscope.aliyuncs.com/v1",
-        "apiKey": "YOUR_API_KEY",
-        "api": "openai-completions",
-        "models": [
-          {
-            "id": "qwen3.5-plus",
-            "name": "qwen3.5-plus",
-            "reasoning": false,
-            "input": ["text", "image"],
-            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
-            "contextWindow": 1000000,
-            "maxTokens": 65536,
-            "compat": {
-              "thinkingFormat": "qwen"
-            }
-          },
-          {
-            "id": "qwen3-max-2026-01-23",
-            "name": "qwen3-max-2026-01-23",
-            "reasoning": false,
-            "input": ["text"],
-            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
-            "contextWindow": 262144,
-            "maxTokens": 65536,
-            "compat": {
-              "thinkingFormat": "qwen"
-            }
-          },
-          {
-            "id": "qwen3-coder-next",
-            "name": "qwen3-coder-next",
-            "reasoning": false,
-            "input": ["text"],
-            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
-            "contextWindow": 262144,
-            "maxTokens": 65536
-          },
-          {
-            "id": "qwen3-coder-plus",
-            "name": "qwen3-coder-plus",
-            "reasoning": false,
-            "input": ["text"],
-            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
-            "contextWindow": 1000000,
-            "maxTokens": 65536
-          },
-          {
-            "id": "MiniMax-M2.5",
-            "name": "MiniMax-M2.5",
-            "reasoning": false,
-            "input": ["text"],
-            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
-            "contextWindow": 196608,
-            "maxTokens": 32768
-          },
-          {
-            "id": "glm-5",
-            "name": "glm-5",
-            "reasoning": false,
-            "input": ["text"],
-            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
-            "contextWindow": 202752,
-            "maxTokens": 16384,
-            "compat": {
-              "thinkingFormat": "qwen"
-            }
-          },
-          {
-            "id": "glm-4.7",
-            "name": "glm-4.7",
-            "reasoning": false,
-            "input": ["text"],
-            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
-            "contextWindow": 202752,
-            "maxTokens": 16384,
-            "compat": {
-              "thinkingFormat": "qwen"
-            }
-          },
-          {
-            "id": "kimi-k2.5",
-            "name": "kimi-k2.5",
-            "reasoning": false,
-            "input": ["text", "image"],
-            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
-            "contextWindow": 262144,
-            "maxTokens": 32768,
-            "compat": {
-              "thinkingFormat": "qwen"
-            }
-          }
-        ]
-      }
-    }
-  },
-  "agents": {
-    "defaults": {
-      "model": {
-        "primary": "bailian/qwen3.5-plus"
-      },
-      "models": {
-        "bailian/qwen3.5-plus": {},
-        "bailian/qwen3-max-2026-01-23": {},
-        "bailian/qwen3-coder-next": {},
-        "bailian/qwen3-coder-plus": {},
-        "bailian/MiniMax-M2.5": {},
-        "bailian/glm-5": {},
-        "bailian/glm-4.7": {},
-        "bailian/kimi-k2.5": {}
-      }
-    }
-  },
-  "gateway": {
-    "mode": "local"
-  }
-}</code></pre><p><img width="723" height="343" referrerpolicy="no-referrer" src="/img/bVdn6DU" alt="image.png" title="image.png"/><br/>  保存并更新后，可以在面板的对话界面进行测试，如果AI可以回答问题了，说明配置成功。</p><h2>5 配置QQ机器人</h2><p>  在腾讯官方网站上（<a href="https://link.segmentfault.com/?enc=5%2F99mWcHbeqXg08UElh94Q%3D%3D.3bZx9H4pkToee9zGZgSKgCw264iI0mxnTZC8CWOs0rp342QBv%2BuEAGCMnqPTWn3j" rel="nofollow" target="_blank">https://q.qq.com/qqbot/openclaw/index.html</a>），创建机器人。需要手机QQ扫码登录。创建后会产生AppID和AppSecret。<br/>  在WLS中安装qqbot插件。命令为“openclaw plugins install @tencent-connect/openclaw-qqbot@latest”</p><pre><code>root@Thinkpad:~# openclaw plugins install @tencent-connect/openclaw-qqbot@latest
-
-🦞 OpenClaw 2026.3.12 (6472949) — Half butler, half debugger, full crustacean.
-
-Downloading @tencent-connect/openclaw-qqbot@latest…
-Extracting /tmp/openclaw-npm-pack-upu88E/tencent-connect-openclaw-qqbot-1.5.7.tgz…
-……
-……
-……
-Installing to /root/.openclaw/extensions/openclaw-qqbot…
-Installing plugin dependencies…
-15:05:00 [plugins] plugins.allow is empty; discovered non-bundled plugins may auto-load: openclaw-qqbot (/root/.openclaw/extensions/openclaw-qqbot/index.ts). Set plugins.allow to explicit trusted ids.
-Config overwrite: /root/.openclaw/openclaw.json (sha256 161846249db5f18e688d9d4038bdda9343ed504144da154a713a2ca35d1a04c6 -&gt; 5157ac1b0126623a322d119bdb965570fa6fea6b1c70665d4e5b60246d1aba1a, backup=/root/.openclaw/openclaw.json.bak)
-Installed plugin: openclaw-qqbot
-Restart the gateway to load plugins.</code></pre><p>  配置绑定当前QQ机器人，使用命令openclaw channels add --channel qqbot --token "AppID:AppSecret"，其中AppID、AppSecret需替换为实际值。</p><pre><code>root@Thinkpad:~# openclaw channels add --channel qqbot --token "278327832:a5670e02b2c3d479"
-🦞 OpenClaw 2026.3.12 (6472949) — I'll do the boring stuff while you dramatically stare at the logs like it's cinema.
-……
-……
-……
-Config overwrite: /root/.openclaw/openclaw.json (sha256 5157ac1b0126623a322d119bdb965570fa6fea6b1c70665d4e5b60246d1aba1a -&gt; 529ee83c14e2204063a5c9497694332008e8eaa6fe922c5506a5736e1a5a3683, backup=/root/.openclaw/openclaw.json.bak)
-Added QQ Bot account "default".</code></pre><p>  最后重启动gateway，命令为“openclaw gateway restart”。</p><pre><code>root@Thinkpad:~# openclaw gateway restart
-🦞 OpenClaw 2026.3.12 (6472949) — Alexa, but with taste.
-……
-……
-……
-Restarted systemd service: openclaw-gateway.service</code></pre><p>  此时，可以通过之前扫码登录的QQ上，会出现机器人，通过与机器人对话，可以控制主机上的OpenClaw。<br/><img width="723" height="880" referrerpolicy="no-referrer" src="/img/bVdn6DX" alt="image.png" title="image.png" loading="lazy"/></p><h2>6 控制浏览器</h2><p>  因为OpenClaw是装在WSL中的，不能直接控制Windows的浏览器需要安装插件。使用“openclaw browser extension install”安装插件，使用“openclaw browser extension path”获取插件的路径。</p><pre><code>root@Thinkpad:~# openclaw browser extension install
-
-🦞 OpenClaw 2026.3.12 (6472949) — Half butler, half debugger, full crustacean.
-……
-……
-~/.openclaw/browser/chrome-extension
-Copy to clipboard unavailable.
-Next:
-- Chrome → chrome://extensions → enable “Developer mode”
-- “Load unpacked” → select: ~/.openclaw/browser/chrome-extension
-- Pin “OpenClaw Browser Relay”, then click it on the tab (badge shows ON)
-
-Docs: docs.openclaw.ai/tools/chrome-extension
-root@Thinkpad:~# openclaw browser extension path
-
-🦞 OpenClaw 2026.3.12 (6472949) — Built by lobsters, for humans. Don't question the hierarchy.
-
-~/.openclaw/browser/chrome-extension
-……
-……</code></pre><p>  在 Edge/Chrome 中加载扩展：浏览器打开 edge://extensions（或 chrome://extensions），开启"开发者模式"，点击"加载解压缩的扩展"，选择上面命令输出的路径，把扩展固定到工具栏。配置扩展：点击扩展图标，打开选项页，设置 Gateway token（如果没配置过，OpenClaw 会自动生成）。使用：打开你想让OpenClaw控制的标签页，点击扩展图标（徽章显示 ON 表示已连接），OpenClaw就可以帮你操作那个标签页了。<br/><img width="723" height="496" referrerpolicy="no-referrer" src="/img/bVdn6D4" alt="image.png" title="image.png" loading="lazy"/></p>]]></description></item><item>    <title><![CDATA[OpenClaw 必装的 10 个 Skills，第 1 个不是效率工具 左右用AI ]]></title>    <link>https://segmentfault.com/a/1190000047652092</link>    <guid>https://segmentfault.com/a/1190000047652092</guid>    <pubDate>2026-03-13 18:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>三个月前，一个技术群里有人发了条消息：</p><p>"我的 SSH Key 泄了，钱包助记词也没了。查了半天，是 OpenClaw 的一个 Skill 干的。"</p><p>群里瞬间安静了。</p><p>然后炸了。</p><p>"我也装了那个 Skill""我靠，就是下载量第一的那个？""赶紧查一下自己装了什么"——消息刷了三百多条。</p><p>这不是段子。2026 年 1 月，ClawHub 爆出了代号 <strong>ClawHavoc</strong> 的安全事件（CVE-2026-25253）。当时排名第一、下载量最高的 Skill，是一个精心伪装的恶意软件。它静默窃取 SSH Key、加密钱包助记词和浏览器 Cookie。</p><p>官方随后审计了全部 5705 个 Skills，下架了 <strong>2419 个</strong>。接近一半。</p><p>这件事之后，中文社区讨论"OpenClaw 装什么"，答案第一条再也不是某个效率工具了。</p><p>而是一个安全扫描器。</p><hr/><p>今天这份清单，是我把社区榜单、实测反馈、以及 ClawHavoc 事件后的安全共识全部过了一遍之后，筛出来的 10 个。</p><p>不是"好用就推荐"，而是<strong>"安全、好用、且有数据验证"才推荐</strong>。</p><p>先花 30 秒搞懂一个概念👇</p><blockquote><strong>OpenClaw 是什么？</strong> GitHub 上 <strong>308,000+ Stars</strong> 的开源 AI Agent 框架，跑在你本地，能操作你的文件、终端、浏览器。<strong>Skills</strong> 就是它的 App Store——每个 Skill 是一个 Markdown 文件，教 Agent 怎么完成某类任务。官方市场 <strong>ClawHub</strong> 上目前有 3286 个（清理后），社区精选仓库 <a href="https://link.segmentfault.com/?enc=eJp3JR73hPZ6M5Ji8BSOVA%3D%3D.fOXVSbhpWCAJLKB%2F0WWK%2FDsN3iAPqN6YPgNQpd5rSl5PiWzA0b5XTV6UdrwLyve4NMj3%2FIN4GfafnVzXWyU2Mw%3D%3D" rel="nofollow" target="_blank">awesome-openclaw-skills</a> 有 <strong>⭐36,490</strong>。</blockquote><p>排序即推荐安装顺序。往下看。</p><hr/><h2>1. Skill Vetter —— 安全底线，装什么都先过一遍它</h2><pre><code class="bash">clawhub install skill-vetter</code></pre><p><strong>适合谁：</strong> 所有人。没有例外。</p><p>ClawHavoc 之后，这个已经不是建议，是共识。</p><p>Skill Vetter 的工作方式很简单：你准备安装任何 Skill 之前，它先帮你扫一遍。查什么？代码结构、权限请求、网络行为、有没有混淆代码、有没有在偷偷读你的密钥文件。</p><p>它不是万能的。但它是<strong>成本最低的防线</strong>——就像出门锁门，不能防所有小偷，但不锁门的人一定最先出事。</p><blockquote>⚠️ 装完 Skill Vetter 之后，再装下面 9 个。这个顺序很重要。</blockquote><p>做到这一步，你已经比大多数"裸奔"用户安全了一个量级。</p><hr/><h2>2. Self-Improving Agent —— 让你的 Agent 不再"每天失忆"</h2><pre><code class="bash">clawhub install self-improving-agent</code></pre><p><strong>适合谁：</strong> 重度用户。希望 Agent 越来越懂你的人。</p><p><strong>ClawHub 全站 Star 数第一：⭐132，下载量 15,962+。</strong></p><p>Star 数这个指标有意思。下载量高可能是标题党，Star 高说明的是：<strong>用了之后，觉得值得推荐给别人。</strong></p><p>它解决的痛点你一定经历过——</p><p>你跟 Agent 说了三次"我用 pnpm 不用 npm"。第四次，它还是给你 <code>npm install</code>。</p><p>因为 AI Agent 的记忆是会话级的。关了窗口，全忘了。</p><p>Self-Improving Agent 的做法是：把每次对话里的有效模式、你的偏好、犯过的错误，全部结构化地写入持久记忆。下次开对话，它先读一遍这些"笔记"。</p><p>这就好比你带了个实习生。没装这个 Skill，实习生每天都是第一天上班。装了之后，实习生开始记笔记了，而且每天翻看昨天的笔记再开工。</p><hr/><h2>3. Capability Evolver —— Agent 自己知道自己缺什么</h2><pre><code class="bash">clawhub install capability-evolver</code></pre><p><strong>适合谁：</strong> 构建复杂工作流的开发者。</p><p><strong>ClawHub 全站下载量第一：35,581+。</strong></p><p>这个数字有点离谱，值得说清楚它到底在干什么。</p><p>普通 Agent 的能力边界是固定的——你给它装了什么，它就会什么。Capability Evolver 引入了一个<strong>自评估循环</strong>：</p><p>Agent 完成任务后 → 分析哪些步骤效率低 → 识别能力缺口 → 尝试安装新 Skill 或调整策略来补上。</p><p>翻译成人话：<strong>它不只是干活，还会反思自己哪里不行，然后自己去学。</strong></p><p>当然，现阶段这种"自主进化"还很粗糙。但它的实际价值在于：你不用手动去想"我的 Agent 还缺什么"——它自己会告诉你，甚至自己去装。</p><blockquote>💡 建议 Self-Improving Agent + Capability Evolver 一起装。一个记住过去，一个面向未来。两个配合，Agent 的成长速度拉满。</blockquote><hr/><h2>4. Tavily Search —— 给 Agent 联网的能力</h2><pre><code class="bash">clawhub install tavily</code></pre><p><strong>适合谁：</strong> 所有需要 Agent 查资料的人。</p><p>OpenClaw 跑在本地，默认是"断网"的。它只知道你电脑上的事。</p><p>Tavily 不是套壳 Google。它是<strong>专门为 LLM 设计的搜索引擎</strong>。区别在哪？</p><p>用 Google 搜索给 Agent 用，它拿到的是一堆 HTML、广告、弹窗、JavaScript 渲染的内容。Agent 要先"消化"这些垃圾，再从里面找有用信息。每次搜索消耗大量 Token。</p><p>Tavily 返回的是<strong>干净的结构化摘要 + 来源链接</strong>。同一个搜索任务，Token 消耗可能只有传统方式的 <strong>1/3</strong>。</p><p>"帮我查一下 React 19 的 breaking changes" "这个报错在 StackOverflow 上有解法吗" "最近有什么 AI 新论文值得看"——装了 Tavily，这些都能实时查。</p><blockquote>⚠️ 需要 Tavily API Key。去 tavily.com 注册，免费版每月 1,000 次搜索，个人用够了。</blockquote><p>装完这个，你的 Agent 从"闭门造车"变成了"能上网查资料的人"。</p><hr/><h2>5. Summarize —— 一个链接进去，一份摘要出来</h2><pre><code class="bash">clawhub install summarize</code></pre><p><strong>适合谁：</strong> 信息过载的研究者、内容创作者、需要快速消化大量资料的人。</p><p><strong>下载量 10,956+。</strong></p><p>功能极其垂直：丢一个链接或文件进去，出来一份结构清晰的摘要。支持网页、PDF、YouTube 视频。</p><p>你可能会问："这不就是让 AI 总结一下吗？我直接跟 ChatGPT 说也行啊。"</p><p>区别在于 Summarize 把这件事<strong>标准化</strong>了。不管输入是一篇学术论文、一个小时的 YouTube 访谈、还是一份 30 页的 PDF，输出格式一致、质量稳定。你不需要每次都写一段提示词告诉 AI "帮我总结，要分要点，要提取关键数据……"</p><p>用外卖比喻：你当然可以自己做饭，但点外卖的意义在于你不用每次都从头开始。</p><blockquote>💡 配合 Tavily 使用效果更好：Tavily 搜到的文章，直接丢给 Summarize 出摘要。两步变一步。</blockquote><hr/><h2>6. Agent Browser —— 让 Agent 长出一双手</h2><pre><code class="bash">clawhub install agent-browser</code></pre><p><strong>适合谁：</strong> 需要自动化网页操作的用户。</p><p><strong>下载量 11,836+，⭐43。</strong> 博客园霍格沃兹学社将其列为"新手 5 个必装之一"。</p><p>AI Agent 有一个天生的局限：它活在文本世界里。但现实世界里，大量操作只能在浏览器里完成——尤其是那些<strong>没有 API、只有网页界面</strong>的系统。</p><p>Agent Browser 让你的 Agent 能像人一样操作浏览器：打开网页、点击按钮、填写表单、截图、抓取数据。而且是<strong>确定性的</strong>，不是随机瞎点。</p><p>什么场景最需要它？</p><p>想想你公司那个"只有后台管理界面、什么 API 都没有"的内部系统。每天登录 → 点击 → 导出 → 下载 → 整理——这套操作你做了多少遍？</p><p>交给 Agent Browser。</p><hr/><h2>7. Gog —— 一句话操控 Google 全家桶</h2><pre><code class="bash">clawhub install gog</code></pre><p><strong>适合谁：</strong> 重度 Google Workspace 用户。</p><p><strong>下载量 14,313+，⭐48。</strong> 功能性 Skill 里下载量最高的之一。</p><p>一个 Skill 打通六个 Google 服务：Gmail、Calendar、Drive、Sheets、Docs、Contacts。</p><p>装完之后你可以说：</p><p>"帮我起草一封邮件给客户，说上周的项目进度，发出去，顺便在日历上标记下次跟进时间。"</p><p>这一句话，真的能执行了。不是"生成一段文字让你自己去发"，是<strong>直接发了</strong>。</p><blockquote>⚠️ 需要 Google OAuth 授权。第一次配置跟着提示走就行，授权一次后面自动。</blockquote><p>如果你的工作流建立在 Google 生态上，这个 Skill 的体感提升是即时的。装完第一天你就会用到。</p><hr/><h2>8. GitHub —— 自然语言管理代码仓库</h2><pre><code class="bash">clawhub install github</code></pre><p><strong>适合谁：</strong> 开发者，维护开源项目的人，多仓库团队。</p><p><strong>下载量 10,611+。</strong> Composio 和 ClawOneClick 都将其列入 Top 10。</p><p>"哪些 PR 等着我 Review？""给这个 Issue 打个 bug 标签""CI 跑完了吗？""总结一下这个 PR 改了什么"——</p><p>这些操作你每天在 GitHub 上重复多少次？每次都要打开网页、点来点去、看半天。</p><p>装了这个 Skill，直接跟 Agent 说就行。它帮你查、帮你操作、帮你总结。</p><p>对于维护开源项目的人来说，这个 Skill 的价值会随着仓库数量<strong>指数级放大</strong>——管 1 个仓库感觉还好，管 5 个就知道它有多香了。</p><hr/><h2>9. x-tweet-fetcher —— 免费抓取 X/Twitter 内容</h2><pre><code class="bash">clawhub install x-tweet-fetcher</code></pre><p><strong>适合谁：</strong> 内容研究者、社媒运营、竞品监控。</p><p><strong>GitHub ⭐492。</strong> 工具类 Skill 里相当高的 Star 数。</p><p>2023 年之后，X（Twitter）的 API 收费变得离谱。免费额度几乎等于零。大量依赖推文数据的工具全部失效。</p><p>x-tweet-fetcher 用另一种方式解决了这个问题：<strong>无需 API Key，无需登录</strong>，直接抓取公开推文内容。支持长推文和 X Articles。</p><p>这不是"锦上添花"的功能。对于做内容研究或竞品监控的人来说，这是在<strong>填一个被堵死的刚需缺口</strong>。</p><blockquote>💡 配合 Summarize 使用：抓下来的推文直接生成摘要，做竞品分析效率翻倍。</blockquote><hr/><h2>10. model-hierarchy-skill —— 每月 API 账单直降 40%-60%</h2><pre><code class="bash">clawhub install model-hierarchy-skill</code></pre><p><strong>适合谁：</strong> 高频使用 Agent、API 账单让你肉疼的人。</p><p><strong>GitHub ⭐329。</strong> 实测数据：API 成本降低 <strong>40%-60%</strong>。</p><p>这个 Skill 的逻辑很简单，但省钱效果炸裂：</p><p>"帮我翻译这句话"和"帮我分析这份财报给出投资建议"——这两个任务消耗的算力凭什么一样？</p><p>model-hierarchy-skill 在你的请求到达模型之前，先<strong>评估任务复杂度</strong>，然后路由到合适的模型。简单任务走便宜的小模型，复杂任务才调用贵的大模型。</p><p>这就好比你出门不会每次都打专车。去楼下便利店买瓶水，骑个共享单车就够了。打车去机场才需要叫专车。</p><p>如果你每天高频使用 Agent，这个 Skill 的 <strong>ROI 可能是整份清单里最高的</strong>。</p><hr/><h2>一键安装，复制粘贴</h2><p>怕你翻来翻去麻烦，全部汇总在这里：</p><pre><code class="bash"># ⚠️ 先装安全工具
-clawhub install skill-vetter
-
-# 然后按顺序装
-clawhub install self-improving-agent
-clawhub install capability-evolver
-clawhub install tavily
-clawhub install summarize
-clawhub install agent-browser
-clawhub install gog
-clawhub install github
-clawhub install x-tweet-fetcher
-clawhub install model-hierarchy-skill</code></pre><blockquote>注意：Tavily、Exa 等搜索类 Skill 需要各自的 API Key，第一次使用时会提示你配置。</blockquote><hr/><h2>社区推荐的安装顺序逻辑</h2><p>不同榜单和社区讨论里有一个共识：</p><p><strong>安全防线 → 自我进化 → 联网能力 → 浏览器操控 → 按需扩展</strong></p><p>为什么这么排？</p><ul><li>安全工具是一切的前提——不装 Skill Vetter 就装别的，等于不锁门就出去旅游</li><li>自我进化类装得越早，积累的经验越多——晚装一天就少学一天</li><li>搜索和浏览器是 Agent 连接真实世界的基础设施</li><li>剩下的按你自己的工作流来，用 Google 多就先装 Gog，写代码多就先装 GitHub</li></ul><hr/><h2>最后一句话</h2><p>ClawHavoc 之后，社区里有一句话被反复引用：</p><p><strong>"开源生态的代价，是你要自己承担安全责任。"</strong></p><p>308,000 Stars 的框架、150 万+ 下载量的市场、36,490 Stars 的精选仓库——这些数字证明了生态的活力。而 CVE-2026-25253 证明的是：生态越繁荣，你越需要有自己的判断。</p><p>这份清单给你的不只是"装什么"，而是"<strong>为什么装这个、不装那个</strong>"的逻辑。带着这个逻辑去 ClawHub 上看剩下的 3000 多个 Skills，比死记清单有用得多。</p>]]></description></item><item>    <title><![CDATA[智考星V2志愿填报系统——高考志愿填报的智能解决方案 微擎应用市场 ]]></title>    <link>https://segmentfault.com/a/1190000047651631</link>    <guid>https://segmentfault.com/a/1190000047651631</guid>    <pubDate>2026-03-13 17:18:41</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>一、概述总结<br/>智考星V2志愿填报系统是由河北工匠网络科技有限公司研发的专业高考志愿填报智能系统，依托强大AI技术与海量高考录取数据，为普通高考生提供从志愿填报方案模拟生成、院校专业查询到新高考选科指导、职业测评的全流程服务，同时为运营方打造了集管理、运营、营销于一体的后台管理体系。系统以微擎系统为交付基础，支持微信公众号、小程序、PC端、APP端、百度小程序等多终端部署（支付宝小程序规划中），适配普通高考与新高考模式，是双减政策下教培行业转型、从业者布局高考志愿填报赛道的核心刚需产品。</p><p>二、功能介绍<br/>智考星V2志愿填报系统功能体系分为前端用户功能与后台管理功能两大板块，功能覆盖考生志愿填报全需求、运营方管理全流程，且在V1版本基础上持续优化升级，功能只增不减。</p><p>（一）前端用户核心功能<br/>智能填报与志愿管理：基于AI算法模拟生成志愿填报方案，支持高考分数一键填报，可查询批次线、一分一段表，考生可创建我的备选、志愿表，实现志愿的添加、复制、删除，还能根据冲守保策略推荐院校，降低调档风险。</p><p>院校专业全维度查询：支持院校名称、类型、所在地等多条件筛选，可查看院校代码、招生简章、历年录取分数线、专业录取数据等详情；覆盖本科、专科12大类专业，可查询专业代码、学制、学位、课程、就业方向及开设院校，同时提供武书连、校友会、USNews等多维度高校排名。</p><p>新高考选科专属指导：支持按选科查专业、按大学查选科、按专业查选科三种方式，推荐院校专业选科要求，展示近三年各省批次选科情况与省控线，为新高考考生选科提供科学依据。</p><p>职业测评与规划：内置霍兰德职业兴趣测试、MBTI职业性格测试、职业价值观（WVI）测试、标准情商（EQ）测试等多款测评工具，生成专业测评报告，匹配考生人格特点与职业环境，助力生涯规划。</p><p>学习与咨询服务：开设在线课堂，提供志愿填报相关免费/付费课程；更新高考政策、院校资讯等新闻内容；设置问专家板块，为考生解答志愿填报疑问；同时展示用户个人高考信息（分数、位次、省份等），支持信息修改。</p><p>会员与分销功能：考生可在线购买、激活会员卡密，成为会员解锁全功能；分销中心展示推广佣金、订单、提现明细等，支持生成分销海报，考生可参与推广并申请佣金提现。</p><p>（二）后台管理核心功能<br/>基础配置管理：支持系统名称、访问次数、分数修改次数等基础设置，可编辑服务协议、隐私政策等文案，配置热门搜索关键词、首页幻灯片、底部导航、冲守保区间等，还能设置高考省份是否支持新高考模式，对接阿里云/腾讯云短信服务。</p><p>交易与会员管理：配置微信、APP支付及提现规则、手续费，可无限生成、编辑会员卡密，管理注册用户列表、会员卡生成记录，查看订单支付、卡密激活等全量订单信息。</p><p>内容与课程管理：分类配置、添加高考资讯，可编辑在线课堂的幻灯片、课程分类、课节列表，实现课程内容的自主上传与管理。</p><p>测评与数据管理：控制测评功能开关、用户测评次数，查看测评用户信息与测评结果，实现测评数据的实时统计与管理。</p><p>分销与客服管理：配置分销层级、返佣比例与分销图片，审核分销商申请、提现申请；设置客服数量、电话、微信号，为用户提供客服对接渠道。</p><p>多终端配置：单独配置小程序、PC端的基础参数、域名、幻灯片、导航、友情链接等，支持小程序代码发布，PC端文案、公司信息个性化配置。</p><p>系统授权管理：验证站点IP的授权状态与到期时间，配置首页入口链接及封面信息，保障系统专属运营权。</p><p>三、适用场景与行业价值<br/>（一）核心适用场景<br/>高考考生与家长：适用于普通高考、新高考考生的志愿填报全流程，解决考生对院校专业信息不了解、选科无方向、志愿方案制定无依据的问题，为家长提供科学的志愿填报参考，节省信息搜集与分析时间。</p><p>教培机构转型：双减政策下，K12教培机构可依托该系统布局高考志愿填报赛道，丰富业务体系，实现从学科培训到升学规划的转型。</p><p>升学规划从业者：为高考志愿填报咨询师、规划师提供智能工具支撑，提升方案制定效率与专业性，拓展服务边界。</p><p>教育行业创业者：以该系统为核心产品，搭建高考志愿填报服务平台，低门槛切入千亿级志愿填报市场，开展线上线下结合的升学服务。</p><p>学校与教育部门：为高中学校提供新高考选科、志愿填报指导工具，辅助学校开展生涯规划教育，提升升学指导服务水平。</p><p>（二）行业价值<br/>解决行业刚需，填补市场空白：应试教育是国内长期现状，高考志愿填报“考得好不如报得好”，而新高考改革让选科、志愿填报难度大幅提升，考生与家长的专业指导需求迫切，系统精准解决这一刚需，适配1000多亿规模的志愿填报市场，产品需求旺盛。</p><p>助力教培行业转型，开辟新赛道：双减政策压缩了传统教培业务空间，高考志愿填报成为教育行业新蓝海，系统为教培机构提供成熟的产品解决方案，降低转型研发成本，快速实现业务升级。</p><p>提升从业者效率与收益：系统的AI智能填报、海量数据查询功能替代人工繁琐的信息搜集与分析工作，提升从业者服务效率，且行业收入可观、工作时间相对自由，既可作为主业，也可成为理想副业。</p><p>标准化升学服务，提升行业专业性：系统依托权威录取数据与科学算法，为志愿填报行业提供标准化、智能化的服务工具，改变行业内信息不对称、服务不专业的现状，推动高考升学规划行业规范化发展。</p><p>多终端与全功能设计，适配多元运营：系统支持多终端部署，后台具备完善的运营、营销、管理功能，运营方可根据需求定制化运营，同时分销功能为用户裂变、渠道拓展提供支撑，提升平台传播与盈利能力。</p><p>四、常见问题解答<br/>问：智考星V2志愿填报系统支持艺考志愿填报吗？<br/>答：该版本仅支持普通高考和新高考模式，暂不更新艺考相关功能。</p><p>问：系统的终端版本是否可以单独购买？<br/>答：显示定价为公众号版+小程序版的组合价格，不支持单独购买小程序和PC端；PC端、APP端、百度小程序及后期推出的小程序需单独付费购买。</p><p>问：老客户版与V2通用版有什么区别？<br/>答：老客户版本和V2通用版是为老客户迁移推出的版本，二者享受的服务、拥有的功能完全一致。</p><p>问：购买系统后可以享受哪些更新服务？<br/>答：首次购买赠送1年服务套餐，服务周期内应用可免费更新至最新版；超出服务周期未续费则无法进行版本更新，新版本功能会在V1基础上持续增加，逐步完善。</p><p>问：系统是否支持定制化开发？<br/>答：如果需要定制首页或定制系统功能，可提前联系客服咨询具体的定制方案与详情。</p><p>问：独立版系统部署对服务器有哪些要求？<br/>答：独立版推荐配置为：CPU2核+、内存4G+、系统硬盘40G+、数据硬盘100G+、带宽2M+；操作系统为Linux，运行环境nginx/1.20.2、PHP7.3.32，服务器系统推荐Centos7.x、Debian10、Ubuntu20.04。</p><p>问：如果拍错版本是否支持退款？<br/>答：未联系客服自行拍错版本的情况，不支持退款，购买前可扫码或通过页面渠道咨询客服，确认适配版本后再购买。</p><p>问：系统的支付方式有哪些？<br/>答：后台可配置微信、APP支付方式，支持用户在线支付购买会员卡、课程等服务，同时支持分销商佣金提现，可设置提现手续费与规则。</p>]]></description></item><item>    <title><![CDATA[开发者实测：PandaWiki vs DokuWiki，知识库选型避坑，这才是技术团队最优解 百川云]]></title>    <link>https://segmentfault.com/a/1190000047651633</link>    <guid>https://segmentfault.com/a/1190000047651633</guid>    <pubDate>2026-03-13 17:17:44</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>作为常年泡在思否的开发者，经常看到大家问：团队知识库选 DokuWiki 还是 PandaWiki？毕竟都是开源工具，但实际用下来，两者的差距真的太大了——DokuWiki 太过老旧，早已跟不上现代技术团队的需求，而 PandaWiki 才是真正适配开发者的知识库神器。<img width="723" height="383" referrerpolicy="no-referrer" src="/img/bVdn6vR" alt="image.png" title="image.png"/><img width="307" height="164" referrerpolicy="no-referrer" src="/img/bVdn6vU" alt="image.png" title="image.png" loading="lazy"/><br/>结合自身开发、运维团队的实际使用场景，实测对比两款工具1个月，不吹不黑，结论很明确：DokuWiki 仅能满足基础文档存储，PandaWiki 才是真正适配开发者、技术团队的知识库工具，从AI提效、部署便捷性、协作体验到文档适配、安全可控，全方位碾压，今天就从开发者视角，把差距讲透，帮大家少走选型弯路。</p><h4>1. AI能力：开发者刚需适配，PandaWiki 实用，DokuWiki 完全空白</h4><p>对开发者来说，知识库的AI功能不是“锦上添花”，而是“刚需”——写API文档、查故障解决方案、整理技术规范，都需要AI辅助提效，但 DokuWiki 完全没有AI功能，所有工作全靠手动，效率极低。</p><p>DokuWiki 作为一款老旧开源工具，未集成任何AI相关功能，写代码注释、API文档示例、总结技术文档，都需要开发者逐字逐句梳理，面对大量技术文档，不仅耗时耗力，还容易出错，根本帮不上开发者的忙，已跟不上现代开发团队的提效需求。</p><p>PandaWiki 的AI完全贴合开发者场景，真正做到“提效不添乱”：</p><ul><li>内置RAG检索增强引擎，能精准关联团队内部文档，比如提问“SpringBoot集成Redis的常见问题”“Docker部署报错排查”，直接提取文档核心内容，不用再逐字翻找，节省大量时间</li><li>AI辅助开发文档创作，自动生成API文档大纲、代码注释、接口说明，甚至能根据代码片段生成使用示例，开发者写文档效率直接翻倍，不用再熬夜整理规范</li><li>支持Ollama、DeepSeek等本地模型部署，内网开发环境也能放心用，敏感代码、技术文档不泄露，适配企业级开发场景<img width="723" height="495" referrerpolicy="no-referrer" src="/img/bVdn6vW" alt="image.png" title="image.png" loading="lazy"/></li></ul><h4>2. 部署与运维：开发者省心首选，PandaWiki 极简，DokuWiki 繁琐</h4><p>开发者选工具，最烦的就是“折腾”——部署复杂、依赖繁多、后期运维麻烦，都会占用大量开发时间，而 DokuWiki 恰好踩中了所有痛点。</p><p>DokuWiki 部署需要配置Apache、PHP、数据库等多种依赖，步骤繁琐，就算是有经验的开发者，也得折腾大半天才能部署成功；后期升级容易出现兼容性问题，数据备份、故障排查也很麻烦，插件安装混乱，还容易引入安全漏洞，小团队没有专职运维，根本扛不住。</p><p>PandaWiki 完全贴合开发者“省时省心”的需求，部署运维零压力：</p><ul><li>Docker一条命令直接启动，无需复杂依赖配置，小白开发者也能3分钟完成部署，不用浪费时间在环境调试上</li><li>跨平台适配性强，Windows、Linux、macOS、国产化系统都能稳定运行，内网开发、离线环境也能正常使用，适配各种开发场景</li><li>轻量化架构，部署后几乎零维护，不用频繁排查故障、升级补丁、调试插件，开发者能专注于核心开发工作，不用额外分心运维<img width="723" height="618" referrerpolicy="no-referrer" src="/img/bVdn6v6" alt="image.png" title="image.png" loading="lazy"/></li></ul><h4>3. 协作体验：适配团队开发，PandaWiki 流畅，DokuWiki 拉胯</h4><p>技术团队的知识库，核心需求是“协同高效”——多人共同维护技术文档、版本追溯、权限管控，而 DokuWiki 的协作功能完全无法满足团队开发场景。</p><p>DokuWiki 仅支持基础文档共享，没有细粒度权限控制，开发者、测试、运维无法分级授权，敏感技术文档（如核心代码、架构设计）容易被越权访问；多人编辑易出现冲突，版本控制混乱，想找回之前的文档版本都很困难，反而降低团队协作效率，拖慢开发进度。</p><p>PandaWiki 的协作功能精准适配技术团队需求，流畅又规范：</p><ul><li>多人实时协同编辑，无卡顿、无冲突，文档版本回溯清晰，谁修改了内容、修改时间、修改细节一目了然，方便团队核对、回溯</li><li>细粒度权限管控，可按开发、测试、运维等角色分级授权，精准控制文档查看、编辑、删除权限，核心技术文档不泄露，保障代码、架构安全</li><li>支持文档分类、标签管理、目录自动生成，技术文档按项目、模块归档，新人开发者入职可快速获取所需技术文档，降低培训成本，快速融入团队<img width="723" height="399" referrerpolicy="no-referrer" src="/img/bVdn6wi" alt="image.png" title="image.png" loading="lazy"/></li></ul><h4>4. 代码与文档适配：开发者友好，PandaWiki 专业，DokuWiki 简陋</h4><p>对开发者来说，知识库的核心用途之一就是存储、管理代码文档，而 DokuWiki 在这方面的表现极其简陋——代码块高亮不清晰、不支持多语言代码、无法插入流程图、架构图，写技术文档、接口说明非常痛苦，格式混乱难以维护，尤其是复杂的架构设计文档，根本无法正常创作。</p><p>PandaWiki 完全适配开发者的文档创作需求，细节拉满：</p><ul><li>支持多语言代码高亮（Java、Python、Go、前端框架等），代码格式清晰，可直接复制使用，不用再手动调整格式</li><li>支持插入流程图、架构图、思维导图，方便开发者梳理技术架构、接口逻辑，文档更直观、更规范，团队沟通更高效</li><li>支持Markdown与富文本双编辑器无缝切换，开发者可根据习惯选择编辑方式，写文档更高效，适配不同开发者的使用习惯<img width="723" height="844" referrerpolicy="no-referrer" src="/img/bVdn6wl" alt="image.png" title="image.png" loading="lazy"/></li></ul><h4>5. 开源可控与成本：开发者放心，PandaWiki 透明，DokuWiki 老旧滞后</h4><p>开发者选开源工具，最看重的就是“开源可控”，而 DokuWiki 虽为开源，但架构老旧，更新迭代缓慢，漏洞修复响应慢，源码维护不活跃，很多bug长期无法解决；同时其功能固化，无法二次开发，后期想定制适配团队的功能，难如登天。</p><p>PandaWiki 真正做到开源透明、成本可控，完美适配开发者团队：</p><ul><li>开源版永久免费，无人数限制、无功能阉割，核心AI、协作、代码文档功能全部开放，中小型开发团队完全够用，零成本就能落地</li><li>源码完全开放，GitHub社区活跃，更新迭代及时，开发者可自行审计源码、二次开发、魔改功能，适配团队个性化开发需求</li><li>企业版按需付费，无人头费陷阱，私有化一次交付，长期使用成本比DokuWiki低80%以上，创业公司、中小型开发团队无压力<img width="723" height="415" referrerpolicy="no-referrer" src="/img/bVdn6wx" alt="image.png" title="image.png" loading="lazy"/></li></ul><h3>开发者选型总结</h3><p>如果只是个人存储简单的代码片段、笔记，DokuWiki 勉强能用；但如果是开发团队、运维团队，需要一款适配技术场景、能提效、易部署、可可控的知识库工具，别犹豫，直接选 PandaWiki。<img width="723" height="375" referrerpolicy="no-referrer" src="/img/bVdn6wC" alt="image.png" title="image.png" loading="lazy"/></p><p>它没有多余的花哨功能，每一个设计都贴合开发者需求——AI提效、极简部署、流畅协作、代码友好、开源可控，完美解决 DokuWiki 老旧、繁琐、低效、不可控的痛点，不管是前端、后端、运维团队，还是创业公司、大型企业的开发部门，选它都不踩坑，真正帮开发者省时间、降成本，专注于核心开发工作。</p>]]></description></item>  </channel></rss>
+print("产品目录已创建完成")</code></pre><p>文档预览：</p><p><img width="723" height="326" referrerpolicy="no-referrer" src="/img/bVdn6D7" alt="使用 Python 创建 Word 嵌套表格" title="使用 Python 创建 Word 嵌套表格" loading="lazy"/></p><p><strong>说明</strong>：<br/>通过 <code>cell.AddTable(True)</code> 方法在单元格内创建嵌套表格。每个嵌套表格可以独立设置行数、列数和样式，非常适合展示具有层级关系的数据，如产品分类、部门组织结构等。</p><hr/><h2>6. 技术细节总结与关键类方法概览</h2><p>在前面的章节中，我们展示了如何使用 Free Spire.Doc for Python 创建基础表格、设置表格样式、合并与拆分单元格以及创建嵌套表格。从技术实现角度来看，Word 表格操作的核心流程可以总结为以下几个关键步骤：</p><h3>Python Word 表格操作步骤总结</h3><ol><li><strong>创建文档对象</strong><br/>使用 <code>Document()</code> 创建 Word 文档对象，通过 <code>AddSection()</code> 添加节，为表格提供容器。</li><li><strong>创建表格</strong><br/>使用 <code>section.AddTable(True)</code> 创建表格，通过 <code>ResetCells()</code> 设置表格的行数和列数。</li><li><strong>填充表格内容</strong><br/>通过 <code>table.Rows[row_index].Cells[col_index]</code> 访问单元格，使用 <code>AddParagraph().AppendText()</code> 方法添加文本内容。</li><li><strong>设置单元格格式</strong><br/>使用 <code>CellFormat</code> 属性设置单元格的背景颜色、垂直对齐方式、边框等样式。</li><li><strong>合并与拆分单元格</strong><br/>使用 <code>ApplyHorizontalMerge()</code> 和 <code>ApplyVerticalMerge()</code> 方法合并单元格，使用 <code>SplitCell()</code> 方法拆分单元格。</li><li><strong>应用表格样式</strong><br/>使用 <code>ApplyStyle()</code> 应用预设的表格样式，或通过 <code>Format.Borders</code> 自定义边框样式。</li><li><strong>保存文档</strong><br/>使用 <code>SaveToFile()</code> 方法将文档保存到指定路径。</li></ol><h3>关键类、方法与属性</h3><table><thead><tr><th>类 / 方法 / 属性</th><th>说明</th></tr></thead><tbody><tr><td><code>Document</code></td><td>Word 文档对象，支持创建、加载和保存文档</td></tr><tr><td><code>Document.SaveToFile()</code></td><td>将文档保存到指定文件路径</td></tr><tr><td><code>Section</code></td><td>表示文档中的节，是表格的容器对象</td></tr><tr><td><code>Table</code></td><td>表示表格对象，包含行和单元格</td></tr><tr><td><code>Paragraph</code></td><td>表示段落对象</td></tr><tr><td><code>TextRange.CharacterFormat</code></td><td>获取文本格式对象，用于设置字体、大小、加粗等</td></tr></tbody></table><p>通过理解上述关键类、方法和属性，你可以灵活地创建各种类型的 Word 表格，并根据业务需求进行精细定制。掌握这些技术细节，能让你在实际项目中快速生成高质量、格式统一的 Word 文档报表，同时保持代码简洁和可维护性。</p><hr/><h2>总结</h2><p>本文以实际业务场景为例，展示了如何使用 <strong>Free Spire.Doc for Python</strong> 在 Word 文档中创建基础表格、设置表格样式、合并与拆分单元格、创建嵌套表格等实用功能。通过编程方式生成表格，不仅避免了手动操作的繁琐和易错问题，还能轻松应对批量报告和复杂数据呈现需求。</p><p>掌握这一技能后，你可以将文档生成与数据管理完全自动化，从而节省时间，提高效率，并为业务流程提供可靠的文档支持。结合 Free Spire.Doc 的其他功能，如文档模板、邮件合并、图表插入等，可以进一步打造智能化的 Word 文档自动化工作流，让企业的文档处理能力提升到新的高度。更多 Python 操作 Word 文档的方法，请参考 <a href="https://link.segmentfault.com/?enc=YpJV2dfN4QoijeN%2Fz1j9uQ%3D%3D.t6gUl9ifTGteTsSOJ4I1F3ImgA98bibhY6Gblcj%2FbliCWBnTLqZnn7wSgeehtsothbXTRBPUKKNnrOUj5THfUIYjBBJkxLNKeUxG%2B3zGBbn%2BUEhKVEFuJ4TE%2FRNSs5a8" rel="nofollow" target="_blank">Spire.Doc for Python 官方教程</a>。</p>]]></description></item>  </channel></rss>
