@@ -1,4 +1,253 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[征程 6X Camera 接入数据评估 地平线智驾开发者 ]]></title>    <link>https://segmentfault.com/a/1190000047654483</link>    <guid>https://segmentfault.com/a/1190000047654483</guid>    <pubDate>2026-03-15 23:03:07</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>1.接入带宽计算</h2><h3>1.1</h3><p>Camera 接入时，需评估链路上各模块之间的理论要求和限制，接入通路一般涉及加解串器，MIPI，CIM， ISP（RAW），PYM，GDC/STITCH（可选）等 ，接入模组一般分为 RAW/YUV Sensor，RAW Sensor 一般在通路上需要 ISP 处理进行处理，对处理性能有要求的需同时考虑通路中相关模块性能以及限制，对于数据接入来说前端解串器，MIPI， CIM 的影响更明显。</p><ul><li>在 DES 侧： 其输出 MIPI 速率需满足总带宽需求，同时还要满足 Camera 输出 timing，6E/M 上主流的美信解串器最大速率为 2.5G，其他厂商或者大速率需额外适配。</li><li><p>在 MIPI 侧，需满足 ipi 总带宽大于 mipiclk 输入数据带宽，否则可能出现 ipi overflow。</p><ul><li>其 FIFO 较小，对于有数据累积情况：行长越大，累积时间越长，越容易出现。</li><li>若满足 IPI 速率大于 mipiclk 输入速率，则理论上不会产生 ipi overflow。</li></ul></li><li>其他的硬件模块的限制可以参考模块规格，此处跳转到对应的规格限制。</li></ul><h3>1.2</h3><p>带宽计算，此处均按 RAW16 计算，其他的 RAW 尺寸则按照对应的比例换算即可：</p><ul><li><p>Camera 接入实际数据量：</p><ul><li>1 路 8M RAW16: 3840x2160<em>2</em>8*30 ～= 4Gbps</li><li>1 路 2M YUV: 1920x1080<em>16</em>30 ～= 1Gbps</li></ul></li><li><p>MIPI IPI 传输 RAW 与 YUV 的区别：默认 IPI 使用 48bit 模式：</p><ul><li>传 YUV 时一个 ipi clock 只能传 1 个 pixel</li><li>传 RAW（&lt;=16）时一个 ipi clock 可传 3 个 pixel</li></ul></li><li><p>CIM 的 IPI 速率（pix\_clk）为 600M 频率上限，因此限制了 IPI 传输 YUV 带宽为 9.6Gbps，RAW 传输的 28.8Gbps；</p><ul><li>征程 6E/M 通用的解串器最大的支持速率是 2.5G，下图按照此规格进行理论计算，如有更改规定的解串器，则可进行类比计算</li><li>CPHY: 2.28bits/symbol，因此 CPHY 计算时，需要乘以对应的系数</li><li>同一个 RX 上，混合接入时，由于有 YUV 数据，最大 IPI 的传输限制就变成了 9.6Gbps 数据类型 IPI 带宽限制 RAW 28.8Gbps （按 RAW16） YUV （RAW+YUV） 9.6Gbps （按 YUV422） PHY 类型 PHY 带宽限制 CPHY 17.1Gbps DPHY 10Gbps</li></ul></li></ul><h2>2.实际接入评估：</h2><h3>2.1</h3><p>上述已对实际数据流以及理论接入能力进行分析讲解，下面开始进行实际场景计算</p><h3>2.2</h3><p>实际 Camera 接入时，计算 Camera 数据流不能按照理论值，此时需要考虑 blanking 时间， 因此实际接入的数据流计算如下：</p><ul><li><p>数据量 = Lanes * H\_total * V\_total * fps * dataType（bpp， for RAW12， bpp=12； for yuv422, bpp=16)</p><ul><li>其中 H\_total、V\_total 是包含了 blanking 时间的，可按照总体 0.4 的 blanking 或是长和宽各 0.2 的 blanking 来计算</li></ul></li><li><p>1 路 8M，RAW 按照总体 0.4 的 blanking 计算，YUV 的 blanking 时间按照 1.2 计算</p><ul><li>RAW12: 3840x2160<em>12</em>30*1.4 \~= 4.2Gbps</li><li>YUV（按 YUV422）: 3840<em>2160</em>16<em>30</em>1.2 ～= 4.7 Gbps</li></ul></li><li><p>MIPI RX Camera 最大接入评估：</p><ul><li><p>RAW Camera:</p><ul><li>4 路 8M 基本是接近极限带宽，考虑到一些硬件软件的延时，目前是接不进来的，因此最大单 RX 最大接入能力在 3 个 8M，还可以接一个后置 2M 或者 3M，若还需更大分辨率，可能需要调试 Sensor 输出 timing 进行适配。</li></ul></li><li><p>YUV Camera:</p><ul><li>2 路 8M YUV，blanking 控制在 1.2 以内，是可以接入的，再多的模组就接入不进来了</li></ul></li><li><p>RAW+YUV</p><ul><li>一个 8M 的 YUV Sensor，可以再接入一路 8M 的 RAW Sensor，至于还能不能接一路 2M 的 raw Sensor 依赖于 blanking 时间，待自行评估计算</li></ul></li></ul></li></ul><h2>3.接入规格支持 ：</h2><h3>3.1</h3><p>征程 6E/M 系统，总共 3 个 RX，每个 RX 有 4 个 ipi，理论可支持 12 路 Camera 接入，支持 CPHY 和 DPHY，不同形态的 PHY 的带宽限制分别如下：C-PHY 17.1 Gbps，D-PHY10 Gbps。</p><h3>3.2</h3><p>单个 RX 的接入规格如下，以 RAW12 来计算的：</p><p>RAW 摄像头接入：<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047654485" alt="1.jpg" title="1.jpg"/></p><p>YUV 摄像头接入：<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047654486" alt="2.jpg" title="2.jpg" loading="lazy"/></p><p>混合接入（RAW+YUV）：<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047654487" alt="3.jpg" title="3.jpg" loading="lazy"/></p><p>此外征程 6E/M 的 Camera 通路还支持 RAW8， RAW10，RAW16 以及 RAW20，可根据上述方法计算出相应的接入组合方案。</p>]]></description></item><item>    <title><![CDATA[征程 6P codec decoder sample 地平线智驾开发者 ]]></title>    <link>https://segmentfault.com/a/1190000047654511</link>    <guid>https://segmentfault.com/a/1190000047654511</guid>    <pubDate>2026-03-15 23:02:13</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>1. 功能概述</h2><p>解码 h264/h265 视频或 jpg 图片，生成 yuv 图像。</p><h4>1.1. 软件架构</h4><p>采用 MediaCodec 的 poll 模式来解耦输入和输出，可使解码帧率性能达到最优。 在主线程中灌码流数据：取出一个空的 input buffer，配置码流数据的地址信息（如 phys addr），再 queue input buffer 并通知解码器处理该帧数据； 另一个线程取输出 YUV 图像：通过 select 接收硬件解码完成通知，取出一个硬件填满输出图像的 output buffer，将解码结果写到文件中后归还 output buffer。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047654513" alt="" title=""/></p><h4>1.2. 硬件数据流说明</h4><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047654514" alt="" title="" loading="lazy"/></p><h4>1.3. 代码位置及目录结构</h4><p>sample 代码位置在工程目录{sdk\_dir}/test/samples/platform\_samples/source/S83\_Sample/S83E04\_Module/codec\_sample。</p><p>目录结构如下：</p><pre><code class="Plain">.
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[一周我把一个25kStar,200w行代码的ts项目转换为了dart 小白要生发 ]]></title>    <link>https://segmentfault.com/a/1190000047654571</link>    <guid>https://segmentfault.com/a/1190000047654571</guid>    <pubDate>2026-03-16 00:01:33</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>背景</h2><p>由于个人兴趣，我需要一个dart语言的命令行补全建议库，当前最权威的就是 fig 的—— <a href="https://link.segmentfault.com/?enc=X6qnAMG0VHQmz14x5LNLaQ%3D%3D.OKsYCDStRAyPyDQdiZTBsZwCGFPlai2B5PGZjSG2a72lh3elEkd7IlUjf5bhHzq%2B" rel="nofollow" target="_blank">withfig/autocomplete</a> , 但它是由 javascript 语言编写的。 想把它引入到 flutter App项中，正值春节大假，有时间盘一盘这个项目。</p><p>如果你还不知道这个项目是干啥的，可以看看下面的介绍</p><ul><li><a href="https://link.segmentfault.com/?enc=ii9Zmb%2FYtf2pT%2BaC6ivEdw%3D%3D.8EYznvSaMH3A6mnml%2FObnhak0YcvHAFkjq8F0ek1lKhi5V0t0Qz8BZ7%2FahBdL0XThHNLssxRpa6aGe5cdGPG8j9MRCW4LyLntit%2B5vwqdBQ%3D" rel="nofollow" target="_blank">https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/what...</a> 被aws收购后，并入了 Amazon Q工具。</li><li><a href="https://link.segmentfault.com/?enc=7EDu%2BIk8Z3BbJ9EIMomFJw%3D%3D.1I3eMPbYO60%2FCvM%2BLL1PBGZxdafntLbJHQedzBo4H1JyNZMeg7%2BGpVEL3cah0asa" rel="nofollow" target="_blank">https://juejin.cn/post/7119121960814002189</a></li><li><a href="https://link.segmentfault.com/?enc=X7VmSyqiR3gldB5AmXswPg%3D%3D.6jcU6XSRFbqa06mggtFfyVh%2BqaBeScA7QktOlFtyR2Jy1SVJ9n4c2fHu6D3ZICdG" rel="nofollow" target="_blank">https://zhuanlan.zhihu.com/p/492181067</a></li><li><a href="https://www.bilibili.com/video/BV1NR4y1A7Tf" target="_blank">https://www.bilibili.com/video/BV1NR4y1A7Tf</a> 视频介绍</li></ul><h3>一句话</h3><p>我把 <a href="https://link.segmentfault.com/?enc=3yIv1qlK8pwM%2BvMcbVbpoA%3D%3D.x2EZfOo51U7gxMRpIi9Cu6tKDoTIK%2BCbt7ZLYsG7UvmOiweGHYPC7DMuYhtg%2FIUp" rel="nofollow" target="_blank">https://github.com/withfig/autocomplete</a> 这个 25k star 的开源ts代码，使用dart实现了，开源在 <a href="https://link.segmentfault.com/?enc=nO65WUP2I2gEauxMjKELLg%3D%3D.EaEsMJokjPvLF4wIQm6ppoWaCO%2FTew2JRZtDNmn9CCBpw7RHN8Ce%2B6FR8Bm6ouXH" rel="nofollow" target="_blank">https://github.com/littlewrite/autocomplete</a> ，并应用到了 <a href="https://link.segmentfault.com/?enc=FmbQsOx2%2FrjWpIkctsk5wQ%3D%3D.BSrQFmqdjU5xwwkB0wDNRbwQbTW1a7sJqh8rxKhacTY%3D" rel="nofollow" target="_blank">https://www.faiterm.com/</a> 终端App中。</p><h2>意义</h2><p><strong>接下来的内容，你将了解到</strong>：</p><ol><li><strong>一个核心问题</strong>：为何通用转换工具（如 ts2dart）在面临大型、复杂的 TypeScript 项目时会“失灵”。</li><li><strong>一种混合策略</strong>：如何通过“观察规律 + 编写专用转换器 + AI 辅助修补”的三段式方法，系统性地处理、翻译海量代码。</li><li><strong>一次实战优化</strong>：从一次加载 500MB 内存的 MVP，到通过延迟加载、缓存策略实现平滑集成的完整演进路径。</li><li><strong>一类典型问题的解法</strong>：在静态类型语言（Dart）中，如何模拟动态语言（JavaScript）的特性（如动态导入），并平衡内存、性能与开发体验。</li></ol><h2>一期工程</h2><p>先看看一共有多少代码。<br/>这个项目我先肉眼预览了一遍，代码量还是比较大的，有1.4k +个文件，代码行数： 2百万+ 。</p><pre><code class="shell">$ cd autocomplete/src
+$  find . -name "*.ts" -type f | wc -l
+  1484 # 个 ts 文件
+
+$ find . -type f -name "*" -exec wc -l {} + | tail -1
+ 2281947 total # ts 代码行数</code></pre><p>代码量还是挺大的。</p><h3>ts2dart ?</h3><p>用代码转换？<br/>我尝试过 [ts2dart]](<a href="https://link.segmentfault.com/?enc=TQWERyfKxWsNRSx3iwDRdQ%3D%3D.XKTfVC3v4ef1bsnpMoA%2BTI1yGHY3zmig4CtkrFHZSo8eXKn4x4UM8JHanR6xrTaA" rel="nofollow" target="_blank">https://github.com/dart-archive/ts2dart</a>)  这个开源项目来处理代码。处理结果是：</p><pre><code>...
+         ^^^^^
+ clang.ts:4863:3: Property assignment expected.
+ clang.ts:4864:10: ';' expected.
+ clang.ts:4865:1: Expression expected.
+</code></pre><p>处理简单的ts代码还行，稍微复杂点的就会报错，例如这个 clang.ts， 它包含一些 ts 特性，dart 又没有实现的就乱转了。<br/>这个项目已归档不再更新。</p><p>给大家看看转换结果：</p><pre><code class="dart"> final List &lt; Fig . Suggestion &gt; stdCSuggestions = [ { "name" : [ "c89" , "c90" , "iso9899:1990" ] , "description" : "ISO C 1990" } , { "name" : "iso9899:199409" , "description" : "ISO C 1990 with amendment 1" } , { "name" : [ "gnu89" , "gnu90" ] , "description" : "ISO C 1990 with GNU extensions" } , { "name" : [ "c99" , "iso9899:1999" ] , "description" : "ISO C 1999" } , { "name" : "gnu99" , "description" : "ISO C 1999 with GNU extensions" } , { "name" : [ "c11" , "iso9899:2011" ] , "description" : "ISO C 2011" } , { "name" : "gnu11" , "description" : "ISO C 2011 with GNU extensions" } , { "name" : [ "c17" , "iso9899:2017" , "c18" , "iso9899:2018" ] , "description" : "ISO C 2017" } , { "name" : [ "gnu17" , "gnu18" ] , "description" : "ISO C 2017 with GNU extensions" } , { "name" : "c2x" , "description" : "Working Draft for ISO C2x" } , { "name" : "gnu2x" , "description" : "Working Draft for ISO C2x with GNU extensions" } ] ; final List &lt; Fig . Suggestion &gt; stdCPPSuggestions = [ { "name" : [ "c++98" , "c++03" ] , "description" : "ISO C++ 1998 with amendments" } , { "name" : [ "gnu++98" , "gnu++03" ] , "description" : "ISO C++ 1998 with amendments and GNU extensions" } , { "name" : "c++11" , "description" : "ISO C++ 2011 with amendments" } , { "name" : "gnu++11" , "description" : "ISO C++ 2011 with amendments and GNU extensions" } , { "name" : "c++14" , "description" : "ISO C++ 2014 with amendments" } , { "name" : "gnu++14" , </code></pre><p>没格式化，代码有错误也没法格式化，属于没法用。这个方案看来是行不通的。pass掉</p><h3>All in AI ?</h3><p>直接丢给AI？ </p><p>我担心项目还没抱出来，钱包先爆掉。pass掉</p><h3>vibe coding: ts 2 dart</h3><p>我开始观察这个项目，看看有啥规则，规律。</p><p>这个项目的文件，代码量很多，但每个文件都有着类似的结构。<br/>例如：<br/>./src/@fig/publish-spec.ts</p><pre><code class="javascript">const completionSpec: Fig.Spec = {
+  name: "@fig/publish-spec",
+  description: "Publish a spec to fig teams",
+  subcommands: [
+    {
+      name: "help",
+      description: "Display help for command",
+      priority: 49,
+      args: { name: "command", isOptional: true },
+    },
+  ],
+...</code></pre><p>./src/adb.ts</p><pre><code class="javascript">const completionSpec: Fig.Spec = {
+  name: "adb",
+  description: "Android Debug Bridge",
+  subcommands: [
+    {
+      name: "devices",
+      description: "List connected devices",
+      options: [
+        {
+          name: "-l",
+          description: "Long output",
+        },
+      ],
+    },
+...</code></pre><p>./src/cf.ts</p><pre><code class="javascript">const completionSpec: Fig.Spec = {
+  name: "cf",
+  description: "Cloudfoundry cli",
+  subcommands: [
+    {
+      name: ["app", "a"],
+      description: "Display health and status for app",
+      args: {
+        name: "APP_NAME",
+        description: "The app you want to get health and status for",
+        generators: generateAppNames,
+      },
+      options: [
+        {
+          name: "--guid",
+          description:
+            "Retrieve and display the given app's guid.  All other health and status output for the app is suppressed",
+        },
+      ],
+    },
+...</code></pre><p>每个文件的入口文件都是如此，都是一个spec 对象，对象那包含很多对象数组，很少有函数逻辑（是的有自定义函数），大量的数组，对象定义代码，从ts转换为dart就是语法调整了一下，不容易出错。于是就让AI写了个 Fig.Spec 转换为 Dart FigSpec 的代码，先解决大部分工作。</p><p>输入需求， AI 就给出了一个  <code>tools/converter-engine.cjs</code></p><p>怎么使唤AI的流程就不赘述了，直接给结果—— <code>tools/ts-to-dart-converter.cjs</code> 这个是转换代码。</p><p>代码转换结果：<br/>./dart/lib/specs/arch.dart</p><pre><code class="dart">// Auto-generated from TypeScript source: arch.ts
+// Generated at: 2026-02-12
+// WARNING: Manual changes may be overwritten!
+
+import 'package:autocomplete/src/spec.dart';
+
+/// Completion spec for `arch` CLI
+final FigSpec archSpec = FigSpec(
+  name: 'arch',
+  description: 'Print architecture type or run select architecture',
+  parserDirectives: ParserDirectives(
+    flagsArePosixNoncompliant: true,
+    optionsMustPrecedeArguments: true
+  ),
+  options: [
+
+    Option(
+      name: '-32',
+      description: 'Add the native 32-bit architecture to the list of architectures'
+    ),
+    Option(
+      name: '-64',
+      description: 'Add the native 64-bit architecture to the list of architectures'
+    ),
+    Option(
+      name: '-c',
+      description: 'Clear the environment that will be passed to the command'
+    ),
+    Option(
+      name: '-d',
+      description: 'Delete the named environment variable from the command\'s environment',
+      isRepeatable: true,
+      args: [
+        Arg(
+        name: 'envname'
+      )
+      ]
+    ),
+    Option(
+      name: '-e',
+      description: 'Assign the given value to the variable in the command\'s environment',
+      isRepeatable: true,
+      args: [
+        Arg(
+        name: 'envname=value'
+      )
+      ]
+    ),
+    Option(
+      name: '-h',
+      description: 'Print a help message and exit'
+    )
+  ],
+  args: [
+    Arg(
+    name: 'program',
+    template: 'filepaths',
+    isVariadic: true
+  )
+  ]
+);</code></pre><p>这样在写个 批量脚本就能完成整个项目的转换了，也就废了点写cjs的AI token，很划算，并且js的执行效率也比AI生成快非常快。</p><p>这样也只是转换了大部分代码，还有些代码用到了些特别的语法，以及动态函数，无法被转换，别跳过了。</p><blockquote>先花 20%的时间，转换80%的代码，跑通MVP！</blockquote><h3>驱动代码</h3><p>当前这个 autocomplete 项目中，ts 代码是命令的定义数据，还没法工作。例如，命令解析，load complete 这些功能是没有的。为了大家方便，就不单独拆一个 dart 项目存放了，直接搁一块了。</p><p>这里我借鉴了 -- <a href="https://link.segmentfault.com/?enc=CqBf2v48gVN8XlIQya4Bzw%3D%3D.Yhsew6o%2BPUawW45RSVwkkpQjGjKbZQosU5v1juJpJpxLdqgItH37p6gx5g3kSWEu" rel="nofollow" target="_blank">microsoft/inshellisense</a> 的代码，逻辑写到 ./dart/lib/src 目录下了。</p><h2>ts 和 dart 语法特性问题</h2><p>在处理 inshellisense 的代码时，发现这么一段代码：</p><pre><code class="javascript">const loadSpec = async (cmd: CommandToken[]): Promise&lt;Fig.Spec | undefined&gt; =&gt; {
+...
+  if (specSet[rootToken.token]) {
+    const specPath = specSet[rootToken.token];
+    const importPath = path.isAbsolute(specPath) ? pathToFileURL(specPath).href : specPath;
+    const spec = (await import(importPath)).default;
+    loadedSpecs[rootToken.token] = spec;
+    return spec;
+  }
+};</code></pre><pre><code class="javascript">const spec = (await import(importPath)).default;</code></pre><p>这里的意思是，当我用到 git 命令时，才加载 git 相关的建议代码，当我用到 cd 代码是，才导入 cd 相关的建议。这个lazy load 是个非常棒的设计。</p><p>javascript 是一个动态语言，支持动态 import ，但 dart 不行，当前就只能全部import 了。</p><p>我就又让 AI 写了个加载所有 spec的 dart 生成代码——<code>generate-all-specs.cjs</code></p><p>./dart/lib/spec/all_specs.dart</p><pre><code class="dart">import '../src/registry.dart';
+import '-.dart';
+import '@capgo/cli.dart';
+import 'act.dart';
+import 'adb.dart';
+import 'adr.dart';
+import 'afplay.dart';
+
+...
+
+/// Register every spec. Called by [registerBuiltinSpecs] in autocomplete.dart.
+void registerAllSpecs() {
+  registerSpec(specSpec.name, () =&gt; specSpec);
+  registerSpec(cliSpec.name, () =&gt; cliSpec);
+  registerSpec(figPublishSpecSpec.name, () =&gt; figPublishSpecSpec);
+  registerSpec(presetSpec.name, () =&gt; presetSpec);
+  registerSpec(withfigAutocompleteToolsSpec.name, () =&gt; withfigAutocompleteToolsSpec);
+  registerSpec(wordpressCreateBlockSpec.name, () =&gt; wordpressCreateBlockSpec);
+  registerSpec(actSpec.name, () =&gt; actSpec);
+
+...</code></pre><p>好，完成了周边的命令解析代码，spec 驱动代码，写个example 试试—— dart/example/run_suggest.dart</p><pre><code class="dart">void main(List&lt;String&gt; args) async {
+  String? cmd;
+  var shell = Shell.bash;
+
+...
+
+  registerBuiltinSpecs();
+  final cwd = Directory.current.path;
+
+  final blob = await getSuggestions(cmd, cwd, shell);
+  if (blob == null) {
+    print('(no spec or no suggestions)');
+    exit(0);
+  }
+
+  if (blob.argumentDescription != null) {
+    print('Argument: ${blob.argumentDescription}');
+  }
+  for (final s in blob.suggestions) {
+    print('${s.name}\t${s.description ?? ""}');
+  }
+  print(
+      '(${blob.suggestions.length} suggestions, charactersToDrop: ${blob.charactersToDrop})');
+}</code></pre><pre><code class="shell">$ dart run ./example/run_suggest.dart "cut "
+dart
+example
+docs
+README.md
+pubspec.yaml
+lib
+assets
+-b    Byte positions as a comma or - separated list of numbers
+-c    Column positions as a comma or - separated list of numbers
+-f    Field positions as a comma or - separated list of numbers
+-n    Do not split multi-byte characters
+-d    Use delim as the field delimiter character instead of the tab character
+-s    Suppress lines with no field delimiter characters.  unless specified, lines with no delimiters are passed through unmodified
+-w    Use whitespace (spaces and tabs) as the delimiter.  Consecutive spaces and tabs count as one single field separator
+(17 suggestions, charactersToDrop: 0)</code></pre><p>好，一期工程完毕，完成了 MVP。</p><h2>二期</h2><p>当前项目还有这些问题：</p><ol><li>大部分代码处理，都是一些简单易懂的代码，但是一些复杂的，动态代码是没处理的。</li><li>有些代码结构也简单，但它的结构有点变化，只是多了个变量、数组，并且也能找到规律，可以加入到通用转换逻辑。</li><li>需要接入实际的 flutter app 中，看看性能如何，cpu，内存占用如何。</li></ol><h3>解决方案</h3><p>我是这样解决的</p><ol><li>一些 ts2dart.cjs 没法转换的、简短的ts代码，直接丢给 AI，转换完了后，加上 complete 标记，避免 cjs 重复转换已处理好的 dart 代码。</li><li>对于一些 Fig.Option , 这些数组，这些代码，结构简单，但是往往有几百行，交给AI容易出错，可以写个ts代码来处理 。</li><li>对于一些常用的命令，自动转换失败的，很大的文件，人工去处理。例如：docker.ts, python.ts, npm.ts, git.ts . 这些命令的使用率很高，同时这些文件也很大，丢给AI，或者ts转dart都不能完全转换为正确的 dart 代码。</li></ol><p>我人工review了每个ts文件，把一些简短的ts丢给AI重新生成，并标记 complete。再次 完善 ts2dart.cjs 。</p><p>在node中引入了多进程，来加快任务。之前发现了这个执行效率问题，加上了多线程，异步还是没把cpu跑满，想起来js的异步机制，就改为多进程进一步压榨cpu。</p><p>提交到仓库后—— <a href="https://link.segmentfault.com/?enc=kyUvj5ZbvZxHmN9BEe5mxA%3D%3D.XheWjSVx1Dcuy2Vzf8vwTvCBpFoiJEVtd71%2BWoHBR4AVt4myqWSjpmBVXpFKpxsX" rel="nofollow" target="_blank">littlewrite/autocomplete</a> , 在Faiterm app 引入后使用了下，发现了新的问题，第一次引入时，程序直接卡了一下，然后内存蹦到了500MB。</p><p>通过打时间戳分析了一下，卡的那一帧是 all spaces.dart 代码里执行 registry all 导致的，这个函数就是初始化所有 command spec对象，一共几百个对象，注册完内存就上去了。</p><h2>三期工程</h2><p>待解决问题：</p><ol><li>一次性注册所有命令内存，cpu 爆炸</li><li>不支持主命令推荐。</li><li>一些常用命令待人工review。</li></ol><h2>优化</h2><p>问了下AI，dart 没有动态import，但有 延迟加载 (<code>deferred</code>)。</p><pre><code class="dart">import 'package:autocomplete/specs/gt.dart' deferred as spec_gt; // 声明但并未实际导入
+
+await spec_gt.loadLibrary(); // 运行时加载与使用</code></pre><p>按照上面的技术方案，我调整了 <code>generate-all-specs-v2.cjs</code>  .</p><p>之前的补全的建议是在明确了命令的情况给出的子命令建议推荐，现在新增命令推荐。原来输入  ”git “ ，”lsof “ 才能建议，现在新增功能，输入 ”g”， “d”， ”c” 时，提供命令推荐。</p><p>我先把所有的命令都集合到一个数组里，这样就能实现输入首字母然后推荐命令了。</p><p>./dart/lib/specs/all_specs_v2.dart</p><pre><code class="dart">/// Command names available in this v2 bundle (for command-name completion without loading).
+const List&lt;String&gt; v2SpecNames = ['-', '@commercelayer/cli', '@fig/publish-spec', '@forge/cli', '@withfig/autocomplete-tools', '@wordpress/create-block', 'Rscript', 'access-context-manager', 'accessanalyzer', 'account', 'acm-pca', 'acr', 'act', 'active-directory', 'ad', 'adb', ......
+</code></pre><p>然而这个数组很大，通过首字母过滤推荐，我感觉有点慢，并且我似乎也用不到这么大的数组，我又想了个办法，把这些命令按照首字母归类。</p><pre><code class="dart">// 按照首字母分类的命令映射
+final Map&lt;String, List&lt;String&gt;&gt; categorizedCommands = {
+  '@': [
+    '@commercelayer/cli',
+    '@fig/publish-spec', 
+  ],
+  'a': [
+    'access-context-manager',
+    'accessanalyzer',
+    'account',
+  ],
+   'R': [
+    'Rscript',
+  ],</code></pre><p>这样我就不用加载整个数组了。</p><p>...</p><p>等等，好像不太对劲，这不还是一个变量么，这个大Map。</p><p>我又优化了一下，改为每个字母为一个单独数组</p><pre><code class="dart">const List&lt;String&gt; v2SpecNamesFirstChar_at = [
+  '@commercelayer/cli',
+  '@fig/publish-spec',
+...
+
+const List&lt;String&gt; v2SpecNamesFirstChar_a = [
+  'act',
+  'adb',
+  'adr',
+...
+
+const List&lt;String&gt; v2SpecNamesFirstChar_b = [
+  'babel',
+  'banner',
+  'barnard59',
+...
+
+const List&lt;String&gt; v2SpecNamesFirstChar_d = [
+  'dart',
+  'date',</code></pre><h2>四期</h2><p>之前的我以为我上传成功了，其实并没有上传完整，它有这样的规则，哪怕你通过git add -f 把文件提交到了仓库，但它会参考<code>.gitignore</code> 中的设置，也就是  dart publish 的流水线会忽略这部分文件，这是个要注意的点！我是通过 <code>pub.dev</code> 的静态检查报错信息里面看到的，它报告找不到某某文件（这些文件虽然在git仓库，但命中了 .gitignore 的规则)</p><p>调整了 <code>.gitignore</code> 文件后，这些文件能提交了，再上传时又报错文件太大了。</p><pre><code>│       ├── suggestion.dart (7 KB)
+│       └── template.dart (2 KB)
+└── pubspec.yaml (&lt;1 KB)
+
+Total compressed archive size: 7 MB.
+Validating package... (43.5s)
+...
+
+Policy details are available at https://pub.dev/policy
+
+
+Package has 2 warnings and 1 hint.. Do you want to publish autocomplete 0.1.2-dev to https://pub.dev (y/N)? y
+Uploading... (9.5s)
+Failed to scan tar archive. (Maximum total length reached: 104857600.)</code></pre><p>这里展示的信息表示，上传到 pub.dev 过程中，项目压缩后右 7MB，但在服务器端解压后超过 100MB了，不符合 pub.dev 的规则，建议我这么多代码，拆成多个包发布。</p><p>再检查了下 dart 项目，有 104MB，算了，找几个不那么常用的命令删减一下吧，🤣</p><pre><code class="shell">% du -hd 1 | sort -rh
+104M    .
+ 44M    ./aws
+ 25M    ./az
+ 20M    ./gcloud
+436K    ./heroku
+328K    ./fig
+ 96K    ./shopify
+ 76K    ./infracost
+ 60K    ./dotnet
+ 44K    ./task
+ 36K    ./deno
+ 12K    ./php
+ 12K    ./example
+ 12K    ./@capgo
+8.0K    ./@withfig
+8.0K    ./@usermn
+4.0K    ./python
+4.0K    ./@wordpress</code></pre><p>这三大云的命令，都有很大啊，删一个云是删，那就三个一起删了。</p><p>这样就能上传到 <code>pub.dev</code> 了。</p><h2>第五期</h2><p>这一期改动都是几周之后了，这个项目完成后，我后续有空也看了看源码，发现当前是函数式的，中间发现解析spec是个一个深度检索，也就是你选择了<code>git</code> 命令后续的检索都是在这个<code>git spec</code> 上进行检索，也就是可以缓存可以避免多次解析 <code>git spec</code> 对象。</p><p>例如：你输入命令时，就是这样的 <code>git</code> ，<code>git b</code>，<code>git br</code> ，这会触发三次命令推荐函数，当第一次输入<code>git</code> 时，后续的推荐命令，都是在 <code>git spec</code> 内找，后续就可以服用 <code>git spec</code> 对象，避免了多次检索，如果是函数式，就需要一个全局缓存对象。 </p><p>按照 dart/flutter 的设计思想，可以改为对象，这个缓存变量作为一个对象属性，和view一样有自己的生命周期管理，dispose 就回收资源。</p><p>这样之后，那个全局缓存对象就没有无限增长了，引入这个 <code>autocomplete</code> 后，<code>app</code> 内存，<code>cpu</code> 也没有突刺了。</p><h2>结束</h2><p>好的，<a href="https://link.segmentfault.com/?enc=G7OkDZOomFA4gJIXllnTFw%3D%3D.BE0fXpu6vcyCLe3iz3bL%2BG0RzIbhDbDgkUkMifYseiy5XBDOBaW3R33giE6GXcVc" rel="nofollow" target="_blank">autocomplete for dart</a> 就算完成了，实装效果，大家下载 <a href="https://link.segmentfault.com/?enc=jdLRvqYUpmKlctuIaIQSLw%3D%3D.pIeZF%2FcYgxlDL5ixv97ZhT5DrdEemL7HPawiCFmm46s%3D" rel="nofollow" target="_blank">Faiterm.app</a> 体验看看，作为这个终端的自动提示，使用起来还是非常棒的, 跨平台开发，Windows，Mac，Linux 的用户都可以使用。</p><ul><li><a href="https://link.segmentfault.com/?enc=AKx4acfjKDUVzY%2FqcTBi%2Bw%3D%3D.pIpLka%2FOCGDlb%2BUID10sAuWQWaIAdaYWWGXwDkJ%2BzRnEsBL4rQaMA%2Fk4J%2Bc3NlaF" rel="nofollow" target="_blank">https://github.com/littlewrite/autocomplete</a></li><li><a href="https://link.segmentfault.com/?enc=IAbWfdM8YGx1oq7d8d%2FRwQ%3D%3D.ZsScW7tZ4YjyFP1Nu0eJvRg1a31CESapkhwWkEucEtM%3D" rel="nofollow" target="_blank">https://www.faiterm.com/</a></li></ul><p><strong>回顾与经验分享</strong>：</p><ol><li><strong>工具是手段，而非银弹</strong>：面对 200 万行代码，试图寻找一个全自动的转换工具一劳永逸是不现实的。正确的方法是<strong>快速验证工具的边界</strong>，然后立即转向能解决 80% 问题的、更定制化的方案。</li><li><strong>让 AI 做它擅长的事</strong>：在这次迁移中，AI 的角色不是“翻译整个项目”，而是“<strong>撰写转换规则引擎</strong>”和“<strong>处理零散的、模式不统一的代码片段</strong>”。这极大地降低了成本并提高了准确性。</li><li><strong>性能问题是设计出来的</strong>：初期 500MB 的内存占用是一个强烈的设计信号。它迫使我们将架构从“一次性全量加载”重新思考为“<strong>按需加载 + 智能缓存</strong>”，这反而是打磨出更健壮、更贴合 Dart/Flutter 生态设计模式（如对象生命周期）的契机。</li><li><strong>发布即交付，细节定成败</strong>：<code>.gitignore</code>规则和 pub.dev 的包大小限制，这两个看似微小的“发布流水线”细节，最终影响了交付物的内容。工程化项目必须<strong>尽早并频繁地走通整个构建、打包、发布流程</strong>。</li></ol>]]></description></item><item>    <title><![CDATA[征程 6X Camera 接入数据评估 地平线智驾开发者 ]]></title>    <link>https://segmentfault.com/a/1190000047654483</link>    <guid>https://segmentfault.com/a/1190000047654483</guid>    <pubDate>2026-03-15 23:03:07</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>1.接入带宽计算</h2><h3>1.1</h3><p>Camera 接入时，需评估链路上各模块之间的理论要求和限制，接入通路一般涉及加解串器，MIPI，CIM， ISP（RAW），PYM，GDC/STITCH（可选）等 ，接入模组一般分为 RAW/YUV Sensor，RAW Sensor 一般在通路上需要 ISP 处理进行处理，对处理性能有要求的需同时考虑通路中相关模块性能以及限制，对于数据接入来说前端解串器，MIPI， CIM 的影响更明显。</p><ul><li>在 DES 侧： 其输出 MIPI 速率需满足总带宽需求，同时还要满足 Camera 输出 timing，6E/M 上主流的美信解串器最大速率为 2.5G，其他厂商或者大速率需额外适配。</li><li><p>在 MIPI 侧，需满足 ipi 总带宽大于 mipiclk 输入数据带宽，否则可能出现 ipi overflow。</p><ul><li>其 FIFO 较小，对于有数据累积情况：行长越大，累积时间越长，越容易出现。</li><li>若满足 IPI 速率大于 mipiclk 输入速率，则理论上不会产生 ipi overflow。</li></ul></li><li>其他的硬件模块的限制可以参考模块规格，此处跳转到对应的规格限制。</li></ul><h3>1.2</h3><p>带宽计算，此处均按 RAW16 计算，其他的 RAW 尺寸则按照对应的比例换算即可：</p><ul><li><p>Camera 接入实际数据量：</p><ul><li>1 路 8M RAW16: 3840x2160<em>2</em>8*30 ～= 4Gbps</li><li>1 路 2M YUV: 1920x1080<em>16</em>30 ～= 1Gbps</li></ul></li><li><p>MIPI IPI 传输 RAW 与 YUV 的区别：默认 IPI 使用 48bit 模式：</p><ul><li>传 YUV 时一个 ipi clock 只能传 1 个 pixel</li><li>传 RAW（&lt;=16）时一个 ipi clock 可传 3 个 pixel</li></ul></li><li><p>CIM 的 IPI 速率（pix\_clk）为 600M 频率上限，因此限制了 IPI 传输 YUV 带宽为 9.6Gbps，RAW 传输的 28.8Gbps；</p><ul><li>征程 6E/M 通用的解串器最大的支持速率是 2.5G，下图按照此规格进行理论计算，如有更改规定的解串器，则可进行类比计算</li><li>CPHY: 2.28bits/symbol，因此 CPHY 计算时，需要乘以对应的系数</li><li>同一个 RX 上，混合接入时，由于有 YUV 数据，最大 IPI 的传输限制就变成了 9.6Gbps 数据类型 IPI 带宽限制 RAW 28.8Gbps （按 RAW16） YUV （RAW+YUV） 9.6Gbps （按 YUV422） PHY 类型 PHY 带宽限制 CPHY 17.1Gbps DPHY 10Gbps</li></ul></li></ul><h2>2.实际接入评估：</h2><h3>2.1</h3><p>上述已对实际数据流以及理论接入能力进行分析讲解，下面开始进行实际场景计算</p><h3>2.2</h3><p>实际 Camera 接入时，计算 Camera 数据流不能按照理论值，此时需要考虑 blanking 时间， 因此实际接入的数据流计算如下：</p><ul><li><p>数据量 = Lanes * H\_total * V\_total * fps * dataType（bpp， for RAW12， bpp=12； for yuv422, bpp=16)</p><ul><li>其中 H\_total、V\_total 是包含了 blanking 时间的，可按照总体 0.4 的 blanking 或是长和宽各 0.2 的 blanking 来计算</li></ul></li><li><p>1 路 8M，RAW 按照总体 0.4 的 blanking 计算，YUV 的 blanking 时间按照 1.2 计算</p><ul><li>RAW12: 3840x2160<em>12</em>30*1.4 \~= 4.2Gbps</li><li>YUV（按 YUV422）: 3840<em>2160</em>16<em>30</em>1.2 ～= 4.7 Gbps</li></ul></li><li><p>MIPI RX Camera 最大接入评估：</p><ul><li><p>RAW Camera:</p><ul><li>4 路 8M 基本是接近极限带宽，考虑到一些硬件软件的延时，目前是接不进来的，因此最大单 RX 最大接入能力在 3 个 8M，还可以接一个后置 2M 或者 3M，若还需更大分辨率，可能需要调试 Sensor 输出 timing 进行适配。</li></ul></li><li><p>YUV Camera:</p><ul><li>2 路 8M YUV，blanking 控制在 1.2 以内，是可以接入的，再多的模组就接入不进来了</li></ul></li><li><p>RAW+YUV</p><ul><li>一个 8M 的 YUV Sensor，可以再接入一路 8M 的 RAW Sensor，至于还能不能接一路 2M 的 raw Sensor 依赖于 blanking 时间，待自行评估计算</li></ul></li></ul></li></ul><h2>3.接入规格支持 ：</h2><h3>3.1</h3><p>征程 6E/M 系统，总共 3 个 RX，每个 RX 有 4 个 ipi，理论可支持 12 路 Camera 接入，支持 CPHY 和 DPHY，不同形态的 PHY 的带宽限制分别如下：C-PHY 17.1 Gbps，D-PHY10 Gbps。</p><h3>3.2</h3><p>单个 RX 的接入规格如下，以 RAW12 来计算的：</p><p>RAW 摄像头接入：<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047654485" alt="1.jpg" title="1.jpg"/></p><p>YUV 摄像头接入：<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047654486" alt="2.jpg" title="2.jpg" loading="lazy"/></p><p>混合接入（RAW+YUV）：<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047654487" alt="3.jpg" title="3.jpg" loading="lazy"/></p><p>此外征程 6E/M 的 Camera 通路还支持 RAW8， RAW10，RAW16 以及 RAW20，可根据上述方法计算出相应的接入组合方案。</p>]]></description></item><item>    <title><![CDATA[征程 6P codec decoder sample 地平线智驾开发者 ]]></title>    <link>https://segmentfault.com/a/1190000047654511</link>    <guid>https://segmentfault.com/a/1190000047654511</guid>    <pubDate>2026-03-15 23:02:13</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>1. 功能概述</h2><p>解码 h264/h265 视频或 jpg 图片，生成 yuv 图像。</p><h4>1.1. 软件架构</h4><p>采用 MediaCodec 的 poll 模式来解耦输入和输出，可使解码帧率性能达到最优。 在主线程中灌码流数据：取出一个空的 input buffer，配置码流数据的地址信息（如 phys addr），再 queue input buffer 并通知解码器处理该帧数据； 另一个线程取输出 YUV 图像：通过 select 接收硬件解码完成通知，取出一个硬件填满输出图像的 output buffer，将解码结果写到文件中后归还 output buffer。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047654513" alt="" title=""/></p><h4>1.2. 硬件数据流说明</h4><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047654514" alt="" title="" loading="lazy"/></p><h4>1.3. 代码位置及目录结构</h4><p>sample 代码位置在工程目录{sdk\_dir}/test/samples/platform\_samples/source/S83\_Sample/S83E04\_Module/codec\_sample。</p><p>目录结构如下：</p><pre><code class="Plain">.
 ├── codec_sample.sh
 ├── Kconfig
 ├── Makefile
@@ -1659,4 +1908,4 @@ Try your best to concurrent the tasks.</code></pre><p>中文版本：</p><pre><c
       "console": "integratedTerminal",
       "outFiles": ["${workspaceFolder}/dist/**/*.js"],
       "skipFiles": ["&lt;node_internals&gt;/**"]
-    },    </code></pre>]]></description></item><item>    <title><![CDATA[OpenClaw 新手最容易踩的 8 个坑，90% 人中招 程序员小饭 ]]></title>    <link>https://segmentfault.com/a/1190000047653171</link>    <guid>https://segmentfault.com/a/1190000047653171</guid>    <pubDate>2026-03-14 20:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <blockquote><strong>OpenClaw 难的不是“功能不会点”，而是“流程没想清楚”</strong>。你把这 8 个坑避开，基本就能从“能跑”进阶到“跑得稳”。</blockquote><p>大家好，我是饭米粒</p><p>很多人刚上手 OpenClaw，第一反应是：</p><p>“这工具好强，但我怎么越用越乱？”</p><p>我一开始也一样。<br/>看了很多功能，配了很多自动化，结果两天后自己都看不懂自己在干嘛。</p><p>后来我发现，新手不是输在技术，而是输在<strong>顺序</strong>。<br/>下面这 8 个坑，是我见过最多、也最容易修的。</p><h2>坑 1：一上来就追“全自动”</h2><h4>典型表现</h4><ul><li>想一次性把写作、分发、复盘全打通</li><li>没有人工检查点</li><li>出错后不知道哪一环炸了</li></ul><h4>为什么会踩</h4><p>你把 OpenClaw 当“无人驾驶”，但新手阶段它更像“带辅助驾驶”。</p><h4>正确做法</h4><p>先做“<strong>半自动流程</strong>”：</p><ol><li>AI 先生成草稿</li><li>人工确认关键内容</li><li>再自动分发或归档</li></ol><p><strong>口诀：先可控，再省事。</strong></p><h2>坑 2：不写流程图，直接堆功能</h2><h4>典型表现</h4><ul><li>看见工具就接</li><li>触发条件全靠记忆</li><li>后面改一处，其他地方连锁崩</li></ul><h4>为什么会踩</h4><p>你没有“流程视图”，只有“功能碎片”。</p><h4>正确做法</h4><p>开工前先写 4 行流程：</p><ol><li>触发源（谁触发）</li><li>处理逻辑（AI 做什么）</li><li>人工校验点（哪一步必须确认）</li><li>输出目标（发到哪，存到哪）</li></ol><p>你可以把它理解成“装修前先画户型图”。<br/>不画图直接开工，后面全是返工。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047653173" alt="" title=""/></p><h2>坑 3：提示词写太长、太抽象</h2><h4>典型表现</h4><ul><li>一段提示词几百字</li><li>要求很多，但没有优先级</li><li>输出风格忽左忽右</li></ul><h4>为什么会踩</h4><p>你以为“写得越多越准”，实际上模型更吃“结构化指令”。</p><h4>正确做法</h4><p>把提示词改成 3 段：</p><ul><li><strong>角色</strong>：你是谁（例如：公众号结构增强编辑）</li><li><strong>任务</strong>：你要产出什么（提纲/正文/标题）</li><li><strong>约束</strong>：字数、风格、禁区</li></ul><p>再加一条：<br/><strong>先出提纲，再写正文。</strong></p><p>这样稳定性会明显提升。</p><h2>坑 4：上下文喂太少，AI“失忆”</h2><h4>典型表现</h4><ul><li>每次都像重新开始</li><li>同一主题，前后口径不一致</li><li>写作风格飘来飘去</li></ul><h4>为什么会踩</h4><p>你没把“长期信息”变成可复用上下文。</p><h4>正确做法</h4><p>最少维护 3 类固定信息：</p><ol><li>用户画像（你是谁、读者是谁）</li><li>写作偏好（口语化、步骤化、少术语）</li><li>内容边界（不夸大、不虚构）</li></ol><p>把它当成“开场白模板”，每次任务前自动带上。</p><h2>坑 5：不做错误分层，排障全靠猜</h2><h4>典型表现</h4><ul><li>一报错就重试</li><li>不看是权限问题、格式问题还是网络问题</li><li>反复踩同一类错误</li></ul><h4>为什么会踩</h4><p>你把所有报错当成一个问题。</p><h4>正确做法</h4><p>按 3 层排查：</p><ol><li><strong>输入层</strong>：参数、字段、格式是否对</li><li><strong>权限层</strong>：token/scopes 是否够</li><li><strong>执行层</strong>：超时、网络、服务状态</li></ol><p>先分层，再处理，速度会快很多。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047653174" alt="" title="" loading="lazy"/></p><h2>坑 6：把“提醒”写成“系统噪音”</h2><h4>典型表现</h4><ul><li>定时任务会触发，但提醒文案看不懂</li><li>过了几天你自己都不知道它在提醒什么</li></ul><h4>为什么会踩</h4><p>提醒没有上下文，只有一句“该做事了”。</p><h4>正确做法</h4><p>提醒文案至少包含 4 件事：</p><ol><li>这是提醒</li><li>具体任务是什么</li><li>对应哪个项目</li><li>下一步动作是什么</li></ol><p>比如：<br/>“【提醒】你 3 天前规划的 OpenClaw 教程选题该复盘了，现在请补 3 条读者问题并更新提纲。”</p><h2>坑 7：没有“人工兜底”就直接外发</h2><h4>典型表现</h4><ul><li>自动生成后直接发群/发公众号</li><li>出现事实错误、口吻失真</li><li>返工成本巨大</li></ul><h4>为什么会踩</h4><p>你把 AI 当最终发布者，而不是第一生产者。</p><h4>正确做法</h4><p>加一个“发布前 checklist”：</p><ul><li>事实是否可验证</li><li>观点是否符合你定位</li><li>是否有夸大承诺</li><li>是否读起来像你本人</li></ul><p>检查通过再发布。</p><h2>坑 8：只盯功能，不做复盘</h2><h4>典型表现</h4><ul><li>今天搭一个流程，明天换一个</li><li>没有衡量标准</li><li>做了很多，增长没感觉</li></ul><h4>为什么会踩</h4><p>你在“忙自动化”，不是“用自动化拿结果”。</p><h4>正确做法</h4><p>每周固定复盘 3 个指标：</p><ol><li>省了多少时间</li><li>错误率是否下降</li><li>内容产出是否更稳定</li></ol><p>复盘后只做一件优化，不要一次改 10 个地方。</p><h2>给新手的最小可行路径（直接照抄）</h2><p>如果你刚开始，不要贪多，先跑这条线：</p><ol><li>先做一个“选题 → 提纲 → 初稿”的半自动流程</li><li>强制保留人工审核</li><li>每周复盘一次，只优化一个点</li></ol><p>你会发现，OpenClaw 真正的价值不是“炫技”，<br/>而是让你稳定产出、减少内耗。</p><p>我现在做内容也是这套。<br/>不是最快，但很稳。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047653175" alt="" title="" loading="lazy"/></p><h2>写在最后</h2><p>很多人问我：<br/>“OpenClaw 到底难不难？”</p><p>我现在的回答是：<br/><strong>不难，前提是你别一上来就把它当万能机器。</strong></p><p>先把流程跑顺，再谈规模化。<br/>先把一个场景做成，再复制到第二个、第三个。</p><p>你会比大多数人快很多。</p><p>本文由<a href="https://link.segmentfault.com/?enc=J2LzKD4wijy0iMRvmjHRTg%3D%3D.2OCYKA1ZYwHkiZgoQz8TktBrqIECldiuHB1auYc%2BPDg%3D" rel="nofollow" target="_blank">mdnice</a>多平台发布</p>]]></description></item><item>    <title><![CDATA[关于日本IP方面需要注意什么？ IPDEEP ]]></title>    <link>https://segmentfault.com/a/1190000047653033</link>    <guid>https://segmentfault.com/a/1190000047653033</guid>    <pubDate>2026-03-14 18:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>随着跨境电商、网络营销以及数据采集需求的增长，日本原生IP的使用越来越受到关注。那么，什么是原生IP，为什么选择日本原生IP购买呢？下面就跟着IPDEEP小编一起来看看吧！</p><p><img width="723" height="324" referrerpolicy="no-referrer" src="/img/bVdn6Ts" alt="日本原生IP购买" title="日本原生IP购买"/></p><p>一、什么是原生IP？</p><p>原生IP指的是由互联网服务提供商（ISP）分配的真实IP地址，与虚拟或共享IP不同，它是真实存在的、可追踪的网络身份。使用原生IP范文公文网站，可以更好地模拟普通用户的上网行为，降低被封禁或限制的风险。</p><p>二、为什么选择日本IP？</p><p>1.高访问稳定性</p><p>相比普通代理或VPN，日本原生IP通常来自正规ISP，稳定性和访问速度更高，特别适合需要频繁访问日本网站的用户。</p><p>2.地域定位精准</p><p>日本原生IP能够帮助用户在网络服务上显示为日本本地访问，这对需要获取日本本地内容、进行广告投放或跨境电商运营的用户非常重要。</p><p>3.适用场景广泛</p><p>无论是做市场调研、自动化抓取数据，还是管理日本亚马逊等平台账号，原生IP都能提供更安全可靠的网络环境。</p><p>三、日本原生IP购买建议</p><p>1.根据需求选择IP类型</p><p>动态IP适合频繁切换IP、避免封禁的场景；静态IP适合长期绑定账号或固定服务器访问。</p><p>2.关注价格与套餐</p><p>不同供应商提供的IP数量、流量限制和使用时间不同，用户可以根据自身需求选择最适合的套餐。</p><p>3.选择正规供应商</p><p>在购买前应该选择信誉好、提供实时在线支持的供应商，确保IP的稳定性和安全性。</p><p>四、总结</p><p>日本原生IP在跨境业务、数据抓取、账号管理登场景中有着非常重要的作用。选择稳定、安全的供应商，并根据实际需求购买合适的IP类型，能够有效提供工作效率和网络安全性。</p>]]></description></item>  </channel></rss>
+    },    </code></pre>]]></description></item><item>    <title><![CDATA[OpenClaw 新手最容易踩的 8 个坑，90% 人中招 程序员小饭 ]]></title>    <link>https://segmentfault.com/a/1190000047653171</link>    <guid>https://segmentfault.com/a/1190000047653171</guid>    <pubDate>2026-03-14 20:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <blockquote><strong>OpenClaw 难的不是“功能不会点”，而是“流程没想清楚”</strong>。你把这 8 个坑避开，基本就能从“能跑”进阶到“跑得稳”。</blockquote><p>大家好，我是饭米粒</p><p>很多人刚上手 OpenClaw，第一反应是：</p><p>“这工具好强，但我怎么越用越乱？”</p><p>我一开始也一样。<br/>看了很多功能，配了很多自动化，结果两天后自己都看不懂自己在干嘛。</p><p>后来我发现，新手不是输在技术，而是输在<strong>顺序</strong>。<br/>下面这 8 个坑，是我见过最多、也最容易修的。</p><h2>坑 1：一上来就追“全自动”</h2><h4>典型表现</h4><ul><li>想一次性把写作、分发、复盘全打通</li><li>没有人工检查点</li><li>出错后不知道哪一环炸了</li></ul><h4>为什么会踩</h4><p>你把 OpenClaw 当“无人驾驶”，但新手阶段它更像“带辅助驾驶”。</p><h4>正确做法</h4><p>先做“<strong>半自动流程</strong>”：</p><ol><li>AI 先生成草稿</li><li>人工确认关键内容</li><li>再自动分发或归档</li></ol><p><strong>口诀：先可控，再省事。</strong></p><h2>坑 2：不写流程图，直接堆功能</h2><h4>典型表现</h4><ul><li>看见工具就接</li><li>触发条件全靠记忆</li><li>后面改一处，其他地方连锁崩</li></ul><h4>为什么会踩</h4><p>你没有“流程视图”，只有“功能碎片”。</p><h4>正确做法</h4><p>开工前先写 4 行流程：</p><ol><li>触发源（谁触发）</li><li>处理逻辑（AI 做什么）</li><li>人工校验点（哪一步必须确认）</li><li>输出目标（发到哪，存到哪）</li></ol><p>你可以把它理解成“装修前先画户型图”。<br/>不画图直接开工，后面全是返工。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047653173" alt="" title=""/></p><h2>坑 3：提示词写太长、太抽象</h2><h4>典型表现</h4><ul><li>一段提示词几百字</li><li>要求很多，但没有优先级</li><li>输出风格忽左忽右</li></ul><h4>为什么会踩</h4><p>你以为“写得越多越准”，实际上模型更吃“结构化指令”。</p><h4>正确做法</h4><p>把提示词改成 3 段：</p><ul><li><strong>角色</strong>：你是谁（例如：公众号结构增强编辑）</li><li><strong>任务</strong>：你要产出什么（提纲/正文/标题）</li><li><strong>约束</strong>：字数、风格、禁区</li></ul><p>再加一条：<br/><strong>先出提纲，再写正文。</strong></p><p>这样稳定性会明显提升。</p><h2>坑 4：上下文喂太少，AI“失忆”</h2><h4>典型表现</h4><ul><li>每次都像重新开始</li><li>同一主题，前后口径不一致</li><li>写作风格飘来飘去</li></ul><h4>为什么会踩</h4><p>你没把“长期信息”变成可复用上下文。</p><h4>正确做法</h4><p>最少维护 3 类固定信息：</p><ol><li>用户画像（你是谁、读者是谁）</li><li>写作偏好（口语化、步骤化、少术语）</li><li>内容边界（不夸大、不虚构）</li></ol><p>把它当成“开场白模板”，每次任务前自动带上。</p><h2>坑 5：不做错误分层，排障全靠猜</h2><h4>典型表现</h4><ul><li>一报错就重试</li><li>不看是权限问题、格式问题还是网络问题</li><li>反复踩同一类错误</li></ul><h4>为什么会踩</h4><p>你把所有报错当成一个问题。</p><h4>正确做法</h4><p>按 3 层排查：</p><ol><li><strong>输入层</strong>：参数、字段、格式是否对</li><li><strong>权限层</strong>：token/scopes 是否够</li><li><strong>执行层</strong>：超时、网络、服务状态</li></ol><p>先分层，再处理，速度会快很多。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047653174" alt="" title="" loading="lazy"/></p><h2>坑 6：把“提醒”写成“系统噪音”</h2><h4>典型表现</h4><ul><li>定时任务会触发，但提醒文案看不懂</li><li>过了几天你自己都不知道它在提醒什么</li></ul><h4>为什么会踩</h4><p>提醒没有上下文，只有一句“该做事了”。</p><h4>正确做法</h4><p>提醒文案至少包含 4 件事：</p><ol><li>这是提醒</li><li>具体任务是什么</li><li>对应哪个项目</li><li>下一步动作是什么</li></ol><p>比如：<br/>“【提醒】你 3 天前规划的 OpenClaw 教程选题该复盘了，现在请补 3 条读者问题并更新提纲。”</p><h2>坑 7：没有“人工兜底”就直接外发</h2><h4>典型表现</h4><ul><li>自动生成后直接发群/发公众号</li><li>出现事实错误、口吻失真</li><li>返工成本巨大</li></ul><h4>为什么会踩</h4><p>你把 AI 当最终发布者，而不是第一生产者。</p><h4>正确做法</h4><p>加一个“发布前 checklist”：</p><ul><li>事实是否可验证</li><li>观点是否符合你定位</li><li>是否有夸大承诺</li><li>是否读起来像你本人</li></ul><p>检查通过再发布。</p><h2>坑 8：只盯功能，不做复盘</h2><h4>典型表现</h4><ul><li>今天搭一个流程，明天换一个</li><li>没有衡量标准</li><li>做了很多，增长没感觉</li></ul><h4>为什么会踩</h4><p>你在“忙自动化”，不是“用自动化拿结果”。</p><h4>正确做法</h4><p>每周固定复盘 3 个指标：</p><ol><li>省了多少时间</li><li>错误率是否下降</li><li>内容产出是否更稳定</li></ol><p>复盘后只做一件优化，不要一次改 10 个地方。</p><h2>给新手的最小可行路径（直接照抄）</h2><p>如果你刚开始，不要贪多，先跑这条线：</p><ol><li>先做一个“选题 → 提纲 → 初稿”的半自动流程</li><li>强制保留人工审核</li><li>每周复盘一次，只优化一个点</li></ol><p>你会发现，OpenClaw 真正的价值不是“炫技”，<br/>而是让你稳定产出、减少内耗。</p><p>我现在做内容也是这套。<br/>不是最快，但很稳。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047653175" alt="" title="" loading="lazy"/></p><h2>写在最后</h2><p>很多人问我：<br/>“OpenClaw 到底难不难？”</p><p>我现在的回答是：<br/><strong>不难，前提是你别一上来就把它当万能机器。</strong></p><p>先把流程跑顺，再谈规模化。<br/>先把一个场景做成，再复制到第二个、第三个。</p><p>你会比大多数人快很多。</p><p>本文由<a href="https://link.segmentfault.com/?enc=J2LzKD4wijy0iMRvmjHRTg%3D%3D.2OCYKA1ZYwHkiZgoQz8TktBrqIECldiuHB1auYc%2BPDg%3D" rel="nofollow" target="_blank">mdnice</a>多平台发布</p>]]></description></item>  </channel></rss>
