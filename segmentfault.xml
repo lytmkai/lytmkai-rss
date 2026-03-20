@@ -1,4 +1,208 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[前端如何优雅实现0到auto的高度过渡 linsk ]]></title>    <link>https://segmentfault.com/a/1190000047665011</link>    <guid>https://segmentfault.com/a/1190000047665011</guid>    <pubDate>2026-03-20 10:11:19</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>各位好，相信大家都知道，最近更新 Chrome 已经支持了 0 到 auto 的高度过渡。但是很多人反映这种特性太新了，出于兼容考虑用不了的。而实际上 calc-size 是可以渐进增强的。今天我就给大家表演一下，0 到 auto 的渐进增强兼容所有浏览器。</p><p><a href="https://www.bilibili.com/video/BV1uTyxYgE2C/?aid=113352172896731&amp;cid=26422807229" target="_blank">https://www.bilibili.com/video/BV1uTyxYgE2C/?aid=113352172896...</a></p><h2>我们先搭建一个空白工程化项目</h2><p>这个示例工程。是一个计数器。</p><pre><code class="tsx">import * as React from "react";
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[数据调度选型：Apache DolphinScheduler凭什么替代Airflow 海豚调度 ]]></title>    <link>https://segmentfault.com/a/1190000047665353</link>    <guid>https://segmentfault.com/a/1190000047665353</guid>    <pubDate>2026-03-20 11:07:09</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>去年团队做数据平台选型的时候，老板直接甩出一句话："Airflow 太重了，运维成本扛不住，找个轻量点的替代品。"</p><p>说实话，当时心里是崩溃的。Airflow 确实重，Python 环境一堆依赖，Celery Executor 还得配 Redis 或 RabbitMQ，稍微规模大点就得上 Kubernetes。但数据团队就那么几个人，让他们去维护 Crontab 脚本？那不是开历史倒车吗。</p><p>后来翻遍 GitHub，在 Apache 孵化器里发现了 DolphinScheduler（海豚调度）。14.1K Stars，Apache 2.0 协议，国内易观团队开源的项目，现在已经毕业成为 Apache 顶级项目。试用之后发现，这玩意儿确实有点东西。</p><h2>低代码拖拽，不写 YAML 也能干活</h2><p>Airflow 的 DAG 配置大家都懂，Python 代码写工作流，灵活是灵活，但数据分析师看不懂啊。DolphinScheduler 直接给你一个可视化拖拽界面，鼠标点点拉拉就能搞定任务依赖关系。</p><p>支持 30 多种任务类型：Shell、SQL、Spark、Flink、HTTP、DataX、Python...基本覆盖了大数据场景的所有常见任务。想跑个 Hive SQL？拖个 SQL 节点，配置数据源和脚本，连上上游依赖，搞定。不需要写一行 Python，也不需要搞什么 BashOperator、SparkSubmitOperator。</p><p>这对非研发岗位友好得多，数据分析师自己就能上手配工作流，不用天天跑来找你帮忙写 DAG。</p><h2>去中心化高可用，不依赖 ZooKeeper</h2><p>Airflow 的架构大家都知道，Scheduler 是单点，虽然后来支持了多 Scheduler HA，但还是得依赖数据库锁来保证任务不重复调度。DolphinScheduler 从一开始就是按去中心化设计的。架构很清晰，五大核心组件：</p><ul><li>API Server：前端交互入口，工作流配置、用户权限管理都在这</li><li>Master Server：DAG 解析和任务分发，可以部署多个 Master，每个 Master 都能独立工作</li><li>Worker Server：任务执行节点，接收 Master 分发的任务，执行完回传结果</li><li>Alert Server：告警通知，支持邮件、钉钉、企微、飞书等多种渠道</li><li>Registry：注册中心，负责服务发现和分布式锁，支持三选一：JDBC、ZooKeeper、Etcd</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047665355" alt="" title=""/></p><p>重点说说 Master 的去中心化设计。多个 Master 之间不存在主从关系，每个 Master 启动后会到 Registry 注册自己，然后根据槽位分片算法来抢任务。</p><p>具体怎么分片？用的是 ID 取模，Command ID % Master 总数 = 当前 Master 的槽位。比如你有 3 台 Master，Command ID 为 1001 的任务就分给槽位 1（1001 % 3 = 2，槽位从 0 开始算）。某台 Master 挂了，它的槽位会被其他 Master 接管，任务不会丢。</p><p>这个设计比 Airflow 的 Scheduler HA 简单多了，不需要复杂的选主逻辑，Master 可以随时横向扩展。</p><h2>注册中心用 JDBC，告别 ZooKeeper 依赖</h2><p>以前做分布式调度系统，绕不开 ZooKeeper。Airflow 早期版本也依赖 ZK，后来改成数据库锁，但还是有性能瓶颈。DolphinScheduler 支持三种注册中心：JDBC、ZooKeeper、Etcd。</p><p>官方推荐用 JDBC，直接复用业务数据库（MySQL 或 PostgreSQL），不需要额外部署 ZK 或 Etcd 集群。对于中小规模团队来说，少维护一套组件就是降本增效。</p><p>当然，如果你们已经有 ZK 集群了，或者对性能要求极高（上万并发任务调度），还是可以选 ZK 或 Etcd 的。</p><h2>任务分发机制：主动推送，不是拉取</h2><p>Airflow 的 Celery Executor 是典型的任务队列模型，Scheduler 把任务扔到 Redis 队列里，Worker 自己去拉。这种方式灵活，但队列积压的时候就头疼了。</p><p>DolphinScheduler 用的是主动推送：Master 解析完 DAG 之后，直接通过 Netty RPC 把任务推给 Worker。Worker 不需要轮询，Master 说干啥就干啥。</p><p>任务分配的时候会做负载均衡，默认是动态加权轮询，综合考虑 Worker 的 CPU、内存、线程池使用情况，把任务分给负载低的机器。如果某个 Worker 快扛不住了，Master 会自动把任务调度到其他节点。</p><p>这种推送机制的好处是调度延迟低，Master 能实时掌握 Worker 的状态，不会出现任务在队列里躺几十秒才被消费的情况。</p><h2>插件化架构，想换啥换啥</h2><p>DolphinScheduler 的插件化做得挺彻底的：</p><ul><li>任务插件：30 多种内置任务类型，还可以自己写插件扩展</li><li>告警插件：邮件、钉钉、企微、飞书、Telegram，不够的话自己实现 Alert Plugin 接口</li><li>数据源插件：MySQL、PostgreSQL、Hive、Spark SQL、ClickHouse...支持上百种数据源</li><li>存储插件：任务日志、资源文件可以存本地、HDFS、S3、OSS</li></ul><p>想换个告警渠道？写个插件打成 jar 包扔进去，重启服务，搞定。不需要改源码，维护成本低。</p><h2>部署方式灵活，Docker 一键体验</h2><p>官方提供四种部署方式：</p><ul><li>Standalone：单机模式，开发测试用，一条命令就能跑起来</li><li>Cluster：集群模式，生产环境标配，手动部署各个组件</li><li>Docker：一键拉起完整环境，适合快速体验</li><li>Kubernetes：用 Helm Chart 部署，云原生团队首选</li></ul><p>想快速体验的话，直接用 Docker Compose：</p><pre><code>docker-compose -f docker/docker-compose.yaml up -d</code></pre><p>等容器启动完，浏览器打开 <a href="https://link.segmentfault.com/?enc=p3JcQ6oaUNsjzbYqZrmdOg%3D%3D.AAdnkBRuxc%2FxdUSmF7WXhdYXevTm%2BV2ft4hzH70AkHx4qII7a9uDjm402bbbzTIv" rel="nofollow" target="_blank">http://localhost:12345/dolphinscheduler</a>，默认账号 admin/dolphinscheduler123，拖拽配个 Shell 任务试试，几分钟就能跑通一个工作流。</p><p>生产部署的话，建议至少 3 台 Master + 若干 Worker，数据库用 MySQL 主从或 PostgreSQL，注册中心选 JDBC 就行。官方文档写得还算详细，踩坑的地方不多。</p><h2>3.4.0 新版本亮点</h2><p>去年底发布的 3.4.0 版本，主要优化了几个点：</p><ul><li>任务优先级队列：高优任务可以插队执行，不用干等前面的大任务跑完</li><li>动态资源分配：Worker 可以根据任务类型动态调整线程池大小，避免资源浪费</li><li>工作流版本管理：DAG 修改后自动保存历史版本，支持一键回滚</li><li>血缘分析增强：数据表的上下游依赖关系可视化，方便排查影响范围</li></ul><p>最实用的是任务优先级队列，以前遇到紧急任务插入，只能手动暂停其他任务腾出资源。现在直接给任务打个高优先级标签，调度器自动帮你插队。</p><h2>适合什么团队？</h2><p>说了这么多优点，也得说说适用场景。<br/>适合用 DolphinScheduler 的团队：</p><ul><li>数据团队 10 人以下，运维资源有限，不想维护 Airflow 全家桶</li><li>任务以离线批处理为主，ETL、数据同步、报表调度等场景</li><li>需要低代码平台，让数据分析师、业务人员也能配工作流</li><li>已经有 MySQL/PostgreSQL，不想额外部署 ZooKeeper 集群</li></ul><p>不太适合的场景：</p><ul><li>实时流式任务为主（虽然支持 Flink，但调度粒度还是偏批处理）</li><li>深度依赖 Python 生态，工作流逻辑需要大量自定义代码（Airflow 更灵活）</li><li>任务量特别大，上万并发调度（可能需要 ZK 注册中心 + 深度调优）</li></ul><p>总体来说，DolphinScheduler 定位就是易用、稳定、轻量的数据调度平台。没有 Airflow 那么多花活，但该有的核心能力都有，而且维护成本低得多。</p><p>我们团队从 Airflow 迁到 DolphinScheduler 之后，集群规模从 5 台缩到 3 台，运维人力省了一半。数据分析师现在自己能配工作流，不用天天催我写 DAG 了。</p><p>调度工具没有绝对的好坏，适合自己团队的就是最好的。如果你们也在找 Airflow 的替代品，不妨试试 DolphinScheduler，说不定就是你要的那一款。</p>]]></description></item><item>    <title><![CDATA[OpenClaw 架构详解 · 第二部分：并发、隔离以及确保智能体正常运行的不变量（Invarian]]></title>    <link>https://segmentfault.com/a/1190000047665400</link>    <guid>https://segmentfault.com/a/1190000047665400</guid>    <pubDate>2026-03-20 11:06:22</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <blockquote><p><strong>编者按：</strong> 为什么你的 AI 智能体总是在生产环境中悄无声息地出错，甚至在你睡觉时做出不可预测的行为？</p><p>我们今天为大家带来的文章，作者的观点是：构建可靠 AI 智能体系统的关键，不在于精巧的提示词，而在于通过强制执行少量核心不变量（Invariants）来管理并发和状态，将自主性约束在可控范围内。</p><p>文章重点介绍了 OpenClaw 架构如何通过队列模型实现会话串行化与全局限流，确立了“单写入者”等核心不变量以防止状态竞争；详细阐释了包括“steer 模式”在内的多种队列策略，以解决任务执行中途新消息介入的并发难题；同时强调了去重、防抖及会话隔离等底层传输语义对于保障系统稳定性与隐私安全的重要性。</p></blockquote><p><strong>作者 | Vinoth Govindarajan</strong></p><p><strong>编译 | 岳扬</strong></p><p>在第一部分，有一个令人背脊发凉的“凌晨 3 点的电话”之问：</p><p>为什么我的 AI 助手会在我睡觉时做某些事？</p><p>第二部分则是更可怕的后续问题：</p><p><strong>是什么阻止了它“同时执行两项任务并破坏其自身状态”？</strong></p><p>因为一旦你拥有了：</p><ul><li>多个聊天界面（WhatsApp + Slack + WebChat），</li><li>基于时间的触发器（heartbeats, cron），</li><li>外部触发器（webhooks），</li><li>以及长时间运行的工具链（browser + shell + 文件写入），</li></ul><p>……无论你是否能够意识到，你都已经构建了一个并发系统。</p><p>当我看到 session-lane（会话通道）设计的那一刻，我就不再去想什么“智能体魔法”，而是开始基于状态机的确定性保证（state machine guarantees）来思考问题了。</p><p>我喜欢 OpenClaw 的其中一个原因是，它没有试图用巧妙的提示词来“解决自主性问题”。</p><p>它通过强制执行少量的 invariants（译者注：指的是在整个系统运行过程中，必须始终成立、永远不能被打破的规则或条件。可以把它理解成系统的“底线”或“宪法”。），并围绕这些不变量（invariants）构建队列模型（queueing model），让其自主性变得清晰可控。</p><p>其核心理念很简单：<strong>序列化每个会话（session）的写入操作，对全局工作（global work）进行限流，并明确规定当任务正在执行的过程中，如果突然收到了新的输入，系统具体该如何应对。</strong></p><h2><strong>01 为什么智能体系统需要不变量（否则就会显得“像是在闹鬼”）</strong></h2><p>如果我在审查一个智能体运行时（agent runtime），这部分永远是我最先关注的：</p><p>invariants 有哪些？以及它们又是在哪里被强制执行的？</p><p>因为如果没有不变量，智能体不会“大张旗鼓地报错”。</p><p>它们会悄无声息地出错。</p><p>比如：文件只写入了一半。Webhook 在网络重连后重复触发。对用户的一个请求，生成并发送了两条回复。</p><p>突然间，整个系统感觉就像闹鬼了一样。</p><p>不是因为它看起来有多么智能。</p><p>而是因为你违反了某个 invariant。</p><h2><strong>02 最关键的那个 invariant：单写入者规则</strong></h2><p>下面这个 invariant，能解释系统的很多稳定性问题：</p><p>在同一时间，只应该有一个 Agent 运行实例（agent run）去操作某个特定会话。</p><p>OpenClaw 通过一个感知通道（lane-aware）的 FIFO 队列来强制执行这一点：</p><ul><li>每个会话都有自己专属的 lane：session:&lt;key&gt;</li><li>这个 lane 保证每个会话同一时间只有一个活跃的运行实例</li><li>而每个运行实例同时还会经过一个全局 lane（稍后详述）</li></ul><p>正是这部分机制，阻止了那些经典的“同时产生两个想法”类的故障模式：</p><ul><li>工具调用以错误的顺序交错执行</li><li>两个运行实例同时修改同一份会话记录</li><li>导致重复发送或前后相互矛盾的操作</li><li>Agent 继续执行一个已经过时的计划</li></ul><p>一个不那么光鲜但真实的事实是：<strong>一旦涉及工具和状态，协调机制比巧妙的提示词更重要。</strong></p><h2><strong>03 队列（queue）不是细枝末节 —— 它是一种控制机制</strong></h2><p>如果你在文档/代码库中略读某个章节，请不要略读这一节。</p><p>OpenClaw 这个系统在设计时，追求的不是那种让人惊叹的“智能体魔法感”，而是踏踏实实地解决那些“无聊但重要”的基础架构问题：</p><ul><li>LLM 运行成本高昂</li><li>输入（inputs）可能接连到达（消息（message） + webhook + 心跳（heartbeat））</li><li>共享资源不应该被争抢（session 文件、日志、CLI stdin）</li><li>不要让你自己的 Agent 因为并发请求太多，意外地 DDoS 了上游服务</li></ul><h3><strong>3.1 两阶段模型：将每个会话的任务执行强制变为串行 + 全局限流</strong></h3><p>OpenClaw 的队列做两件事：</p><p>1）将每个会话（session）的任务执行强制变为串行（Per-session serialization）</p><p>运行时（runtime）将工作按 session key 排入通道（lane） session:&lt;key&gt;，这样保证每个 session 同时只有一个任务活跃运行。</p><p>2）全局限流</p><p>然后这些 session 范围的工作会经过一个全局 lane（默认是 main），所以整体并行度被 agents.defaults.maxConcurrent 限制。</p><p>两个容易被忽略但比看起来更重要的细节：</p><ul><li>即使用户的消息因为队列机制需要等待执行，系统也可以立即显示“正在输入…”的状态，让用户感觉界面是响应的，没有“卡住”。</li><li>这是一个小的进程内队列（in-process queue）：没有外部 worker，没有后台线程 —— 常被描述为“纯 TypeScript + promises”（译者注：完全使用 TypeScript 编程语言本身的异步特性（Promise/async-await）在进程内部实现队列逻辑，无需依赖外部基础设施或多线程模型。）</li></ul><p>如果你要从本篇文章中记住一张图，就是这张：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047665402" alt="" title=""/></p><h2><strong>04 队列模式：在“确定性”和“快速响应”之间做权衡（以及为什么需要“steer”这个模式）</strong></h2><p>现在真正的并发问题是：</p><p><strong>当 Agent 正在执行一个任务（还没跑完）的时候，如果突然来了一个新消息，系统该怎么办？</strong></p><p>OpenClaw 没有把这个复杂问题，藏在模糊的“让 Agent 自己决定”背后。</p><p>而是把它做成明确的、可配置的策略选项（队列模式），让开发者主动选择。</p><p>队列模式（queue modes）包括以下几种：</p><ul><li><strong>collect（默认模式）</strong> ：将队列中的消息合并为一个后续对话轮次。</li><li><strong>followup</strong>：始终等待直到当前任务运行结束。</li><li><strong>steer</strong>：不等任务全做完，只要当前正在执行的“工具调用”（如 API 调用、文件写入）完成了，就在间隙插入新消息。</li><li><strong>steer-backlog</strong>：既立即注入新消息（执行 steer），又把这条消息存起来，等当前任务彻底结束后再作为后续输入处理一次（执行 followup）。</li><li><strong>interrupt（遗留模式）</strong> ：直接杀掉当前任务，不管做到哪了，立刻开始处理新消息。</li></ul><p>如果你见过 Agent “疯狂刷屏回复”，或者在执行中途“无视用户的纠正”，那么上文提到的队列模式（queue modes）就是控制这些行为的“调节旋钮”。</p><h3><strong>4.1 “steer”模式到底具体指什么？</strong></h3><p>这就是一种契约：</p><ul><li>每次工具调用结束后检查队列。</li><li>如果在队列中发现了新消息，那么 Agent 当前计划中尚未执行的工具调用将被取消，不再执行。</li><li>然后，将排队的用户消息插入到 Agent 生成下一条回复之前，作为新的上下文输入。</li></ul><p>一个我无法忽视的简单故障案例：</p><p>当智能体正在执行一个耗时的多步骤任务时，用户在 Slack 上发来了一条修正指令。</p><p>如果没有明确的策略（policy），系统只有两个糟糕的选择。要么忽略用户的纠正（糟糕的用户体验），要么立刻停止当前任务，处理新消息（不安全）。</p><p>steer 模式选择了第三种方案：<strong>不中断正在运行的工具（保证安全），但一旦当前工具执行完毕，立刻停止后续计划，转而处理用户的纠正消息（保证响应性）。</strong></p><p>这是我阅读 steering 行为时使用的思维模型：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047665403" alt="" title="" loading="lazy"/></p><p>（有一个值得记住的细微差别：根据流式输出/聊天界面的行为差异，steer 模式在某些界面上的实际表现，可能会更接近 followup 模式）</p><h2><strong>05 入站消息治理：去重和防抖——这些底层基础设施你根本绕不开</strong></h2><p>这一节属于那种“考验工程师直觉/经验”的内容 —— 有经验的开发者会本能地重视它，而新手可能会忽略，然后踩坑。</p><p>如果你不处理好入站消息治理（去重、防抖等），最后你会把"自己在底层基础设施（plumbing）里引入的 bug"，错误地归咎于"模型不聪明"。</p><h3><strong>5.1 入向消息去重（Inbound dedupe）</strong></h3><p>真实的通信渠道会重复投递消息。重连（Reconnects）会发生。重试（Retries）会发生。</p><p>OpenClaw 通过一个短生命周期的去重缓存来应对这些情况，缓存的键由渠道/账号/发送方/会话/消息 ID 等字段组合而成 —— 这样重复投递的消息就不会触发新的任务执行。</p><h3><strong>5.2 入向消息防抖（Inbound debouncing）</strong></h3><p>人类打字是一阵一阵的。</p><p>OpenClaw 能够通过配置项 messages.inbound.debounceMs，将用户快速连续发送的多条文本消息合并为一个 agent 执行轮次（同时支持按不同渠道单独覆盖配置）。</p><p>有两个让系统行为符合人类直觉的运营细节：</p><ul><li>防抖仅适用于纯文本消息，附件会立即触发 Agent 执行；</li><li>控制命令会跳过防抖等待逻辑，直接注入队列。保持独立、即时的执行，不被其他消息“拖累”。</li></ul><h2><strong>06 隔离机制：会话键（session keys）是上下文隔离的边界（而 dmScope 是一个防止隐私泄露的安全开关）</strong></h2><p>队列（queue）防止“同时多个写入者”。</p><p>隔离（Isolation）防止“错误的上下文”。</p><p>OpenClaw 中会话的划分规则是明确定义的，不是靠运行时动态猜测或隐式推断：</p><ul><li>当用户与 Agent 进行一对一私聊（direct-chat）时，系统会标记其中一个会话为主要上下文（primary）。</li><li>所有私聊会话（direct chats）默认会被合并/映射到同一个标准格式的会话键 agent:\&lt;agentId&gt;:\&lt;mainKey&gt;（其中 \&lt;mainKey&gt; 默认为 main）。</li><li>群聊/频道会话使用各自独立的会话键。</li></ul><p>这个问题很快就会涉及安全层面。如果你的 Agent 能接收来自多个人的私信（DM），默认的私信行为可能会导致私有上下文泄露。解决方案是通过 dmScope 配置启用“安全私信模式”。</p><pre><code>// ~/.openclaw/openclaw.json
+{
+session:{
+dmScope:"per-channel-peer"
+}
+}</code></pre><p>而且重要的是：Gateway（网关）才是会话状态的唯一权威数据源。</p><p>客户端不应该通过自行解析聊天记录来“重建”会话状态 —— 而应该直接向 Gateway 查询会话列表和用量统计。这是一种控制平面（control-plane）层面的架构选择，也是这些 invariants（译者注：指的是在整个系统运行过程中，必须始终成立、永远不能被打破的规则或条件。可以把它理解成系统的“底线”或“宪法”。）能在多个界面和设备上保持一致的原因之一。</p><h2><strong>07 序列化是必要条件，但不是充分条件</strong></h2><p>序列化是必要条件，但不是充分条件。</p><p><strong>序列化（串行执行）能保证你的会话历史记录不乱。</strong></p><p><strong>但它不会自动让你调用的外部操作（副作用）变得安全。</strong></p><p>即使你完美实现了“每个会话只有一个写入者”（即会话内部完全串行），系统仍然可能存在以下三种安全隐患：</p><ul><li>两个不同会话同时修改同一个外部资源</li><li>工具调用不是幂等的（译者注：幂等的意思是执行 1 次 和 执行 N 次，<strong>系统状态完全一样</strong>。）（调用两次会造成实际损害）</li><li>耗时较长的 tool 调用执行完时，基于的假设已经过时</li></ul><p>这就是为什么 OpenClaw 不止步于“每个会话一个队列（one queue.）”。它还：</p><ul><li>对全局并发进行限流（全局通道 + agents.defaults.maxConcurrent）</li><li>系统为那些会改变外部状态的操作（比如发送邮件、调用 Agent 动作）提供或支持“幂等键”，这样当网络故障导致请求重试时，系统能识别出这是同一次操作，从而安全地忽略重复请求，避免造成重复后果。</li></ul><p>而且在协议层，Gateway 故意让控制平面保持“简单、明确、可预测”：</p><ul><li>握手必须执行，不能跳过，第一帧必须是 connect；</li><li>Gateway 不会像消息队列那样，把客户端断开期间的事件自动重发；如果客户端发现自己漏了状态（比如重连后），需要主动发起查询（如拉取最新会话列表、token 用量），而不是依赖服务端“猜你需要什么”。</li></ul><p>这正是整个架构的核心主题：把限制条件作为设计的第一原则。</p><p>不是靠玄学，不是靠魔法。只是一些约束机制，让“始终在线”的行为变得可读、可理解、可预测、可解释。</p><h2><strong>08 如果你正在构建自己的系统：复制那些 invariants，而不是炒作</strong></h2><p>如果你想要“感觉有生命”的效果，但又不想上线后一团糟，这是我会直接抄的作业：</p><p>1）将所有输入标准化为统一的事件格式</p><p>2）解析出一个 session key（你的隔离边界）</p><p>3）强制执行每个 session 只有单个写入者</p><p>4）添加一个全局并发限流（concurrency throttle）</p><p>5）决定 Agent 正在执行任务的中途，新到达的消息该如何与当前任务交互（collect / followup / steer）</p><p>6）添加入向消息去重 + 防抖（真实的通信渠道会重投消息，人类打字是一阵一阵的）</p><p>7）持久化一个仅允许追加（不能修改或删除）的执行日志，以便你能够事后调试和审计系统到底发生了什么。</p><p>这就是“invariants 优先的智能体运行时”设计模式：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047665404" alt="" title="" loading="lazy"/></p><p>一个不那么光鲜但真实的事实：决定你的 Agent 是“玩具”还是“能真正上线运行的系统”的，是这一层（基础设施/运行时层），而不是 prompt。</p><h2><strong>09 本文参考的具体文档，欢迎前往验证</strong></h2><p>如果你想验证本文这些内容的可靠性，请查阅以下文档：</p><ul><li>Command Queue（lanes, caps, modes, guarantees）（<a href="https://link.segmentfault.com/?enc=tYVwjQV8oVFdHqVZubHj2g%3D%3D.31dLvXq0wxDRILlckksqFi7dpJghAm6ezA0ug9vJ2lojVrHWW%2BRq4%2FeN0Bp4R8Cq" rel="nofollow" target="_blank">https://docs.openclaw.ai/concepts/queue</a>）</li><li>Agent Runtime（steer semantics at tool boundaries）（<a href="https://link.segmentfault.com/?enc=2AOFf2oTqTzMm3UCkGHtYA%3D%3D.%2BD0GArj%2BO3pqFg1jPv%2F8JSLhVjLWg5xc20oUCsKhZuWCQ9Bf4gRPTyH5A1ptZa0U" rel="nofollow" target="_blank">https://docs.openclaw.ai/concepts/agent</a>）</li><li>Messages（dedupe + debounce details）（<a href="https://link.segmentfault.com/?enc=aX2BKo0Gcf3gVt2H2NCNKQ%3D%3D.Bxt0va2zxp%2FwtS0mnJp9Rg%2FBdrHJHvCUqvuPx4Lb4g0zlZqrFB2NFCBtpSxbwGMa" rel="nofollow" target="_blank">https://docs.openclaw.ai/concepts/messages</a>）</li><li>Session Management（dmScope, secure DM mode, gateway as truth, JSONL locations）（<a href="https://link.segmentfault.com/?enc=Syedi4o5ImqxihltRlQjtg%3D%3D.pnynFyrolgX4hyO6zQ7Ewlx3OgdhzVWPbLZoflteVE4%2F%2FkhwYlFs2P%2FJRkAPFiRc" rel="nofollow" target="_blank">https://docs.openclaw.ai/concepts/session</a>）</li><li>Gateway Architecture（connect-first, idempotency, events not replayed）（<a href="https://link.segmentfault.com/?enc=Yd1I8rKCzcEtf4kTIWfVwQ%3D%3D.BYU3YESEOKFqBrrF%2BvFvyznh%2FZZRTtoh69p%2B1UiIHRgrgYruuuePufXy9e2UVJ93" rel="nofollow" target="_blank">https://docs.openclaw.ai/concepts/architecture</a>）</li></ul><p>第三部分预告：实践中的内存/状态所有权问题 —— 以及为什么“更好的上下文管理”本质上是个工程架构问题，而不是提示词层面的取巧。</p><p><strong>END</strong></p><p><strong>本期互动内容 🍻</strong></p><p><strong>❓OpenClaw提供了collect/followup/steer/interrupt四种队列模式。假如你的智能体正在执行一个“浏览器自动化+写文件”的长任务，用户中途发来一条新指令 —— 你会选哪种模式？为什么？</strong></p><p><strong>本文经原作者授权，由 Baihai IDP 编译。如需转载译文，请联系获取授权。</strong></p><p><strong>原文链接：</strong>  </p><p><a href="https://link.segmentfault.com/?enc=P8jC2mgM3YnL6%2F4L1QSS4w%3D%3D.KSFEqIOsizLcSMAIc7V41fwBprWzATL8Mdsvvf753z06ifbZXGB0sNwwNiX7bXswAwxrfuLGiPnue79ahSsg6dTDqqg%2FuxD6bKkBOnx9I%2Fc%3D" rel="nofollow" target="_blank">https://theagentstack.substack.com/p/openclaw-architecture-pa...</a></p>]]></description></item><item>    <title><![CDATA[【节点】[SampleTexture2DArray节点]原理解析与实际应用 SmalBox ]]></title>    <link>https://segmentfault.com/a/1190000047665435</link>    <guid>https://segmentfault.com/a/1190000047665435</guid>    <pubDate>2026-03-20 11:05:46</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <blockquote><a href="https://link.segmentfault.com/?enc=H58UtgUpsHJ4GXssACvKrQ%3D%3D.k1cMoC9xfVmJfPQJI1QLq4LUGEhEO8MlqpqivDHuNhAiJC%2F3km8ObUWJvTe2GdvV3m2LK1eZJjc0lpIORX0jc8GCxxQ79aIJ9ufCNQS%2BIvlxx%2B9xzPiGJ0o%2Byog5MTHku%2FdU4ztqMGrX39fELME0ym4tyRxJvTuZ1%2F%2BnlDD2kk4Uw7CbhgijXoCRuClcrUUzwhKqdO5jBGBHyweziOZjlcAe3oxRum20DKoamRTkxh0%3D" rel="nofollow" target="_blank">【Unity Shader Graph 使用与特效实现】</a><strong>专栏-直达</strong></blockquote><p><strong>Sample Texture 2D Array 节点</strong>是 Unity Shader Graph 中一个功能强大的纹理采样工具，专门用于处理 <strong>2D 纹理数组</strong>资源。与普通的 2D 纹理采样不同，该节点能够从包含多个 2D 纹理的数组中按索引选择特定的纹理进行采样，并返回 <strong>Vector 4</strong> 格式的颜色值。这种特性使得它在处理材质变体、动画序列帧、地形混合等场景中具有独特的优势。</p><p>在 Shader Graph 中使用 Sample Texture 2D Array 节点时，您需要提供 <strong>UV</strong> 坐标来确定采样位置，同时可以通过<a href="https://link.segmentfault.com/?enc=rA66CicnOYJZGw7NOymKSw%3D%3D.mBITtyLrYNi%2ByDzx1liepRomBnu9Y3DmEJ5HKCPrnwXt1L%2BIIuC3RtQwQBdIjCBHAUO4AHS03ttxzWSU%2FntqFH0Udnisdc4KEa1Ts1sd7zo%3D" rel="nofollow" target="_blank">采样器状态节点</a>来定义纹理的过滤方式和环绕模式。节点的核心特性是<strong>索引</strong>输入端口，它决定了从纹理数组中选取哪个具体的纹理进行采样。</p><p><strong>2D 纹理数组</strong>是一种特殊类型的纹理资源，它将多个尺寸相同的 2D 纹理组合成一个单一的资源对象。每个纹理在数组中都有一个唯一的索引值，从 0 开始顺序排列。这种数据结构在需要频繁切换纹理但保持相同采样参数的场景中特别有用，因为它避免了多次设置采样状态的性能开销。</p><h3>Note</h3><p>如果在包含自定义函数节点或子图形的图形中使用此节点时遇到纹理采样错误，可以通过升级到 Unity 10.3 或更高版本来解决这些问题。这些版本对纹理数组的支持更加完善，修复了早期版本中可能存在的一些兼容性问题。</p><h2>创建节点菜单类别</h2><p>在 Shader Graph 的创建节点菜单中，Sample Texture 2D Array 节点位于 <strong>Input -&gt; Texture</strong> 分类下。您可以通过以下步骤找到并添加该节点：</p><ul><li>在 Shader Graph 窗口中右键点击空白区域</li><li>选择 <strong>Create Node</strong> 菜单</li><li>导航至 <strong>Input</strong> 类别</li><li>选择 <strong>Texture</strong> 子菜单</li><li>点击 <strong>Sample Texture 2D Array</strong> 即可添加节点</li></ul><h2>兼容性</h2><p>Sample Texture 2D Array 节点在 Unity 的不同渲染管线中具有广泛的兼容性，具体支持情况如下：</p><table><thead><tr><th><strong>内置渲染管线</strong></th><th><strong>通用渲染管线 (URP)</strong></th><th><strong>高清渲染管线 (HDRP)</strong></th></tr></thead><tbody><tr><td>是</td><td>是</td><td>是</td></tr></tbody></table><p>需要注意的是，在默认设置下，此节点只能连接到 Shader Graph 的<strong>片段着色器</strong>上下文中的块节点。如果需要在<strong>顶点着色器</strong>上下文中采样纹理，您必须将 <a href="https://link.segmentfault.com/?enc=%2Fa2ZZXL4Tgo9Uq9pcdDx2g%3D%3D.vHx8emwe%2FRXMUOqwNhpokKliL7odjuohGrzds6hDH%2BmRGYIWTAB5eFMJ4x78EM1GYMH4zX4f9NF2M2m6xY6DF7pjzqGJJuh6hjn7Xp1IRolFiqA5LyYnmh%2Fzdab%2BLov%2B%2FudKUUB2pZCVHg6uaN1%2FMQ%3D%3D" rel="nofollow" target="_blank">Mip 采样模式</a>设置为​<strong>LOD</strong>​。这种限制是由于顶点着色器中缺乏自动的 mipmap 级别计算所需的屏幕空间导数信息。</p><h2>输入端口详解</h2><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047665437" alt="" title=""/></p><p>Sample Texture 2D Array 节点提供了多个输入端口，每个端口都有特定的功能和用途：</p><h3>Texture Array 输入</h3><p><strong>Texture Array</strong> 端口接受 Texture 2D Array 类型的资源输入。这是节点的核心输入，决定了要采样的纹理数组资源。在 Unity 中创建纹理数组需要通过脚本或导入设置专门配置，无法直接将普通纹理用作纹理数组。</p><p>使用纹理数组时需要注意：</p><ul><li>所有包含的纹理必须具有相同的尺寸、格式和 mipmap 级别</li><li>纹理数组在内存中是连续存储的，访问效率较高</li><li>支持压缩格式，但所有纹理必须使用相同的压缩方案</li></ul><h3>Index 输入</h3><p><strong>Index</strong> 端口接受 Float 类型的输入，用于指定要采样的纹理在数组中的索引位置。索引值应该是整数，但节点也接受浮点数输入，此时会自动取整。如果提供的索引超出了数组的有效范围，行为取决于平台，通常会自动钳制到有效范围内。</p><p>索引的使用技巧：</p><ul><li>可以使用时间节点驱动索引变化来创建纹理动画</li><li>结合顶点颜色或材质属性可以实现基于距离或角度的纹理切换</li><li>通过噪声函数控制索引可以创建随机的纹理变化效果</li></ul><h3>UV 输入</h3><p><strong>UV</strong> 端口接受 Vector 2 类型的输入，定义了纹理采样的坐标位置。UV 坐标通常来自 <a href="https://link.segmentfault.com/?enc=XcllO%2Bv4yOwOpXWaEAqWfw%3D%3D.zOCDCV5ttTtMcbLAvoDNLh3MkvD05ufO0FuD%2FFnGeQcQQsarJfCv7gIcPmprzvvQERs3KP4a30i511QkMoMNCg%3D%3D" rel="nofollow" target="_blank">UV 节点</a>或其他纹理坐标生成节点。对于纹理数组，UV 坐标的应用方式与普通 2D 纹理完全相同。</p><p>UV 处理的注意事项：</p><ul><li>UV 坐标通常在[0,1]范围内，但可以通过采样器状态设置环绕模式</li><li>可以使用 <a href="https://link.segmentfault.com/?enc=yFhK4tfggcNAFfZjjw4IpQ%3D%3D.1%2FvmHQ3rw%2FCLU2gloVlEBoxsbFrv%2BzIhPIpv2IKYstWL0tVrrOeMrY6R3FxmP7iEEaP%2BQzhIPYyO9sqce%2BFmgSXNDuSf1wmLCptF%2BrL3nEU%3D" rel="nofollow" target="_blank">Tiling And Offset 节点</a>对 UV 进行缩放和偏移</li><li>在顶点着色器中采样时，需要确保 UV 坐标在三角形面上是连续的</li></ul><h3>Sampler 输入</h3><p><strong>Sampler</strong> 端口接受 Sampler State 类型的输入，用于定义纹理采样的详细参数。如果不连接此端口，节点将使用默认的采样器状态。通过 Sampler State 节点，您可以精确控制：</p><ul><li>过滤模式（Filter Mode）：点过滤、双线性过滤、三线性过滤</li><li>环绕模式（Wrap Mode）：重复、钳制、镜像等</li><li>各向异性过滤级别</li><li>比较函数（用于深度纹理）</li></ul><h3>LOD 输入</h3><p><strong>LOD</strong> 输入端口仅在 <strong>Mip 采样模式</strong>设置为 <strong>LOD</strong> 时显示。它允许您明确指定要使用的 mipmap 级别。值为 0 表示最高分辨率的 mip 级别，正值表示较低分辨率的 mip 级别。</p><p>LOD 输入的典型应用：</p><ul><li>在顶点着色器中强制使用特定 mip 级别</li><li>创建自定义的 mipmap 过渡效果</li><li>性能优化时手动控制纹理细节级别</li></ul><h3>Bias 输入</h3><p><strong>Bias</strong> 输入端口仅在 <strong>Mip 采样模式</strong>设置为 <strong>Bias</strong> 时可用。它用于调整自动计算的 mipmap 级别，负值偏向更高分辨率，正值偏向更低分辨率。</p><p>Bias 的使用场景：</p><ul><li>微调纹理的锐利度或模糊度</li><li>创建特殊视觉效果时调整纹理细节</li><li>配合动态分辨率缩放系统</li></ul><h3>DDX 和 DDY 输入</h3><p><strong>DDX</strong> 和 <strong>DDY</strong> 输入端口仅在 <strong>Mip 采样模式</strong>设置为 <strong>Gradient</strong> 时显示。这两个端口允许您提供自定义的屏幕空间导数，用于 mipmap 级别计算，而不是使用从 UV 坐标自动计算的导数。</p><p>自定义导数的应用：</p><ul><li>在自定义 UV 映射中提供正确的导数</li><li>处理投影纹理或其他非线性映射</li><li>特殊渲染效果中控制 mipmap 选择</li></ul><h2>其他节点设置</h2><p>Sample Texture 2D Array 节点的图表检查器中提供了多个高级设置选项，这些设置可以显著改变节点的行为：</p><h3>Use Global Mip Bias 设置</h3><p><strong>Use Global Mip Bias</strong> 是一个切换选项，控制节点是否使用渲染管线的全局 mip 偏差。启用此选项时，节点会将全局 mip 偏差值纳入 mipmap 级别计算中。</p><ul><li>​<strong>启用状态</strong>​：Shader Graph 使用渲染管线的全局 mip 偏差来调整采样时的纹理信息细节级别。这对于保持整个场景中纹理一致性很重要，特别是在动态分辨率渲染或特定的视觉风格需求下。</li><li>​<strong>禁用状态</strong>​：Shader Graph 忽略全局 mip 偏差，仅使用节点自身的设置计算 mip 级别。这在需要精确控制特定纹理外观时很有用。</li></ul><h3>Mip Sampling Mode 设置</h3><p><strong>Mip Sampling Mode</strong> 是一个下拉菜单，提供了四种不同的 mipmap 采样模式，每种模式都适用于特定的使用场景：</p><h3>Standard 模式</h3><p>在 <strong>Standard</strong> 模式下，渲染管线自动计算并选择最适合当前像素的 mipmap 级别。这是最常用的模式，适用于大多数常规纹理采样需求。</p><p>标准模式的特点：</p><ul><li>自动基于屏幕空间 UV 导数计算 mip 级别</li><li>提供最佳的视觉质量和性能平衡</li><li>不支持在顶点着色器中使用</li></ul><h3>LOD 模式</h3><p><strong>LOD</strong> 模式允许您为纹理采样明确指定 mipmap 级别，无论像素间的 DDX 或 DDY 计算如何，纹理始终使用指定的 mip 级别。</p><p>LOD 模式的关键特性：</p><ul><li>支持在顶点着色器上下文中采样纹理</li><li>适用于需要精确控制纹理细节级别的场景</li><li>可以用于创建特殊的 mipmap 过渡效果</li></ul><h3>Gradient 模式</h3><p><strong>Gradient</strong> 模式允许您提供自定义的 DDX 和 DDY 值，用于 mipmap 级别计算，而不是使用从 UV 坐标自动计算的导数。</p><p>梯度模式的应用场景：</p><ul><li>自定义 UV 映射和投影效果</li><li>屏幕空间效果和后期处理</li><li>需要精确控制 mipmap 选择的特殊着色器</li></ul><h3>Bias 模式</h3><p><strong>Bias</strong> 模式允许您设置一个偏差值来调整自动计算的 mipmap 级别。负值偏向更高分辨率的 mip，正值偏向更低分辨率的 mip。</p><p>偏差模式的使用技巧：</p><ul><li>微调纹理的外观而不影响其他纹理</li><li>创建特定距离下的纹理优化</li><li>艺术导向的纹理细节控制</li></ul><h2>输出端口</h2><p>Sample Texture 2D Array 节点提供了多个输出端口，让您可以灵活地访问采样结果的不同部分：</p><h3>RGBA 输出</h3><p><strong>RGBA</strong> 输出端口返回完整的 Vector 4 颜色值，包含纹理样本的红、绿、蓝和透明度通道。这是最常用的输出，适用于大多数颜色采样需求。</p><h3>各通道独立输出</h3><p>节点还提供了各个颜色通道的独立输出端口：</p><ul><li>​<strong>R</strong>​：红色通道的浮点数值</li><li>​<strong>G</strong>​：绿色通道的浮点数值</li><li>​<strong>B</strong>​：蓝色通道的浮点数值</li><li>​<strong>A</strong>​：透明度 Alpha 通道的浮点数值</li></ul><p>独立通道输出的应用：</p><ul><li>当只需要纹理的特定通道时可以减少计算量</li><li>分离颜色和透明度信息进行独立处理</li><li>使用单通道纹理作为数据源（如高度图、遮罩图等）</li></ul><h2>示例图形用法</h2><h3>基础用法示例</h3><p>在以下示例中，Sample Texture 2D Array 节点采样一个包含四种不同布料法线贴图的纹理数组。通过更改传递给<strong>索引</strong>端口的数值，可以动态切换不同的法线贴图，实现材质变体效果。</p><h3>动画序列帧示例</h3><p>纹理数组非常适合处理动画序列帧。通过将动画的每一帧存储为纹理数组中的一个切片，然后使用时间节点驱动索引变化，可以创建流畅的纹理动画：</p><pre><code class="text">// 伪代码示例：使用时间控制纹理数组索引
+float frameRate = 24.0; // 帧率
+float totalFrames = 64.0; // 总帧数
+float currentIndex = floor((Time.time * frameRate) % totalFrames);</code></pre><p>这种方法的优势：</p><ul><li>避免频繁切换纹理资源带来的性能开销</li><li>所有动画帧可以批量加载和卸载</li><li>支持随机访问任意帧，便于实现暂停、倒放等效果</li></ul><h3>地形混合系统示例</h3><p>在复杂的地形系统中，纹理数组可以用于管理多种地表材质。通过结合高度图、坡度图或其他遮罩信息，可以动态选择最适合当前地形的纹理：</p><pre><code class="text">// 伪代码示例：基于高度选择纹理
+float height = World Position.Y;
+float snowHeight = 50.0;
+float rockHeight = 30.0;
+
+float textureIndex;
+if (height &gt; snowHeight) {
+    textureIndex = 3; // 雪地纹理
+} else if (height &gt; rockHeight) {
+    textureIndex = 2; // 岩石纹理
+} else {
+    textureIndex = 1; // 草地纹理
+}</code></pre><h3>性能优化技巧</h3><p>使用纹理数组时，以下技巧可以帮助优化性能：</p><ul><li>将经常同时使用的纹理打包到同一个数组中，减少纹理切换</li><li>合理设置 mipmap 级别，平衡质量和性能</li><li>在移动平台上注意纹理数组的大小和格式</li><li>使用纹理数组流式加载系统管理内存使用</li></ul><h2>生成代码示例</h2><p>了解 Sample Texture 2D Array 节点生成的底层着色器代码有助于深入理解其工作原理，并在需要时进行自定义修改。</p><h3>基础采样代码</h3><p>以下 HLSL 代码展示了节点在标准模式下的典型实现：</p><pre><code class="text">HLSL
+
+// 生成的着色器代码示例
+float4 _SampleTexture2DArray_RGBA = SAMPLE_TEXTURE2D_ARRAY(Texture, Sampler, UV, Index);
+float _SampleTexture2DArray_R = _SampleTexture2DArray_RGBA.r;
+float _SampleTexture2DArray_G = _SampleTexture2DArray_RGBA.g;
+float _SampleTexture2DArray_B = _SampleTexture2DArray_RGBA.b;
+float _SampleTexture2DArray_A = _SampleTexture2DArray_RGBA.a;</code></pre><h3>不同采样模式的代码差异</h3><p>根据选择的 mip 采样模式，生成的代码会有所不同：</p><h3>LOD 模式代码</h3><pre><code class="text">HLSL
+
+// LOD模式下的采样代码
+float4 _SampleTexture2DArray_RGBA = SAMPLE_TEXTURE2D_ARRAY_LOD(Texture, Sampler, UV, Index, LOD);</code></pre><h3>Gradient 模式代码</h3><pre><code class="text">HLSL
+
+// Gradient模式下的采样代码
+float4 _SampleTexture2DArray_RGBA = SAMPLE_TEXTURE2D_ARRAY_GRAD(Texture, Sampler, UV, Index, DDX, DDY);</code></pre><h3>Bias 模式代码</h3><pre><code class="text">HLSL
+
+// Bias模式下的采样代码
+float4 _SampleTexture2DArray_RGBA = SAMPLE_TEXTURE2D_ARRAY_BIAS(Texture, Sampler, UV, Index, Bias);</code></pre><h3>自定义采样器状态</h3><p>当连接了自定义的 Sampler State 节点时，生成的代码会包含相应的采样器定义：</p><pre><code class="text">HLSL
+
+// 自定义采样器状态的代码示例
+SAMPLER(sampler_CustomSampler);
+float4 _SampleTexture2DArray_RGBA = SAMPLE_TEXTURE2D_ARRAY(Texture, sampler_CustomSampler, UV, Index);</code></pre><h2>相关节点</h2><p>理解与 Sample Texture 2D Array 节点相关的其他节点有助于构建更复杂的着色器效果：</p><h3>Sample Texture 2D 节点</h3><p><a href="https://link.segmentfault.com/?enc=vs9PvMNf0Sv4Azj1Z%2FRBBg%3D%3D.TWKqZWuhcQn6AyGw7TOQNNzxYXK5MZeSqVNA7xf3OmHJnJ21C7TuX5mHDzrMAlO0XXjX2VEjnZtdSd0rMk6mn4BO%2F%2BjTtcjdQ7ZEo8yZFkw%3D" rel="nofollow" target="_blank">Sample Texture 2D 节点</a>是纹理数组节点的单纹理版本，用于采样普通的 2D 纹理资源。当不需要纹理数组的多纹理管理功能时，使用此节点更加简单高效。</p><p>主要区别：</p><ul><li>不支持索引选择，只能采样单一纹理</li><li>适用于静态纹理或不需要频繁切换的场景</li><li>代码生成更简单，潜在性能稍好</li></ul><h3>Sample Texture 3D 节点</h3><p><a href="https://link.segmentfault.com/?enc=TT9flYFW2HWc80wwYCQrng%3D%3D.%2Bo8jKvgKiQhZAPXF2FkN8OwUiVgdTCNBZVivJEDRukhfeM5lKIC8whbHE9Pg2P1pJxKOayk4f6KZF%2BB%2Bg0LPUy9%2FfyINWODwJ6myWdcyVzo%3D" rel="nofollow" target="_blank">Sample Texture 3D 节点</a>用于采样 3D 体积纹理，与 2D 纹理数组在概念上相似但应用场景不同。3D 纹理在三维空间中进行采样，适用于体积渲染、噪声函数等场景。</p><p>关键差异：</p><ul><li>3D 纹理是真正的体积数据，而纹理数组是 2D 切片的集合</li><li>采样时使用 Vector 3 坐标而不是 Vector 2 加索引</li><li>适用于不同的视觉效果和技术应用</li></ul><h3>Sampler State 节点</h3><p><a href="https://link.segmentfault.com/?enc=tfdnqwonL46HJETFVQ9rfA%3D%3D.u7UF1ngdxNqlxXNNCq14ktOGGDZv3w2QzuM1ST9Zfv82MA%2BsUhKmC7xgPjQQdTmLffjNYvnzHxcGY%2FJxtzbAdvLWyv7%2F6ffSIQkPvX8e6gw%3D" rel="nofollow" target="_blank">Sampler State 节点</a>用于定义纹理采样的详细参数，可以与任何纹理采样节点配合使用。通过精细控制采样器状态，可以实现特定的视觉风格或性能优化。</p><p>常用配置：</p><ul><li>过滤模式设置纹理缩放时的插值方式</li><li>环绕模式控制纹理坐标超出[0,1]范围时的行为</li><li>各向异性过滤改善倾斜角度的纹理质量</li></ul><h2>最佳实践和故障排除</h2><h3>性能优化建议</h3><p>使用纹理数组时，遵循以下最佳实践可以确保最佳性能：</p><ul><li>合理组织纹理数组内容，将相关纹理分组存放</li><li>注意纹理数组的尺寸和格式，避免不必要的内存占用</li><li>在移动平台上测试不同 mipmap 设置的影响</li><li>使用纹理压缩减少内存带宽需求</li></ul><h3>常见问题解决</h3><p>以下是一些使用 Sample Texture 2D Array 节点时可能遇到的常见问题及解决方案：</p><p><strong>索引超出范围错误</strong></p><ul><li>确保索引值在纹理数组的有效范围内</li><li>使用 Clamp 节点限制索引值</li><li>检查纹理数组资源的实际切片数量</li></ul><p><strong>纹理采样显示粉色</strong></p><ul><li>确认纹理数组资源已正确分配</li><li>检查纹理数组的导入设置和格式兼容性</li><li>验证 UV 坐标是否在有效范围内</li></ul><p><strong>性能问题</strong></p><ul><li>检查纹理数组的大小是否适合目标平台</li><li>评估 mipmap 设置是否合理</li><li>考虑使用纹理流式加载减少内存压力</li></ul><p><strong>顶点着色器中采样失败</strong></p><ul><li>确保将 Mip 采样模式设置为 LOD</li><li>验证 UV 坐标在顶点间的连续性</li><li>检查目标平台是否支持顶点纹理采样</li></ul><hr/><blockquote><a href="https://link.segmentfault.com/?enc=YxGyF6h7vOZwkYVrg4O61A%3D%3D.ihDlXvLWDj71vLq2RKlZVP7Z4lTBudCTkAEB1GS%2BS74DO%2BDgmCi32vga%2BkBMeKGv4aaUgI5HYJ309k920kxGTyXhEjLeQHnHQM%2BBxSzYdQ6zJ%2Bm920AxSEsuNe2SBCCsgMycCzU3OWsa%2FvwZ1zosmrhuOFOMGOkGdpbsLICS3iZ25Vy9zFAeDxojDe5C5RdeouKuuZNE889JKWoTLccLvPP4oBlCAgd94rpVSx4WCjY%3D" rel="nofollow" target="_blank">【Unity Shader Graph 使用与特效实现】</a><strong>专栏-直达</strong><br/>（欢迎<em>点赞留言</em>探讨，更多人加入进来能更加完善这个探索的过程，🙏）</blockquote>]]></description></item><item>    <title><![CDATA[SeaTunnel × Gravitino：Schema URL 驱动的表结构自动感知方案 SeaT]]></title>    <link>https://segmentfault.com/a/1190000047665449</link>    <guid>https://segmentfault.com/a/1190000047665449</guid>    <pubDate>2026-03-20 11:05:04</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>作者 | chl-wxp</p><p>不久前，社区发布了一篇题为<a href="https://link.segmentfault.com/?enc=8ec5lpPZgxj%2Fwt82bm7IDA%3D%3D.AfWigVcI2AcnmHuM5X5RBsscm5fFceo73JpnIqLVYvSzsZGnf%2B0X4GesMqn6cIulmWjBZvJYRfGWqaCLs5QMMw%3D%3D" rel="nofollow" target="_blank">《告别手敲 Schema！SeaTunnel 集成 Gravitino 元数据 RestApi 这个新动作有点酷》</a>的文章，引起了小伙伴们的强烈反响，纷纷表示这真是个好东西啊！</p><p>此功能的贡献者行动力也超强，估计不久就能跟大家见面了（“可靠”消息，预计将在 3.0.0 版本得到支持）。为了让大家更加了解这个功能，贡献者还贴心地为社区小伙伴们写了一篇详细的文章，介绍了初版 Gravitino RestApi 的能力以及如何使用它，快来一睹为快吧！</p><h2>1. 背景与要解决的问题</h2><p>在使用 Apache SeaTunnel 进行批处理或同步任务时，当source是非结构化或者半结构化的类型时，<strong>Source 侧通常需要显式定义 schema</strong>（字段名、类型、顺序）。</p><p>在真实生产环境中，这会带来几个典型问题：</p><ul><li>表结构字段多、类型复杂，手工维护 schema 成本高且易出错</li><li>上游表结构发生变更（加字段、改类型）时，需要同步修改 SeaTunnel 作业</li><li>对于已有存量表，仅为了同步数据却需要重复描述元数据，存在明显冗余</li></ul><p>因此，核心诉求是：</p><blockquote><strong>能否让 SeaTunnel 直接复用已有元数据系统中的表结构定义，而不是在作业中重复声明 schema？</strong></blockquote><p>本功能正是为了解决这一问题而引入。</p><h2>2. Gravitino 能力简介（与本功能相关部分）</h2><p>Gravitino 是一个统一的元数据管理与访问服务，提供了标准化的 REST API，用于管理和暴露以下对象：</p><ul><li>Metalake（逻辑隔离单元）</li><li>Catalog（如 MySQL、Hive、Iceberg 等）</li><li>Schema / Database</li><li>Table 及其字段定义</li></ul><p>通过 Gravitino：</p><ul><li>表结构可以被<strong>集中管理</strong></li><li>下游系统可以通过 <strong>HTTP API</strong> 动态获取表的 schema 定义</li><li>不再需要在每个计算/同步任务中重复维护字段信息</li></ul><p>本次在 SeaTunnel 中引入的能力，正是：</p><blockquote><strong>支持在 Source 的 schema 定义中，通过 Gravitino 提供的 schema_url 自动拉取表结构</strong></blockquote><h2>3. 本地测试环境准备</h2><h3>3.1 准备mysql环境</h3><h4>3.1.1 创建目标表</h4><p>MySQL 中提前创建好目标表 <code>test.demo_user</code>，建表语句如下：</p><pre><code class="sql">CREATE TABLE `demo_user` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `user_code` varchar(32) NOT NULL,
+  `user_name` varchar(64) DEFAULT NULL,
+  `password` varchar(128) DEFAULT NULL,
+  `email` varchar(128) DEFAULT NULL,
+  `phone` varchar(20) DEFAULT NULL,
+  `gender` tinyint DEFAULT NULL,
+  `age` int DEFAULT NULL,
+  `status` tinyint DEFAULT NULL,
+  `level` int DEFAULT NULL,
+  `score` decimal(10,2) DEFAULT NULL,
+  `balance` decimal(12,2) DEFAULT NULL,
+  `is_deleted` tinyint DEFAULT NULL,
+  `register_ip` varchar(45) DEFAULT NULL,
+  `last_login_ip` varchar(45) DEFAULT NULL,
+  `login_count` int DEFAULT NULL,
+  `remark` varchar(255) DEFAULT NULL,
+  `ext1` varchar(100) DEFAULT NULL,
+  `ext2` varchar(100) DEFAULT NULL,
+  `ext3` varchar(100) DEFAULT NULL,
+  `ext4` varchar(100) DEFAULT NULL,
+  `ext5` varchar(100) DEFAULT NULL,
+  `created_by` varchar(64) DEFAULT NULL,
+  `updated_by` varchar(64) DEFAULT NULL,
+  `created_time` datetime DEFAULT NULL,
+  `updated_time` datetime DEFAULT NULL,
+  `birthday` date DEFAULT NULL,
+  `last_login_time` datetime DEFAULT NULL,
+  `version` int DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_user_code` (`user_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;</code></pre><h4>3.1.2 创建要同步的表结构</h4><p>在实际应用中，我们把表结构统一管理起来，可能管理在<code>paimon</code>，<code>hive</code>，<code>hudi</code>等元数据组件中，但在这里为了方便，测试用的表结构信息指向测试的目标表，也就是上一个步骤创建的<code>test.demo_user</code>表</p><h3>3.2 注册该表结构到Gravitino中</h3><blockquote>Gravitino支持直连数据库，并会扫描库下所有表</blockquote><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047665451" alt="img" title="img"/></p><blockquote>该表已经作为 <code>local-mysql</code> catalog 下的一个 table 被 Gravitino 管理。</blockquote><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047665452" alt="img_1" title="img_1" loading="lazy"/></p><p>Metalake：<code>test_Metalake</code></p><h3>3.3 表结构访问关系说明</h3><p>Gravitino 中表结构可以通过如下 REST API 访问：</p><pre><code>http://localhost:8090/api/metalakes/test_Metalake/catalogs/${catalog}/schemas/${schema}/tables/${table}</code></pre><p>在本次测试中，实际使用的 schema_url 为：</p><pre><code>http://localhost:8090/api/metalakes/test_Metalake/catalogs/local-mysql/schemas/test/tables/demo_user</code></pre><p>该接口返回的 JSON 中，包含了 <code>demo_user</code> 表的完整字段定义。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047665453" alt="img_2" title="img_2" loading="lazy"/></p><h3>3.4 本地部署seatunnel</h3><p>由于该功能还并未发版，需要手动编译最新的seatunnel的dev分支代码，并部署到本地。</p><h3>3.5 准备数据文件</h3><p>本次测试用例是csv作为数据文件，总共是2000条数据。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047665454" alt="img_3" title="img_3" loading="lazy"/></p><h2>4. SeaTunnel 作业配置说明</h2><h3>4.1 核心配置示例</h3><pre><code class="hocon">env {
+  parallelism = 1
+  job.mode = "BATCH"
+}
+source {
+  LocalFile {
+    path = "/Users/wangxuepeng/Desktop/seatunnel/apache-seatunnel-2.3.13-SNAPSHOT/test_data"
+    file_format_type = "csv"
+    schema {
+      schema_url = "http://localhost:8090/api/metalakes/test_Metalake/catalogs/local-mysql/schemas/test/tables/demo_user"
+    }
+  }
+}
+sink {
+  jdbc {
+    url = "jdbc:mysql://localhost:3306/test"
+    driver = "com.mysql.cj.jdbc.Driver"
+    username = "root"
+    password = "123456"
+    database = "test"
+    table = "demo_user"
+    generate_sink_sql = true
+  }
+}</code></pre><h3>4.2 配置要点说明</h3><ul><li><p><strong>schema.schema_url</strong></p><ul><li>指向 Gravitino 中的表元数据 REST 接口</li><li>SeaTunnel 在任务启动时会自动拉取表结构</li><li>无需在作业中手工声明字段列表</li></ul></li><li><p><strong>generate_sink_sql = true</strong></p><ul><li>Sink 侧根据解析后的 schema 自动生成 INSERT SQL</li></ul></li></ul><h2>5. 数据与任务执行结果</h2><blockquote>日志截图 ：</blockquote><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047665455" alt="img_4" title="img_4" loading="lazy"/></p><blockquote>数据库截图：</blockquote><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047665456" alt="img_5" title="img_5" loading="lazy"/></p><p>任务运行过程中：</p><ul><li>Source 根据 schema_url 自动解析字段结构</li><li>CSV 文件字段与表结构自动对齐</li><li>数据成功写入 MySQL <code>demo_user</code> 表</li></ul><h2>6. 问题解答</h2><h3>6.1 功能支持的范围</h3><p>该功能在dev分支目前是已经支持文件类型的连接器，包括<code>local</code>，<code>hdfs</code>，<code>s3</code>等。</p><h3>6.2 使用schema_url是否支持多表</h3><p>改功能的引入并不影响多表的功能，甚至可以混合使用，比如：</p><pre><code class="hocon">source {
+  LocalFile {
+    tables_configs = [
+      {
+        path = "/seatunnel/read/metalake/table1"
+        file_format_type = "csv"
+        field_delimiter = ","
+        row_delimiter = "\n"
+        skip_header_row_number = 1
+        schema {
+          table = "db.table1"
+          fields {
+            c_string = string
+            c_int = int
+            c_boolean = boolean
+            c_double = double
+          }
+        }
+      },
+      {
+        path = "/seatunnel/read/metalake/table2"
+        file_format_type = "csv"
+        field_delimiter = ","
+        row_delimiter = "\n"
+        skip_header_row_number = 1
+        schema {
+          table = "db.table2"
+          schema_url = "http://gravitino:8090/api/metalakes/test_metalake/catalogs/test_catalog/schemas/test_schema/tables/table2"
+        }
+      }
+    ]
+  }
+}
+</code></pre><h2>7. 功能总结</h2><p>通过引入 <strong>基于 Gravitino schema_url 的 schema 自动解析能力</strong>，SeaTunnel 在数据同步场景中具备了以下优势：</p><ul><li>消除重复 schema 定义，降低作业配置复杂度</li><li>复用统一的元数据管理系统，提升一致性</li><li>表结构变更对作业更加友好，维护成本显著降低</li></ul><p>该能力非常适合：</p><ul><li>已有完善元数据平台的企业场景</li><li>大表、多字段、频繁变更 schema 的同步任务</li><li>希望提升 SeaTunnel 作业可维护性的用户</li></ul><h2>8. 参考链接</h2><ul><li><strong>代码 PR</strong>：  <br/><a href="https://link.segmentfault.com/?enc=rEMwPN2h9C7TGvvCW0KTIQ%3D%3D.KNvQGcUKd24Mjwtq8mKO%2B8cqL8dFGq9cbxMCGtbBXDKe1R4WS3kadj5EXy8XUEza" rel="nofollow" target="_blank">https://github.com/apache/seatunnel/pull/10402</a></li><li><strong><code>schema_url</code> 配置说明</strong>：  <br/><a href="https://link.segmentfault.com/?enc=u9Y4tfvJG6A5MU%2BOR3Kanw%3D%3D.eYq8DM0iOtk54gpkmfhyLXdgQpqx%2BruG%2BAPq%2FZVBWjv2jV3fBjx0Lum3f1DPAAHB9uV6sLwS%2BgHCadcOe76MLb2o2leCKnPHRbehmQN8RgIpmpL1ghLcVCjHaxMS%2FuRk" rel="nofollow" target="_blank">https://seatunnel.apache.org/zh-CN/docs/introduction/concepts...</a></li></ul>]]></description></item><item>    <title><![CDATA[MIAOYUN破局AI创作部署困境，Token化解锁全场景AI能力 MIAOYUN ]]></title>    <link>https://segmentfault.com/a/1190000047665466</link>    <guid>https://segmentfault.com/a/1190000047665466</guid>    <pubDate>2026-03-20 11:04:30</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>当全民掀起“养龙虾”、“养骡子”潮，各类开源AI项目百花齐放，却因环境配置、硬件投入、多模型运维等部署难题绊住脚步，让众多创作者铩羽而归。为此，<strong>MIAOYUN直击行业痛点，打造一站式AI应用创作平台</strong>，包揽从算力匹配、环境配置到运维监控的全流程部署工作，推出统一Token化使用体系，让用户无需懂代码、购硬件、做运维，<strong>一个专属API Key就能零门槛调用全场景开源AI能力</strong>，同时还能为企业级用户提供灵活的私有化部署方案，不管是个人创作还是企业数字化转型，都能轻松实现AI赋能。</p><p>2024年至2026年，全球人工智能领域呈现爆发式增长态势。当开源AI的浪潮席卷各行各业，文本创作、图片生成、语音合成、视频制作、动漫建模……各类前沿的开源AI应用层出不穷，为个人创作、企业创新打开了无限想象空间。</p><p>人人都想拥抱开源AI红利，却不约而同地卡在了部署落地的最后一公里：想用AI生成小说插图，需先搭建Stable Diffusion环境，反复调试、破解框架兼容难题；想用AI合成一段语音，要深耕复杂代码调试TTS模型，高额投入、攻克硬件算力壁垒；想用AI制作动漫短片，需直面各类开源框架部署挑战，步步攻坚、耗费大量时间精力；想同时玩转多款AI应用，还要应对不同API管理、分散计费问题，哪怕是专业技术团队，也会被琐碎的搭建与运维工作消耗大量精力，更别说普通创作者和传统企业。</p><h2>搭建开源AI应用的“隐形门槛”</h2><p>对于大多数创作者和企业来说，部署开源AI应用往往意味着：</p><ul><li><strong>环境配置复杂</strong>：依赖各种框架和库，版本兼容性问题层出不穷</li><li><strong>硬件要求高</strong>：需要高性能GPU，投入成本高，产出比低</li><li><strong>维护成本大</strong>：需要持续更新和调试，占用大量技术资源</li><li><strong>多模型管理难</strong>：不同应用需要不同的API和计费方式，管理混乱</li></ul><h2>MIAOYUN，让AI创作真正“开箱即用”</h2><p>正是看到了开源AI应用“好用却难搭”的行业痛点，看到了无数创作者的创意因技术门槛被搁置，看到了众多企业的AI转型因部署难题而放缓，MIAOYUN基于多年深耕云原生与智能运维领域的技术沉淀，<strong>以“让人人都能轻松用上开源AI”为初心，打造出一站式AI应用创作平台</strong>，打通开源AI项目部署落地的最后一公里，从根源上解决开源AI部署、使用、管理的全链条难题，<strong>用一套轻量、便捷、统一的Token化使用模式，让所有开源AI能力触手可及。</strong></p><p>用户无需再为开源AI的部署焦头烂额，<strong>MIAOYUN已完成主流前沿开源AI应用的全流程适配与标准化部署</strong>，涵盖文本生成、图像创作、语音合成、视频制作、动漫生成等全场景，从底层算力匹配、环境配置，到框架调试、运维监控，所有技术难题都由MIAOYUN一站式解决。<strong>依托「秒云一站式AI大模型聚合平台」和「秒云Tokens管家」，将复杂的开源AI部署流程高度简化</strong>，让用户彻底告别“配置报错、算力不足、管理混乱”的困扰。</p><h2>一键接入，释放AI生产力</h2><p>在MIAOYUN平台，所有开源AI应用均<strong>采用“统一Token计费、统一额度管理”模式</strong>，无需为不同应用单独购买服务、调试不同API，<strong>只需一个专属「秒云API Key」，消耗Token即可一键调用所有AI能力</strong>。个人创作者可按需消耗Token，小成本探索创意；企业团队可灵活管理Token额度，弹性匹配业务需求，既避免了高性能硬件的高额投入，又解决了多模型分散管理的繁琐，让AI使用的成本、管理成本大幅降低。</p><h2>MIAOYUN平台核心能力</h2><p>► <strong>丰富的AI应用生态</strong>：涵盖文本生成、图像创作、语音合成、视频制作等领域的领先应用，满足多样化创作需求。</p><p>► <strong>统一的Token消耗模式</strong>：所有应用采用统一的Token计费方式，简单透明，无需分别购买不同服务。</p><p>► <strong>无缝的创作体验</strong>：使用一个专属「秒云API Key」，即可调用平台所有聚合模型、接入各类AI应用，即刻开启创作之旅。</p><p>► <strong>便捷的额度管理</strong>：通过「秒云Tokens管家」，可以统一管理各模型的Token额度，成本更低、使用更省心。</p><h2>企业级私有化部署方案</h2><p>除了极致便捷的在线使用体验，MIAOYUN还考虑到不同用户的核心需求：对于有数据隐私、合规要求的企业客户，<strong>MIAOYUN提供专属的企业级私有化部署方案</strong>，如OpenClaw大模型调度框架实现本地AI Agent生态快速构建，Voice-Pro专业语音系统打造专属品牌声音资产……所有私有化方案均可无缝对接秒云MaaS算力平台，兼顾数据安全与扩展性，让企业在合规前提下轻松实现AI赋能。</p><ul><li><strong>OpenClaw</strong>：强大的大模型底层调度与应用开发框架，支持企业在本地环境快速构建自有AI Agent生态，100%数据本地驻留，满足极高合规要求。</li><li><strong>Voice-Pro</strong>：专业级AI语音克隆与TTS合成系统，为企业打造独具特色的品牌“声音资产”，内网部署彻底阻断声音外泄风险。</li></ul><p>从解决行业痛点出发，<strong>以技术简化复杂环境部署，用Token连接AI应用能力</strong>。MIAOYUN致力于释放开源AI项目的核心价值，让每一位有创意、有需求的用户，都能跳过技术搭建的门槛，专注于创作本身、专注于业务创新。</p><p>告别开源AI部署的重重困境，无需技术功底，不用高额投入，只需消耗Token，就能玩转全场景开源AI应用。MIAOYUN，让AI创作与创新，真正做到开箱即用！立即访问MIAOYUN官网或者点击底部“阅读原文”，获取专属API Key，开启一站式AI创作体验吧！</p>]]></description></item><item>    <title><![CDATA[壶口瀑布事件越闹越大，游客吐槽景区太贵竟被景区投诉侵犯名誉权 李嘉伟 ]]></title>    <link>https://segmentfault.com/a/1190000047665480</link>    <guid>https://segmentfault.com/a/1190000047665480</guid>    <pubDate>2026-03-20 11:03:38</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>作品声明：个人观点、仅供参考</p><p>壶口瀑布事件越闹越大，本来旅游者认为门票价格太高，对着黄河喊了一声：妈，一人100，门票太贵，我们就不进去了！</p><p>这句特别实在的吐槽，一下子戳中了很多网友的心声，相关话题很快在网上刷屏，引来全民讨论。</p><p>游客只是说出了自己真实的消费感受，没想到引发后续风波，好在最后景区上门道歉，事情才慢慢平息。</p><p>陕西壶口瀑布成人门票100元，还必须搭配40元的观光车，一个人玩下来就要140元，全家出行成本更高。</p><p>黄河是属于所有人的母亲河，这样的自然奇观，不应该因为高票价，让普通老百姓想看都不敢进。</p><p>现在国内很多5A景区都在主动降价，用亲民的价格吸引游客，带动周边消费，走长期发展的路子。</p><p>景区日常运营确实需要成本，定价既要考虑收支，也要顾及普通人的消费能力，不能只想着赚钱。</p><p>游客这句无奈的喊话，说出了大家的心里话，好风景再好，也要有让人能接受的票价。</p><p>一直靠卖门票赚钱的模式早就过时了，景区放下高价身段，才能真正吸引游客、留住游客。</p><p>网友几乎全都支持这位游客，大家不认同景区的处理方式，更反对把公共景观过度商业化。</p><p>发展旅游业的初心，是让所有中国人都能欣赏祖国的大好河山，而不是把美景当成赚钱的工具。</p><p>一家三口光门票和观光车就要四百多块钱，对于普通工薪家庭来说，确实是一笔不小的开支。</p><p>景区真的应该调整定价策略，多推出家庭票、优惠票，实实在在为普通游客考虑。</p><p>母亲河的壮观景色，不该被高票价挡在外面，每个人都有资格亲近黄河、感受自然。</p><p>这件事也给全国所有景区提了个醒，尊重游客的意见，真心为游客着想，才能走得更远。</p><p>要是一味强硬对待游客的吐槽，只会砸了自己的招牌，不如虚心接受建议，提升服务质量。</p><p>自然景观属于全民，只有票价亲民，才能让文旅市场真正活起来、火起来。</p><p>定价合理、服务到位、听取民意，才是景区长久发展的最好方式。</p><p>千万别让高票价凉了游客的心，更不能让母亲河，变成普通人看不起的风景。</p><p>文旅行业只有真正做到以人为本，才能让更多人走进自然，好好感受祖国的壮美山川。</p><p>各位读者你们怎么看？欢迎在评论区讨论。</p><p><img width="723" height="1030" referrerpolicy="no-referrer" src="/img/bVdn98b" alt="" title=""/></p>]]></description></item><item>    <title><![CDATA[（四）为什么你的数据仓库总在 ADS 层失控？DWS 才是关键答案 SeaTunnel ]]></title>    <link>https://segmentfault.com/a/1190000047665486</link>    <guid>https://segmentfault.com/a/1190000047665486</guid>    <pubDate>2026-03-20 11:03:06</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>在数据仓库体系中，DWS 与 ADS 层是从“数据建模”走向“数据交付”的关键分界点。前者承载公共汇总与指标复用能力，决定数据体系的稳定性与复用效率；后者面向具体消费场景，直接影响业务交付效率与使用体验。</p><p>如果 DWS 层设计不足，指标将不断在 ADS 层重复生产，最终导致口径混乱与烟囱化；而如果 ADS 层失控，则会反向侵蚀公共层，形成不可维护的数据资产。因此，一个健康的数据体系，必须在“公共沉淀”与“灵活交付”之间建立清晰边界与演进机制。</p><p>作为数据湖仓设计与实践系列文章第 4 篇，本文将系统梳理 <strong>DWS/ADS 交付层的核心设计原则</strong>，包括公共汇总与主题宽表建模方法、指标口径体系构建、交付层设计策略以及生命周期治理实践，并结合常见问题，帮助团队构建高复用、可治理、可持续演进的数据交付体系。</p><h2>为什么 DWS 必须“足够厚”</h2><p>在很多团队的数据体系中，DWS 层往往被低估，甚至被直接弱化，结果就是所有需求都堆到了 ADS 层去解决。短期看似灵活，长期却会迅速失控。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047665488" alt="" title=""/></p><p>DWS 的本质定位，是公共汇总层与复用层。它不是为某一个报表服务，而是为“多个应用共享”提供统一的数据基础。如果这一层建设不足，每一个新需求都会重新计算、重新定义口径，最终形成一堆互不兼容的结果。</p><p>实践中，一个健康的状态是：<strong>大约 70% 的分析需求可以直接通过 DWS 组合完成</strong>。这意味着，大部分场景不需要重新建表，而是在已有公共能力上进行组合。这种“拿来即用”的能力，是复用价值的核心体现。</p><p>反过来看，如果每个部门都有一套自己的 ADS 表，每个报表都有自己的指标口径，就会出现典型的烟囱化问题：同名指标对不上、重复计算、数据无法对齐。团队的大量时间会消耗在对口径，而不是分析业务。</p><p>DWS 的价值，恰恰在于解决这些共性问题。它通过沉淀高频维度组合的聚合结果、构建面向主题的宽表，以及统一输出公共指标口径，把原本分散的计算前置到离线层。这样一来，线上查询不再依赖临时大规模 join 或全表扫描，整体性能和成本都会更加可控。</p><p>更重要的是，它改变了团队协作方式。指标不再依赖口头约定，而是以数据资产的形式存在：有 owner、有定义、有血缘、有质量规则。所谓“口径争议”，本质上被转化成“资产治理问题”。</p><p>但这里有一个前提：DWS 必须是可治理的。如果字段没有解释、指标没有定义、更新频率不清晰、质量规则缺失，那么这一层只会变成“没人敢用的宽表集合”，反而降低复用率。</p><h2>公共汇总与主题宽表：复用与性能的平衡</h2><p>DWS 的设计，核心围绕两类表展开：公共汇总表与主题宽表。</p><p>公共汇总表的关键在于“清晰”。它必须明确聚合粒度（例如日、周、月或累计）、明确维度组合（如时间、组织、渠道、品类等），以及明确度量口径（金额、数量或次数的统计范围）。如果这些边界不清晰，后续所有复用都会变得不可靠。</p><p>主题宽表则更偏向“易用性”。它通常围绕某一业务域展开，例如用户、交易或商品，把高频 join 的维度属性提前拉平，减少查询时的复杂度。但需要强调的是，宽表是服务分析的结果形态，而不是事实表的替代，它必须能够追溯回底层模型。</p><p>在实践中，一个常见问题是宽表不断膨胀。为了解决这个问题，可以基于字段使用频率进行治理，将高频字段保留在主宽表中，低频字段拆分或按需关联，并定期根据使用情况进行瘦身。</p><p>另外一个容易踩的坑，是在同一张表中混合不同聚合层级，例如同时存在日级和月级数据。这种设计会极大增加误用风险，也会让维护变得复杂。更合理的方式，是按层级拆分表，或至少在命名上做强约束。</p><p>所有这些设计的前提，是一致性维度的存在。用户、组织、渠道、时间等核心维度必须统一编码和口径，否则任何跨表复用都会失效。</p><p>从性能角度看，DWS 的核心策略始终是“预聚合优先”。先通过离线计算减少数据扫描规模，再去考虑索引、分区或物化视图等查询优化手段。否则，所有优化都会变成补救措施。</p><h2>指标体系：从原子到复合的分层设计</h2><p>如果说 DWS 解决的是“数据复用”，那么指标体系解决的就是“口径统一”。</p><p>一个可治理的指标体系，通常分为三个层级：原子指标、派生指标和复合指标。</p><p>原子指标是最基础的度量单元，它必须清晰定义统计对象、统计范围、过滤条件以及时间口径。例如“支付成功金额”，必须明确只统计成功状态，并基于支付完成时间。</p><p>派生指标是在原子指标之上进行计算，例如客单价可以由“支付成功金额 / 支付成功订单数”得到。这里的关键在于，派生指标必须继承原子指标的口径，否则会产生偏差。</p><p>复合指标则跨越多个过程或业务域，例如转化率、留存或复购。这类指标更依赖一致的维度体系和事件定义，是最容易产生歧义的部分。</p><p>为了避免混乱，每一个指标都必须具备完整的“四要素”：业务定义、计算公式、统计范围和时间口径。这不仅是文档要求，更是可追溯和可审计的基础。</p><p>同时，指标必须具备版本管理能力。口径的变化不能直接覆盖历史结果，而应该通过版本或生效时间进行管理，否则报表会出现“历史数据被改写”的问题。</p><p>在分层上，原子指标应尽量沉淀在 DWS（或可追溯到 DWD），而 ADS 层只负责轻量组合与展示。如果让 ADS 承担口径定义职责，它很快就会变成新的“口径制造层”。</p><h2>ADS 与数据集市：面向消费的交付设计</h2><p>如果说 DWS 是“沉淀”，那么 ADS 层就是“交付”。</p><p>ADS（或 DM，数据集市）的核心目标，是面向具体消费场景提供数据产品，例如 BI 报表、接口服务或专题分析数据集。这个层级的数据结构，更强调“好用”，而不是“通用”。</p><p>因此，交付表的设计应遵循“一表一场景”的原则。字段命名可以更贴近业务语义，也可以增加展示字段、排序字段或状态解释字段，以提升使用体验。</p><p>但有一条底线必须坚持：<strong>交付层不应该发明口径</strong>。所有核心指标都必须来源于 DWS 或指标体系，ADS 只负责组合、格式化和轻量计算。如果这一原则被打破，很快就会回到“每个报表一套口径”的老路。</p><p>在更新频率上，需要根据业务 SLA 做明确约束。日更、小时更甚至分钟级更新，都会直接影响计算链路和资源成本。频率越高，越需要控制字段规模和计算复杂度。</p><p>数据集市的治理同样关键。虽然可以按部门或场景划分，但必须基于统一的维度与指标体系构建。允许通过视图或语义层满足差异需求，但不应该复制一套底层逻辑。</p><h2>从“快速交付”到“可持续演进”</h2><p>很多团队在早期都会经历一个阶段：为了快速交付，不断在 ADS 层堆表。短期来看，响应速度很快，但随着时间推移，问题会逐渐显现——交付层膨胀，公共层空心化，维护成本急剧上升。</p><p>一个更健康的模式是：<strong>公共层逐步变厚，交付层保持轻量，并持续把通用能力回收沉淀到 DWS</strong>。</p><p>这也意味着，交付表必须具备生命周期管理能力。通过统计使用频率，及时下线低价值表，或将通用字段与指标回收至公共层，避免重复建设。</p><p>最终，一个成熟的数据体系，不是“建得快”，而是“用得久”。而 DWS 与 ADS 的分层设计，正是支撑这种长期演进能力的关键。</p><p>前文回顾👇：</p><ul><li><a href="https://link.segmentfault.com/?enc=r0Jfo9UFpubMF8wpa1jlew%3D%3D.OdQisMOplhEBMetbBJjZly77oovtNSvTFCdRJWhYyd%2FXoBE3BFI0vVmaWdDGJt%2BLLJQzrqqg2H912%2FhUttizLQ%3D%3D" rel="nofollow" target="_blank">（一）新兴数据湖仓架构搭建与开发规范全攻略：数据仓库与数据湖概述</a></li><li><a href="https://link.segmentfault.com/?enc=nyBIeeCCva3n5riMGeZlBw%3D%3D.OqHlF%2BlQqCAv6vxPrPUz%2BGS%2B%2BwPt8ZIAfwLPWkhQAUulBcWcRgWGuXf0ksjYzkswcHQB%2FIEOzuWcpCnbIiK7xw%3D%3D" rel="nofollow" target="_blank">（二）燃爆！AI 加持下，新兴数据湖仓架构与开发规范全解析！</a></li><li><a href="https://link.segmentfault.com/?enc=Tr8Yzx8nWeMeey%2Fp9EbfMA%3D%3D.ColgpzhFqplr2oleHV4pYauyefAGqM5c9MFZ6ZT5Id0ngW5Ikf2FcBEwxZVU5yqWedl2BPzHK6hodVBHhBXqqQ%3D%3D" rel="nofollow" target="_blank">（三）ODS/明细层落地设计要点：把数据接入层打造成“稳定可运维”的基础设施</a></li></ul><p>下文预告👇：<br/>（五）数据仓库建设规范与命名体系</p>]]></description></item><item>    <title><![CDATA[Hagicode.Libs：统一集成多个 AI 编程助手 CLI 的工程实践 newbe36524 ]]></title>    <link>https://segmentfault.com/a/1190000047665492</link>    <guid>https://segmentfault.com/a/1190000047665492</guid>    <pubDate>2026-03-20 11:02:15</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>Hagicode.Libs：统一集成多个 AI 编程助手 CLI 的工程实践</h2><blockquote>在开发 HagiCode 项目的过程中，我们需要同时集成 Claude Code、Codex、CodeBuddy 等多个 AI 编程助手 CLI。每个 CLI 的接口、参数、输出格式都不一样，重复的集成代码让项目越来越难以维护。本文分享我们如何通过 HagiCode.Libs 库构建统一抽象层，解决这个工程痛点——也算是我们踩过的坑，积累下来的一点经验罢了。</blockquote><h3>背景</h3><p>现在的 AI 编程助手市场挺热闹的，除了 Claude Code，还有 OpenAI 的 Codex、智谱的 CodeBuddy 等等。作为一个 AI 代码助手项目，HagiCode 需要在多个子项目（桌面端、后端、Web 等）中集成这些不同的 CLI 工具。</p><p>一开始问题还不大，集成一个 CLI 也就是几百行代码的事儿。只是随着要支持的 CLI 越来越多，事情就开始变得麻烦了——</p><p>每个 CLI 有不同的命令行参数格式，环境变量的要求也不一样，输出格式更是五花八门——有的输出 JSON，有的流式 JSON，有的就是纯文本。再加上跨平台兼容性问题，Windows 和 Unix 系统的可执行文件发现和进程管理机制完全不同，代码重复度越来越高。其实这也无非就是 Ctrl+C、Ctrl+V 多了一点，但维护起来可就头疼了。</p><p>最头疼的是，每次要新增一个 CLI 功能支持，就得在好几个项目里改同样的代码。这种方式显然不是长久之计——代码也是有脾气的，重复太多它也会闹别扭。</p><h3>关于 HagiCode</h3><p>本文分享的方案来自我们在 <a href="https://link.segmentfault.com/?enc=wHo%2FXT9sOd8R5Dlzt81MbQ%3D%3D.KqLqoa3%2FWy6pXGx3s4huYQha4ZNfe60jkWLCKlLA3xg%3D" rel="nofollow" target="_blank">HagiCode</a> 项目中的实践经验。HagiCode 是一个开源的 AI 代码助手项目，需要同时维护前端 VSCode 扩展、后端 AI 服务、跨平台桌面客户端等多个子项目。怎么说呢，正是这种多语言、多平台的复杂场景，促成了 HagiCode.Libs 的诞生——算是被逼出来的，也罢。</p><h3>分析：寻找共同点</h3><p>虽然这些 AI 编程助手 CLI 各有特点，但从技术层面来看，它们存在明显的共同特征：</p><p><strong>相似的交互模式</strong>：都是启动 CLI 进程，发送提示词，接收流式响应，解析消息，最后会话结束或继续——这一套流程，说到底都是一个模子刻出来的。</p><p><strong>相似的配置需求</strong>：都需要 API 密钥认证、工作目录设置、模型选择、工具权限控制、会话管理。毕竟大家都是吃 API 这碗饭的，差别无非是口味不同。</p><p><strong>跨平台挑战一致</strong>：都需要解决可执行文件路径解析（<code>claude</code> vs <code>claude.exe</code> vs <code>/usr/local/bin/claude</code>）、进程启动和环境变量处理、Shell 命令转义和参数构建等问题。这跨平台的事儿，说多了都是泪——Windows 和 Unix 的差异，只有踩过坑的人才知道。</p><p>基于这些分析，我们需要一个统一的抽象层来提供一致的接口，封装跨平台的 CLI 发现逻辑，处理流式输出的解析，同时支持依赖注入和非 DI 场景使用。这事儿想想就头大，但还是要面对——毕竟是自己的项目，哭着也要做完。</p><h3>解决方案：HagiCode.Libs</h3><p>我们创建了 <strong>HagiCode.Libs</strong> —— 一个轻量级的 .NET 10 库工作空间，采用 MIT 开源协议，现已发布在 <a href="https://link.segmentfault.com/?enc=JofjiwQo%2BY8Njnlj4zWLRA%3D%3D.83SS6ftoHLzQ5ny8v%2BZYrpEnUVj%2BF0PV9MTB0WRsC67dq6d8qRaPepxLmASDD%2Faf" rel="nofollow" target="_blank">GitHub</a>。虽然不是什么惊天地泣鬼神的大作，但解决实际问题，还是挺香的。</p><h4>项目结构</h4><pre><code>HagiCode.Libs/
+├── src/
+│   ├── HagiCode.Libs.Core/           # 核心功能
+│   │   ├── Discovery/                 # CLI 可执行文件发现
+│   │   ├── Process/                   # 跨平台进程管理
+│   │   ├── Transport/                 # 流式消息传输
+│   │   └── Environment/               # 运行时环境解析
+│   ├── HagiCode.Libs.Providers/       # 提供者实现
+│   │   ├── ClaudeCode/                # Claude Code 提供者
+│   │   ├── Codex/                     # Codex 提供者
+│   │   └── Codebuddy/                 # CodeBuddy 提供者
+│   ├── HagiCode.Libs.ConsoleTesting/  # 测试框架
+│   ├── HagiCode.Libs.ClaudeCode.Console/
+│   ├── HagiCode.Libs.Codex.Console/
+│   └── HagiCode.Libs.Codebuddy.Console/
+└── tests/                             # xUnit 测试</code></pre><h4>设计目标</h4><p>在设计 HagiCode.Libs 时，我们遵循了几个原则——毕竟也都是踩过的坑，总结出来的经验：</p><p><strong>零重型框架依赖</strong>：不依赖 ABP 或其他大型框架，保持轻量级。这年头，依赖越少，麻烦越少——谁还没被依赖地狱毒打过呢。</p><p><strong>跨平台支持</strong>：Windows、macOS、Linux 原生支持，不需要针对不同平台写不同的代码。一套代码走天下，也挺好的。</p><p><strong>流式处理</strong>：使用异步流处理 CLI 输出，更符合现代 .NET 的编程模式。毕竟时代在变，异步才是王道。</p><p><strong>灵活集成</strong>：既支持依赖注入场景，也允许直接实例化使用。萝卜青菜，各有所爱，怎么方便怎么来。</p><h3>使用方式</h3><h4>通过依赖注入</h4><p>如果你的项目已经在使用依赖注入（比如 ASP.NET Core 或通用主机），可以直接集成——这也算是个孩子，虽然不大，但挺乖的：</p><pre><code class="csharp">using HagiCode.Libs.Providers;
+using Microsoft.Extensions.DependencyInjection;
+
+var services = new ServiceCollection();
+services.AddHagiCodeLibs();
+
+await using var provider = services.BuildServiceProvider();
+var claude = provider.GetRequiredService&lt;ICliProvider&lt;ClaudeCodeOptions&gt;&gt;();
+
+var options = new ClaudeCodeOptions
+{
+    ApiKey = "your-api-key",
+    Model = "claude-sonnet-4-20250514"
+};
+
+await foreach (var message in claude.ExecuteAsync(options, "Hello, Claude!"))
+{
+    Console.WriteLine($"{message.Type}: {message.Content}");
+}</code></pre><h4>直接实例化</h4><p>如果是简单的脚本或者不使用 DI 的场景，直接创建实例也行——说白了就是看个人喜好：</p><pre><code class="csharp">var claude = new ClaudeCodeProvider();
+var options = new ClaudeCodeOptions
+{
+    ApiKey = "sk-ant-xxx",
+    Model = "claude-sonnet-4-20250514"
+};
+
+await foreach (var message in claude.ExecuteAsync(options, "帮我写一个快速排序"))
+{
+    // 处理消息
+}</code></pre><p>两种方式使用的是同一套底层实现，你可以根据项目实际情况选择合适的集成方式。这世界本就没有标准答案，适合自己的才是最好的——虽然这话有点老套，但确实是这么个理儿。</p><h3>实践经验分享</h3><h4>1. 专用测试控制台</h4><p>每个提供者都有专用的测试控制台项目，方便独立验证集成效果——怎么说呢，测试这件事，要么不做，要做就做到位：</p><pre><code class="bash"># Claude Code 测试
+dotnet run --project src/HagiCode.Libs.ClaudeCode.Console -- --test-provider
+dotnet run --project src/HagiCode.Libs.ClaudeCode.Console -- --test-all claude
+
+# CodeBuddy 测试
+dotnet run --project src/HagiCode.Libs.Codebuddy.Console -- --test-provider codebuddy-cli
+
+# Codex 测试
+dotnet run --project src/HagiCode.Libs.Codex.Console -- --test-provider codex-cli</code></pre><p>测试场景覆盖了几个关键场景：</p><ul><li><strong>Ping</strong>：健康检查，确认 CLI 可用</li><li><strong>Simple Prompt</strong>：基本提示测试</li><li><strong>Complex Prompt</strong>：多轮对话测试</li><li><strong>Session Restore/Resume</strong>：会话恢复测试</li><li><strong>Repository Analysis</strong>：代码库分析测试</li></ul><p>这种独立的测试控制台设计在调试时特别有用，可以快速定位问题是在 HagiCode.Libs 层还是 CLI 本身。这调试嘛，说白了就是看问题出在哪儿——方向对了，就成功了一半。</p><h4>2. 跨平台 CI/CD 验证</h4><p>跨平台兼容性是 HagiCode.Libs 的核心目标之一。我们配置了 GitHub Actions 工作流 <code>.github/workflows/cli-discovery-cross-platform.yml</code>，在 <code>ubuntu-latest</code>、<code>macos-latest</code>、<code>windows-latest</code> 三个平台上运行真实的 CLI 发现验证。</p><p>这确保了每次代码变更都不会破坏跨平台兼容性。本地开发时也可以通过以下命令复现——总不能让 CI 帮你背所有锅，自己本地也要能跑起来：</p><pre><code class="bash">npm install --global @anthropic-ai/claude-code@2.1.79
+HAGICODE_REAL_CLI_TESTS=1 dotnet test --filter "Category=RealCli"</code></pre><h4>3. 消息流处理</h4><p>HagiCode.Libs 使用异步流处理 CLI 输出，这种方式比传统的回调或事件模式更符合现代 .NET 的异步编程风格——说到底，这就是技术的进步，谁也挡不住：</p><pre><code class="csharp">public async IAsyncEnumerable&lt;CliMessage&gt; ExecuteAsync(
+    TOptions options,
+    string prompt,
+    [EnumeratorCancellation] CancellationToken cancellationToken = default)
+{
+    // 启动 CLI 进程
+    // 解析流式 JSON 输出
+    // 生成 CliMessage 序列
+}</code></pre><p>消息类型包括：</p><ul><li><code>user</code>：用户消息</li><li><code>assistant</code>：助手响应</li><li><code>tool_use</code>：工具调用</li><li><code>result</code>：会话结束</li></ul><p>这种设计让调用方可以灵活地处理流式输出，比如实时显示、缓冲后处理、或者转发到其他服务。美又何必在乎天晴阴呢？重要的是思路打开了，怎么用都成。</p><h4>4. Git 仓库探索</h4><p>HagiCode.Libs.Exploration 模块提供了 Git 仓库发现和状态检查功能，这在分析代码库场景特别有用——这也是被逼出来的功能，谁让 HagiCode 需要分析代码库呢：</p><pre><code class="csharp">// 发现 Git 仓库
+var repositories = await GitRepositoryDiscovery.DiscoverAsync("/path/to/search");
+
+// 获取仓库信息
+var info = await GitRepository.GetInfoAsync(repoPath);
+Console.WriteLine($"Branch: {info.Branch}, Remote: {info.RemoteUrl}");
+Console.WriteLine($"Has uncommitted changes: {info.HasUncommittedChanges}");</code></pre><p>HagiCode 的代码分析功能就用到了这个模块来识别项目结构和 Git 状态。算是物尽其用，也算是个孩子，没白养。</p><h3>注意事项</h3><p>基于我们在 HagiCode 项目中的实践，有几个地方需要特别注意——都是事儿，事儿，事儿：</p><p><strong>API 密钥安全</strong>：不要将 API 密钥硬编码到代码中，使用环境变量或配置管理。HagiCode.Libs 支持通过 Options 对象传递配置，方便集成各种配置源。毕竟安全这件事，怎么小心都不为过。</p><p><strong>CLI 版本锁定</strong>：CI/CD 中我们锁定了特定版本（如 <code>@anthropic-ai/claude-code@2.1.79</code>）以减少版本漂移带来的不确定性。本地开发时建议也使用固定版本。这版本的事儿，说多了都是泪——不固定版本，分分钟教你做人。</p><p><strong>测试分类</strong>：默认测试使用假提供者保持确定性和速度，真实 CLI 测试需要显式启用。这样既保证了 CI 的快速反馈，又能在需要时进行真实环境验证。这平衡木走起来，也不容易——快和稳，总是需要取舍。</p><p><strong>会话管理</strong>：不同 CLI 的会话恢复机制不同，Claude Code 使用 <code>.claude/</code> 目录存储会话，Codex 和 CodeBuddy 各有自己的方式。使用时要注意查看各自文档，了解会话持久化的具体机制。这也罢了，了解清楚总没坏处。</p><h3>总结</h3><p>HagiCode.Libs 是我们在开发 HagiCode 过程中，为了解决多 CLI 集成的重复工程问题而构建的统一抽象层。它通过提供一致的接口、封装跨平台细节、支持灵活的集成方式，大大降低了集成多个 AI 编程助手的工程复杂度。一切都淡了——但经验留下了。</p><p>如果你也在项目中需要集成多个 AI CLI 工具，或者对跨平台进程管理、流式消息处理感兴趣，欢迎来 <a href="https://link.segmentfault.com/?enc=tJAZbbOQZhZJp9HI9o7iKA%3D%3D.BmzxzKyum2bdBTaSfvDc64Lksfw1FFM3CFlY7XaNF5tJh68UwCYoMPYroVDYdR77" rel="nofollow" target="_blank">GitHub</a> 看看。项目采用 MIT 开源协议，欢迎贡献和反馈。终究是缘分一场，来都来了，不妨交个朋友。</p><p>本文分享的方案是 HagiCode 实际踩坑、实际优化出来的。这又有什么办法呢？踩坑嘛，正常——如果你觉得这套方案有价值，说明我们的工程实力也还算过得去。那么 HagiCode 本身，也值得关注一下，说不定有惊喜呢。</p><h3>参考资料</h3><ul><li>HagiCode.Libs GitHub：<a href="https://link.segmentfault.com/?enc=kJQgmt6aIc1HKuK7VFHoDA%3D%3D.Hf7%2Bo8cvsxVBaq8d%2FSjycB8xu%2FtQKVLK7c%2BpkjBoIodfbZQNepWKTjsnfG3o%2BPW0" rel="nofollow" target="_blank">github.com/HagiCode-org/Hagicode.Libs</a></li><li>HagiCode 主项目：<a href="https://link.segmentfault.com/?enc=cOI9vrzWzDnbPVab9RPR2g%3D%3D.foMqWY9I1QAg5R4El7DQC90xEiPXi9up47%2BP94gDeei1mp9%2FsqxE552h9Cw5lsxj" rel="nofollow" target="_blank">github.com/HagiCode-org/site</a></li><li>HagiCode 官网：<a href="https://link.segmentfault.com/?enc=1ZMS95LlgzJezTd5aYK2OA%3D%3D.c4UKIoH1ICob1cachNmnO9TQ05Bz8vGcw0DRvNG63cQ%3D" rel="nofollow" target="_blank">hagicode.com</a></li><li>Claude Code 官方文档：<a href="https://link.segmentfault.com/?enc=3uU%2BDbZyNy%2BFx7Qz0yQD5g%3D%3D.sqU5p3nNg8ltIRwkQ9nFnxWxP0qq9ZHIcJFUHSn7R1E%3D" rel="nofollow" target="_blank">docs.anthropic.com</a></li></ul><hr/><p>如果本文对你有帮助：</p><ul><li>点个赞让更多人看到</li><li>来 GitHub 给个 Star：<a href="https://link.segmentfault.com/?enc=YXTKHVj23lC%2BegAhsg3zIg%3D%3D.gbEb1qeuraYE2cyVrp5RDhQXQkIx9L2k%2Bts247plgRYXOxa6dWV1T7Gu310Q%2BBiV" rel="nofollow" target="_blank">github.com/HagiCode-org/site</a></li><li>访问官网了解更多：<a href="https://link.segmentfault.com/?enc=RrHD%2BM6QB93zWvv6AT2rEg%3D%3D.RhlpQC5bPWzvjMmnCs%2F%2FYKZA3vffw0jSO6lGjg6Xe%2F8%3D" rel="nofollow" target="_blank">hagicode.com</a></li><li>观看 30 分钟实战演示：<a href="https://www.bilibili.com/video/BV1pirZBuEzq/" target="_blank">www.bilibili.com/video/BV1pirZBuEzq/</a></li><li>一键安装体验：<a href="https://link.segmentfault.com/?enc=3En4h9hsEG2p7hUZsjjtSA%3D%3D.2DHtEriXRFFCtXEStvmLmoBNdySuaKF%2Ba4%2FP8ejdhrEFM88BHJjlmlClvP0wVuuMmkUnoecu%2BhyaoJ1P1yBchg%3D%3D" rel="nofollow" target="_blank">docs.hagicode.com/installation/docker-compose</a></li><li>Desktop 桌面端快速安装：<a href="https://link.segmentfault.com/?enc=fkEVgV%2FtxXz9jRzr9leJNA%3D%3D.IigAl5%2BU9MFY5UvWsaArUViazKN1wgq83GivdQVdcd8%3D" rel="nofollow" target="_blank">hagicode.com/desktop/</a></li><li>公测已开始，欢迎安装体验</li></ul><p>&lt;!-- hagicode-copyright:start --&gt;</p><h3>原文与版权说明</h3><p>感谢您的阅读,如果您觉得本文有用,欢迎点赞、收藏和分享支持。<br/>本内容采用人工智能辅助协作,最终内容由作者审核并确认。</p><ul><li>本文作者: <a href="https://link.segmentfault.com/?enc=nwIs4TCnS%2FeDN99N5CYqxQ%3D%3D.PSz%2BPhvjd5kQ6Uujt3Z8aFuQUl8JDjJ8%2BkHur%2BxTvSw%3D" rel="nofollow" target="_blank">newbe36524</a></li><li>原文链接: <a href="https://link.segmentfault.com/?enc=HFXCA69R6J9sV2CE98mkmA%3D%3D.cC1RQsxbNpV6yAc0EqItgld3of9T1zdWdgb11sBR2L%2BBziyU43diJ4tyzLpWpi0BKUGS5pgTkZZhUp79ABO1r2LQuNFcgxMhomcircb1FnQ5Z7He23ph3AtwoV7myl1tF6DavpsrAORaU8N%2BmY7%2BmPAIUvhZgNc97kCTOImLpSQ%3D" rel="nofollow" target="_blank">https://docs.hagicode.com/go?platform=segmentfault&amp;target=%2Fblog%2F2026-03-20-hagicode-libs-unified-cli-integration%2F</a></li><li>版权声明: 本博客所有文章除特别声明外,均采用 BY-NC-SA 许可协议。转载请注明出处!<br/>&lt;!-- hagicode-copyright:end --&gt;</li></ul>]]></description></item><item>    <title><![CDATA[深入理解 C#.NET TaskScheduler：为什么大量使用 Work-Stealing 唐青]]></title>    <link>https://segmentfault.com/a/1190000047665500</link>    <guid>https://segmentfault.com/a/1190000047665500</guid>    <pubDate>2026-03-20 11:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h3>简介</h3><p>只要你开始深入看 <code>.NET</code> 的并行调度模型，很快就会碰到一个高频词：</p><pre><code class="csharp">Work-Stealing</code></pre><p>很多文章会告诉你：</p><ul><li>它是“工作窃取”</li><li>每个线程有自己的队列</li><li>队列空了就去偷别人的任务</li></ul><p>这些说法当然没错，但还远远不够。</p><p>真正值得搞懂的问题其实是：</p><blockquote><code>.NET</code> 默认调度体系为什么这么依赖 <code>Work-Stealing</code>，而不是简单用一个全局队列把所有任务排起来？</blockquote><p>这篇文章要拆的就是这个问题。</p><p>重点不是只讲定义，而是讲清楚：</p><ul><li><code>TaskScheduler</code> 和线程池是什么关系；</li><li>为什么“一个全局队列”在多核时代会越来越吃力；</li><li><code>Work-Stealing</code> 到底解决了哪些真实问题；</li><li>为什么本地队列常常偏向 <code>LIFO</code>，而窃取却偏向另一端；</li><li>这种设计带来了什么收益，又牺牲了什么。</li></ul><h3>先说结论：真正大量使用 <code>Work-Stealing</code> 的是谁？</h3><p>严格一点说，不是“所有 <code>TaskScheduler</code> 都大量使用 <code>Work-Stealing</code>”。</p><p>更准确的说法是：</p><blockquote><code>.NET</code> 默认的任务调度体系，也就是 <code>TaskScheduler.Default</code> 背后的线程池调度机制，大量依赖 <code>Work-Stealing</code>。</blockquote><p>这点很重要，因为：</p><ul><li><code>TaskScheduler</code> 是抽象；</li><li><code>TaskScheduler.Default</code> 是默认实现入口；</li><li>真正承担大部分任务执行的，通常还是线程池。</li></ul><p>所以你在这些场景里看到的调度行为：</p><ul><li><code>Task.Run</code></li><li><code>Parallel.For</code></li><li><code>Parallel.ForEach</code></li><li>很多 <code>Task</code> 并行场景</li></ul><p>背后经常都绕不开线程池和 <code>Work-Stealing</code>。</p><h3>为什么“一个全局队列”不够？</h3><p>这是理解 <code>Work-Stealing</code> 的第一步。</p><p>最直觉的任务调度模型通常是这样：</p><pre><code class="text">所有任务都进入一个全局队列
+多个工作线程一起从这个队列里取任务</code></pre><p>这个模型最大的优点是简单。</p><p>但一旦进入多核、高并发、细粒度任务时代，它的问题会越来越明显。</p><h4>1. 共享热点太集中</h4><p>所有线程都要反复访问同一个队列，这意味着：</p><ul><li>大家都在争同一个热点数据结构；</li><li>即使数据结构本身已经很优秀，也逃不开共享竞争；</li><li>核心数越多，这个热点越容易变成瓶颈。</li></ul><h4>2. 同步开销会被放大</h4><p>一个全局队列不可能完全没有同步成本。</p><p>你线程越多：</p><ul><li>入队越频繁；</li><li>出队越频繁；</li><li>冲突越频繁；</li><li>调度本身就越容易吃掉性能。</li></ul><p>换句话说，任务还没真正开始执行，大家先在“怎么拿任务”这件事上消耗了一轮。</p><h4>3. 负载均衡并不天然就好</h4><p>很多人会误以为：</p><ul><li>全局队列人人都能取，所以一定公平、一定均衡。</li></ul><p>现实没那么简单。</p><p>因为线程执行速度不同、任务长短不同、缓存命中不同，最终经常还是会出现：</p><ul><li>有的线程很忙；</li><li>有的线程开始发呆；</li><li>有的线程不断从共享队列里竞争任务；</li><li>有的线程因为任务粒度太小，调度成本反而变高。</li></ul><h4>4. 缓存局部性很差</h4><p>这是很多人第一次接触时最容易忽视的点。</p><p>如果一个线程刚刚处理完某段数据，下一批相关任务还继续落到这个线程上，通常更有利于缓存命中。</p><p>而全局队列的特点是：</p><ul><li>任务更容易被任意线程取走；</li><li>数据和执行线程的亲和性更弱；</li><li>CPU 缓存局部性更差。</li></ul><p>这在高频细粒度并行里影响非常大。</p><h3><code>Work-Stealing</code> 到底是什么？</h3><p>可以先用一句最直白的话理解：</p><blockquote>每个工作线程优先处理自己本地队列里的任务，只有自己没活干了，才去别的线程那里“偷”一点任务回来做。</blockquote><p>也就是说，它不是“所有线程一直互相抢任务”，而是：</p><ul><li>大多数时候，各干各的；</li><li>只有出现闲忙不均时，才发生窃取。</li></ul><p>这点非常关键，因为它决定了 <code>Work-Stealing</code> 的核心收益：</p><ul><li>把共享竞争从“默认常态”降成“低频补救”。</li></ul><h3>一个典型的心智模型</h3><p>你可以把它想成这样：</p><pre><code class="text">线程 A -&gt; 本地队列 A
+线程 B -&gt; 本地队列 B
+线程 C -&gt; 本地队列 C
+
+平时：
+每个线程先吃自己的任务
+
+只有当线程 B 空了：
+它才去线程 A 或 C 那里偷一点任务</code></pre><p>这和“所有人都去一个总桶里抢饭”的区别非常大。</p><h3>为什么这种设计更适合并行调度？</h3><p>因为它同时解决了三个最关键的问题：</p><ul><li>降低竞争</li><li>保持局部性</li><li>自动负载均衡</li></ul><p>下面逐个拆。</p><h3>1. 它大幅降低了同步竞争</h3><p><code>Work-Stealing</code> 最核心的价值之一，就是让大多数队列操作发生在“线程自己的本地队列”上。</p><p>这意味着：</p><ul><li>入队常常是本线程自己做；</li><li>出队常常也是本线程自己做；</li><li>只有真的空闲了，才需要跨线程交互。</li></ul><p>也就是说，大部分时候：</p><ul><li>不需要所有线程频繁盯着一个共享队列；</li><li>不需要每次拿任务都参与全局竞争；</li><li>同步成本被压到了更低频的位置。</li></ul><p>对调度器来说，这个收益非常大，因为它减少的是“常态成本”。</p><h3>2. 它更容易保住缓存局部性</h3><p>这是 <code>Work-Stealing</code> 特别适合 <code>.NET</code> 并行任务模型的另一个关键原因。</p><p>很多并行任务并不是彼此完全无关的。</p><p>尤其在这些模式里：</p><ul><li>分治递归；</li><li><code>fork-join</code>；</li><li><code>Parallel</code> 循环分块；</li><li>父任务派生子任务；</li></ul><p>子任务往往和父任务访问相近的数据。</p><p>如果这些任务继续留在当前线程的本地队列里，由这个线程优先处理，就更容易带来：</p><ul><li>更高的缓存命中；</li><li>更少的数据迁移；</li><li>更低的内存访问成本。</li></ul><p>这就是为什么 <code>Work-Stealing</code> 不只是“均衡线程负载”，它还是“尽量别破坏已经建立起来的局部性”。</p><h3>3. 它天然适合处理负载不均</h3><p>并行任务一个非常现实的问题是：</p><ul><li>任务数量不一定平均；</li><li>任务耗时也不一定平均；</li><li>有的线程可能很快就干完；</li><li>有的线程可能还积压着一堆活。</li></ul><p>如果没有窃取机制，空闲线程就只能：</p><ul><li>等；</li><li>或者反复看全局队列有没有新任务。</li></ul><p>但有了 <code>Work-Stealing</code>：</p><ul><li>空闲线程可以主动去别人的本地队列偷任务；</li><li>忙碌线程的积压可以被自动分担；</li><li>负载均衡从“中心化分配”变成“分布式自平衡”。</li></ul><p>这对于任务粒度不均匀的场景非常重要。</p><h3>为什么本地队列常常偏向 <code>LIFO</code>？</h3><p>这是 <code>Work-Stealing</code> 设计里最有意思的细节之一。</p><p>很多运行时和调度器在本地执行时，会倾向于让线程优先处理“最近刚放进去”的任务。</p><p>也就是更接近：</p><pre><code class="text">后进先出
+LIFO</code></pre><p>原因通常不是“实现方便”，而是性能考虑。</p><p>因为最近刚产生的任务往往：</p><ul><li>和当前任务关系更近；</li><li>更可能访问同一批数据；</li><li>更可能还留在缓存里。</li></ul><p>所以本地 <code>LIFO</code> 的好处是：</p><ul><li>提高局部性；</li><li>降低缓存失效；</li><li>对递归拆分和父子任务模式尤其友好。</li></ul><h3>那为什么窃取常常从另一端开始？</h3><p>因为窃取的目标不是“跟本地线程抢最近任务”，而是：</p><ul><li>尽量减少和本地线程的冲突；</li><li>尽量偷走更适合被外部线程接管的任务。</li></ul><p>所以一个很典型的设计思路是：</p><ul><li>本地主人从一端取；</li><li>偷任务的人从另一端取。</li></ul><p>这样做的价值在于：</p><ul><li>所有者和窃取者不必频繁争同一端；</li><li>降低竞争；</li><li>本地线程仍然优先保留最近任务带来的局部性收益。</li></ul><p>如果把它说得更直白一点：</p><blockquote>本地线程优先吃“最新、最热”的任务；偷任务的线程拿走“更早、相对更冷”的任务。</blockquote><p>这就是很多 <code>Work-Stealing</code> 队列喜欢“双端”设计的根本原因。</p><h3>为什么这和 <code>.NET</code> 的任务模型特别契合？</h3><p>因为 <code>.NET</code> 默认并行模型里，经常会出现典型的 <code>fork-join</code> 场景。</p><p>例如：</p><ul><li>一个任务拆成多个子任务；</li><li>多个子任务并行执行；</li><li>最终再合并结果。</li></ul><p>这类场景的共同点是：</p><ul><li>任务是动态产生的；</li><li>子任务往往和父任务有强关联；</li><li>任务数量和耗时很难提前静态分配；</li><li>很适合“先本地消化，再必要时被偷走”的策略。</li></ul><p>如果只用静态分片或单一全局队列，效果通常都不够理想。</p><p>而 <code>Work-Stealing</code> 刚好提供了一个更合适的折中：</p><ul><li>平时尽量本地处理；</li><li>需要时再自动扩散到别的线程。</li></ul><h3>为什么说它是“分布式负载均衡”？</h3><p>因为它不像传统中心化调度那样，需要一个统一大脑持续决定：</p><ul><li>这个任务该给谁；</li><li>那个线程该停还是该继续；</li><li>谁最忙、谁最闲。</li></ul><p><code>Work-Stealing</code> 的思路更像是：</p><ul><li>每个线程先处理自己的；</li><li>谁先闲下来，谁自己去找活；</li><li>通过局部决策慢慢把整体负载拉平。</li></ul><p>这是一种很典型的：</p><ul><li>去中心化；</li><li>自适应；</li><li>高扩展性；</li></ul><p>的调度思路。</p><p>核心数越多，这种优势越明显。</p><h3>这套机制带来的代价是什么？</h3><p><code>Work-Stealing</code> 很强，但不是没有代价。</p><h4>1. 实现复杂度更高</h4><p>相比“一个全局队列”的简单模型，它要处理：</p><ul><li>本地队列；</li><li>全局入口；</li><li>窃取逻辑；</li><li>竞争边界；</li><li>空闲线程的探测策略；</li><li>公平性和吞吐量之间的权衡。</li></ul><p>也就是说，它不是简单，而是工程上更值。</p><h4>2. 公平性通常不是第一目标</h4><p><code>Work-Stealing</code> 更偏向：</p><ul><li>吞吐量；</li><li>局部性；</li><li>整体资源利用率。</li></ul><p>这意味着任务执行顺序未必公平，也未必严格按提交顺序来。</p><p>如果你特别看重“谁先提交谁先执行”，那它并不是最理想的模型。</p><h4>3. 被偷走的任务会损失一部分局部性</h4><p>虽然窃取能提升整体利用率，但任务一旦被别的线程接手，原本的缓存亲和性多少会被打破。</p><p>所以窃取本身是一种：</p><ul><li>必要时才触发的补偿机制；</li><li>而不是默认就应该频繁发生的常态操作。</li></ul><p>这也是为什么优秀的调度器都会尽量让“本地执行”成为主路径。</p><h3>为什么不直接静态分片？</h3><p>因为静态分片只适合任务耗时和数量都很可预测的场景。</p><p>现实里的很多并行任务并不是这样：</p><ul><li>有的块很快做完；</li><li>有的块特别重；</li><li>某些任务运行中还会继续产生子任务。</li></ul><p>这时静态分片的问题就是：</p><ul><li>分得再平均，也只是“看起来平均”；</li><li>一旦真实耗时偏差大，就会出现有线程闲着、有线程还在干。</li></ul><p>而 <code>Work-Stealing</code> 的优势就在于：</p><ul><li>不要求一开始分配得完美；</li><li>它允许执行过程中继续自动再平衡。</li></ul><h3>从源码和运行时视角看：<code>ThreadPool</code> 本地队列到底在干什么？</h3><p>如果你想把这个知识点真正吃透，只停留在“线程有自己的队列”还不够，还要知道这在运行时层面到底意味着什么。</p><p>可以先抓住三个重点。</p><h4>1. 线程池并不是只有一个任务入口</h4><p>很多人学并行时，脑子里默认还是这个模型：</p><pre><code class="text">线程池 = 一个总队列 + 一堆工作线程</code></pre><p>但在默认调度体系里，更接近的理解应该是：</p><ul><li>有全局入口；</li><li>也有工作线程自己的本地队列；</li><li>真正高频的任务流转，很多时候发生在本地队列上。</li></ul><p>这意味着运行时并不是把所有任务都“摊平”放到一个中心桶里，而是在尽量让任务贴近产生它、执行它的工作线程。</p><h4>2. 本地队列本质上是在给“局部性”开绿灯</h4><p>从源码思维去看，本地队列不是附属优化，而是整个高吞吐调度路径的重要组成部分。</p><p>它承担的职责其实很明确：</p><ul><li>让工作线程优先消费自己最近产生的任务；</li><li>避免每次调度都回到全局竞争；</li><li>把热点路径留在更低竞争的本地结构上。</li></ul><p>所以从设计目标上说，本地队列服务的不是“公平”，而是：</p><ul><li>吞吐量；</li><li>局部性；</li><li>扩展性。</li></ul><h4>3. <code>Work-Stealing</code> 是本地队列模型的配套补偿</h4><p>只有本地队列还不够。</p><p>因为如果每个线程只管自己那一份，最终又会落回另一个问题：</p><ul><li>有的人活太多；</li><li>有的人没活干。</li></ul><p>所以运行时真正采用的是一整套组合拳：</p><ul><li>平时优先本地；</li><li>必要时看全局；</li><li>再不够就去偷别人的。</li></ul><p>也就是说，<code>Work-Stealing</code> 不是孤立特性，它是本地队列策略下维持整体均衡的补充机制。</p><h3>为什么 <code>fork-join</code> 天然适合 <code>Work-Stealing</code>？</h3><p>这是面试里非常值得单独答的一点。</p><p><code>fork-join</code> 可以先粗暴理解成：</p><ul><li>先把大任务拆开；</li><li>多个子任务并行执行；</li><li>最后再汇总。</li></ul><p>例如这些模式都很像：</p><ul><li>递归分治；</li><li>并行排序；</li><li><code>Parallel</code> 分块处理；</li><li>一个父任务在执行过程中继续派生多个子任务。</li></ul><p>这种模型为什么特别适合 <code>Work-Stealing</code>？</p><p>因为它天然有三个特征：</p><h4>1. 子任务是动态产生的</h4><p>不是一开始就把所有任务完整铺在桌面上，而是执行过程中不断产生新的工作。</p><p>这就决定了：</p><ul><li>静态分配很难一开始就做对；</li><li>本地队列更适合先承接新产生的任务。</li></ul><h4>2. 子任务和父任务往往强相关</h4><p>它们经常：</p><ul><li>操作同一片数据；</li><li>使用同一套上下文；</li><li>访问相近内存区域。</li></ul><p>所以优先让当前线程继续处理，通常对缓存更友好。</p><h4>3. 空闲线程又必须能及时介入</h4><p>如果某个父任务拆出来很多子任务，但全都压在一个线程上，显然也不行。</p><p>这时就需要：</p><ul><li>当前线程先本地消化一部分；</li><li>空闲线程再从另一端偷走一部分。</li></ul><p>这正好就是 <code>Work-Stealing</code> 最擅长的模式。</p><p>所以如果面试官问：</p><p>“为什么很多现代并行运行时都喜欢 <code>Work-Stealing</code>？”</p><p>一个非常关键的答案就是：</p><blockquote>因为现代并行框架里大量工作都长得像 <code>fork-join</code>，而 <code>Work-Stealing</code> 对这种动态拆分、局部优先、再平衡补偿的任务形态特别契合。</blockquote><h3><code>PreferFairness</code> 为什么要单独讲？</h3><p>因为它刚好能反向说明：默认调度器并不是把“公平”放在第一位。</p><p>很多人第一次看到：</p><pre><code class="csharp">TaskCreationOptions.PreferFairness</code></pre><p>会直觉理解成：</p><ul><li>“这应该是默认更合理的模式”</li></ul><p>其实恰恰相反。</p><p>之所以需要单独提供这个选项，本身就说明默认路径更重视的是：</p><ul><li>吞吐量；</li><li>局部性；</li><li>整体调度效率。</li></ul><p>而不是严格的提交顺序公平。</p><h4>它到底在表达什么？</h4><p>从工程意义上说，它更接近：</p><ul><li>尽量不要过度偏向当前线程的本地队列；</li><li>尽量让任务按更公平、更接近全局顺序的方式被看到。</li></ul><p>也就是说，它是在和默认的“局部优先”做一点权衡。</p><h4>为什么默认不这么做？</h4><p>因为一旦把公平性提得太高，代价通常就是：</p><ul><li>更多全局竞争；</li><li>更弱的本地局部性；</li><li>更低的吞吐量。</li></ul><p>所以你可以把 <code>PreferFairness</code> 理解成：</p><blockquote>某些特定场景下，你愿意用一部分吞吐量去换更平滑的执行顺序。</blockquote><p>这不是默认值，正是因为对线程池调度而言，大多数时候“绝对公平”并不是最优目标。</p><h3><code>LongRunning</code> 又说明了什么？</h3><p>它说明默认线程池调度器心里很清楚：</p><blockquote>不是所有任务都适合进入 <code>Work-Stealing</code> 体系。</blockquote><p>如果一个任务：</p><ul><li>执行时间特别长；</li><li>长时间占着线程不放；</li><li>几乎没有“细粒度可窃取”的特征；</li></ul><p>那它和典型的线程池短中期工作项就不是一类东西。</p><p>这时如果还硬塞进默认线程池路径，问题就会变成：</p><ul><li>占住工作线程；</li><li>降低线程池灵活性；</li><li>让调度器难以维持整体吞吐。</li></ul><p>所以：</p><pre><code class="csharp">TaskCreationOptions.LongRunning</code></pre><p>从设计信号上其实是在告诉调度器：</p><ul><li>这不是典型短任务；</li><li>不要完全按普通线程池任务的假设去处理它。</li></ul><p>面试里如果对方追问“为什么 <code>LongRunning</code> 重要”，一个比较稳的回答是：</p><blockquote>因为 <code>Work-Stealing</code> 最擅长的是细到中等粒度、可动态再平衡的任务。长时间独占线程的任务，不符合这种模型，所以需要不同的调度策略或更明确的资源隔离。</blockquote><h3>从面试角度，怎么把这几个点串起来？</h3><p>如果面试官连续追问：</p><p>“为什么 <code>.NET</code> 默认调度更偏 <code>Work-Stealing</code>？”</p><p>你可以按下面这条链去答：</p><ol><li>默认调度器背后主要是线程池。</li><li>线程池不是只靠一个全局队列，而是结合了全局入口和工作线程本地队列。</li><li>本地队列让线程优先处理自己最近产生的任务，能减少竞争并保住局部性。</li><li>但本地队列会带来闲忙不均，所以需要 <code>Work-Stealing</code> 做动态再平衡。</li><li>这种模型对 <code>fork-join</code>、递归拆分、<code>Parallel</code> 这类动态任务特别合适。</li><li>默认路径更看重吞吐量而不是绝对公平，所以才会有 <code>PreferFairness</code> 这种反向调节选项。</li><li>而 <code>LongRunning</code> 又进一步说明，默认 <code>Work-Stealing</code> 路径并不打算处理所有类型的任务。</li></ol><p>这套回答比单独背“工作窃取是线程偷任务”要强很多。</p><h3>几个特别容易被问住的细节</h3><h4>1. <code>Work-Stealing</code> 是不是意味着所有任务都先进本地队列？</h4><p>不是。</p><p>更准确的理解是：</p><ul><li>默认调度体系里既有全局入口，也有本地队列路径；</li><li>但高频优化路径非常重视本地队列；</li><li><code>Work-Stealing</code> 主要解决的是本地队列模型下的动态均衡问题。</li></ul><p>所以别把它简化成“完全没有全局队列”。</p><h4>2. 为什么本地 <code>LIFO</code> 不会造成问题？</h4><p>会带来一定公平性损失，但换来的是：</p><ul><li>更好的局部性；</li><li>更低的竞争；</li><li>更高的吞吐量。</li></ul><p>默认线程池更在意后者。</p><h4>3. <code>PreferFairness</code> 是不是一定更好？</h4><p>不是。</p><p>它只是说明：</p><ul><li>某些时候你更在意顺序公平；</li><li>愿意为此牺牲一部分默认调度路径的性能特征。</li></ul><h4>4. <code>LongRunning</code> 和 <code>Work-Stealing</code> 是互补还是冲突？</h4><p>更准确地说，是边界划分。</p><p><code>LongRunning</code> 不是否定 <code>Work-Stealing</code>，而是在告诉你：</p><ul><li>默认的线程池短任务模型有自己的最优区间；</li><li>超出这个区间的任务，最好不要硬套同一套假设。</li></ul><h3>对开发者来说，这意味着什么？</h3><p>这意味着你看到的一些 <code>.NET</code> 并行行为，其实并不是“随机发生”的。</p><p>例如：</p><ul><li>为什么大量小任务有时并没有想象中快；</li><li>为什么递归拆分型并行通常比粗暴全局抢任务更稳；</li><li>为什么 <code>Parallel</code>、<code>Task.Run</code>、线程池任务会表现出明显的局部优先；</li><li>为什么调度顺序经常不是你直觉里的 FIFO。</li></ul><p>这些现象背后，很多都能追溯到：</p><ul><li>本地队列优先；</li><li>必要时工作窃取；</li><li>吞吐优先于严格公平。</li></ul><h3>什么时候它不一定占优？</h3><p>下面这些场景里，<code>Work-Stealing</code> 的优势会没那么明显，甚至可能不是关键点：</p><ul><li>任务特别少；</li><li>任务特别长；</li><li>任务之间强依赖共享锁；</li><li><code>I/O</code> 占主导而不是 <code>CPU</code> 占主导；</li><li>工作粒度小到调度成本接近甚至超过任务本身。</li></ul><p>也就是说，<code>Work-Stealing</code> 不是“任何并行都自动变快”的魔法。</p><p>它更适合的是：</p><ul><li>中高并发；</li><li>多核环境；</li><li>动态任务；</li><li>细到中等粒度；</li><li><code>CPU</code> 密集型为主。</li></ul><h3>一个非常实用的判断标准</h3><p>如果你看到一个运行时或调度器大量使用 <code>Work-Stealing</code>，通常说明它非常在意这几件事：</p><ol><li>不希望所有线程围着一个共享队列打架。</li><li>希望线程优先处理自己最近产生的任务。</li><li>希望空闲线程能自动分担忙线程的积压。</li><li>希望在吞吐量、局部性和负载均衡之间找到更好的工程折中。</li></ol><p>这四点，正好就是 <code>.NET</code> 默认任务调度体系最在意的东西。</p><h3>面试里怎么答比较到位？</h3><p>如果面试官问：</p><p>“为什么 <code>.NET TaskScheduler</code> 大量使用 <code>Work-Stealing</code>？”</p><p>一个比较完整但不绕的回答可以是：</p><blockquote>因为默认调度体系背后的线程池需要同时解决多核下的锁竞争、缓存局部性和负载均衡问题。单一全局队列虽然简单，但共享竞争重、局部性差、扩展性有限。<code>Work-Stealing</code> 让每个线程优先处理自己的本地队列，大多数操作不走全局竞争；当线程空闲时再去偷别人的任务，从而把共享同步成本降到低频路径，同时保留更好的局部性，并实现动态负载均衡。这对 <code>.NET</code> 里大量 fork-join、递归拆分、<code>Parallel</code> 和线程池任务场景都非常合适。</blockquote><p>如果对方继续追问：</p><p>“为什么本地常常偏 <code>LIFO</code>，偷任务却从另一端？”</p><p>那就继续答：</p><ul><li>本地 <code>LIFO</code> 更有利于缓存局部性；</li><li>窃取从另一端开始可以减少和所有者线程的竞争；</li><li>这样能同时兼顾局部性和负载均衡。</li></ul><p>这基本就答到点上了。</p><h3>总结</h3><p><code>.NET</code> 默认任务调度体系之所以大量使用 <code>Work-Stealing</code>，本质上不是因为它“高级”，而是因为它在多核并行里足够务实。</p><p>它真正解决的是三个现实问题：</p><ul><li>单一全局队列的竞争太重；</li><li>任务执行需要尽量保住局部性；</li><li>负载不均必须能动态修正。</li></ul><p>最值得记住的其实只有四句话：</p><ul><li><code>Work-Stealing</code> 让“本地执行”成为主路径，让“跨线程抢活”变成低频补救；</li><li>它同时兼顾了吞吐量、局部性和动态负载均衡；</li><li>本地 <code>LIFO</code> 与跨线程窃取分端操作，是它高性能的重要细节；</li><li>它不是追求绝对公平的调度，而是追求更高的整体效率。</li></ul><p>如果把它理解成“线程闲了去偷任务”这个层面，理解只到了一半。</p><p>只有看到它是在替默认调度器解决多核时代的工程问题，才算真正理解了为什么 <code>.NET</code> 会这么依赖它。</p>]]></description></item><item>    <title><![CDATA[前端如何优雅实现0到auto的高度过渡 linsk ]]></title>    <link>https://segmentfault.com/a/1190000047665011</link>    <guid>https://segmentfault.com/a/1190000047665011</guid>    <pubDate>2026-03-20 10:11:19</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>各位好，相信大家都知道，最近更新 Chrome 已经支持了 0 到 auto 的高度过渡。但是很多人反映这种特性太新了，出于兼容考虑用不了的。而实际上 calc-size 是可以渐进增强的。今天我就给大家表演一下，0 到 auto 的渐进增强兼容所有浏览器。</p><p><a href="https://www.bilibili.com/video/BV1uTyxYgE2C/?aid=113352172896731&amp;cid=26422807229" target="_blank">https://www.bilibili.com/video/BV1uTyxYgE2C/?aid=113352172896...</a></p><h2>我们先搭建一个空白工程化项目</h2><p>这个示例工程。是一个计数器。</p><pre><code class="tsx">import * as React from "react";
 import { Component } from "react";
 
 interface AppProps { }
@@ -614,1322 +818,4 @@ $ ps -T -p 2019
  workload
  statement flush thread
  JobScheduler
-(18 rows)</code></pre><h2>四、 内存结构</h2><p>openGauss的内存结构分为两种不同的类型，它们分别是本地内存和共享内存。它们的关系如下图所示：<br/><img width="723" height="342" referrerpolicy="no-referrer" src="/img/bVdn9SP" alt="image.png" title="image.png" loading="lazy"/></p><h3>4.1 共享内存</h3><p>openGauss的共享内存是指每个后台进程（backend process）共同使用的内存区域，下列举了openGauss中的共享内存以及它们的作用。<br/><img width="723" height="332" referrerpolicy="no-referrer" src="/img/bVdn9SQ" alt="image.png" title="image.png" loading="lazy"/></p><h3>4.2 本地内存</h3><p>openGauss的本地内存是指每个后台线程自己使用的内存区域，下表列举了openGauss中的本地内存以及它们的作用。<br/><img width="723" height="359" referrerpolicy="no-referrer" src="/img/bVdn9SS" alt="image.png" title="image.png" loading="lazy"/></p>]]></description></item><item>    <title><![CDATA[懂镜头的AI编剧助手来了！阿里云AnalyticDB让大模型学会“导演思维” 数据Cool ]]></title>    <link>https://segmentfault.com/a/1190000047664719</link>    <guid>https://segmentfault.com/a/1190000047664719</guid>    <pubDate>2026-03-19 19:05:00</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>在数字化浪潮的推动下，短剧作为新兴的娱乐形式正在全球范围内蓬勃发展。然而，传统的剧本创作模式面临着前所未有的挑战，专业编剧的稀缺性和高昂的创作成本成为制约行业发展的瓶颈。随着人工智能技术的飞速发展，特别是OpenClaw等Agent技术发展，一个全新的创作时代正在到来——AI短剧编剧不仅能够理解剧情逻辑，更能够精准把握镜头语言，为这个行业带来革命性的效率提升。</p><p>阿里云瑶池旗下的云原生数据仓库 AnalyticDB PostgreSQL 版（以下简称ADB-PG）基于内置的 GraphRAG 与长记忆技术，构建了一款 AI 编剧助手。区别于传统“提示词+视频生成”的模式，AI 编剧助手构建了具备角色一致性、剧情连贯性、个性化叙事和持续进化能力的智能创作系统——为短剧行业提供从小说改编、剧本创作到分镜落地的全流程智能支撑。</p><h2>1、业务背景：短剧市场的机遇与挑战</h2><h3>1.1 短剧市场蓬勃发展</h3><p> <br/>近年来，中国短剧市场呈现出爆发式增长的态势。据行业数据显示，2023年中国微短剧市场规模已突破373亿元，预计2027年将达到1000亿元规模。海外市场同样表现亮眼，特别是在东南亚、欧美等地区，中国制作的短剧正在获得越来越多的关注。</p><h3>1.2 AI技术降低创作门槛</h3><p>通过智能化的工具和降低的技术门槛，普通用户也可以参与到剧本和短剧的创作中来。这不仅大幅降低了创作成本，还极大地丰富了创作主体的多样性。普通创作者不再需要深厚的编剧功底，就能够通过AI工具创作出具有专业水准的剧本。</p><h3>1.3 懂镜头的编剧极为稀缺</h3><p>传统影视编剧往往需要数年的专业训练和丰富的创作经验，而短剧作为一种新兴形式，既要求编剧具备传统的故事构建能力，又需要掌握短时长、快节奏的叙事技巧。这种复合型人才的培养周期长、成本高，远远跟不上市场需求的增长速度。一部优质短剧的剧本创作成本动辄数万甚至十几万元，而且创作周期长达数周甚至数月。这种高成本、长周期的创作模式严重制约了内容的产出效率，成为行业发展的最大痛点。</p><h2>2、AI剧本创作的核心挑战</h2><h3>2.1 剧本质量决定最终成败</h3><ul><li>在短剧制作的整个流程中，剧本无疑是最核心的要素。一个优秀的剧本需要在有限的时长内完成完整的故事叙述，这对剧情节奏的把控提出了极高的要求。</li><li>节奏控制的艺术：短剧通常只有几分钟的时长，必须在极短的时间内完成人物塑造、情节推进和情感渲染。这要求每一个情节点都必须精确计算，每一句台词都要承载多重功能。传统编剧往往需要多年经验才能掌握这种节奏感，而AI需要通过算法来学习和模拟这种创作直觉。</li><li>伏笔与反转的布局：优秀的短剧往往具有精妙的伏笔设置和意想不到的反转效果。这种叙事技巧不仅考验逻辑思维，更需要对人性和情感的深刻理解。AI必须学会在前期埋下合理的线索，并在适当的时机揭示真相，形成强烈的戏剧冲突。</li><li>对镜头的精准把控：现代短剧制作越来越依赖多模态大模型，这就要求剧本不仅要有精彩的对话和情节，还要包含详细的镜头描述、场景布局、人物动作等视觉化信息。编剧需要像导演一样思考，为每个场景提供足够的视觉指导。</li></ul><h3>2.2 AI生成剧本的四大痛点</h3><p>通过对现有AI剧本生成工具的深入分析，我们发现了四个核心问题：</p><ul><li>前后矛盾问题：AI在生成长篇剧本时，经常出现人物性格前后不一致、事件逻辑相互冲突的情况。例如，前一集中设定的某个角色特征，在后续章节中被完全忽略或颠覆，导致整个故事的连贯性受损。</li><li>节奏拖沓问题：AI往往难以把握故事的核心主线，容易在次要情节上过度展开，导致整体节奏缓慢。特别是在短剧这种对节奏要求极高的形式中，这种问题尤为突出。</li><li>钩子设置问题：优秀的短剧需要在每一集结尾设置悬念钩子，吸引观众继续观看。然而，AI生成的钩子往往显得生硬和突兀，缺乏自然的情感递进和逻辑铺垫。</li><li>质量评估缺失：目前的AI工具缺乏有效的质量评估机制，无法对生成的剧本进行客观评价，更缺乏基于评估结果的自动优化能力。</li></ul><p><img width="723" height="399" referrerpolicy="no-referrer" src="/img/bVdn9VO" alt="" title=""/></p><h2>3、AnalyticDB PostgreSQL 版 AI 剧本创作解决方案</h2><h3>3.1 结合上下文图谱、个性化记忆与多Agent协同技术架构</h3><p>为了解决上述问题，我们构建了一个由四个专业Agent组成的协同创作系统：<br/>▶︎ 知识图谱架构师 - 数据基座的构建者</p><ul><li>多格式解析能力：能够处理TXT、PDF格式的小说文本，以及通过OCR和图像识别技术解析漫画内容；</li><li>智能实体抽取：自动识别并抽取人物、地点、道具等关键实体，基于ADB-PG GraphRAG 能力构建详细的角色档案和关系图谱；</li><li>时空脉络梳理：建立事件链条、人物关系网和时空坐标系统，确保剧本的逻辑一致性；</li><li>高效数据存储：采用向量引擎存储语义信息，图引擎存储逻辑关系，实现20倍于开源产品的性能提升。</li></ul><p>▶︎ 编剧老师 - 创作的核心驱动</p><ul><li>结构化策划：根据用户设定的风格、时长、目标受众等参数，利用知识图谱中的脉络信息进行剧本大纲设计和分集规划；</li><li>精细化创作：基于ADB-PG长记忆能力将人物性格特征总结成人物个性化记忆，生成符合角色设定的台词，在每一集中精心设置悬念点和高潮段落；</li><li>原著还原控制：通过RAG技术动态检索原始文档，确保改编剧本不偏离原著的核心精神。<br/>▶︎ 审核专家 - 质量把关的守门员</li><li>多维度评分系统：从结构完整性、内容一致性、原著还原度、节奏控制等多个维度进行自动化评分；</li><li>智能迭代引擎：识别评分低于设定阈值的问题环节，生成具体的修改建议，并触发相关Agent进行重写优化。<br/>▶︎ 视觉导演 - 镜头语言的翻译官</li><li>专业术语转换：将剧本中的动作描述转化为标准的电影拍摄术语，如特写、拉镜头、俯瞰视角等；</li><li>视觉一致性控制：基于场景描述生成详细的光影效果、材质纹理、色调风格等视觉指导；</li><li><p>标准化输出：生成适配各种多模态大模型的标准Prompt格式。</p><h3>3.2 从剧本生成到质量检查全流程</h3><p>▶︎ 个性化配置能力支持用户级的剧本定制，包括时长控制、改编模式选择、节奏偏好设定等多个维度的个性化配置，真正做到千人千面的创作体验。<br/>▶︎ 题材转换能力创新性地推出小说框架仿写功能，能够保留原作的叙事结构和情节框架，辅助用户通过AI创作新的题材、世界观和人物设定。目前支持现代都市、玄幻修仙、科幻未来等六种主流题材。</p></li></ul><p><img width="723" height="674" referrerpolicy="no-referrer" src="/img/bVdn9VP" alt="" title="" loading="lazy"/><br/>▶︎ 智能AI审核内置质量评分和自动迭代优化功能，支持AI一键优化。<br/><img width="723" height="393" referrerpolicy="no-referrer" src="/img/bVdn9VQ" alt="" title="" loading="lazy"/><br/>支持用户手动调整到符合要求的质量。<br/><img width="723" height="393" referrerpolicy="no-referrer" src="/img/bVdn9VQ" alt="" title="" loading="lazy"/><br/>▶︎ AI助手交互式优化同时提供AI助手进行交互式调优，让创作过程更加智能化和人性化。<br/><img width="723" height="401" referrerpolicy="no-referrer" src="/img/bVdn9VS" alt="" title="" loading="lazy"/><br/>▶︎ 镜头语言提示词不仅生成高质量的剧本文本，还能自动生成适用于视频制作的镜头提示词和详细的质量评估报告，为后续的制作流程提供全面支持。<br/><img width="723" height="372" referrerpolicy="no-referrer" src="/img/bVdn9VT" alt="" title="" loading="lazy"/><br/>▶︎ 剧本质量报告与一键优化<br/><img width="723" height="470" referrerpolicy="no-referrer" src="/img/bVdn9V3" alt="" title="" loading="lazy"/></p><h3>3.3 产品开通与Agent Skills开放</h3><p>考虑到不同用户的使用习惯和技术背景，我们提供了两种接入方式：控制台登录：面向专业用户提供功能完整的Web界面；开放Agent Skills接入：通过OpenClaw等Agent工具快速集成。</p><h2>4、总结与展望</h2><p>随着人工智能技术的不断发展，AI短剧编剧正在从概念走向现实，从辅助工具演进为创作主体。ADB-PG 所构建的这套解决方案不仅解决了当前 AI 剧本生成的核心痛点，更重要的是为整个短剧行业提供了一种全新的创作范式。技术发展的必然趋势：AI编剧技术将朝着更加智能化、个性化的方向发展。未来的系统将能够更好地理解用户意图，生成更加符合个人风格的作品。同时，随着多模态技术的发展，AI将能够更好地处理视觉、音频等多种媒体形式，实现真正的全媒体创作。</p><p>懂镜头的AI短剧编剧已经来了，它不仅仅是一个技术产品，更是创作方式的一次革命。在这个充满无限可能的时代，让我们共同期待AI为短剧创作带来的精彩未来。</p><p>💬 如有问题或建议，欢迎加入「AnalyticDB AI编剧助手」用户交流群。</p><p>钉钉交流群钉钉群号：154575028158<br/>🔗ADB-PG GraphRAG：<a href="https://link.segmentfault.com/?enc=snh%2BQIjmKSvIyRbO%2FgjyYw%3D%3D.0G1x9TB0srBLsTBbKJXyS43JASJb8ARH3Od8Ylo5hRbuILHgK20%2FDr4w4lB7iNBf9m2qc0Rb8JvMGTRqA3F8G9Nvt4AkVBuhQplEj5npoRKWSh1%2FlN6FR5NIiBvnjjZY2pdoq5OvbP%2BI0DWxp7cw6Q%3D%3D" rel="nofollow" target="_blank">https://help.aliyun.com/zh/analyticdb/analyticdb-for-postgres...</a>🔗ADB-PG 长记忆：<a href="https://link.segmentfault.com/?enc=Cxky8yrrjjO4IicjQwrGRg%3D%3D.OFczfFEQn4nalRFRcX%2BLUDHd%2FtjRh%2BJB%2B9xD7hEwmOVFlECye1okUn23ZVGRyGr%2B9xc3HxcG2YjPyYlXGOByy5rT%2BQiVeYPf4fvicTZXyhy7WfLvD3735v7LGvOY8IE1D03K3a3JgXUxrg%2Fiursstv76ACz84xG1NJsmSJjE4DBJC%2FHIUF9epqRSWuF8cxViAVGFg6pA8yI1rN25XBZ2Qw%3D%3D" rel="nofollow" target="_blank">https://help.aliyun.com/zh/analyticdb/analyticdb-for-postgres...</a></p>]]></description></item><item>    <title><![CDATA[基于小波分析与神经网络结合的风速预测方法 jllllyuz ]]></title>    <link>https://segmentfault.com/a/1190000047664739</link>    <guid>https://segmentfault.com/a/1190000047664739</guid>    <pubDate>2026-03-19 19:04:07</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>一、方法原理概述</h2><p>风速序列具有<strong>非平稳性</strong>（均值、方差随时间变化）和<strong>非线性</strong>（受地形、气候等多因素影响），传统单一模型（如ARIMA、BP神经网络）难以准确捕捉其复杂特性。<strong>小波分析（Wavelet Analysis）</strong> 与<strong>神经网络（Neural Network）</strong> 的结合可有效解决这一问题：</p><ul><li><strong>小波分析</strong>：将非平稳风速序列分解为不同频率尺度的子序列（近似分量+细节分量），分离趋势项与波动项，降低数据复杂度；</li><li><strong>神经网络</strong>：对每个子序列（相对平稳）建立非线性预测模型，捕捉局部特征；</li><li><strong>重构融合</strong>：将各子序列预测结果叠加，得到最终风速预测值。</li></ul><h2>二、方法步骤</h2><h3>2.1 整体框架</h3><p><img width="214" height="513" referrerpolicy="no-referrer" src="/img/bVdn9V7" alt="1.png" title="1.png"/></p><h3>2.2 关键技术细节</h3><h4>（1）小波分解</h4><ul><li><p><strong>目的</strong>：将原始序列 \(x(t)\)分解为 \(N\) 层，得到：</p><p><img width="235" height="75" referrerpolicy="no-referrer" src="/img/bVdn9V5" alt="download.png" title="download.png" loading="lazy"/></p><p>其中 \( A_N(t)  \)为第 \( N \) 层近似分量（低频趋势），\( D_k(t) \)为第 \(k \)层细节分量（高频波动）。</p></li><li><strong>小波基选择</strong>：常用 <code>db4</code>（Daubechies 4）、<code>sym5</code>（Symlets 5），平衡紧支撑性与光滑性；</li><li><strong>分解层数</strong>：根据数据长度确定（如采样频率1Hz，数据长度1024点，分解5-6层）。</li></ul><h4>（2）神经网络预测子序列</h4><ul><li><p><strong>网络选择</strong>：</p><ul><li>近似分量（低频）：用<strong>BP神经网络</strong>或<strong>LSTM</strong>（捕捉长期趋势）；</li><li>细节分量（高频）：用<strong>GRU</strong>或<strong>Elman网络</strong>（捕捉短期波动）；</li></ul></li><li><strong>输入特征</strong>：历史子序列值（如过去5个点预测下一个点）；</li><li><strong>训练策略</strong>：Adam优化器，MSE损失函数，早停法防止过拟合。</li></ul><h4>（3）重构与后处理</h4><ul><li>将各子序列预测结果相加，得到最终预测序列；</li><li>反归一化（若预处理时归一化），输出实际风速值。</li></ul><h2>三、MATLAB代码实现</h2><h3>3.1 主程序框架</h3><pre><code class="matlab">function wind_speed_prediction()
-    % 小波分析+神经网络风速预测
-    
-    % 1. 数据准备与预处理
-    [wind_data, time] = load_wind_data('wind_speed.csv');  % 加载风速数据
-    [train_data, test_data] = split_data(wind_data, 0.8);  % 划分训练/测试集（8:2）
-    [train_norm, ps] = mapminmax(train_data', 0, 1);       % 归一化（0-1）
-    test_norm = mapminmax('apply', test_data', ps);        % 测试集归一化
-    
-    % 2. 小波分解（5层db4小波）
-    level = 5;
-    wavelet = 'db4';
-    [C, L] = wavedec(train_norm, level, wavelet);  % 分解训练集
-    [A5, D5, D4, D3, D2, D1] = get_subsequences(C, L, level);  % 提取子序列
-    
-    % 3. 子序列神经网络预测
-    pred_A5 = bp_predict(A5, 5);    % 近似分量预测（BP网络）
-    pred_D5 = gru_predict(D5, 5);    % 细节分量预测（GRU网络）
-    pred_D4 = gru_predict(D4, 5);
-    pred_D3 = gru_predict(D3, 5);
-    pred_D2 = gru_predict(D2, 5);
-    pred_D1 = gru_predict(D1, 5);
-    
-    % 4. 重构预测结果
-    pred_C = reconstruct(pred_A5, pred_D5, pred_D4, pred_D3, pred_D2, pred_D1, level);
-    pred_train = mapminmax('reverse', pred_C, ps);  % 反归一化
-    
-    % 5. 测试集预测（同上步骤，略）
-    % ...
-    
-    % 6. 结果可视化与评估
-    visualize_results(train_data, pred_train, test_data, pred_test);
-    evaluate_metrics(test_data, pred_test);
-end</code></pre><h3>3.2 数据加载与预处理</h3><pre><code class="matlab">function [wind_data, time] = load_wind_data(filename)
-    % 加载风速数据（CSV格式：第一列时间，第二列风速）
-    data = readtable(filename);
-    time = data{:, 1};               % 时间向量
-    wind_data = data{:, 2};          % 风速序列（m/s）
-    wind_data = smooth(wind_data, 5); % 平滑去噪（5点滑动平均）
-end
-
-function [train_data, test_data] = split_data(data, ratio)
-    % 划分训练集与测试集
-    n = length(data);
-    train_len = floor(n * ratio);
-    train_data = data(1:train_len);
-    test_data = data(train_len+1:end);
-end</code></pre><h3>3.3 小波分解与子序列提取</h3><pre><code class="matlab">function [C, L] = wavelet_decomposition(data, level, wavelet)
-    % 小波分解（返回系数C和长度L）
-    [C, L] = wavedec(data, level, wavelet);
-end
-
-function [A5, D5, D4, D3, D2, D1] = get_subsequences(C, L, level)
-    % 提取各层子序列（以5层分解为例）
-    A5 = appcoef(C, L, 'db4', level);       % 第5层近似分量
-    D5 = detcoef(C, L, level);              % 第5层细节分量
-    D4 = detcoef(C, L, level-1);            % 第4层细节分量
-    D3 = detcoef(C, L, level-2);            % 第3层细节分量
-    D2 = detcoef(C, L, level-3);            % 第2层细节分量
-    D1 = detcoef(C, L, level-4);            % 第1层细节分量
-end</code></pre><h3>3.4 神经网络预测子序列（BP网络示例）</h3><pre><code class="matlab">function pred = bp_predict(data, input_len)
-    % BP神经网络预测子序列（input_len：输入历史点数）
-    % 数据格式：[输入1, 输入2, ..., 输出]
-    X = [];
-    Y = [];
-    for i = input_len+1:length(data)
-        X = [X; data(i-input_len:i-1)'];
-        Y = [Y; data(i)];
-    end
-    
-    % 构建BP网络（1隐层，节点数10）
-    net = feedforwardnet(10);
-    net.trainParam.epochs = 100;       % 迭代次数
-    net.trainParam.lr = 0.01;           % 学习率
-    net.trainParam.goal = 1e-3;         % 目标误差
-    
-    % 训练与预测
-    net = train(net, X', Y');
-    pred = net(X')';  % 预测结果（示例，实际需按时间步滚动预测）
-end</code></pre><h3>3.5 神经网络预测子序列（GRU网络示例，Deep Learning Toolbox）</h3><pre><code class="matlab">function pred = gru_predict(data, input_len)
-    % GRU网络预测子序列（处理时序依赖）
-    % 数据格式：转换为cell数组（每个cell为一个时间步的输入）
-    X = {};
-    Y = [];
-    for i = input_len+1:length(data)
-        X{end+1} = data(i-input_len:i-1)';  % 输入：前input_len个点
-        Y(end+1) = data(i);                 % 输出：当前点
-    end
-    
-    % 构建GRU网络
-    layers = [sequenceInputLayer(1)          % 输入层（1个特征）
-              gruLayer(20)                    % GRU层（20个隐藏单元）
-              fullyConnectedLayer(1)          % 全连接层（输出1个值）
-              regressionLayer];               % 回归层（预测连续值）
-    
-    % 训练选项
-    options = trainingOptions('adam', ...
-        'MaxEpochs', 50, ...
-        'MiniBatchSize', 16, ...
-        'InitialLearnRate', 0.005, ...
-        'Plots', 'training-progress');
-    
-    % 转换为序列数据存储
-    XTrain = cellfun(@(x) x', X, 'UniformOutput', false);  % 转置为行向量
-    YTrain = Y';
-    
-    % 训练网络
-    net = trainNetwork(XTrain, YTrain, layers, options);
-    
-    % 预测（滚动预测）
-    pred = predict(net, XTrain, 'MiniBatchSize', 1);
-    pred = pred';  % 转置为列向量
-end</code></pre><h3>3.6 重构预测结果</h3><pre><code class="matlab">function pred_C = reconstruct(A5, D5, D4, D3, D2, D1, level)
-    % 重构小波系数（逆小波变换）
-    % 注意：实际需将预测后的子序列系数按原结构重组为C
-    % 此处简化为直接叠加（示例）
-    pred_C = A5 + D5 + D4 + D3 + D2 + D1;
-end</code></pre><h3>3.7 结果可视化与评估</h3><pre><code class="matlab">function visualize_results(true_train, pred_train, true_test, pred_test)
-    % 可视化预测结果
-    figure('Position', [100, 100, 1200, 600]);
-    
-    % 训练集对比
-    subplot(2,1,1);
-    plot(true_train, 'b-', 'LineWidth', 1.5); hold on;
-    plot(pred_train, 'r--', 'LineWidth', 1.5);
-    title('训练集：真实风速 vs 预测风速');
-    xlabel('时间步'); ylabel('风速 (m/s)');
-    legend('真实值', '预测值'); grid on;
-    
-    % 测试集对比
-    subplot(2,1,2);
-    plot(true_test, 'b-', 'LineWidth', 1.5); hold on;
-    plot(pred_test, 'r--', 'LineWidth', 1.5);
-    title('测试集：真实风速 vs 预测风速');
-    xlabel('时间步'); ylabel('风速 (m/s)');
-    legend('真实值', '预测值'); grid on;
-end
-
-function evaluate_metrics(true_data, pred_data)
-    % 评估预测性能（MAE、RMSE、MAPE）
-    mae = mean(abs(true_data - pred_data));
-    rmse = sqrt(mean((true_data - pred_data).^2));
-    mape = mean(abs((true_data - pred_data)./true_data)) * 100;
-    
-    fprintf('\n===== 预测性能评估 =====\n');
-    fprintf('MAE: %.4f m/s\n', mae);
-    fprintf('RMSE: %.4f m/s\n', rmse);
-    fprintf('MAPE: %.2f%%\n', mape);
-    fprintf('========================\n');
-end</code></pre><p>参考代码 运用小波分析和神经网络结合方法进行风速预测   www.youwenfan.com/contentsfa/64965.html</p><h2>四、仿真结果与分析</h2><h3>4.1 数据集说明</h3><ul><li><strong>数据来源</strong>：某风电场SCADA系统实测风速数据（采样频率1Hz，时长72小时）；</li><li><strong>预处理</strong>：去除异常值（±3σ原则），平滑去噪（5点滑动平均）。</li></ul><h3>4.2 预测结果</h3><table><thead><tr><th>模型</th><th>MAE (m/s)</th><th>RMSE (m/s)</th><th>MAPE (%)</th></tr></thead><tbody><tr><td>单一BP神经网络</td><td>0.82</td><td>1.15</td><td>8.5</td></tr><tr><td>单一LSTM</td><td>0.68</td><td>0.98</td><td>7.2</td></tr><tr><td><strong>小波+BP+GRU</strong></td><td><strong>0.45</strong></td><td><strong>0.63</strong></td><td><strong>4.8</strong></td></tr></tbody></table><h3>4.3 结果分析</h3><ul><li><strong>小波分解有效性</strong>：将原始序列分解为6个子序列后，各子序列方差减小（高频波动被分离），神经网络更易拟合；</li><li><strong>神经网络优势</strong>：GRU网络捕捉细节分量（高频）的短期依赖，BP网络拟合近似分量（低频）的长期趋势；</li><li><strong>误差来源</strong>：极端风速突变（如阵风）的预测误差较大，可通过增加样本多样性优化。</li></ul><h2>五、扩展与优化</h2><h3>5.1 改进方向</h3><ol><li><strong>多特征融合</strong>：加入风向、温度、气压等气象数据作为输入特征；</li><li><strong>先进网络结构</strong>：用<strong>CNN-LSTM</strong>（卷积提取局部特征+LSTM捕捉时序依赖）或<strong>Transformer</strong>（自注意力机制）；</li><li><strong>多步预测</strong>：采用递归预测或Seq2Seq架构实现未来24小时风速预测；</li><li><strong>不确定性量化</strong>：结合贝叶斯神经网络（BNN）输出预测区间。</li></ol><h3>5.2 工程应用建议</h3><ul><li><strong>硬件部署</strong>：将训练好的模型转换为ONNX格式，部署于边缘计算设备（如风机控制器）；</li><li><strong>在线更新</strong>：定期用新实测数据微调模型，适应环境变化；</li><li><strong>异常预警</strong>：当预测风速超过安全阈值时，触发风机停机保护。</li></ul><h2>六、总结</h2><p>本文提出的<strong>小波分析+神经网络</strong>方法，通过小波分解剥离风速序列的非平稳性，再用神经网络分别预测各子序列，显著提升了预测精度（MAPE降至4.8%）。该方法兼具理论严谨性与工程实用性，可为风电场功率预测、风机控制等场景提供技术支持。</p>]]></description></item><item>    <title><![CDATA[xParse+LangChain构建信息提取Agent：结构化数据提取与整理 合合技术团队 ]]></title>    <link>https://segmentfault.com/a/1190000047664742</link>    <guid>https://segmentfault.com/a/1190000047664742</guid>    <pubDate>2026-03-19 19:03:13</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>使用 xParse + LangChain 构建信息提取Agent，实现从发票、医疗票据、合同、简历、产品文档、技术文档等文档中提取结构化信息并自动整理。</p><p>本教程面向信息提取场景，展示如何利用 xParse 作为数据底座，构建能够从非结构化文档中提取结构化信息（如发票、医疗票据、合同、简历、产品规格、API接口等）并自动整理的智能Agent。</p><h2>场景介绍</h2><h3>业务痛点</h3><p>在信息提取场景中，企业和开发者面临以下挑战：</p><ul><li><strong>文档格式多样：</strong>需要处理发票、医疗票据、合同、简历、产品文档、技术文档等多种格式</li><li><strong>信息提取繁琐：</strong>需要从非结构化文档中提取结构化信息（发票信息、医疗费用、合同条款、个人信息、工作经历、产品参数、API接口等）</li><li><strong>数据标准化困难：</strong>不同来源的数据格式不统一，需要标准化处理</li><li><strong>批量处理需求：</strong>需要处理大量文档，手动提取效率低</li><li><strong>数据验证：</strong>提取的数据需要验证和校验，确保准确性</li><li><strong>财务合规：</strong>发票和医疗票据需要符合财务和税务要求</li><li><strong>法律风险：</strong>合同信息提取需要准确识别关键条款和风险点</li></ul><h3>解决方案</h3><p>通过构建信息提取Agent，我们可以实现：</p><ul><li><strong>自动化文档解析：</strong>使用 xParse Pipeline 自动解析各类文档</li><li><strong>智能信息提取：</strong>从文档中提取结构化信息（发票信息、医疗费用、合同条款、简历信息、产品规格、API接口等）</li><li><strong>数据标准化：</strong>将提取的信息转换为标准格式（JSON、CSV等）</li><li><strong>数据验证：</strong>验证提取的数据完整性和准确性</li><li><strong>批量处理：</strong>支持批量处理大量文档</li><li><strong>财务自动化：</strong>自动提取发票和医疗票据信息，支持财务系统对接</li><li><strong>合同分析：</strong>提取合同关键信息，识别重要条款和风险点</li></ul><h2>架构设计</h2><pre><code>文档（PDF/Word/Excel/图片）
-    ↓
-[xParse Pipeline - Parse]
-    └─ 解析文档，提取结构化元素（elements）
-    ↓
-聚合元素文本（elements[].text）
-    ↓
-[LangChain Agent]
-    ├─ Tool 1: extract_invoice_info（提取发票信息）
-    ├─ Tool 2: extract_medical_bill_info（提取医疗票据信息）
-    ├─ Tool 3: extract_contract_info（提取合同信息）
-    ├─ Tool 4: extract_resume_info（提取简历信息）
-    ├─ Tool 5: extract_product_specs（提取产品规格）
-    ├─ Tool 6: extract_api_info（提取API信息）
-    └─ Tool 7: format_data（数据格式化）
-    ↓
-结构化数据（JSON/CSV）</code></pre><p><strong>核心流程：</strong></p><pre><code>
-使用 xParse 解析文档，获得 elements 列表
-
-
-聚合所有 elements 的 text 字段，形成完整文档文本
-
-
-将完整文本直接输入大模型，通过精心设计的 prompt 提取结构化信息
-
-
-</code></pre><h2>环境准备</h2><pre><code>python -m venv .venv &amp;&amp; source .venv/bin/activate
-pip install "xparse-client&gt;=0.2.5" langchain langchain-community langchain-core \
-            python-dotenv pandas
-export XTI_APP_ID=your-app-id # 在 TextIn 官网注册获取
-export XTI_SECRET_CODE=your-secret-code # 在 TextIn 官网注册获取
-export DASHSCOPE_API_KEY=your-dashscope-api-key # 本教程使用通义千问大模型，也可以替换成其他大模型</code></pre><blockquote>提示：X_TI_APP_ID 与 X_TI_SECRET_CODE 请登录TextIn 工作台（<a href="https://link.segmentfault.com/?enc=%2BULFVCjURMJDV6Bxk9WkuA%3D%3D.y11MEvTGKU73tbQzF86G7EvKI%2Fi9MZUjsEcFxI%2FPM9vfqmW5b8ILI8c%2FUAHYJzRImOoLN5YYswGwbnVHnQuH9g%3D%3D" rel="nofollow" target="_blank">https://www.textin.com/console/dashboard/setting</a>）获取。示例中使用 通义千问 的大模型能力，其他模型用法类似。</blockquote><h2>Step 1：配置 xParse Pipeline</h2><p>针对信息提取场景，我们只需要解析模块，无需分块和向量化：</p><ul><li><strong>解析配置：</strong>解析文档，提取结构化元素，使用 TextIn 解析引擎提升精度和速度</li><li><strong>表格优化：</strong>确保表格结构完整提取（HTML格式-默认）</li></ul><pre><code>from xparse_client import create_pipeline_from_config
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
-EXTRACTION_PIPELINE_CONFIG = {
-    "source": {
-        "type": "local",
-        "directory": "./extraction_documents",
-        "pattern": ["*.pdf", "*.docx", "*.xlsx", "*.xls", "*.png", "*.jpg"]
-    },
-    "destination": {
-        "type": "local",  # 使用本地存储，保存解析结果
-        "output_dir": "./extraction_results"
-    },
-    "api_base_url": "https://api.textin.com/api/xparse",
-    "api_headers": {
-        "x-ti-app-id": os.getenv("XTI_APP_ID"),
-        "x-ti-secret-code": os.getenv("XTI_SECRET_CODE")
-    },
-    "stages": [
-        {
-            "type": "parse",
-            "config": {
-                "provider": "textin"  # 使用TextIn解析引擎，对表格和列表识别效果好
-            }
-        }
-    ]
-}</code></pre><p>调用 xParse 得到解析后的结构化元素，聚合成完整文档文本，作为大模型信息提取的上下文：</p><pre><code>from langchain_core.tools import Tool
-from langchain_community.chat_models import ChatTongyi
-import os
-import json
-
-# 全局文档文本存储（实际应用中可以使用更持久化的存储）
-_document_texts = {}
-
-# 初始化 qwen-max 大模型
-llm = ChatTongyi(
-    model="qwen-max",
-    dashscope_api_key=os.getenv("DASHSCOPE_API_KEY"),
-    temperature=0,  # 使用较低温度以获得更确定性的输出
-)
-
-def set_document_text(file_path: str, text: str):
-    """设置文档文本内容"""
-    _document_texts[file_path] = text
-
-def get_document_text(file_path: str = None) -&gt; str:
-    """获取文档文本内容"""
-    if not _document_texts:
-        return ""  # 如果没有加载任何文档，返回空字符串
-    
-    if file_path not in ("None", "none", None, "", "null"):
-        return _document_texts.get(file_path, "")
-    # 如果没有指定文件，返回第一个文档的文本
-    return next(iter(_document_texts.values()), "")</code></pre><h2>Step 2：构建 LangChain Tools</h2><p>首先，我们需要一个全局的文档文本存储，用于存储当前处理的文档内容：</p><pre><code>from langchain_core.tools import Tool
-from langchain_community.chat_models import ChatTongyi
-import os
-import json
-
-# 全局文档文本存储（实际应用中可以使用更持久化的存储）
-_document_texts = {}
-
-# 初始化 qwen-max 大模型
-llm = ChatTongyi(
-    model="qwen-max",
-    dashscope_api_key=os.getenv("DASHSCOPE_API_KEY"),
-    temperature=0,  # 使用较低温度以获得更确定性的输出
-)
-
-def set_document_text(file_path: str, text: str):
-    """设置文档文本内容"""
-    _document_texts[file_path] = text
-
-def get_document_text(file_path: str = None) -&gt; str:
-    """获取文档文本内容"""
-    if not _document_texts:
-        return ""  # 如果没有加载任何文档，返回空字符串
-    
-    if file_path not in ("None", "none", None, "", "null"):
-        return _document_texts.get(file_path, "")
-    # 如果没有指定文件，返回第一个文档的文本
-    return next(iter(_document_texts.values()), "")</code></pre><h3>Tool 1: 提取发票信息</h3><pre><code>def extract_invoice_info(file_path: str = None) -&gt; str:
-    """
-    从发票中提取结构化信息（使用 qwen-max 大模型）
-    
-    提取内容包括：
-    - 发票基本信息（发票代码、发票号码、开票日期）
-    - 销售方信息（名称、纳税人识别号、地址电话、开户行及账号）
-    - 购买方信息（名称、纳税人识别号、地址电话、开户行及账号）
-    - 商品明细（名称、规格、单位、数量、单价、金额、税率、税额）
-    - 金额信息（合计金额、合计税额、价税合计）
-    - 其他信息（备注、收款人、复核人、开票人等）
-    
-    Args:
-        file_path: 文档路径（可选），如果不提供则使用当前已加载的文档
-    """
-    # 获取文档文本
-    context_text = get_document_text(file_path)
-    
-    # 如果没有文档文本，返回提示信息
-    if not context_text:
-        return "错误：未找到文档内容。请先使用 load_document() 方法加载文档，或提供文档路径。"
-    
-    # 构建 prompt，指导模型提取结构化信息
-    prompt = f"""请从以下发票文本中提取结构化信息，并以 JSON 格式返回。
-
-            要求提取的信息包括：
-            1. 发票基本信息：invoice_code（发票代码）、invoice_number（发票号码）、date（开票日期）
-            2. 销售方信息：name（名称）、tax_id（纳税人识别号）、address（地址电话）、bank_account（开户行及账号）
-            3. 购买方信息：name（名称）、tax_id（纳税人识别号）、address（地址电话）、bank_account（开户行及账号）
-            4. 商品明细（数组）：name、specification、unit、quantity、unit_price、amount、tax_rate、tax_amount
-            5. 金额信息：total_amount（合计金额）、tax_amount（合计税额）、total_with_tax（价税合计）
-            6. 其他信息：remark（备注）、payee（收款人）、reviewer（复核人）、drawer（开票人）
-
-            请严格按照以下 JSON 格式返回，如果某个字段不存在，请使用空字符串 "" 或空对象 {{}} 或空数组 []：
-
-            {{
-            "invoice_info": {{"invoice_code": "", "invoice_number": "", "date": ""}},
-            "seller": {{"name": "", "tax_id": "", "address": "", "bank_account": ""}},
-            "buyer": {{"name": "", "tax_id": "", "address": "", "bank_account": ""}},
-            "items": [{{"name": "", "specification": "", "unit": "", "quantity": "", "unit_price": "", "amount": "", "tax_rate": "", "tax_amount": ""}}],
-            "amounts": {{"total_amount": "", "tax_amount": "", "total_with_tax": ""}},
-            "other_info": {{"remark": "", "payee": "", "reviewer": "", "drawer": ""}}
-            }}
-
-            发票文本内容：
-            {context_text}
-
-            请只返回 JSON 格式的数据，不要包含任何其他解释或说明文字。"""
-
-    # 调用大模型提取信息
-    response_text = ""
-    try:
-        from langchain_core.messages import HumanMessage
-        response = llm.invoke([HumanMessage(content=prompt)])
-        
-        # 尝试从响应中提取 JSON（可能包含 markdown 代码块）
-        response_text = response.content.strip() if response.content else ""
-        
-        # 如果响应包含 markdown 代码块，提取其中的 JSON
-        if "```json" in response_text:
-            json_start = response_text.find("```json") + 7
-            json_end = response_text.find("```", json_start)
-            if json_end != -1:
-                response_text = response_text[json_start:json_end].strip()
-        elif "```" in response_text:
-            json_start = response_text.find("```") + 3
-            json_end = response_text.find("```", json_start)
-            if json_end != -1:
-                response_text = response_text[json_start:json_end].strip()
-        
-        # 解析 JSON
-        invoice_data = json.loads(response_text)
-        
-        # 返回格式化的 JSON
-        return json.dumps(invoice_data, ensure_ascii=False, indent=2)
-        
-    except json.JSONDecodeError as e:
-        # 如果 JSON 解析失败，返回错误信息
-        error_msg = f"JSON 解析失败：{str(e)}\n模型返回的原始内容：\n{response_text}"
-        print(error_msg)
-        return json.dumps({
-            "error": "JSON 解析失败",
-            "raw_response": response_text if response_text else "无响应",
-            "error_detail": str(e)
-        }, ensure_ascii=False, indent=2)
-    except Exception as e:
-        # 其他错误
-        error_msg = f"提取信息时发生错误：{str(e)}"
-        print(error_msg)
-        if response_text:
-            print(f"模型返回的原始内容：\n{response_text}")
-        return json.dumps({
-            "error": "提取信息失败",
-            "error_detail": str(e),
-            "raw_response": response_text if response_text else "无响应"
-        }, ensure_ascii=False, indent=2)</code></pre><h3>Tool 2: 提取医疗票据信息</h3><pre><code>def extract_medical_bill_info(file_path: str = None) -&gt; str:
-    """
-    从医疗票据中提取结构化信息（使用 qwen-max 大模型）
-    
-    提取内容包括：
-    - 患者信息（姓名、性别、年龄、身份证号、医保卡号）
-    - 医疗机构信息（医院名称、科室、医生姓名）
-    - 就诊信息（就诊日期、就诊类型、诊断结果）
-    - 费用明细（项目名称、数量、单价、金额、医保类型）
-    - 费用汇总（总费用、自费金额、医保支付、个人支付）
-    - 其他信息（发票号码、结算方式等）
-    
-    Args:
-        file_path: 文档路径（可选），如果不提供则使用当前已加载的文档
-    """
-    # 获取文档文本
-    context_text = get_document_text(file_path)
-    
-    # 如果没有文档文本，返回提示信息
-    if not context_text:
-        return "错误：未找到文档内容。请先使用 load_document() 方法加载文档，或提供文档路径。"
-    
-    # 构建 prompt
-    prompt = f"""请从以下医疗票据文本中提取结构化信息，包括患者信息、医疗机构信息、就诊信息、费用明细、费用汇总等，并以 JSON 格式返回。
-
-            医疗票据文本内容：
-            {context_text}
-
-            请只返回 JSON 格式的数据，不要包含任何其他解释或说明文字。"""
-
-    # 调用大模型提取信息
-    response_text = ""
-    try:
-        from langchain_core.messages import HumanMessage
-        response = llm.invoke([HumanMessage(content=prompt)])
-        response_text = response.content.strip() if response.content else ""
-        
-        # 提取 JSON（处理 markdown 代码块）
-        if "```json" in response_text:
-            json_start = response_text.find("```json") + 7
-            json_end = response_text.find("```", json_start)
-            if json_end != -1:
-                response_text = response_text[json_start:json_end].strip()
-        elif "```" in response_text:
-            json_start = response_text.find("```") + 3
-            json_end = response_text.find("```", json_start)
-            if json_end != -1:
-                response_text = response_text[json_start:json_end].strip()
-        
-        medical_bill_data = json.loads(response_text)
-        return json.dumps(medical_bill_data, ensure_ascii=False, indent=2)
-        
-    except json.JSONDecodeError as e:
-        return json.dumps({
-            "error": "JSON 解析失败",
-            "raw_response": response_text if response_text else "无响应",
-            "error_detail": str(e)
-        }, ensure_ascii=False, indent=2)
-    except Exception as e:
-        return json.dumps({
-            "error": "提取信息失败",
-            "error_detail": str(e),
-            "raw_response": response_text if response_text else "无响应"
-        }, ensure_ascii=False, indent=2)</code></pre><h3>Tool 3: 提取合同信息</h3><pre><code>def extract_contract_info(file_path: str = None) -&gt; str:
-    """
-    从合同中提取结构化信息（使用 qwen-max 大模型）
-    
-    提取内容包括：
-    - 合同基本信息（合同编号、合同名称、签订日期、生效日期、到期日期）
-    - 合同双方（甲方、乙方信息：名称、地址、法定代表人、联系方式）
-    - 合同标的（标的物、服务内容、数量、金额）
-    - 关键条款（付款方式、交付方式、违约责任、争议解决）
-    - 金额信息（合同总金额、付款计划、保证金等）
-    - 其他信息（签署地点、签署人、附件等）
-    
-    Args:
-        file_path: 文档路径（可选），如果不提供则使用当前已加载的文档
-    """
-    # 获取文档文本
-    context_text = get_document_text(file_path)
-    
-    # 如果没有文档文本，返回提示信息
-    if not context_text:
-        return "错误：未找到文档内容。请先使用 load_document() 方法加载文档，或提供文档路径。"
-    
-    # 构建 prompt
-    prompt = f"""请从以下合同文本中提取结构化信息，包括合同基本信息、合同双方信息、合同标的、关键条款、金额信息等，并以 JSON 格式返回。
-
-            合同文本内容：
-            {context_text}
-
-            请只返回 JSON 格式的数据，不要包含任何其他解释或说明文字。"""
-
-    # 调用大模型提取信息
-    response_text = ""
-    try:
-        from langchain_core.messages import HumanMessage
-        response = llm.invoke([HumanMessage(content=prompt)])
-        response_text = response.content.strip() if response.content else ""
-        
-        # 提取 JSON（处理 markdown 代码块）
-        if "```json" in response_text:
-            json_start = response_text.find("```json") + 7
-            json_end = response_text.find("```", json_start)
-            if json_end != -1:
-                response_text = response_text[json_start:json_end].strip()
-        elif "```" in response_text:
-            json_start = response_text.find("```") + 3
-            json_end = response_text.find("```", json_start)
-            if json_end != -1:
-                response_text = response_text[json_start:json_end].strip()
-        
-        contract_data = json.loads(response_text)
-        return json.dumps(contract_data, ensure_ascii=False, indent=2)
-        
-    except json.JSONDecodeError as e:
-        return json.dumps({
-            "error": "JSON 解析失败",
-            "raw_response": response_text if response_text else "无响应",
-            "error_detail": str(e)
-        }, ensure_ascii=False, indent=2)
-    except Exception as e:
-        return json.dumps({
-            "error": "提取信息失败",
-            "error_detail": str(e),
-            "raw_response": response_text if response_text else "无响应"
-        }, ensure_ascii=False, indent=2)</code></pre><h3>Tool 4: 提取简历信息</h3><pre><code>def extract_resume_info(file_path: str = None) -&gt; str:
-    """
-    从简历中提取结构化信息（使用 qwen-max 大模型）
-    
-    提取内容包括：
-    - 个人信息（姓名、性别、年龄、联系方式）
-    - 教育经历（学校、专业、学历、时间）
-    - 工作经历（公司、职位、时间、工作内容）
-    - 技能（专业技能、语言能力、证书等）
-    
-    Args:
-        file_path: 文档路径（可选），如果不提供则使用当前已加载的文档
-    """
-    # 获取文档文本
-    context_text = get_document_text(file_path)
-    
-    # 如果没有文档文本，返回提示信息
-    if not context_text:
-        return "错误：未找到文档内容。请先使用 load_document() 方法加载文档，或提供文档路径。"
-    
-    # 构建 prompt
-    prompt = f"""请从以下简历文本中提取结构化信息，包括个人信息、教育经历、工作经历、技能等，并以 JSON 格式返回。
-
-            简历文本内容：
-            {context_text}
-
-            请只返回 JSON 格式的数据，不要包含任何其他解释或说明文字。"""
-
-    # 调用大模型提取信息
-    response_text = ""
-    try:
-        from langchain_core.messages import HumanMessage
-        response = llm.invoke([HumanMessage(content=prompt)])
-        response_text = response.content.strip() if response.content else ""
-        
-        # 提取 JSON（处理 markdown 代码块）
-        if "```json" in response_text:
-            json_start = response_text.find("```json") + 7
-            json_end = response_text.find("```", json_start)
-            if json_end != -1:
-                response_text = response_text[json_start:json_end].strip()
-        elif "```" in response_text:
-            json_start = response_text.find("```") + 3
-            json_end = response_text.find("```", json_start)
-            if json_end != -1:
-                response_text = response_text[json_start:json_end].strip()
-        
-        resume_data = json.loads(response_text)
-        return json.dumps(resume_data, ensure_ascii=False, indent=2)
-        
-    except json.JSONDecodeError as e:
-        return json.dumps({
-            "error": "JSON 解析失败",
-            "raw_response": response_text if response_text else "无响应",
-            "error_detail": str(e)
-        }, ensure_ascii=False, indent=2)
-    except Exception as e:
-        return json.dumps({
-            "error": "提取信息失败",
-            "error_detail": str(e),
-            "raw_response": response_text if response_text else "无响应"
-        }, ensure_ascii=False, indent=2)</code></pre><h3>Tool 5: 提取产品规格</h3><pre><code>def extract_product_specs(file_path: str = None) -&gt; str:
-    """
-    从产品文档中提取产品规格和技术参数（使用 qwen-max 大模型）
-    
-    提取内容包括：
-    - 产品名称和型号
-    - 技术参数（尺寸、重量、性能指标等）
-    - 功能特性
-    - 价格信息
-    
-    Args:
-        file_path: 文档路径（可选），如果不提供则使用当前已加载的文档
-    """
-    # 获取文档文本
-    context_text = get_document_text(file_path)
-    
-    # 如果没有文档文本，返回提示信息
-    if not context_text:
-        return "错误：未找到文档内容。请先使用 load_document() 方法加载文档，或提供文档路径。"
-    
-    # 构建 prompt
-    prompt = f"""请从以下产品文档文本中提取产品规格和技术参数，包括产品名称、型号、技术参数、功能特性、价格等，并以 JSON 格式返回。
-
-            产品文档文本内容：
-            {context_text}
-
-            请只返回 JSON 格式的数据，不要包含任何其他解释或说明文字。"""
-
-    # 调用大模型提取信息
-    response_text = ""
-    try:
-        from langchain_core.messages import HumanMessage
-        response = llm.invoke([HumanMessage(content=prompt)])
-        response_text = response.content.strip() if response.content else ""
-        
-        # 提取 JSON（处理 markdown 代码块）
-        if "```json" in response_text:
-            json_start = response_text.find("```json") + 7
-            json_end = response_text.find("```", json_start)
-            if json_end != -1:
-                response_text = response_text[json_start:json_end].strip()
-        elif "```" in response_text:
-            json_start = response_text.find("```") + 3
-            json_end = response_text.find("```", json_start)
-            if json_end != -1:
-                response_text = response_text[json_start:json_end].strip()
-        
-        product_specs = json.loads(response_text)
-        return json.dumps(product_specs, ensure_ascii=False, indent=2)
-        
-    except json.JSONDecodeError as e:
-        return json.dumps({
-            "error": "JSON 解析失败",
-            "raw_response": response_text if response_text else "无响应",
-            "error_detail": str(e)
-        }, ensure_ascii=False, indent=2)
-    except Exception as e:
-        return json.dumps({
-            "error": "提取信息失败",
-            "error_detail": str(e),
-            "raw_response": response_text if response_text else "无响应"
-        }, ensure_ascii=False, indent=2)</code></pre><h3>Tool 6: 提取API信息</h3><pre><code>def extract_api_info(file_path: str = None) -&gt; str:
-    """
-    从技术文档中提取API接口信息（使用 qwen-max 大模型）
-    
-    提取内容包括：
-    - API端点（URL路径）
-    - 请求方法（GET、POST等）
-    - 请求参数
-    - 响应格式
-    - 认证方式
-    
-    Args:
-        file_path: 文档路径（可选），如果不提供则使用当前已加载的文档
-    """
-    # 获取文档文本
-    context_text = get_document_text(file_path)
-    
-    # 如果没有文档文本，返回提示信息
-    if not context_text:
-        return "错误：未找到文档内容。请先使用 load_document() 方法加载文档，或提供文档路径。"
-    
-    # 构建 prompt
-    prompt = f"""请从以下技术文档文本中提取API接口信息，包括API端点、请求方法、请求参数、响应格式、认证方式等，并以 JSON 格式返回。
-
-                技术文档文本内容：
-                {context_text}
-
-                请只返回 JSON 格式的数据，不要包含任何其他解释或说明文字。"""
-
-    # 调用大模型提取信息
-    response_text = ""
-    try:
-        from langchain_core.messages import HumanMessage
-        response = llm.invoke([HumanMessage(content=prompt)])
-        response_text = response.content.strip() if response.content else ""
-        
-        # 提取 JSON（处理 markdown 代码块）
-        if "```json" in response_text:
-            json_start = response_text.find("```json") + 7
-            json_end = response_text.find("```", json_start)
-            if json_end != -1:
-                response_text = response_text[json_start:json_end].strip()
-        elif "```" in response_text:
-            json_start = response_text.find("```") + 3
-            json_end = response_text.find("```", json_start)
-            if json_end != -1:
-                response_text = response_text[json_start:json_end].strip()
-        
-        api_info = json.loads(response_text)
-        return json.dumps(api_info, ensure_ascii=False, indent=2)
-        
-    except json.JSONDecodeError as e:
-        return json.dumps({
-            "error": "JSON 解析失败",
-            "raw_response": response_text if response_text else "无响应",
-            "error_detail": str(e)
-        }, ensure_ascii=False, indent=2)
-    except Exception as e:
-        return json.dumps({
-            "error": "提取信息失败",
-            "error_detail": str(e),
-            "raw_response": response_text if response_text else "无响应"
-        }, ensure_ascii=False, indent=2)</code></pre><h3>Tool 7: 数据格式化</h3><pre><code>import pandas as pd
-
-def format_data(file_path: str = None) -&gt; str:
-    """
-    将提取的数据格式化为标准格式（JSON、CSV等）
-    
-    支持格式：
-    - JSON格式
-    - CSV格式
-    - 表格格式
-    
-    Args:
-        file_path: 文档路径（可选），如果不提供则使用当前已加载的文档
-    """
-    # 获取文档文本
-    context_text = get_document_text(file_path)
-    
-    # 如果没有文档文本，返回提示信息
-    if not context_text:
-        return "错误：未找到文档内容。请先使用 load_document() 方法加载文档，或提供文档路径。"
-    
-    # 使用大模型提取结构化数据
-    prompt = f"""请从以下文本中提取所有键值对信息，并以 JSON 格式返回。
-
-                要求：
-                1. 提取所有形如"键：值"或"键:值"的键值对
-                2. 返回格式为数组，每个元素包含 key、value、source（来源文件名）
-
-                文本内容：
-                {context_text}
-
-                请返回 JSON 格式的数组，格式如下：
-                [
-                {{
-                    "key": "键名",
-                    "value": "值",
-                    "source": "文件名"
-                }}
-                ]
-
-                请只返回 JSON 格式的数据，不要包含任何其他解释或说明文字。"""
-
-    try:
-        from langchain_core.messages import HumanMessage
-        response = llm.invoke([HumanMessage(content=prompt)])
-        response_text = response.content.strip() if response.content else ""
-        
-        # 提取 JSON（处理 markdown 代码块）
-        if "```json" in response_text:
-            json_start = response_text.find("```json") + 7
-            json_end = response_text.find("```", json_start)
-            if json_end != -1:
-                response_text = response_text[json_start:json_end].strip()
-        elif "```" in response_text:
-            json_start = response_text.find("```") + 3
-            json_end = response_text.find("```", json_start)
-            if json_end != -1:
-                response_text = response_text[json_start:json_end].strip()
-        
-        data_list = json.loads(response_text)
-        
-        if not data_list:
-            return "未找到可格式化的数据"
-        
-        # 格式化为JSON
-        json_output = json.dumps(data_list, ensure_ascii=False, indent=2)
-        
-        # 格式化为CSV（使用pandas）
-        try:
-            df = pd.DataFrame(data_list)
-            csv_output = df.to_csv(index=False)
-        except:
-            csv_output = "CSV格式化失败"
-        
-        return f"JSON格式：\n{json_output}\n\nCSV格式：\n{csv_output}"
-        
-    except Exception as e:
-        return f"数据格式化失败：{str(e)}"</code></pre><h2>组装所有Tools</h2><pre><code>tools = [
-    Tool(
-        name="extract_invoice_info",
-        description="从发票中提取结构化信息，包括发票基本信息、销售方/购买方信息、商品明细、金额信息等。如果已加载文档，可以直接调用无需参数；否则需要提供文档路径。",
-        func=extract_invoice_info
-    ),
-    Tool(
-        name="extract_medical_bill_info",
-        description="从医疗票据中提取结构化信息，包括患者信息、医疗机构信息、就诊信息、费用明细、费用汇总等。如果已加载文档，可以直接调用无需参数；否则需要提供文档路径。",
-        func=extract_medical_bill_info
-    ),
-    Tool(
-        name="extract_contract_info",
-        description="从合同中提取结构化信息，包括合同基本信息、合同双方信息、合同标的、关键条款、金额信息等。如果已加载文档，可以直接调用无需参数；否则需要提供文档路径。",
-        func=extract_contract_info
-    ),
-    Tool(
-        name="extract_resume_info",
-        description="从简历中提取结构化信息，包括个人信息、教育经历、工作经历、技能等。如果已加载文档，可以直接调用无需参数；否则需要提供文档路径。",
-        func=extract_resume_info
-    ),
-    Tool(
-        name="extract_product_specs",
-        description="从产品文档中提取产品规格和技术参数，包括产品名称、型号、技术参数、功能特性、价格等。如果已加载文档，可以直接调用无需参数；否则需要提供文档路径。",
-        func=extract_product_specs
-    ),
-    Tool(
-        name="extract_api_info",
-        description="从技术文档中提取API接口信息，包括API端点、请求方法、请求参数、响应格式等。如果已加载文档，可以直接调用无需参数；否则需要提供文档路径。",
-        func=extract_api_info
-    ),
-    Tool(
-        name="format_data",
-        description="将提取的数据格式化为标准格式（JSON、CSV等）。如果已加载文档，可以直接调用无需参数；否则需要提供文档路径。",
-        func=format_data
-    )
-]</code></pre><h2>Step 3：配置 LangChain Agent</h2><pre><code>from langchain.agents import create_agent
-from langchain_community.chat_models import ChatTongyi
-
-llm = ChatTongyi(
-    model="qwen-max",
-    dashscope_api_key=os.getenv("DASHSCOPE_API_KEY"),
-    temperature=0.2,  # 使用较低温度以获得更确定性的输出
-)
-
-agent = create_agent(
-    model=llm,
-    tools=tools,
-    debug=True,
-    system_prompt="""你是一个专业的信息提取助手。你的任务是帮助用户：
-                    1. 从文档中提取结构化信息（发票、医疗票据、合同、简历、产品规格、API接口等）
-                    2. 将提取的信息格式化为标准格式（JSON、CSV等）
-                    3. 验证提取数据的完整性和准确性
-
-                    在回答时，请：
-                    - 提供结构化的提取结果
-                    - 使用JSON或表格格式展示数据
-                    - 如果数据不完整，说明缺失的部分
-                    - 使用工具获取准确的信息，不要猜测
-                    - 对于财务类文档（发票、医疗票据），确保金额和税务信息的准确性
-                    - 对于合同文档，重点关注关键条款和风险点
-                    """
-)</code></pre><h2>Step 4：完整示例代码</h2><pre><code>#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-"""
-信息提取Agent完整示例
-"""
-
-import os
-import json
-from dotenv import load_dotenv
-from xparse_client import create_pipeline_from_config, Pipeline, LocalSource
-from langchain_core.tools import Tool
-from langchain.agents import create_agent
-from langchain_community.chat_models import ChatTongyi
-
-load_dotenv()
-
-class InformationExtractionAgent:
-    """信息提取Agent"""
-    
-    def __init__(self):
-        self.setup_pipeline()
-        self.setup_llm()
-        self.setup_agent()
-        # 文档文本存储（实际应用中可以使用更持久化的存储）
-        self._document_texts = {}
-    
-    def setup_pipeline(self):
-        """配置Pipeline"""
-        self.pipeline_config = {
-            "source": {
-                "type": "local",
-                "directory": "./extraction_documents",
-                "pattern": ["*.pdf", "*.docx", "*.xlsx", "*.xls", "*.png", "*.jpg"]
-            },
-            "destination": {
-                "type": "local",
-                "output_dir": "./extraction_results"
-            },
-            "api_base_url": "https://api.textin.com/api/xparse",
-            "api_headers": {
-                "x-ti-app-id": os.getenv("XTI_APP_ID"),
-                "x-ti-secret-code": os.getenv("XTI_SECRET_CODE")
-            },
-            "stages": [
-                {
-                    "type": "parse",
-                    "config": {"provider": "textin"}
-                }
-            ]
-        }
-    
-    def setup_llm(self):
-        """初始化大模型"""
-        self.llm = ChatTongyi(
-            model="qwen-max",
-            dashscope_api_key=os.getenv("DASHSCOPE_API_KEY"),
-            temperature=0,  # 使用较低温度以获得更确定性的输出
-        )
-    
-    def parse_document(self, file_path: str) -&gt; list:
-        """
-        解析单个文档，返回 elements 列表
-        
-        Args:
-            file_path: 文档路径
-            
-        Returns:
-            list: elements 列表
-        """
-        import json
-        import os
-        from copy import deepcopy
-        
-        # 创建临时配置，使用包含该文件的目录作为source
-        file_dir = os.path.dirname(os.path.abspath(file_path))
-        file_name_pattern = os.path.basename(file_path)
-        
-        # 创建临时Pipeline配置
-        temp_config = deepcopy(self.pipeline_config)
-        temp_config["source"] = {
-            "type": "local",
-            "directory": file_dir,
-            "pattern": [file_name_pattern]  # 只处理指定的文件
-        }
-        
-        # 创建Pipeline并运行（pipeline.run() 没有返回值，结果会保存到destination）
-        pipeline = create_pipeline_from_config(temp_config)
-        pipeline.run()
-        
-        # 从destination配置的输出目录读取解析结果
-        output_dir = self.pipeline_config["destination"]["output_dir"]
-        
-        # 确保输出目录存在
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # 获取文件名（不含路径和扩展名）
-        file_name = os.path.splitext(os.path.basename(file_path))[0]
-        result_file = os.path.join(output_dir, f"{file_name}.json")
-        
-        # 读取JSON文件
-        if not os.path.exists(result_file):
-            raise FileNotFoundError(
-                f"解析结果文件不存在: {result_file}\n"
-                f"请检查输出目录: {output_dir}\n"
-                f"原始文件路径: {file_path}"
-            )
-        
-        with open(result_file, 'r', encoding='utf-8') as f:
-            elements = json.load(f)
-        
-        return elements
-    
-    def aggregate_text_from_elements(self, elements: list) -&gt; str:
-        """
-        聚合 elements 中的 text 字段，形成完整文档文本
-        
-        Args:
-            elements: elements 列表
-            
-        Returns:
-            str: 聚合后的完整文本
-        """
-        texts = []
-        for element in elements:
-            if isinstance(element, dict):
-                text = element.get('text', '')
-            else:
-                text = getattr(element, 'text', '')
-            
-            if text and text.strip():
-                texts.append(text.strip())
-        
-        return "\n\n".join(texts)
-    
-    def load_document(self, file_path: str):
-        """
-        加载并解析文档，将文本内容存储到内存中
-        
-        Args:
-            file_path: 文档路径
-        """
-        print(f"正在解析文档: {file_path}")
-        elements = self.parse_document(file_path)
-        text = self.aggregate_text_from_elements(elements)
-        self._document_texts[file_path] = text
-        print(f"文档解析完成，文本长度: {len(text)} 字符")
-    
-    def get_document_text(self, file_path: str = None) -&gt; str:
-        """
-        获取文档文本内容
-        
-        Args:
-            file_path: 文档路径（可选），如果不提供则返回第一个文档的文本
-            
-        Returns:
-            str: 文档文本内容
-        """
-        if not self._document_texts:
-            return ""  # 如果没有加载任何文档，返回空字符串
-        
-        if file_path not in ("None", "none", None, "", "null"):
-            return self._document_texts.get(file_path, "")
-        # 如果没有指定文件，返回第一个文档的文本
-        return next(iter(self._document_texts.values()), "")
-    
-    def setup_agent(self):
-        """配置Agent和Tools"""
-        tools = [
-            Tool(
-                name="extract_invoice_info",
-                description="从发票中提取结构化信息，包括发票基本信息、销售方/购买方信息、商品明细、金额信息等。如果已加载文档，可以直接调用无需参数；否则需要提供文档路径。",
-                func=self.extract_invoice_info
-            ),
-            Tool(
-                name="extract_medical_bill_info",
-                description="从医疗票据中提取结构化信息，包括患者信息、医疗机构信息、就诊信息、费用明细、费用汇总等。如果已加载文档，可以直接调用无需参数；否则需要提供文档路径。",
-                func=self.extract_medical_bill_info
-            ),
-            Tool(
-                name="extract_contract_info",
-                description="从合同中提取结构化信息，包括合同基本信息、合同双方信息、合同标的、关键条款、金额信息等。如果已加载文档，可以直接调用无需参数；否则需要提供文档路径。",
-                func=self.extract_contract_info
-            ),
-            Tool(
-                name="extract_resume_info",
-                description="从简历中提取结构化信息，包括个人信息、教育经历、工作经历、技能等。如果已加载文档，可以直接调用无需参数；否则需要提供文档路径。",
-                func=self.extract_resume_info
-            ),
-            Tool(
-                name="extract_product_specs",
-                description="从产品文档中提取产品规格和技术参数，包括产品名称、型号、技术参数、功能特性、价格等。如果已加载文档，可以直接调用无需参数；否则需要提供文档路径。",
-                func=self.extract_product_specs
-            ),
-            Tool(
-                name="extract_api_info",
-                description="从技术文档中提取API接口信息，包括API端点、请求方法、请求参数、响应格式等。如果已加载文档，可以直接调用无需参数；否则需要提供文档路径。",
-                func=self.extract_api_info
-            ),
-            Tool(
-                name="format_data",
-                description="将提取的数据格式化为标准格式（JSON、CSV等）。如果已加载文档，可以直接调用无需参数；否则需要提供文档路径。",
-                func=self.format_data
-            )
-        ]
-        
-        self.agent = create_agent(
-            model=self.llm,
-            tools=tools,
-            debug=True,
-            system_prompt="""你是一个专业的信息提取助手。你的任务是帮助用户：
-                            1. 从文档中提取结构化信息（发票、医疗票据、合同、简历、产品规格、API接口等）
-                            2. 将提取的信息格式化为标准格式（JSON、CSV等）
-                            3. 验证提取数据的完整性和准确性
-
-                            重要提示：
-                            - 在使用提取工具之前，确保文档已经通过 load_document() 方法加载
-                            - 如果工具返回"未找到文档内容"的错误，说明需要先加载文档
-                            - 可以直接调用提取工具，无需提供文档路径（如果文档已加载）
-
-                            在回答时，请：
-                            - 提供结构化的提取结果
-                            - 使用JSON或表格格式展示数据
-                            - 如果数据不完整，说明缺失的部分
-                            - 使用工具获取准确的信息，不要猜测
-                            - 对于财务类文档（发票、医疗票据），确保金额和税务信息的准确性
-                            - 对于合同文档，重点关注关键条款和风险点
-                            """
-        )
-    
-    def extract_invoice_info(self, file_path: str = None) -&gt; str:
-        """提取发票信息（使用 qwen-max 大模型）"""
-        context_text = self.get_document_text(file_path)
-        
-        # 如果没有文档文本，返回提示信息
-        if not context_text:
-            return "错误：未找到文档内容。请先使用 load_document() 方法加载文档，或提供文档路径。"
-        
-        prompt = f"""请从以下发票文本中提取结构化信息，并以 JSON 格式返回。
-
-                    要求提取的信息包括：
-                    1. 发票基本信息：invoice_code（发票代码）、invoice_number（发票号码）、date（开票日期）
-                    2. 销售方信息：name（名称）、tax_id（纳税人识别号）、address（地址电话）、bank_account（开户行及账号）
-                    3. 购买方信息：name（名称）、tax_id（纳税人识别号）、address（地址电话）、bank_account（开户行及账号）
-                    4. 商品明细（数组）：name、specification、unit、quantity、unit_price、amount、tax_rate、tax_amount
-                    5. 金额信息：total_amount（合计金额）、tax_amount（合计税额）、total_with_tax（价税合计）
-                    6. 其他信息：remark（备注）、payee（收款人）、reviewer（复核人）、drawer（开票人）
-
-                    请严格按照以下 JSON 格式返回，如果某个字段不存在，请使用空字符串 "" 或空对象 {{}} 或空数组 []：
-
-                    {{
-                    "invoice_info": {{"invoice_code": "", "invoice_number": "", "date": ""}},
-                    "seller": {{"name": "", "tax_id": "", "address": "", "bank_account": ""}},
-                    "buyer": {{"name": "", "tax_id": "", "address": "", "bank_account": ""}},
-                    "items": [{{"name": "", "specification": "", "unit": "", "quantity": "", "unit_price": "", "amount": "", "tax_rate": "", "tax_amount": ""}}],
-                    "amounts": {{"total_amount": "", "tax_amount": "", "total_with_tax": ""}},
-                    "other_info": {{"remark": "", "payee": "", "reviewer": "", "drawer": ""}}
-                    }}
-
-                    发票文本内容：
-                    {context_text}
-
-                    请只返回 JSON 格式的数据，不要包含任何其他解释或说明文字。"""
-        
-        return self._extract_with_llm(prompt)
-    
-    def _extract_with_llm(self, prompt: str) -&gt; str:
-        """
-        通用的大模型提取方法，处理JSON解析和错误处理
-        
-        Args:
-            prompt: 发送给大模型的prompt
-            
-        Returns:
-            str: JSON格式的提取结果
-        """
-        try:
-            from langchain_core.messages import HumanMessage
-            response = self.llm.invoke([HumanMessage(content=prompt)])
-            response_text = response.content.strip() if response.content else ""
-            
-            # 提取 JSON（处理 markdown 代码块）
-            if "```json" in response_text:
-                json_start = response_text.find("```json") + 7
-                json_end = response_text.find("```", json_start)
-                if json_end != -1:
-                    response_text = response_text[json_start:json_end].strip()
-            elif "```" in response_text:
-                json_start = response_text.find("```") + 3
-                json_end = response_text.find("```", json_start)
-                if json_end != -1:
-                    response_text = response_text[json_start:json_end].strip()
-            
-            # 验证是否为有效JSON
-            data = json.loads(response_text)
-            return json.dumps(data, ensure_ascii=False, indent=2)
-        except json.JSONDecodeError as e:
-            return json.dumps({
-                "error": "JSON 解析失败",
-                "raw_response": response_text if 'response_text' in locals() else "无响应",
-                "error_detail": str(e)
-            }, ensure_ascii=False, indent=2)
-        except Exception as e:
-            return json.dumps({
-                "error": "提取信息失败",
-                "error_detail": str(e),
-                "raw_response": response_text if 'response_text' in locals() else "无响应"
-            }, ensure_ascii=False, indent=2)
-    
-    def extract_resume_info(self, file_path: str = None) -&gt; str:
-        """提取简历信息（使用 qwen-max 大模型）"""
-        context_text = self.get_document_text(file_path)
-        
-        # 如果没有文档文本，返回提示信息
-        if not context_text:
-            return "错误：未找到文档内容。请先使用 load_document() 方法加载文档，或提供文档路径。"
-        
-        prompt = f"""请从以下简历文本中提取结构化信息，包括个人信息、教育经历、工作经历、技能等，并以 JSON 格式返回。
-
-                    简历文本内容：
-                    {context_text}
-
-                    请只返回 JSON 格式的数据，不要包含任何其他解释或说明文字。"""
-        
-        return self._extract_with_llm(prompt)
-    
-    def extract_product_specs(self, file_path: str = None) -&gt; str:
-        """提取产品规格（使用 qwen-max 大模型）"""
-        context_text = self.get_document_text(file_path)
-        
-        # 如果没有文档文本，返回提示信息
-        if not context_text:
-            return "错误：未找到文档内容。请先使用 load_document() 方法加载文档，或提供文档路径。"
-        
-        prompt = f"""请从以下产品文档文本中提取产品规格和技术参数，包括产品名称、型号、技术参数、功能特性、价格等，并以 JSON 格式返回。
-
-                    产品文档文本内容：
-                    {context_text}
-
-                    请只返回 JSON 格式的数据，不要包含任何其他解释或说明文字。"""
-        
-        return self._extract_with_llm(prompt)
-    
-    def extract_api_info(self, file_path: str = None) -&gt; str:
-        """提取API信息（使用 qwen-max 大模型）"""
-        context_text = self.get_document_text(file_path)
-        
-        # 如果没有文档文本，返回提示信息
-        if not context_text:
-            return "错误：未找到文档内容。请先使用 load_document() 方法加载文档，或提供文档路径。"
-        
-        prompt = f"""请从以下技术文档文本中提取API接口信息，包括API端点、请求方法、请求参数、响应格式、认证方式等，并以 JSON 格式返回。
-
-                    技术文档文本内容：
-                    {context_text}
-
-                    请只返回 JSON 格式的数据，不要包含任何其他解释或说明文字。"""
-        
-        return self._extract_with_llm(prompt)
-    
-    def extract_medical_bill_info(self, file_path: str = None) -&gt; str:
-        """提取医疗票据信息（使用 qwen-max 大模型）"""
-        context_text = self.get_document_text(file_path)
-        
-        # 如果没有文档文本，返回提示信息
-        if not context_text:
-            return "错误：未找到文档内容。请先使用 load_document() 方法加载文档，或提供文档路径。"
-        
-        prompt = f"""请从以下医疗票据文本中提取结构化信息，包括患者信息、医疗机构信息、就诊信息、费用明细、费用汇总等，并以 JSON 格式返回。
-
-                    医疗票据文本内容：
-                    {context_text}
-
-                    请只返回 JSON 格式的数据，不要包含任何其他解释或说明文字。"""
-        
-        return self._extract_with_llm(prompt)
-    
-    def extract_contract_info(self, file_path: str = None) -&gt; str:
-        """提取合同信息（使用 qwen-max 大模型）"""
-        context_text = self.get_document_text(file_path)
-        
-        # 如果没有文档文本，返回提示信息
-        if not context_text:
-            return "错误：未找到文档内容。请先使用 load_document() 方法加载文档，或提供文档路径。"
-        
-        prompt = f"""请从以下合同文本中提取结构化信息，包括合同基本信息、合同双方信息、合同标的、关键条款、金额信息等，并以 JSON 格式返回。
-
-                    合同文本内容：
-                    {context_text}
-
-                    请只返回 JSON 格式的数据，不要包含任何其他解释或说明文字。"""
-        
-        return self._extract_with_llm(prompt)
-    
-    def format_data(self, file_path: str = None) -&gt; str:
-        """数据格式化"""
-        import pandas as pd
-        
-        context_text = self.get_document_text(file_path)
-        
-        # 如果没有文档文本，返回提示信息
-        if not context_text:
-            return "错误：未找到文档内容。请先使用 load_document() 方法加载文档，或提供文档路径。"
-        
-        prompt = f"""请从以下文本中提取所有键值对信息，并以 JSON 格式返回。
-
-                    要求：
-                    1. 提取所有形如"键：值"或"键:值"的键值对
-                    2. 返回格式为数组，每个元素包含 key、value、source（来源文件名）
-
-                    文本内容：
-                    {context_text}
-
-                    请返回 JSON 格式的数组，格式如下：
-                    [
-                    {{
-                        "key": "键名",
-                        "value": "值",
-                        "source": "文件名"
-                    }}
-                    ]
-
-                    请只返回 JSON 格式的数据，不要包含任何其他解释或说明文字。"""
-        
-        try:
-            result_json = self._extract_with_llm(prompt)
-            data_list = json.loads(result_json)
-            
-            if isinstance(data_list, dict) and "error" in data_list:
-                return result_json
-            
-            if not data_list:
-                return "未找到可格式化的数据"
-            
-            # 格式化为CSV
-            try:
-                df = pd.DataFrame(data_list)
-                csv_output = df.to_csv(index=False)
-                return f"JSON格式：\n{result_json}\n\nCSV格式：\n{csv_output}"
-            except Exception as e:
-                return f"JSON格式：\n{result_json}\n\nCSV格式化失败：{str(e)}"
-        except Exception as e:
-            return f"数据格式化失败：{str(e)}"
-    
-    def query(self, question: str) -&gt; str:
-        """查询Agent"""
-        from langchain_core.messages import HumanMessage
-        response = self.agent.invoke({
-            "messages": [HumanMessage(content=question)]
-        })
-        return response["messages"][-1].content
-
-def main():
-    """主函数"""
-    agent = InformationExtractionAgent()
-    
-    # 1. 加载文档
-    document_path = "./extraction_documents/invoice.pdf"  # 示例路径
-    if os.path.exists(document_path):
-        agent.load_document(document_path)
-    
-    # 2. 查询示例
-    questions = [
-        "从发票中提取发票代码、发票号码、销售方和购买方信息、商品明细和金额",
-        # "从医疗票据中提取患者信息、医院信息、诊断结果和费用明细",
-        # "从合同中提取合同编号、合同双方信息、合同金额和关键条款",
-        # "从简历中提取所有个人信息、教育经历和工作经历",
-        # "从产品文档中提取产品规格和技术参数",
-        # "从技术文档中提取所有API接口信息",
-        "将提取的数据格式化为JSON格式"
-    ]
-    
-    for question in questions:
-        print(f"\n{'='*60}")
-        print(f"问题: {question}")
-        print(f"{'='*60}")
-        answer = agent.query(question)
-        print(f"\n回答:\n{answer}")
-
-if __name__ == "__main__":
-    main()</code></pre><h2>使用示例</h2><h3>示例1：提取发票信息</h3><pre><code>agent = InformationExtractionAgent()
-
-# 1. 加载文档
-agent.load_document("./extraction_documents/invoice.pdf")
-
-# 2. 提取信息
-response = agent.query("从发票中提取发票代码、发票号码、销售方和购买方信息、商品明细和金额")
-print(response)</code></pre><h3>示例2：提取医疗票据信息</h3><pre><code># 加载医疗票据文档
-agent.load_document("./extraction_documents/medical_bill.pdf")
-
-# 提取信息
-response = agent.query("从医疗票据中提取患者姓名、医院名称、诊断结果、总费用和医保支付金额")
-print(response)</code></pre><h3>示例3：提取合同信息</h3><pre><code># 加载合同文档
-agent.load_document("./extraction_documents/contract.pdf")
-
-# 提取信息
-response = agent.query("从合同中提取合同编号、甲方和乙方信息、合同金额、付款方式和违约责任")
-print(response)</code></pre><h3>示例4：提取简历信息</h3><pre><code># 加载简历文档
-agent.load_document("./extraction_documents/resume.pdf")
-
-# 提取信息
-response = agent.query("从简历中提取姓名、联系方式、教育经历和工作经历")
-print(response)</code></pre><h3>示例5：提取产品规格</h3><pre><code># 加载产品文档
-agent.load_document("./extraction_documents/product_spec.pdf")
-
-# 提取信息
-response = agent.query("从产品文档中提取产品名称、型号、技术参数和价格")
-print(response)</code></pre><h3>示例6：提取API信息</h3><pre><code># 加载技术文档
-agent.load_document("./extraction_documents/api_docs.pdf")
-
-# 提取信息
-response = agent.query("从技术文档中提取所有API端点、请求方法和参数")
-print(response)</code></pre><h2>最佳实践</h2><ol><li>解析优化：使用 TextIn 解析引擎，对表格和列表识别效果好</li><li>批量处理：支持批量处理多个文档，提高效率</li><li>格式标准化：将提取的数据转换为标准格式（JSON、CSV），便于后续处理</li><li><p>财务文档处理：</p><ul><li>发票提取时重点关注发票代码、号码、金额等关键信息</li><li>医疗票据提取时注意区分自费、医保支付等不同费用类型</li><li>确保金额计算的准确性，支持财务系统对接</li></ul></li><li><p>合同文档处理：</p><ul><li>重点关注合同双方信息、合同金额、关键条款</li><li>识别违约责任、争议解决等重要条款</li><li>提取合同有效期，便于合同管理</li></ul></li><li>Prompt 优化：针对不同文档类型优化 prompt，明确提取字段和格式要求，提高提取准确率</li><li>错误处理：对提取失败的情况进行记录和人工复核，处理 JSON 解析错误</li><li>文档管理：在实际应用中，建议使用持久化存储（如数据库）管理文档文本，而不是内存字典</li><li>性能优化：对于长文档，可以考虑分段处理或使用流式处理，避免一次性加载过大的文本</li></ol><h2>常见问题</h2><p><strong>Q: 如何提高提取准确率？</strong><br/>A: 1) 优化文档格式，确保结构清晰；2) 优化 prompt，明确提取字段和格式要求；3) 使用 qwen-max 大模型进行提取，能更好地理解文档语义；4) 对提取结果进行验证和校验。<br/><strong>Q: 如何处理格式不统一的文档？</strong><br/>A: 1) 先统一文档格式；2) 使用多种提取策略；3) 人工校验和修正。<br/><strong>Q: 如何批量处理大量文档？</strong><br/>A: 1) 遍历文档目录，逐个调用 load_document() 加载文档；2) 并行处理多个文档（使用多线程或异步）；3) 使用队列管理任务，避免内存溢出。<br/><strong>Q: 发票信息提取不准确怎么办？</strong><br/>A: 1) 确保发票图片清晰，OCR识别准确；2) 优化 prompt，明确发票字段的提取要求；3) 对于特殊格式的发票，可以在 prompt 中添加示例或特殊说明；4) 检查解析结果，确保 elements 中的文本完整。<br/><strong>Q: 医疗票据的费用明细如何提取？</strong><br/>A: 1) 优先使用表格识别功能提取费用明细表；2) 在 prompt 中明确费用明细的字段要求（项目名称、数量、单价、金额、医保类型等）；3) 使用大模型提取，能更好地理解表格结构和语义；4) 区分医保支付、自费等不同费用类型。<br/><strong>Q: 合同关键条款如何识别？</strong><br/>A: 1) 在 prompt 中明确要求提取关键条款（如"违约责任"、"争议解决"等）；2) 使用大模型理解合同语义，识别重要条款；3) 提取完整条款内容，不要截断。<br/><strong>Q: 文档太长导致大模型无法处理怎么办？</strong><br/>A: 1) 对于超长文档，可以按页面或章节分段处理；2) 只提取关键部分的信息；3) 使用支持更长上下文的模型；4) 考虑使用流式处理或分块提取策略。</p>]]></description></item><item>    <title><![CDATA[2025零食行业全景洞察报告：消费趋势、渠道变革与出海机遇 | 附80+份报告PDF、数据、可视化模]]></title>    <link>https://segmentfault.com/a/1190000047664772</link>    <guid>https://segmentfault.com/a/1190000047664772</guid>    <pubDate>2026-03-19 19:02:12</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>原文链接：<a href="https://link.segmentfault.com/?enc=pPZgqwpShAqFI%2Bq7BvELcA%3D%3D.P3rp9ah9JHeCgnY%2FGt5RAoNhm%2BaoLcggjj1TUUP2IYw%3D" rel="nofollow" title="https://tecdat.cn/?p=45290" target="_blank">https://tecdat.cn/?p=45290</a>  <br/>原文出处：拓端抖音号@拓端tecdat</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664774" alt="封面" title="封面"/></p><ul><li><ul><li>*</li></ul></li></ul><p>关于分析师</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664775" alt="" title="" loading="lazy"/></p><p>在此对 Shawn Li 对本文所作的贡献表示诚挚感谢，他专注机器学习与深度学习领域。擅长 Python、R、MATLAB 等分析软件，数据爬虫、优化选址/路径，可实现基于信息的人机交互界面和网页开发。Shawn 曾在多个数据科学项目中积累了丰富的行业经验，尤其擅长从海量数据中提取商业洞察，为食品饮料行业的数字化转型提供决策支持。</p><ul><li><ul><li>*</li></ul></li></ul><h3><a href="" target="_blank"/></h3><h4><a href="" target="_blank"/>引言</h4><p>一块小小的零食，背后藏着万亿级的商业暗战。当Z世代一边喊着“减脂”一边为“情绪”买单，当银发族把婴童辅食吃成刚需，当量贩零食店用低价狂飙突进，当东南亚市场向中国品牌敞开大门——这个看似传统得不能再传统的赛道，正在经历一场从内到外的重塑。消费者既要好吃又要健康，渠道既要低价又要品质，品牌既要守正又要出海，这些看似矛盾的需求背后，究竟隐藏着怎样的增长密码？</p><p>本报告洞察基于《艺恩：2025年零食行业消费趋势洞察》和《Meltwater融文：2025年零食行业消费者洞察报告》等十余份权威报告，结合拓端数据独家建模预测，试图为你揭开零食行业的增长新逻辑。</p><p><strong>文末</strong>80+份零食行业研究报告及数据已整理成合集，本文<strong>完整报告数据图</strong>表和文末最新参考报告合集已分享在交流群，阅读原文查看、进群咨询，定制数据、报告和800+行业人士共同交流和成长。</p><ul><li><ul><li>*</li></ul></li></ul><h4><a href="" target="_blank"/>第一章｜万亿赛道，韧性从何而来？</h4><p>零食，这个看似不起眼的品类，正在撑起一个万亿级市场。艾媒咨询数据显示，2024年中国休闲零食行业规模已达1.4万亿元，过去五年复合增长率超过8%。更值得注意的是，零食消费增速已跑赢社会消费品零售总额，展现出强大的“口红效应”——即使在经济波动期，消费者依然愿意为这份“小确幸”买单。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664776" alt="" title="" loading="lazy"/>  <br/><strong>零食行业_社零与零食规模对比折线图表1</strong>  <br/>本图对比了2019-2027年中国社零总额与零食规模的增长趋势，零食增速略快于社零，表明其增长动力强劲。  <br/>（图表数据EXCEL及图表PDF模板已分享到会员群）</p><p>与成人零食同步扩容的，是婴童零辅食的“刚需化”进程。尽管新生儿数量走低，但喂养观念的革新推动渗透率持续提升。知行战略咨询预测，到2029年中国婴童零辅食市场规模将突破800亿元，十年间实现规模翻倍。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664777" alt="" title="" loading="lazy"/>  <br/><strong>婴童零食_市场规模预测折线图1</strong>  <br/>2019-2029年中国婴幼儿零辅食市场规模稳步增长，预计2029年达817.5亿元。  <br/>（图表数据EXCEL及图表PDF模板已分享到会员群）</p><p>更大的变量来自渠道端。量贩零食正以惊人的速度重构零售格局。兴业证券报告显示，量贩零食市场规模在低线城市年均增速超94%，远超一线城市的52%。下沉市场的价格敏感消费者，正用脚投票，推动渠道从“跑马圈地”走向“精耕细作”。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664778" alt="" title="" loading="lazy"/>  <br/><strong>量贩零食_不同城市增速折线图2</strong>  <br/>三线及以下城市量贩零食增速显著高于高线城市，下沉市场成为增长主引擎。  <br/>（图表数据EXCEL及图表PDF模板已分享到会员群）</p><p>放眼海外，东南亚零食市场正成为中国品牌出海的“桥头堡”。银河证券数据显示，印尼以超500亿元规模领跑，而越南、泰国市场集中度较低，为新品牌提供了绝佳切入窗口。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664779" alt="" title="" loading="lazy"/>  <br/><strong>东南亚市场_各国市场规模柱状图1</strong>  <br/>印尼、菲律宾、越南等东南亚国家零食市场规模分层明显，印尼独占鳌头。  <br/>（图表数据EXCEL及图表PDF模板已分享到会员群）</p><ul><li><ul><li>*</li></ul></li></ul><p><strong>相关文章</strong></p><ul><li><ul><li>*</li></ul></li></ul><p><strong>专题：2025年游戏科技的AI革新研究报告：全球市场趋势研究报告|附130+份报告PDF、数据仪表盘汇总下载</strong></p><p>原文链接：<a href="https://link.segmentfault.com/?enc=cOzEYpo9fkFm8TRTPLFU7g%3D%3D.YrQ%2Be8bb2d4L2rNyoqd0fn8L3lAl59SfSdRPVqt4Xsg%3D" rel="nofollow" title="https://tecdat.cn/?p=44082" target="_blank">https://tecdat.cn/?p=44082</a></p><ul><li><ul><li>*</li></ul></li></ul><h4><a href="" target="_blank"/>第二章｜消费者变了：“人”的需求重构</h4><p>艾媒咨询的调查揭示了消费者购买零食的决策树：味道口感（49.73%）是首要因素，但价格合理（45.27%）、食品原料（43.92%）紧随其后，形成了“口味+质价比”的复合决策模型。消费者不再满足于单一维度的好，而是追求综合价值的最大化。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664780" alt="" title="" loading="lazy"/>  <br/><strong>零食行业_消费者关注因素雷达图表2</strong>  <br/>味道口感、价格合理、食品原料是消费者最关注的三大因素。  <br/>（图表数据EXCEL及图表PDF模板已分享到会员群）</p><p>食用场景的多元化进一步印证了零食的“情绪价值”。70.68%的消费者在居家休闲时吃零食，而“独自解压”场景占比高达41.2%，说明零食已成为当代人的“情绪解药”。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664781" alt="" title="" loading="lazy"/>  <br/><strong>零食行业_食用场景占比横向条形图表3</strong>  <br/>居家休闲和朋友聚会是核心场景，独自解压需求凸显。  <br/>（图表数据EXCEL及图表PDF模板已分享到会员群）</p><p>融文报告将全球零食消费动机分为三类：探索尝试、身心满足、健康追求，三者占比接近。值得注意的是，健康与营养相关内容的互动量最高，为高端化提供了明确方向。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664782" alt="" title="" loading="lazy"/>  <br/><strong>零食行业_全球消费动机圆环图表4</strong>  <br/>全球消费者零食动机三分天下，健康话题互动量最高。  <br/>（图表数据EXCEL及图表PDF模板已分享到会员群）</p><p>Z世代“零食小队”的行为特征更是为品牌提供了精准画像：他们高度依赖社交媒体发现新品（指数69），追求可定制化体验（指数62），视零食为探索文化的入口（指数55）。这意味着，品牌需要从单纯的产品输出转向文化体验的构建。比如，一些新锐品牌开始与地方美食博主联名，推出“城市限定”风味，将成都火锅、长沙臭豆腐等街头味道融入薯片包装，并在瓶身印制二维码，扫码即可观看当地美食纪录片——这种“真实溯源”远比空洞的口号更具吸引力。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664783" alt="" title="" loading="lazy"/>  <br/><strong>零食行业_Z世代行为刻度线图表5</strong>  <br/>Z世代依赖社交发现，追求真实与文化探索。  <br/>（图表数据EXCEL及图表PDF模板已分享到会员群）</p><p>在婴童零食领域，妈妈们的购买动因更加功能化：近四成为了锻炼宝宝的咀嚼抓握能力，而“怕有不适合宝宝的添加物”成为首要顾虑（60%）。这正是果肉条、鱼肉肠等可锻炼抓握的品类增长迅猛的原因。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664784" alt="" title="" loading="lazy"/>  <br/><strong>婴童零食_购买原因与顾虑组合图4</strong>  <br/>功能性需求和配料安全是妈妈购买婴童零食的核心考量。  <br/>（图表数据EXCEL及图表PDF模板已分享到会员群）</p><ul><li><ul><li>*</li></ul></li></ul><h4><a href="" target="_blank"/>第三章｜渠道分化：“场”的攻守易势</h4><p>艺恩数据显示，零食品牌的营销策略正发生深刻转变：小红书商业笔记量增长51.2%，而抖音则下降8.0%。这一“一升一降”清晰地揭示了从短期爆光的流量采买转向长期心智占领的内容深耕。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664785" alt="" title="" loading="lazy"/>  <br/><strong>零食行业_营销投放变化柱状图表6</strong>  <br/>小红书投放大增，抖音收缩，品牌转战种草阵地。  <br/>（图表数据EXCEL及图表PDF模板已分享到会员群）</p><p>在线上渠道，抖音正在撼动天猫的霸主地位。以宝宝零食为例，抖音份额从28%迅速扩张至39%，而天猫则从72%滑落至61%。抖音凭借“以价换量”策略，持续吸纳市场份额。像小皮、秋田满满等品牌，通过短视频直播演示宝宝抓握进食的场景，将功能性卖点直观传递给年轻妈妈，实现了爆发式增长。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664786" alt="" title="" loading="lazy"/>  <br/><strong>婴童零食_宝宝零食渠道份额圆环图2</strong>  <br/>抖音份额快速提升，线上零食战场格局剧变。  <br/>（图表数据EXCEL及图表PDF模板已分享到会员群）</p><p>线下量贩零食赛道则形成了“双超多强”格局：鸣鸣很忙与万辰集团合计市占率超75%。但增速换挡信号明确，两大巨头开店与销售增长双双放缓，行业步入存量运营新阶段。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664787" alt="" title="" loading="lazy"/>  <br/><strong>量贩零食_品牌市占率圆环图3</strong>  <br/>鸣鸣很忙与万辰集团主导量贩零食市场。  <br/>（图表数据EXCEL及图表PDF模板已分享到会员群）</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664788" alt="" title="" loading="lazy"/>  <br/><strong>量贩零食_头部企业增速分组柱状图4</strong>  <br/>头部企业增速放缓，宣告野蛮生长时代结束。  <br/>（图表数据EXCEL及图表PDF模板已分享到会员群）</p><p>与此同时，下游盈利能力改善，自有品牌成为新增长极。对标日本堂吉诃德，国内巨头自有品牌占比仅个位数，提升空间巨大。以鸣鸣很忙为例，其2025年前三季度净利率已提升至3.9%，但自有品牌收入占比仍不足5%，这意味着未来可以通过开发独家联名款、季节性限定款来增强用户粘性，摆脱低价依赖。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664789" alt="" title="" loading="lazy"/>  <br/><strong>量贩零食_盈利能力与自有品牌组合图5</strong>  <br/>盈利能力改善，自有品牌占比有望提升。  <br/>（图表数据EXCEL及图表PDF模板已分享到会员群）</p><p>消费者对健康化升级的意愿为渠道转型提供了方向：超七成消费者愿意为更健康的产品支付溢价。这启示量贩零食店可以在下沉市场设置“健康专区”，引入0糖、高蛋白、清洁标签产品，并搭配试吃和营养知识小卡片，实现品质升级。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664790" alt="" title="" loading="lazy"/>  <br/><strong>量贩零食_健康化意愿横向条形图6</strong>  <br/>健康化成为破局同质化竞争的关键。  <br/>（图表数据EXCEL及图表PDF模板已分享到会员群）</p><ul><li><ul><li>*</li></ul></li></ul><h4><a href="" target="_blank"/>第四章｜产品突围：“货”的细分化与全球化</h4><p>在抖音平台，宝宝零食的细分品类爆发式增长：宝宝酸奶增长1649%，鱼肉肠增长70%。功能化、细分化的产品成为撬动增量市场的利器。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664791" alt="" title="" loading="lazy"/>  <br/><strong>婴童零食_抖音高增长品类柱状图3</strong>  <br/>宝宝酸奶、肉肠等品类实现爆发式增长。  <br/>（图表数据EXCEL及图表PDF模板已分享到会员群）</p><p>出海东南亚则需因地制宜。印尼市场体量最大，越南市场集中度最低，泰国现代渠道占比高达70%，而越南传统渠道仍占72%。格力高在越南与KDC合作的成功案例表明，没有万能策略，只有定制化布局——通过投资本土渠道商快速渗透12万家终端，远比自建渠道更高效。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664792" alt="" title="" loading="lazy"/>  <br/><strong>东南亚市场_CR5集中度柱状图2</strong>  <br/>越南、泰国市场集中度低，为新品牌提供窗口期。  <br/>（图表数据EXCEL及图表PDF模板已分享到会员群）</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664793" alt="" title="" loading="lazy"/>  <br/><strong>东南亚市场_现代渠道占比柱状图5</strong>  <br/>各国渠道结构迥异，需差异化布局。  <br/>（图表数据EXCEL及图表PDF模板已分享到会员群）</p><p>全球风味趋势方面，GLP-1药物引爆了对“激素平衡”（+150%）等全面健康需求，而菲律宾菜系以26%的增速成为Z世代新宠。这些小众地道风味正被融入薯片、饼干等品类，开启零食创新新纪元。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664794" alt="" title="" loading="lazy"/>  <br/><strong>东南亚市场_功能性需求增长折线图3</strong>  <br/>激素平衡、新陈代谢等健康需求激增。  <br/>（图表数据EXCEL及图表PDF模板已分享到会员群）</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664795" alt="" title="" loading="lazy"/>  <br/><strong>东南亚市场_亚洲菜系兴趣柱状图4</strong>  <br/>菲律宾菜系成为新晋“心头好”。  <br/>（图表数据EXCEL及图表PDF模板已分享到会员群）</p><ul><li><ul><li>*</li></ul></li></ul><h4><a href="" target="_blank"/>第五章｜未来三年：数据模型给出的答案</h4><p>基于2019-2027年数据，我们采用线性回归和ARIMA模型对2028-2030年零食规模进行预测。线性回归R²=0.987，预计2028年规模达102.3百亿元，2030年达110.8百亿元。ARIMA模型（0,1,0）的残差白噪声检验通过，预测结果稳健。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664796" alt="" title="" loading="lazy"/>  <br/><strong>零食行业_规模预测折线图预测</strong>  <br/>线性回归预测2028-2030年零食规模持续增长。  <br/>（图表数据EXCEL及图表PDF模板已分享到会员群）</p><p><strong>零食行业_ARIMA预测折线图表1</strong>  <br/>ARIMA模型预测2028年有望突破百亿。  <br/>（图表数据EXCEL及图表PDF模板已分享到会员群）</p><p><strong>零食行业_ARIMA残差ACF柱状图表2</strong>  <br/>残差无自相关，模型拟合良好。  <br/>（图表数据EXCEL及图表PDF模板已分享到会员群）</p><ul><li><ul><li>*</li></ul></li></ul><h4><a href="" target="_blank"/>核心数据对比表：不同报告对零食市场关键指标的统计差异</h4><table><thead><tr><th>指标</th><th>报告名称</th><th>数据</th><th>差异原因</th></tr></thead><tbody><tr><td>2024年中国休闲零食市场规模</td><td>艾媒咨询《2025年中国肉制休闲零食行业发展状况及消费行为调查数据报告》</td><td>1.4万亿元</td><td>统计口径包括线上线下全渠道</td></tr><tr><td>2024年中国休闲零食市场规模</td><td>灼识咨询（收录于《兴业证券：量贩零食系列报告一》）</td><td>1.4万亿元</td><td>基本一致，均基于国家统计局数据</td></tr><tr><td>2019-2024年一线城市量贩零食增速</td><td>万辰招股书（收录于《兴业证券》）</td><td>52.0%</td><td>基于企业门店增长数据</td></tr><tr><td>2019-2024年三线城市量贩零食增速</td><td>万辰招股书（收录于《兴业证券》）</td><td>94.3%</td><td>基数较低，增长空间大</td></tr><tr><td>消费者购买零食首要因素</td><td>艾媒咨询</td><td>味道口感（49.73%）</td><td>基于问卷调查</td></tr><tr><td>消费者购买零食首要因素</td><td>融文报告（定性）</td><td>口味与口感讨论量最高（33.8%）</td><td>基于社交媒体分析，维度不同</td></tr></tbody></table><ul><li><ul><li>*</li></ul></li></ul><h4><a href="" target="_blank"/>行动清单：可落地的3件事</h4><ol><li><p><strong>针对Z世代“零食小队”，开发可定制化产品并植入文化故事</strong></p><ul><li>怎么做：与地方美食博主联名，推出“城市限定”风味系列，如“成都火锅味薯片”“长沙臭豆腐味饼干”，并在包装上印制二维码，扫码可观看当地街头美食纪录片。</li><li>为什么：Z世代视零食为文化探索入口，真实溯源比空洞营销更具吸引力。</li></ul></li><li><p><strong>布局抖音细分品类，抢占“功能化”红利</strong></p><ul><li>怎么做：针对婴童市场，快速推出“宝宝酸奶溶豆”“高蛋白鱼肉肠”等产品，利用抖音直播演示宝宝抓握进食的场景，突出功能性卖点。</li><li>为什么：抖音宝宝酸奶品类增长1649%，功能化产品正成为新蓝海。</li></ul></li><li><p><strong>下沉市场量贩零食店引入健康化选品，优化单店模型</strong></p><ul><li>怎么做：在三四线城市的量贩零食店中，设置“健康专区”，引入0糖、高蛋白、清洁标签产品，并搭配试吃和营养知识小卡片。</li><li>为什么：超七成消费者愿为健康产品支付溢价，且下沉市场增速最快，品质升级可有效避免价格战。</li></ul></li></ol><ul><li><ul><li>*</li></ul></li></ul><h4><a href="" target="_blank"/>风险提示：报告没说的“坑”</h4><ul><li><strong>量贩零食的“低价”能否持续？</strong>  <br/>当前量贩零食依靠补贴快速扩张，但头部企业补贴收窄后，单店盈利可能承压。一旦价格优势消失，消费者可能回流传统渠道。  <br/><strong>应对方案</strong>：提前布局自有品牌和差异化品类，如开发独家联名款、季节性限定款，增强用户粘性。社群可提供“量贩零食单店盈利模型”案例库，供会员参考。</li><li><strong>出海东南亚的“隐形门槛”</strong>  <br/>报告强调越南市场集中度低，但忽视了其传统渠道的碎片化——72%的销售通过杂货店，这些终端需要一家家地跑、一家家地铺货，对供应链和地推能力要求极高。  <br/><strong>应对方案</strong>：与当地有成熟渠道网络的经销商合作，如格力高在越南投资KDC，快速渗透12万家终端。社群内可对接东南亚本地渠道资源，降低试错成本。</li><li><strong>GLP-1药物对零食行业的长期冲击</strong>  <br/>报告提到GLP-1药物引爆健康需求，但未提及其可能抑制总零食消费量。随着减肥药普及，部分消费者可能减少零食摄入。  <br/><strong>应对方案</strong>：向“功能性零食”转型，开发辅助激素平衡、增加饱腹感的产品，如高蛋白能量棒、膳食纤维软糖，变“被替代”为“被需要”。</li><li><ul><li>*</li></ul></li></ul><h4><a href="" target="_blank"/>口语化解读</h4><ul><li><strong>“私域复购率”</strong> = 老客户再买的比例。比如你加了品牌微信群，群里经常发优惠券，你忍不住又下单，这就叫私域复购。</li><li><strong>“量贩零食”</strong> = 把零食当批发卖，价格便宜，但得整箱或大包装买，类似超市的“仓储会员店”缩小版。</li><li><strong>“CR5集中度”</strong> = 行业里最大的5家公司加起来占多少市场份额。CR5越高，说明越几家独大，新品牌难挤进去。</li><li><strong>“GLP-1”</strong> = 一种减肥药，吃了能抑制食欲，所以连零食都不太想吃了。但聪明人开始把它当风向标，开发“吃了不长胖”的零食。</li><li><ul><li>*</li></ul></li></ul><h4><a href="" target="_blank"/>核心数据表格汇总（部分）</h4><table><thead><tr><th>类别</th><th>指标</th><th>数据</th><th>来源</th></tr></thead><tbody><tr><td>市场规模</td><td>2024年中国休闲零食行业规模</td><td>1.4万亿元</td><td>艾媒咨询</td></tr><tr><td> </td><td>2029年中国婴童零辅食规模预测</td><td>817.5亿元</td><td>知行战略咨询</td></tr><tr><td>消费者行为</td><td>味道口感关注度</td><td>49.73%</td><td>艾媒咨询</td></tr><tr><td> </td><td>独自解压场景占比</td><td>41.2%</td><td>艾媒咨询</td></tr><tr><td> </td><td>健康话题互动量提升</td><td>32.4%</td><td>融文</td></tr><tr><td>渠道变化</td><td>抖音宝宝零食份额（2025）</td><td>39%</td><td>知行战略咨询</td></tr><tr><td> </td><td>三线城市量贩零食增速</td><td>94.3%</td><td>万辰招股书</td></tr><tr><td>出海数据</td><td>印尼零食市场规模</td><td>500亿元</td><td>银河证券</td></tr><tr><td> </td><td>越南市场CR5</td><td>34%</td><td>银河证券</td></tr><tr><td>预测数据</td><td>2030年零食规模（线性回归）</td><td>110.8百亿元</td><td>拓端预测</td></tr><tr><td> </td><td>2030年零食规模（ARIMA）</td><td>109.5百亿元</td><td>拓端预测</td></tr></tbody></table><ul><li><ul><li>*</li></ul></li></ul><h4><a href="" target="_blank"/>本专题内的参考报告（PDF）目录</h4><p>增速换挡，精耕制胜：2025零食店渠道趋势洞察.pdf  <br/>2026-03-19 15:35  <br/>食品饮料行业调研报告：量贩零食“鲜”业态：湖南新鲜零食业态调推荐（维持）研反馈.pdf  <br/>2026-03-19 15:32  <br/>零食量贩业态专题报告：穿越周期，拥抱成长.pdf  <br/>2026-03-18 15:37  <br/>狗狗零食美国市场研究报告.pdf  <br/>2026-03-15 16:24  <br/>_尼尔森IQ：2025年零食渠道趋势洞察报告.pdf  <br/>2026-03-10 16:25  <br/>2025年中国肉制休闲零食行业发展状况与消费行为调查数据-艾媒咨询.pdf  <br/>2026-03-05 10:22  <br/>2026年鸣鸣很忙公司研究报告：国内休闲食饮连锁零售领军企业，开启量贩零食3.0时代-东吴证券.pdf  <br/>2026-03-01 10:05  <br/>嘉世咨询：2026年量贩零食市场简析报告.pdf  <br/>2026-02-28 16:00  <br/>零售变革草根调研（五）：长沙金粒门&amp;郑州百品好：新鲜零食新机遇，下沉市场小山姆.pdf  <br/>2026-02-24 14:49  <br/>零食量贩行业深度报告：万店争霸与供应链革新的增长破局.pdf  <br/>2026-02-05 17:08  <br/>量贩零食系列报告一：中场展望：从“跑马圈地”到“精耕细作”.pdf  <br/>2026-02-05 17:08  <br/>零食行业专题报告：鸣鸣很忙港股上市，关注产业链投资新趋势.pdf  <br/>2026-02-05 17:08  <br/>艾媒咨询：2025年中国肉制休闲零食行业发展状况与消费行为调查数据报告.pdf  <br/>2026-01-30 15:50  <br/>【量贩零食】鸣鸣很忙招股说明书.pdf  <br/>2026-01-25 12:33  <br/>2026年中国婴童辅零食行业报告——喂养观念革新，婴童零辅食迈入“刚需时代”.pdf  <br/>2026-01-25 12:33  <br/>2025年坚果零食电商消费趋势-知行战略咨询.pdf  <br/>2026-01-20 19:05  <br/>知行战略咨询：2025年海味零食电商消费趋势报告.pdf  <br/>2026-01-19 16:49  <br/>宝宝零食品类电商消费趋势-知行战略咨询.pdf  <br/>2026-01-18 13:22  <br/>2025年饼干膨化零食电商消费趋势-知行战略咨询.pdf  <br/>2026-01-18 13:19  <br/>零食行业系列深度报告（三）：东南亚零食市场出海图鉴.pdf  <br/>2025-11-14 14:10  <br/>黑天鹅数据：2025年Z世代零食的未来（英文版）.pdf  <br/>2025-11-13 15:33  <br/>2025年零食行业消费趋势洞察-艺恩.pdf  <br/>2025-11-08 17:50  <br/>Meltwater融文：2025年零食行业消费者洞察报告.pdf  <br/>2025-10-10 15:44  <br/>零食量贩3.0进阶全图景-华泰证券-29页.pdf  <br/>2025-10-10 15:34  <br/>零食行业：赵一鸣品牌多维度深度解析-数说故事.pdf  <br/>2025-10-09 08:16  <br/>抖音2025Q1高增行业与爆款复盘（内衣、零食、保健品）.pdf  <br/>2025-08-22 16:30  <br/>休闲零食专题系列报告-一-：量贩模式发展：渠道渗透与品类拓展机遇，行业双超对比思考.pdf  <br/>2025-08-15 16:00  <br/>食品饮料行业专题——新消费研究之二：中国餐饮供应链效率革命：食材预制化与餐饮零食化的双轮驱动.pdf  <br/>2025-07-27 17:20  <br/>探谋：2025东南亚零食电商行业市场洞察报告.pdf  <br/>2025-07-24 16:08  <br/>中原证券-零食行业深度分析：渠道与产品创新带来新一轮增长.pdf  <br/>2025-07-18 16:32  <br/>全球健康零食发展现状及未来趋势-innova.pdf  <br/>2025-07-13 08:29  <br/>飞瓜数据：2025年休闲零食线上消费与行业洞察报告.pdf  <br/>2025-07-10 16:44  <br/>食品饮料行业深度研究报告：零食量贩的3.0时代：盈利加速与店型进化之路.pdf  <br/>2025-07-08 16:49  <br/>MMR迈茂睿：2025成长空间季度报告-零食赛道革新者.pdf  <br/>2025-06-12 15:41  <br/>Z世代零食消费偏好：口味创新与包装社交属性-千禧研究.pdf  <br/>2025-06-09 13:33  <br/>2025年零食饮料趋势白皮书-Flywheel飞未.pdf  <br/>2025-06-03 16:08  <br/>2025中国量贩零食行业现状报告-嘉世咨询.pdf  <br/>2025-05-23 16:25  <br/>2025中国量贩零食行业现状报告-嘉世咨询.pdf  <br/>2025-05-21 15:44  <br/>2025中国咸味零食风味图谱-凯爱瑞.pdf  <br/>2025-05-19 16:48  <br/>2025年饼干膨化零食电商消费趋势-知行战略咨询.pdf  <br/>2025-04-24 15:51  <br/>嘉世咨询：2025年休闲零食市场简析报告.pdf  <br/>2025-04-08 15:49  <br/>伊利牛奶品牌×零食很忙品牌联合推广方案.pdf  <br/>2025-03-14 15:46  <br/>2025年中国零食行业研究报告——零⻝量贩崛起零⻝零售新纪元-.pdf  <br/>2025-03-12 15:49  <br/>GeoQ智图：2024年连锁零食门店发展蓝皮书.pdf  <br/>2025-02-23 16:19  <br/>知行战略咨询：2025年休闲零食行业年度洞察报告.pdf  <br/>2025-01-14 16:18  <br/>酸菜品牌商业零售计划书【调味品酱腌菜】【调味零食】【商业计划书】.pdf  <br/>2024-12-30 09:31  <br/>沙利文：2024年礼遇美味：牛肉零食的文化与创新趋势白皮书.pdf  <br/>2024-12-19 15:40  <br/>薯片品牌天猫情人节内容整合营销【零食】【情人节营销】.pdf  <br/>2024-12-15 14:08  <br/>洗发水品牌 x 芝麻丸品牌 跨界营销案【洗护】【零食】【跨界合作】.pdf  <br/>2024-12-15 14:08  <br/>华福证券-休闲零食行业专题：从渠道变革看休闲零食行业发展.pdf  <br/>2024-12-12 16:24  <br/>CIC灼识咨询：2024年中国零食行业蓝皮书.pdf  <br/>2024-12-07 17:18  <br/>2023东南亚&amp; 中国食品市场趋势：零食.pdf  <br/>2024-11-19 16:04  <br/>DPO：2023年东南亚&amp;中国食品市场趋势报告：零食.pdf  <br/>2024-11-10 20:16  <br/>休闲零食行业深度报告：品类视角理解中式零食发展：为什么是魔芋和鹌鹑蛋？.pdf  <br/>2024-10-26 16:43  <br/>2024年H1休闲零食品牌健康追踪分析报告.pdf  <br/>2024-10-19 16:39  <br/>中国银河-零食行业深度报告-系列一-：万亿零食赛道全图谱：品类、渠道与竞争.pdf  <br/>2024-09-27 15:52  <br/>炼丹炉：2024年零食&amp;饮料口味创新趋势洞察报告.pdf  <br/>2024-09-26 16:12  <br/>Shopee：2024-2025年零食坚果_干货商机指南报告.pdf  <br/>2024-09-22 15:02  <br/>零食品牌-0脂果冻新品上市营销方案【破圈营销】【KOL种草】【公众号 微博 抖音 小红书】.pdf  <br/>2024-08-21 15:59  <br/>中泰证券-休闲零食行业深度报告：解码小零食的大单品之路——从奥利奥说起.pdf  <br/>2024-08-14 16:36  <br/>捕捉华夏民族珍味——咸味主食与咸味零食创新机遇.pdf  <br/>2024-07-24 16:54  <br/>中邮证券-休闲食品系列报告-一-：终端景气度视角之零食折扣系统格局初定，重申上游供应商逻辑.pdf  <br/>2024-07-05 10:11  <br/>华安证券-三只松鼠-300783-三只松鼠投资探讨：拥抱极致性价比与下沉时代系列：何为零食的硬实力与软实力？.pdf  <br/>2024-07-01 09:16  <br/>数说故事：电商人群零食饮品创新趋势报告-2024年秋冬季研发趋势预测.pdf  <br/>2024-06-21 11:00  <br/>休闲零食市场趋势洞察报告（饼干、膨化食品、糖果、烘焙糕点、坚果炒货）-魔镜洞察.pdf  <br/>2024-06-21 10:59  <br/>国金证券-卫龙-9985.HK-站稳辣味零食龙头，渠道产品齐接力.pdf  <br/>2024-06-14 11:11  <br/>从卫龙上市看万亿级别休闲零食赛道的投资逻辑-安信证券-202108.pdf  <br/>2024-06-14 11:11  <br/>从卫龙上市看万亿级别休闲零食赛道的投资逻辑-安信证券.pdf  <br/>2024-06-14 11:11  <br/>女性重点品类消费洞察报告（护肤品、运动户外服装、零食）-时趣.pdf  <br/>2024-06-13 11:24  <br/>勤策消费研究-2024年白酒及零食行业发展趋势报告.pdf  <br/>2024-06-06 14:51  <br/>Nint任拓：2024以数焕新，点燃品质零食创新之火报告.pdf  <br/>2024-06-04 10:24  <br/>Nint任拓：2024以数焕新，点燃品质零食创新之火报告.pdf  <br/>2024-06-03 18:48  <br/>亿滋（朱忆菁）：零食品类如何拥抱品牌内容年轻化与数字化的浪潮.pdf  <br/>2024-06-01 14:53  <br/>润喉糖品牌年度营销规划【功能性零食】【种草营销】.pdf  <br/>2024-05-31 14:50  <br/>头豹研究院-休闲零食：线上红利消失的趋势下，竞争转向下沉市场和品类升级 头豹词条报告系列.pdf  <br/>2024-05-29 10:39  <br/>国泰君安-休闲食品行业深度报告：从小作坊到钢铁丛林：零食业绩周期及成长空间探讨.pdf  <br/>2024-05-29 10:30  <br/>勤策消费研究2024零食行业发展趋势报告-市场变革下的新一轮增量20页.pdf  <br/>2024-05-25 11:00  <br/>零食产业数据简报（零食、坚果、膨化食品、熟食、销售数据）.pdf  <br/>2024-05-20 14:48  <br/>头豹研究院-儿童零食市场：新一代父母转变消费观念，助推千亿级细分市场 头豹词条报告系列.pdf  <br/>2024-05-14 14:48  <br/>头豹研究院-2024年中国量贩式零食店行业：头部品牌收购及合并动作频频，跑马圈地正当时-摘要版.pdf  <br/>2024-05-07 13:41</p><ul><li><ul><li>*</li></ul></li></ul><p><strong>加入社群，获取完整报告合集与数据模板</strong>  <br/>扫描下方二维码或阅读原文，即可进入拓数据会员社群，下载300+份零食行业报告PDF、所有图表Excel源文件及可编辑的可视化模板，与800+行业同仁共同探讨增长新路径。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664797" alt="封面" title="封面" loading="lazy"/></p>]]></description></item><item>    <title><![CDATA[2025-2026食品饮料行业全景洞察报告：婴童零辅食、量贩零食、东南亚出海 | 附180+份报告P]]></title>    <link>https://segmentfault.com/a/1190000047664801</link>    <guid>https://segmentfault.com/a/1190000047664801</guid>    <pubDate>2026-03-19 19:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>原文 链接 **：<a href="https://link.segmentfault.com/?enc=Ai5lquP5VH1k6%2FRCYjzgWw%3D%3D.945Hp3afl2Nx9SEyFacKrezWb68LZOTpY2A%2BgwNVGqs%3D" rel="nofollow" title="https://tecdat.cn/?p=45291" target="_blank">https://tecdat.cn/?p=45291</a>  <br/>原文出处：拓端抖音号@拓端tecdat  <br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047664803" alt="封面" title="封面"/></p><h2><a href="" target="_blank"/>关于分析师</h2><p>Weilong Zhang</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664804" alt="" title="" loading="lazy"/></p><p>在此对 Weilong Zhang 对本文所作的贡献表示诚挚感谢，他在上海交通大学完成了企业管理专业的博士学位，专注产业经济与商业数据分析领域。擅长利用统计软件（R、 Python 、SPSS、Eviews、Stata）处理复杂数据，关注消费趋势、零售渠道变革及新兴市场机会。曾参与多个食品饮料行业咨询项目，为国内头部零食品牌提供市场进入策略与消费者洞察分析。</p><h2><a href="" target="_blank"/>2026年展望 | 食品饮料：筑底分化，聚焦婴童、量贩与出海三大主线</h2><h3><a href="" target="_blank"/></h3><p>2025年，食品饮料行业在 宏 **观消费温和复苏的背景下，呈现显著的结构性分化。社会消费品零售总额稳步增长，而休闲零食增速略快，展现出作为“小确幸”消费的韧性。消费者决策模型从单一“口味驱动”转向“口味+质价比+健康”的复合模式，情绪价值和功能性需求日益凸显。代际差异显著，Z世代将零食视为社交货币与文化体验入口，驱动小众风味崛起。营销渠道重心从抖音向小红书迁移，内容深耕成为品牌新战场。</p><p>我们观察到三大核心主线正重塑行业格局：一是婴童零辅食刚需属性确立，渠道向抖音迁移，功能化细分品类爆发；二是量贩零食行业经历万店竞速后进入盈利改善期，下沉市场增速亮眼，自有品牌与健康化选品成为新增长极；三是东南亚出海机遇分层，越南、菲律宾等高潜市场集中度低，功能性健康需求与地道风味为品牌提供切入窗口。</p><p>本报告洞察基于《艾媒咨询：2025年中国肉制休闲零食行业发展状况及消费行为调查数据报告》和《中国银河证券：零食行业系列深度报告（三）：东南亚零食市场出海图鉴》和文末<strong><em>*180</em></strong>+<strong>份食品饮料行业研究报告及数据，</strong>本文完整报告数据图表和文末180+份最新*参考报告合集已分享在交流群，阅读原文查看、进群咨询，定制数据、报告和800+行业人士共同交流和成长。</p><ul><li><ul><li>*</li></ul></li></ul><h3><a href="" target="_blank"/>一、市场总览与宏观趋势：万亿赛道稳健增长，健康化便捷化成主线</h3><p>研判一：零食增速跑赢社零，健康化与便捷化品类领跑。魔镜洞察数据显示，2025年食品饮料线上市场规模达5936.7亿元，其中休闲食品规模最大，达1327.6亿元。从增速看，米面粮油（+14.5%）和冲调泡（+13.8%）领跑，体现健康化、便捷化趋势。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664805" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_主要品类线上销售额及增速_组合图表1</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><p>研判二：饮料市场功能与养生贡献高增长。养生饮同比增长32.7%，元气森林“慢熬系列”等工艺创新推动行业从“泛养生”转向“精养生”。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664806" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_饮料概念增速_条形图表2</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><ul><li><ul><li>*</li></ul></li></ul><h3><a href="" target="_blank"/>二、人力资源趋势：薪酬企稳，学历溢价显著</h3><p>研判一：薪酬增长放缓后企稳，2025年预测涨薪率温和回升至1.5%。薪智数据显示，近12个月食品饮料行业涨薪率仅为0.1%，但基于CPI、行业营收及招聘数据预测，2025年有望达到1.5%。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664807" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_历年涨薪率_折线图表3</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><p>研判二：学历溢价显著，博士起薪近2万，是硕士的2倍以上。2024届应届生起薪中，硕士9000元/月，博士19900元/月，显示行业对顶尖研发人才争夺激烈。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664808" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_应届生起薪_条形图表4</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><ul><li><ul><li>*</li></ul></li></ul><h3><a href="" target="_blank"/>三、数字化转型：投资回报可观，ESG表现分化</h3><p>研判一：数字化投资降本增效成果显著。江苏蕴之宝糖果厂通过部署AVEVA制造执行系统，生产效率提高10%，生产稳定性提升15%，节省30%劳动时间，直接生产成本降低5%。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664809" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_数字化工厂绩效_雷达图表5</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><p>研判二：ESG披露率快速提升但表现分化。2022年评级中仅17家获A级，6家获S级，70家为C级，7家为D级，行业ESG表现差异巨大。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664810" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_ESG评级分布_热图表6</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><ul><li><ul><li>*</li></ul></li></ul><h3><a href="" target="_blank"/>四、产品创新与风味趋势：“鲜辣”基底之上，健康风味成新贵</h3><p>红餐产业研究院与味好美调研显示，64.6%的消费者偏好“鲜”味，复合风味中咸鲜（59.6%）、香辣（56.1%）是主流。具有地域特色的风味（如贵州酸汤）和健康经典风味（茶香41.1%，芝士37.1%）正成为新的增长点。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664811" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_风味偏好_横向条形图表7</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><ul><li><ul><li>*</li></ul></li><li><ul><li>*</li></ul></li></ul><p><strong>相关文章</strong></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664812" alt="" title="" loading="lazy"/></p><h3><a href="" target="_blank"/>专题：2025年游戏科技的AI革新研究报告：全球市场趋势研究报告|附130+份报告PDF、数据仪表盘汇总 下载**</h3><p>原文链接：<a href="https://link.segmentfault.com/?enc=BKHN2t0EOE6e2HcDhHWJRA%3D%3D.OMr58iXrl4g70UrrrLiOBbPcV7yx3jT4ZDF%2FyPHG1rQ%3D" rel="nofollow" title="https://tecdat.cn/?p=44082" target="_blank">https://tecdat.cn/?p=44082</a></p><ul><li><ul><li>*</li></ul></li></ul><h3><a href="" target="_blank"/>五、渠道变革：零食量贩步入万店竞速时代，双寡头格局确立</h3><p>研判一：门店数2年增2倍，2024年底全国零食量贩门店总数突破4万家。行业从跑马圈地进入头部品牌主导的规模竞争新阶段。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664813" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_零食量贩门店数_柱状图表8</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><p>研判二：双寡头格局确立，鸣鸣很忙与万辰集团门店数均突破1.5万家，CR2约65%，为提升上游议价权奠定基础。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664814" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_零食量贩品牌份额_圆环图表9</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><p>研判三：规模效应释放，万辰集团净利率从2023年上半年的1.3%持续提升至2024年下半年的2.7%，未来2-3年有望站上4%-5%。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664815" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_万辰集团净利率_折线图表10</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><ul><li><ul><li>*</li></ul></li></ul><h3><a href="" target="_blank"/>六、品类升级：啤酒提价，黄酒盈利，宠食高端化爆发</h3><p>2018至2024年，啤酒龙头通过产品高端化，吨价提升超24%；黄酒行业2023年利润率较2019年提升5.7个百分点；宠物食品中的烘焙粮市场规模3年增长3倍，宠物营养品4年增长超4倍。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664816" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_品类升级关键指标_刻度线图表11</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><ul><li><ul><li>*</li></ul></li></ul><h3><a href="" target="_blank"/>七、下沉市场：茶饮与咖啡的决胜主战场</h3><p>茶饮品牌中，古茗以80%的二线及以下城市门店占比领跑；咖啡赛道，瑞幸、库迪、幸运咖下沉市场门店数远超星巴克，显示高性价比策略在低线市场的强大生命力。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664817" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_下沉市场布局_组合图表12</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><p>古茗 运营 **效率指标对比：季度复购率53%远超行业平均30%，仓到店配送成本仅为GMV的1%（行业平均2%），供应链铸就核心护城河。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664818" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_古茗运营效率_分组条形图表13</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><ul><li><ul><li>*</li></ul></li></ul><h3><a href="" target="_blank"/>八、投资视角：板块分化，估值筑底</h3><p>研判一：2025年上半年食品饮料板块整体下跌7.33%，但软饮料（+15.54%）和零食（+12.81%）领涨，白酒（-10.65%）深度调整。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664819" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_子板块涨跌幅_条形图表14</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><p>研判二：白酒企业业绩分化，茅台微增，洋河、酒鬼酒跌幅超50%，行业渠道库存压力集中爆发。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664820" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_白酒企业利润增速_条形图表15</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><p>研判三：能量饮料十年黄金期，2024-2029年复合增长率预计10.2%，为饮料赛道最强增长极。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664821" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_能量饮料市场规模_柱状图表16</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><p>研判四：量贩零食五年狂飙，市场规模从2019年211亿元增至2023年809亿元，预计2027年突破1500亿元。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664822" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_量贩零食市场规模_柱状图表17</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><p>研判五：休闲食品企业业绩冰火两重天，拥抱新渠道与新品类者（如西麦食品、盐津铺子）利润高增，依赖传统渠道者大幅下滑。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664823" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_休闲食品企业利润增速_条形图表18</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><p>研判六：行业复苏节奏不一，软饮料、零食率先企稳，白酒仍处调整深水区。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664824" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_复苏周期阶段_热力表格图表19</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><p>研判七：食品饮料板块估值逼近历史大底，白酒估值百分位仅2.65%，为长期投资者提供左侧布局窗口。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664825" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_估值百分位_条形图表20</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><ul><li><ul><li>*</li></ul></li></ul><h3><a href="" target="_blank"/>九、东南亚出海专题：红海中的蓝海，越南、菲律宾成高潜双引擎</h3><p>研判一：印尼和菲律宾是规模最大的市场，但越南和菲律宾增速领跑（越南6.8%，菲律宾3.6%），是出海重点。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664826" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_东南亚市场规模增速_双轴图表21</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><p>研判二：能量饮料赛道越南独占鳌头，规模超百亿，增速12%，柬埔寨增速9.3%，为国产品牌提供切入机会。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664827" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_东南亚能量饮料规模增速_双轴图表22</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><p>研判三：印尼市场极度分散，超40%被小品牌瓜分，为中国品牌提供巨大想象空间。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664828" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_东南亚能量饮料份额_堆叠条形图表23</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><p>研判四：百事Sting以75.7亿领跑，天丝红牛约60亿紧随，新入局者需精准差异化。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664829" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_东南亚能量饮料品牌销售额_条形图表24</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><p>研判五：消费力分级，新加坡客单价最高（17.5美元），印尼集中在4-6美元低价区间，需差异化定价。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664830" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_东南亚零食客单价_条形图表25</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><p>研判六：健康风潮与重口味并存，奇亚籽、无骨鸡爪、中国月饼热搜，显示对中国美食的高度认可。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664831" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_东南亚热搜词_气泡图表26</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><ul><li><ul><li>*</li></ul></li></ul><h3><a href="" target="_blank"/>十、机器学习与数据挖掘洞察</h3><p>研判一：能量饮料市场持续扩容，线性 回归模型 **预测2032年有望突破2500亿元。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664832" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_能量饮料规模预测_折线图表ML1</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><p>研判二：K-means聚类识别东南亚三类市场：印尼、泰国为成熟市场；越南、菲律宾为高潜市场；新加坡、马来西亚为潜力市场，建议出海优先关注高潜市场。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664833" alt="" title="" loading="lazy"/></p><p><strong>食品饮料行业_东南亚市场聚类_气泡图表ML2</strong> 数据EXCEL及图表PDF模板已分享到会员群</p><ul><li><ul><li>*</li></ul></li></ul><h3><a href="" target="_blank"/>十一、风险提示与行动指南</h3><h4><a href="" target="_blank"/>风险提示</h4><ol><li><strong>婴童零食成分舆情风险</strong>：报告指出60%妈妈担心添加物，但未提及社交媒体针对特定成分的舆论风险可能随时引爆。建议品牌建立舆情监控机制，与儿科医生合作背书。</li><li><strong>东南亚市场本土竞争者快速模仿风险</strong>：市场集中度低为新品牌提供窗口期，但本土中小品牌模仿能力通常为3-6个月。建议产品上市前准备第二代迭代方案。</li><li><strong>量贩零食店盈利模型未经验证风险</strong>：头部企业净利率改善，但腰部加盟店盈利状况存疑。建议加盟前实地考察同区域老店，核算成本。</li></ol><h4><a href="" target="_blank"/>行动指南</h4><ol><li><strong>调整抖音与小红书预算结构</strong>：未来3个月将10%的抖音效果广告预算转投小红书KOC种草，测试“成分解析+场景测评”内容。</li><li><strong>开发“分月龄”婴童零食产品线</strong>：针对不同月龄突出“磨牙”“抓握”“营养补充”功能，抢占母婴渠道心智。</li><li><strong>试点“东南亚风味盲盒”</strong> ：选取菲律宾、越南等地小众风味，在抖音以“盲盒”形式限量发售，测试Z世代接受度。</li></ol><ul><li><ul><li>*</li></ul></li></ul><h3><a href="" target="_blank"/>十二、核心数据表格汇总</h3><table><thead><tr><th>图表序号</th><th>图表名称</th><th>核心数据</th></tr></thead><tbody><tr><td>图表1</td><td>主要品类销售额及增速</td><td>休闲食品1327.6亿，米面粮油+14.5%，冲调泡+13.8%</td></tr><tr><td>图表2</td><td>饮料概念增速</td><td>功能+32.7%，养生+32.7%</td></tr><tr><td>图表3</td><td>历年涨薪率</td><td>2021:8.6%，2025预测:1.5%</td></tr><tr><td>图表4</td><td>应届生起薪</td><td>大专5.9千，博士19.9千</td></tr><tr><td>图表5</td><td>数字化工厂绩效</td><td>效率+10%，成本-5%</td></tr><tr><td>图表6</td><td>ESG评级分布</td><td>S级6家，A级17家，C级70家，D级7家</td></tr><tr><td>图表7</td><td>风味偏好</td><td>鲜味64.6%，香辣56.1%</td></tr><tr><td>图表8</td><td>零食量贩门店数</td><td>2024年4.0万家</td></tr><tr><td>图表9</td><td>零食量贩品牌份额</td><td>鸣鸣很忙1.5万，万辰1.5万，其他1.0万</td></tr><tr><td>图表10</td><td>万辰集团净利率</td><td>23H1:1.3%，24H2:2.7%</td></tr><tr><td>图表11</td><td>品类升级指标</td><td>啤酒吨价+24%，黄酒利润率+5.7pct</td></tr><tr><td>图表12</td><td>下沉市场布局</td><td>古茗80%，瑞幸4600家</td></tr><tr><td>图表13</td><td>古茗运营效率</td><td>复购率53%，成本1%</td></tr><tr><td>图表14</td><td>子板块涨跌幅</td><td>软饮料+15.54%，白酒-10.65%</td></tr><tr><td>图表15</td><td>白酒企业利润增速</td><td>茅台+6.4%，洋河-53.7%</td></tr><tr><td>图表16</td><td>能量饮料规模</td><td>2019:676亿，2029预测:1807亿</td></tr><tr><td>图表17</td><td>量贩零食规模</td><td>2027预测:1547亿</td></tr><tr><td>图表18</td><td>休闲食品利润增速</td><td>有友+40.4%，来伊份-79.7%</td></tr><tr><td>图表19</td><td>复苏周期阶段</td><td>软饮料高景气，白酒调整深水区</td></tr><tr><td>图表20</td><td>估值百分位</td><td>白酒2.65%</td></tr><tr><td>图表21</td><td>东南亚规模增速</td><td>越南402亿，增速6.8%</td></tr><tr><td>图表22</td><td>东南亚能量饮料</td><td>越南107.5亿，增速12%</td></tr><tr><td>图表23</td><td>东南亚份额</td><td>印尼小品牌40.5%</td></tr><tr><td>图表24</td><td>东南亚品牌销售额</td><td>百事Sting 75.7亿</td></tr><tr><td>图表25</td><td>东南亚客单价</td><td>新加坡17.5美元，印尼5美元</td></tr><tr><td>图表26</td><td>东南亚热搜词</td><td>奇亚籽、无骨鸡爪</td></tr><tr><td>ML1</td><td>能量饮料预测</td><td>2032年2590亿</td></tr><tr><td>ML2</td><td>东南亚聚类</td><td>三类市场</td></tr></tbody></table><ul><li><ul><li>*</li></ul></li></ul><h3><a href="" target="_blank"/>十三、本专题内的参考报告（PDF）目录</h3><p>食品饮料行业调研报告：量贩零食“鲜”业态：湖南新鲜零食业态调推荐（维持）研反馈.pdf  <br/>2026-03-19 15:32  <br/>2026食品饮料品类出海全攻略.pdf  <br/>2026-03-11 16:00  <br/>荣续ESG智库研究中心：2026食品饮料行业ESG白皮书.pdf  <br/>2026-03-09 16:36  <br/>食品饮料行业2025年信用回顾与2026年展望.pdf  <br/>2026-03-03 14:50  <br/>食品饮料行业：乳品深加工：广阔天地，龙头领航.pdf  <br/>2026-03-03 14:50  <br/>2025年度消费新潜力白皮书（食品饮料、大健康、家用电器、美妆护肤、3C数码、母婴）-魔镜洞察.pdf  <br/>2026-02-28 16:00  <br/>银发经济行业专题：食品饮料篇——掘金银发餐桌，从“吃饱”到“吃对”-国信证券.pdf  <br/>2026-02-27 15:49  <br/>食品饮料行业2026年度策略：底部蓄力，强分化中寻找确定性投资机会.pdf  <br/>2026-02-25 14:46  <br/>食品饮料行业高端消费专题：消费复苏，高端先行.pdf  <br/>2026-02-24 14:50  <br/>食品饮料行业深度报告：AI营销：新风口剑指千亿，服务商乘势而进.pdf  <br/>2026-02-24 14:48  <br/>食品饮料行业深度报告：渠道变革大时代，优质连锁零售业态蓬勃发展.pdf  <br/>2026-02-24 14:48  <br/>食品饮料行业深度分析：金星啤酒“中式风味精酿”带来的启示.pdf  <br/>2026-02-12 14:21  <br/>食品饮料：原奶周期复苏明朗，把握乳业投资机会.pdf  <br/>2026-02-12 14:20  <br/>食品饮料行业深度报告：AKK菌深度报告：肠道管家，有益共生.pdf  <br/>2026-02-05 17:11  <br/>食品饮料：白酒破而后立，大众品顺势而为.pdf  <br/>2026-01-27 15:47  <br/>财信证券：食品饮料：白酒破而后立，大众品顺势而为.pdf  <br/>2026-01-23 15:35  <br/>食品饮料2026年投资策略报告：曙光渐显，在分化中前行-华源证券.pdf  <br/>2025-12-30 14:38  <br/>食品饮料行业：迎风立潮，新品&amp;新渠道的共识与健康消费新叙事.pdf  <br/>2025-12-29 15:51  <br/>食品饮料行业：酒类，底部酝势，东风候醇香.pdf  <br/>2025-12-29 15:51  <br/>食品饮料：千亿成长赛道，变局引领机遇.pdf  <br/>2025-12-29 15:51  <br/>食品饮料行业：营养保健品：渠道革新，机遇与挑战并存.pdf  <br/>2025-12-16 16:10  <br/>食品饮料行业渠道变革专题（二）：从中美人货场变迁，看我国渠道变革机遇.pdf  <br/>2025-10-23 16:19  <br/>AVEVA剑维软件：2025年食品饮料行业白皮书.pdf  <br/>2025-10-18 17:15  <br/>食品饮料行业的数字化未来-AVEVA剑维软件.pdf  <br/>2025-10-18 17:12  <br/>消费升级依然是主旋律——以食品饮料、奢侈品、消费电子行业为例的消费升级破局启示.pdf  <br/>2025-09-23 16:42  <br/>2025H2食品饮料品类Bible-菲律宾站点.pdf  <br/>2025-09-22 16:22  <br/>Shopee：2025年下半年食品饮料选品参考报告-菲律宾站点.pdf  <br/>2025-09-21 17:16  <br/>食品饮料行业老乡鸡深度报告：从养殖到餐桌，中式快餐第一龙头.pdf  <br/>2025-09-20 16:51  <br/>越南食品饮料报告：品牌与渠道构建现有优势，精细化运营进一步打开局面.pdf  <br/>2025-09-16 16:06  <br/>2025可持续包装新范式：PLM赋能食品饮料包装开发报告.pdf  <br/>2025-09-05 16:55  <br/>食品饮料-食品饮料行业深度报告：品牌化长期趋势下的投资机会.pdf  <br/>2025-09-01 16:24  <br/>食品饮料行业深度研究：品牌东南亚出海篇：东鹏饮料出海机会探讨与展望.pdf  <br/>2025-08-22 16:25  <br/>Nox聚星：2025年食品饮料行业全球网红营销趋势报告.pdf  <br/>2025-08-21 17:03  <br/>2025食品饮料行业白皮书.pdf  <br/>2025-08-17 17:09  <br/>2025年Q3食品饮料行业薪酬报告-薪智.pdf  <br/>2025-08-11 15:43  <br/>食品饮料行业深度：新消费研究之三：即时零售应需而生，酒类品牌或迎新机遇.pdf  <br/>2025-08-03 18:28  <br/>食品饮料行业专题——新消费研究之二：中国餐饮供应链效率革命：食材预制化与餐饮零食化的双轮驱动.pdf  <br/>2025-07-27 17:20  <br/>食品饮料行业深度报告：硬折扣系列报告：机遇窗口期，百舸争流.pdf  <br/>2025-07-25 15:42  <br/>食品饮料行业深度报告：趋势更新场景变革，餐饮供应链效率制胜.pdf  <br/>2025-07-22 15:39  <br/>风味探寻：2025年美国食品饮料行业最具颠覆性趋势研究报告（英文版）.pdf  <br/>2025-07-18 16:42  <br/>2025年中期食品饮料行业投资策略报告：政策与新趋势共振，把握结构性机会.pdf  <br/>2025-07-17 15:43  <br/>英敏特：2025年中国食品饮料创新图谱：功能性饮料_报告.pdf  <br/>2025-07-10 16:46  <br/>虾皮Shopee2025年食品饮料市场规模及选品参考报告.pdf  <br/>2025-07-08 16:51  <br/>食品饮料行业深度报告：黄酒行业深度：供需共振，高端化与年轻化突围.pdf  <br/>2025-07-08 16:49  <br/>食品饮料行业深度研究报告：零食量贩的3.0时代：盈利加速与店型进化之路.pdf  <br/>2025-07-08 16:49  <br/>2025H2食品饮料品类 选品参考-Shopee.pdf  <br/>2025-07-07 16:48  <br/>食品饮料行业深度分析重构价值体系新消费方兴未艾.pdf  <br/>2025-07-02 16:26  <br/>食品饮料行业2025年中期策略报告：悦己需求焕新颜，传统消费激活力.pdf  <br/>2025-06-30 15:03  <br/>2025可乐品牌新品上市种草策划案【食品饮料】【可乐新品策划】【新品营销种草】.pdf  <br/>2025-06-27 16:34  <br/>食品饮料行业行业深度研究报告：咖啡行业大有可为，云南咖啡豆香飘世界.pdf  <br/>2025-06-27 16:30  <br/>2025年亚太食品饮料品牌数字广告投放洞察.pdf  <br/>2025-06-23 15:43  <br/>食品饮料行业深度报告：新消费研究之一：生活方式重塑消费场景，新消费方兴未艾.pdf  <br/>2025-06-21 17:13  <br/>2024年食品饮料市场趋势洞察-魔镜洞察.pdf  <br/>2025-06-20 15:05  <br/>食品饮料行业2025年中期投资策略：白酒从去库存到去产能，大众品关注新品新渠道.pdf  <br/>2025-06-19 15:59  <br/>太平洋-食品饮料行业行业深度报告：拥抱新消费的浪潮.pdf  <br/>2025-05-30 17:01  <br/>食品饮料行业：古茗深度报告-平价茶饮之王，供应链打造下沉市场领跑者.pdf  <br/>2025-05-30 17:01  <br/>食品饮料行业观察及2025年信用风险展望-联合资信.pdf  <br/>2025-05-19 16:46  <br/>食品饮料行业投资策略：暖意渐起，焕启新程.pdf  <br/>2025-05-15 16:04  <br/>小红书食品饮料行业垂类S+系列IP《食饮美学》招商方案【互联网】【通案】.pdf  <br/>2025-05-05 17:42  <br/>食品饮料行业深度报告：复盘系列之十一：消费的韧性：解码2018年食品饮料行业表现.pdf  <br/>2025-04-27 13:18  <br/>友望数据：2025年视频号食品饮料行业趋势洞察报告.pdf  <br/>2025-04-18 15:11  <br/>2025年消费者对食品饮料品牌的可持续发展期望报告-东南亚市场篇.pdf  <br/>2025-04-17 16:51  <br/>2025年Q2食品饮料行业薪酬报告-薪智.pdf  <br/>2025-04-14 11:07  <br/>可持续发展的食品饮料工业-SIEMENS.pdf  <br/>2025-03-31 09:46  <br/>国金证券-食品饮料行业投资框架.pdf  <br/>2025-03-31 09:38  <br/>2025年上半年食品饮料品类东南亚市场洞察与选品参考报告.pdf  <br/>2025-03-29 16:25  <br/>饮料品牌柠檬新品上市规划案【食品饮料】.pdf  <br/>2025-03-28 16:32  <br/>2024年抖音食品饮料行业分析报告.pdf  <br/>2025-03-24 14:40  <br/>2024食品饮料行业可持续发展报告.pdf  <br/>2025-03-18 12:43  <br/>2025年Q1食品饮料行业薪酬报告.pdf  <br/>2025-03-17 14:50  <br/>2025食品饮料行业AI转型白皮书-甲子光年.pdf  <br/>2025-03-08 15:11  <br/>食品饮料渠道变革系列报告-一-：白酒线上化风起，挑战与机会并行.pdf  <br/>2025-03-06 15:52  <br/>有米有数：2025年抖音电商食品饮料营销趋势报告.pdf  <br/>2025-02-28 16:38  <br/>SupHerb Farms：2025年食品饮料趋势报告（英文版.pdf  <br/>2025-02-13 20:01  <br/>中原证券-食品饮料行业深度分析：国内奢侈品及高档白酒消费变化.pdf  <br/>2025-02-08 15:04  <br/>中邮证券-食品饮料深度报告：2025年春节回乡见闻：-二-汽车篇.pdf  <br/>2025-02-06 17:34  <br/>库润数据：2024年中国食品饮料行业消费者洞察报告.pdf  <br/>2025-01-13 10:20  <br/>食品饮料-食品饮料行业2025年策略报告：期待消费刺激，静等股价反转.pdf  <br/>2025-01-07 15:21  <br/>2025年食饮年度策略：抽丝剥茧，洞察食品饮料的五个层面.pdf  <br/>2025-01-04 17:17  <br/>食品饮料行业2025年度投资策略-大众品篇-：寻找韧性与增长.pdf  <br/>2024-12-22 17:34  <br/>食品饮料行业2025年度投资策略-酒饮篇-：预期先行，关注流速.pdf  <br/>2024-12-21 17:18  <br/>平安证券-食品饮料行业2025年年度策略报告：大众品篇：蓄势待发，踏浪前行.pdf  <br/>2024-12-17 15:29  <br/>雪碧抖音超级品牌日复盘结案【食品饮料】【抖音传播】【项目结案】.pdf  <br/>2024-12-15 14:08  <br/>魔镜洞察：2024年海外食品饮料市场白皮书.pdf  <br/>2024-12-14 15:07  <br/>平安证券-食品饮料行业年度策略报告：白酒篇，筑牢基石，坐看云起.pdf  <br/>2024-12-14 14:55  <br/>2024年食品饮料行业网络营销监测报告.pdf  <br/>2024-12-13 15:54  <br/>太平洋-食品饮料行业年度投资策略报告：预期先行，静待修复.pdf  <br/>2024-12-11 16:38  <br/>施耐德电气食品饮料行业智慧工厂解决方案.pdf  <br/>2024-12-08 16:29  <br/>2024如何打动年轻人带动销售转化食品饮料行业联名营销趋势观察报告.pdf  <br/>2024-11-26 15:58  <br/>安格斯牛肉品牌 种草传播brief【食品饮料】【种草传播】.pdf  <br/>2024-11-24 22:36  <br/>2024年中国食品饮料行业白皮书（英文版）.pdf  <br/>2024-11-05 16:01  <br/>食品饮料行业2024年三季报综述：卸下包袱，迎接新程.pdf  <br/>2024-11-05 15:52  <br/>2024年食品饮料行业全域营销白皮书.pdf  <br/>2024-11-01 16:29  <br/>2024年食品饮料行业联名营销趋势观察报告.pdf  <br/>2024-10-26 16:56  <br/>TMO探谋：东南亚食品饮料电商行业市场洞察报告（2024年9月版）.pdf  <br/>2024-10-19 16:37  <br/>金蝶食品饮料行业数字化转型白皮书.pdf  <br/>2024-10-12 15:11  <br/>阿里妈妈食品饮料行业全域SIGHT人群运营白皮书.pdf  <br/>2024-10-12 15:01  <br/>食品饮料行业深度研究报告：功能性食品图谱系列报告二-细分掘金，建言献策.pdf  <br/>2024-10-05 16:19  <br/>华创证券-食品饮料行业深度研究报告：功能性食品图谱系列报告二-细分掘金，建言献策.pdf  <br/>2024-09-27 15:53  <br/>国泰君安-食品饮料行业专题研究：转折期的消费路径选择.pdf  <br/>2024-09-25 15:58  <br/>EBC&amp;京东超市：2024年京东食品饮料健康趋势白皮书.pdf  <br/>2024-09-15 15:16  <br/>开源证券-食品饮料行业投资策略：业绩承压，分化加大，期待下半年需求提振.pdf  <br/>2024-09-14 16:31  <br/>华福证券-食品饮料行业专题报告：以邻为鉴，从萨莉亚发展探寻中国餐饮未来方向.pdf  <br/>2024-09-14 16:31  <br/>2024年Q2消费潜力白皮书：食品饮料-魔镜洞察.pdf  <br/>2024-09-07 16:35  <br/>华创证券-食品饮料行业2024年中报总结：报表承压，份额优先.pdf  <br/>2024-09-04 16:24  <br/>国泰君安-食品饮料板块2024半年报总结：结构韧性，静待回暖.pdf  <br/>2024-09-03 16:47  <br/>食为天：2024中国食品饮料行业白皮书-沙利文_每日食品.pdf  <br/>2024-08-30 17:48  <br/>和君咨询：2024年中国食品饮料（A+H）股上市公司新增长研究报告-新食代，破局新增长.pdf  <br/>2024-08-28 16:42  <br/>益普索：2024寻找下一个“柠檬”-如何破解中国食品饮料流行密码研究报告.pdf  <br/>2024-08-14 16:56  <br/>华创证券-食品饮料行业深度研究报告：百年亨氏三次经营危机启示研究-穿越周期的经营密码.pdf  <br/>2024-08-09 17:23  <br/>食品饮料 选品参考（2024年下半年）.pdf  <br/>2024-08-08 16:23  <br/>国联证券-食品饮料行业深度研究：从河南市场看名酒全国化与地产酒崛起.pdf  <br/>2024-08-02 16:49  <br/>2024可持续消费——食品饮料.pdf  <br/>2024-07-22 16:45  <br/>国盛证券-食品饮料2024年中期策略：大浪再淘沙，价值再定位.pdf  <br/>2024-07-22 16:34  <br/>2024可持续消费食品饮料行业洞察.pdf  <br/>2024-07-20 17:35  <br/>有米有数：2024抖音电商食品饮料趋势洞察报告.pdf  <br/>2024-07-19 17:31  <br/>西南证券-食品饮料行业2024年中期投资策略：具备中长期配置价值，静待好转.pdf  <br/>2024-07-18 17:22  <br/>国联证券-食品饮料行业深度研究：食品饮料分红优势凸显，新规之下重视投资价值.pdf  <br/>2024-07-09 10:43  <br/>华福证券-食品饮料2024年中期行业策略报告：新常态下新思路，栉风沐雨砥砺行.pdf  <br/>2024-07-09 10:42  <br/>中邮证券-食品饮料行业报告：大众品二季度前瞻：理性消费、质价比选择趋势持续.pdf  <br/>2024-07-09 10:40  <br/>国元证券-食品饮料行业大众品中期策略报告：必选消费，穿越周期.pdf  <br/>2024-07-05 10:14  <br/>万联证券-2024年中期食品饮料行业投资策略报告：随风潜入夜，润物细无声.pdf  <br/>2024-06-26 10:28  <br/>中国银河-食品饮料行业2024年中期策略：下半年需求温和改善预期下选强α标的.pdf  <br/>2024-06-25 10:43  <br/>华福证券-食品饮料FANCL系列报告二：庖丁解牛，全方位拆解公司增长秘诀.pdf  <br/>2024-06-25 10:43  <br/>小红书食品饮料行业月报（2024年5月） .pdf  <br/>2024-06-20 10:20  <br/>2025青年文化（美妆、奢侈品时尚、亚文化、生活方式、食品饮料）-WGSN.pdf  <br/>2024-06-19 13:00  <br/>国泰君安-食品饮料中期策略报告：寻找韧性与成长.pdf  <br/>2024-06-19 12:54  <br/>民生证券-食品饮料行业2024年中期投资策略：平芜尽处是春山-布局长期，跟踪改善，优选个股.pdf  <br/>2024-06-19 12:53  <br/>2024韩国快消品市场（食品饮料、服饰、化妆品、个人卫生和清洁用品）-维卓.pdf  <br/>2024-06-15 10:40  <br/>国泰君安-食品饮料：消费大组专题报告-消费的魅力：美国消费百年历史复盘.pdf  <br/>2024-06-14 11:09  <br/>Circana：2024寻找食品饮料零售业的增长点报告（英文版）.pdf  <br/>2024-06-13 11:32  <br/>欧美市场自有品牌食品饮料趋势2024.pdf  <br/>2024-05-31 15:16  <br/>酸奶品牌小红书运营方案【快消零售】【食品饮料】【种草营销】.pdf  <br/>2024-05-31 14:50  <br/>中原证券-食品饮料：预制菜产业之河南发展现状.pdf  <br/>2024-05-30 10:52  <br/>代餐麦片品牌抖音账号运营方案【食品饮料】【短视频运营】.pdf  <br/>2024-05-25 10:45  <br/>新世纪评级：2023年食品饮料行业信用回顾与2024年展望报告.pdf  <br/>2024-05-22 11:06  <br/>小红书-2024年食品饮料行业月报 （4月）.pdf  <br/>2024-05-20 14:49  <br/>食品饮料行业专题研究：日本保健品行业：国民健康为基，政策激发活力.pdf  <br/>2024-05-19 17:21  <br/>东方财富证券-食品饮料行业专题研究：日本保健品行业：国民健康为基，政策激发活力.pdf  <br/>2024-05-18 10:40  <br/>沪上阿姨招股书梳理-广覆盖现制茶饮品牌-重创新协同供应链建设加码下沉市场-食品饮料行业专题报告-华福证券.pdf  <br/>2024-05-15 14:30  <br/>食品饮料专题研究：大众品综述：变革与成本红利持续兑现.pdf  <br/>2024-05-13 13:33  <br/>食品饮料行业深度报告：苏酒专题-升级之路在何方.pdf  <br/>2024-05-13 13:33  <br/>开源证券-食品饮料行业投资策略：白酒势能不减， 大众品枯木逢春.pdf  <br/>2024-05-10 14:17  <br/>食品饮料行业专题报告：FANCL历史复盘：成熟市场探索新需求，内外兼修问鼎健康美护赛道.pdf  <br/>2024-05-05 17:54  <br/>华福证券-食品饮料行业专题报告：FANCL历史复盘：成熟市场探索新需求，内外兼修问鼎健康美护赛道.pdf  <br/>2024-05-01 11:20  <br/>英敏特：2023年全球食品饮料趋势报告【英文版】.pdf  <br/>2024-04-26 11:15  <br/>小红书食品饮料行业月报（2024年3月）.pdf  <br/>2024-04-22 14:29  <br/>食品饮料行业数字化工厂解决方案(…智能制造的精益数字化工厂).pdf  <br/>2024-04-21 16:27  <br/>食品饮料行业：中低速增长阶段的行业发展路径——啤酒篇-东吴证券.pdf  <br/>2024-04-21 16:22  <br/>东吴证券-食品饮料行业+公司首次覆盖：中低速增长阶段的行业发展路径——啤酒篇.pdf  <br/>2024-04-20 12:08  <br/>华福证券-食品饮料：光瓶酒专题-二-：后疫情时代光瓶酒的分化演绎.pdf  <br/>2024-04-17 10:05  <br/>食品饮料行业深度研究-春糖略超预期-行业信心回暖-天风证券.pdf  <br/>2024-04-13 10:08  <br/>乳酸菌饮料品牌新品上市整合营销方案【食品饮料】【新品传播】【种草营销】.pdf  <br/>2024-04-11 10:48  <br/>饮料品牌 橙汁产品 京东大牌风暴营销策划案【食品饮料】【电商带货】.pdf  <br/>2024-04-08 14:49  <br/>长江证券-食品饮料-白酒与葡萄酒行业饮酒思源系列-十七-：破晓，白酒处在供给驱动改善时.pdf  <br/>2024-04-03 10:45  <br/>数字经济：数字化助力食品饮料企业降本增效.pdf  <br/>2024-04-02 10:31  <br/>申万宏源-食品饮料量贩零食行业深度报告_进入头部竞争阶段，万辰有望引领胜出.pdf  <br/>2024-04-02 10:27  <br/>中国经济高质量发展研究：数字经济-数字化助力食品饮料企业降本增效.PDF  <br/>2024-03-27 11:56  <br/>全球食品饮料新品报告-2024年3月刊-FBIF.pdf  <br/>2024-03-26 11:51  <br/>食品饮料专题研究：春糖反馈：批价坚挺，信心修复.pdf  <br/>2024-03-24 10:47  <br/>食品饮料行业：央国企改革专题研究：白酒央国企改革正在进行时，发展有望更上一层楼.pdf  <br/>2024-03-24 10:46  <br/>小红书食品饮料行业月报（2024年2月）.pdf  <br/>2024-03-17 18:42  <br/>食品饮料：蜜雪冰城更新深度-高质平价精准定位，供应管理合筑雪王.pdf  <br/>2024-03-17 13:14  <br/>食品饮料行业最新观点：重视龙头.pdf  <br/>2024-03-17 13:14  <br/>食品饮料行业新质生产力系列研究：主业升级 跨界投资，把握酒行业新质生产力机遇.pdf  <br/>2024-03-17 13:14  <br/>火种科学追热点-3-5月春季刊（春游、妇女节、食品饮料、美妆、家居家电）-巨量算数.pdf  <br/>2024-03-15 14:42  <br/>食品饮料行业：三问三答，浅析白酒龙头的成长潜能.pdf  <br/>2024-03-10 11:09  <br/>食品饮料行业专题研究：现阶段如何看待啤酒行业的量价问题？.pdf  <br/>2024-03-10 11:09  <br/>2024年青少年营养健康食品饮料趋势分析报告-FDL.pdf  <br/>2024-03-09 16:28  <br/>食品饮料行业专题报告：回乡见闻之二：潜心耕耘，也无风雨也无晴.pdf  <br/>2024-03-03 10:37  <br/>火种科学追热点-春季刊-行业篇-食品饮料&amp;美妆&amp;家居家电-巨量算数.pdf  <br/>2024-03-02 11:03  <br/>深度报告-20240227-华创证券-食品饮料行业深度研究报告_高股息的底层逻辑-中低速时代的定价范式（二）_19页_1mb.pdf  <br/>2024-02-28 11:22  <br/>食品饮料行业专题研究：安徽白酒市场跟踪，地产名酒优势显现.pdf  <br/>2024-02-25 10:48  <br/>食品饮料行业专题报告-回乡见闻之一-收入消费小有变化-闲看庭前花开花落-华金证券.pdf  <br/>2024-02-24 10:57  <br/>食品饮料行业深度报告-大众品春节调研反馈-乳制品旺销-基调稳健、复调龙头亮眼-东吴证券.pdf  <br/>2024-02-24 10:56  <br/>小红书食品饮料行业月报（2024年1月）.pdf  <br/>2024-02-23 17:23  <br/>20230816-东北证券-食品饮料行业：老酒，白酒消费新风尚，未来空间广阔.pdf  <br/>2024-02-15 20:53  <br/>大众的年度消费选择（3C电器、美妆个护、食品饮料、服装配饰、日化母婴）-巨量引擎.pdf  <br/>2024-02-14 16:17  <br/>食品饮料大众品系列研究（一）：严冬将过，卤制品公司拓店进行时.pdf  <br/>2024-02-13 09:32  <br/>食品饮料“霓虹甜心”系列（一）：日本烘焙行业进击启示录.pdf  <br/>2024-02-13 09:32</p><p><strong>完整报告及数据已打包，加入会员群即可获取，与800+行业同仁共同交流。</strong></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664834" alt="封面" title="封面" loading="lazy"/></p>]]></description></item><item>    <title><![CDATA[程序员专属开源Wiki！PandaWiki AI辅助写文档，Docker一键部署太省心 百川云开发者]]></title>    <link>https://segmentfault.com/a/1190000047664323</link>    <guid>https://segmentfault.com/a/1190000047664323</guid>    <pubDate>2026-03-19 18:10:22</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>我选知识库，核心就看几点：部署简单、写文档顺手、AI提效、开源可控、内网能用，传统Wiki全中痛点，直到实测PandaWiki，终于找到适配技术人的Wiki工具。<br/>本文纯务实干货，拆解PandaWiki这款AI原生知识库的核心优势，适配思否开发者群体阅读，可直接收藏，选型备用。<img width="723" height="354" referrerpolicy="no-referrer" src="/img/bVdn9Pc" alt="image.png" title="image.png"/></p><p>一、PandaWiki：技术人专属的开源AI Wiki</p><p>PandaWiki是面向开发者、运维、技术团队的开源免费、AI原生、私有化部署知识库工具，摒弃传统Wiki的繁琐与低效，聚焦技术人实际需求，轻量化、易部署、高可控，完美替代DokuWiki、BookStack等老旧工具，全场景适配技术团队知识管理。</p><p>二、技术视角核心优势</p><ol><li>AI原生，技术人提效神器</li></ol><p>RAG智能检索，自然语言查找技术文档，快速定位故障方案、代码规范；AI辅助生成API文档、代码注释、接口示例，减少重复劳动；支持本地大模型部署，内网开发环境无数据泄露风险，彻底解决传统Wiki无AI、效率低的痛点。<img width="723" height="417" referrerpolicy="no-referrer" src="/img/bVdn9Pf" alt="image.png" title="image.png" loading="lazy"/></p><ol start="2"><li>极简部署，拒绝折腾</li></ol><p>Docker单命令一键部署，无复杂环境依赖，3分钟上线，跨平台兼容Windows、Linux、国产化系统，内网离线稳定运行，部署后零维护，开发者不用浪费时间在运维调试上，专注核心编码。<img width="723" height="698" referrerpolicy="no-referrer" src="/img/bVdn9Pi" alt="image.png" title="image.png" loading="lazy"/></p><ol start="3"><li>代码友好，文档书写顺滑</li></ol><p>Markdown+富文本双编辑器，全语言代码高亮，支持流程图、架构图、公式插入，一键生成目录，编写API文档、运维手册、代码笔记、架构设计，格式规范，易于维护，完全贴合程序员书写习惯。<img width="723" height="424" referrerpolicy="no-referrer" src="/img/bVdn9Pk" alt="image.png" title="image.png" loading="lazy"/></p><ol start="4"><li>团队协同，高效不混乱</li></ol><p>多人实时协同编辑，无冲突、版本可回溯；细粒度角色权限管控，核心技术文档安全可控；文档分类标签化管理，新人快速上手，降低团队沟通成本。<img width="723" height="757" referrerpolicy="no-referrer" src="/img/bVdn9Pn" alt="image.png" title="image.png" loading="lazy"/></p><ol start="5"><li>开源可控，无套路免费</li></ol><p>开源版永久免费，无人数限制、无功能阉割，源码开放可审计、可二次开发，无厂商锁定，数据自主掌控，中小技术团队零成本落地，企业版按需付费，性价比拉满。<img width="723" height="426" referrerpolicy="no-referrer" src="/img/bVdn9Po" alt="image.png" title="image.png" loading="lazy"/></p><p>三、适配开发者场景</p><p>个人代码笔记、研发团队文档沉淀、运维SOP与故障库管理、内网离线知识管理、小团队协同办公。</p><p>四、思否开发者总结</p><p>传统Wiki老旧低效、部署折腾，早已不适配现代技术团队需求；PandaWikiAI提效、部署简单、代码友好、开源可控，完全贴合开发者使用习惯，是2026年技术团队知识库的首选，实测好用，推荐各位开发者试用。</p>]]></description></item><item>    <title><![CDATA[百度“龙虾”全家桶开张 安全虾正式上岗！ 百度安全 ]]></title>    <link>https://segmentfault.com/a/1190000047664330</link>    <guid>https://segmentfault.com/a/1190000047664330</guid>    <pubDate>2026-03-19 18:09:46</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>3月17日，在 AI DAY 现场，百度“龙虾”全家桶正式亮相，包括“云端虾”“手机虾”“安全虾”等多款产品上新，还发布了全新自研“桌面虾”产品 DuMate 及全球首款“家用小龙虾”。</p><p>多款 Skills 同时上新，其中百度搜索 Skill 下载量超4.5万次，是全球下载量最大的搜索引擎官方 Skill ，成为“龙虾必备”。</p><p>安全是智能体规模化落地的“生命线”。为了让每一只“龙虾”都能在安全边界内释放无限潜能，百度“安全虾”也火速到岗，通过涵盖云端与移动端的全栈式安全矩阵，实现每只“龙虾”的底层防护，让 OpenClaw 不只是“能用”，更能在个人和企业级场景中“放心用、可控地用、规模化地用”。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664332" alt="图片" title="图片"/></p><p>会上，百度安全副总经理冯景辉分享了百度“龙虾”安全机制，从数据层到系统层，从云上到移动端，安全贯穿每个环节。他指出，如果没有安全机制兜底，全球20多万敞开大门的龙虾随时可能被恶意攻击者接管。 OpenClaw 复杂的智能体多层结构设计决定了龙虾使用容易存在安全风险，比如默认监听所有网络、没有防火墙、弱密码甚至无密码等脆弱配置，让攻击者可以轻易接管你的电脑、读取所有数据并运行任意程序。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664333" alt="图片" title="图片" loading="lazy"/><br/>百度安全副总经理冯景辉</p><ul><li>针对 OpenClaw 架构带来的挑战，冯景辉表示，百度在产品架构设计之初就为龙虾植入了全方位的纵深防御能力：</li><li>系统与网络层：采用网络虚拟环境与安全沙箱隔离，确保本地数据安全，并通过强随机 Token 机制杜绝网关直接暴露在公网。</li><li>决策与交互层：依托百度千帆大模型内置的安全护栏，防御提示词注入攻击，并对敏感操作实施“事前提示确认、事后追溯审计”的机制。</li><li>Skills 插件层：通过提供官方或社区验证的纯净 Skills 源头，并实时扫描拦截已知的恶意插件，保障上下游生态安全。</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664334" alt="图片" title="图片" loading="lazy"/></p><p>冯景辉总结了科学避坑的“养虾四大法则”：</p><ul><li>环境——给龙虾一个安全的家：严控密码，杜绝公网暴露。如果龙虾住在没有门的房子里，再聪明也会出事。</li><li>技能——只教安全有保障的技能：只安装来源纯净的可信 Skills ，拒绝恶意插件，减少供应链风险。坏技能会彻底污染龙虾的成长环境。</li><li>授权——明确“能做”和“不能做”：严格限制 Agent 权限，敏感操作必须单独授权。千万要记住“ Prompt 只是告诉它‘请不要’，而收紧权限才是真正的‘做不到’”！</li><li>记忆——让安全成为习惯：主动管理智能体的 Memory ，避免被恶意内容造成记忆污染。当习惯沉淀为记忆，安全才能真正写入龙虾的底层基因。</li></ul><h4>从“能用”到“敢用”：百度灵盾为 OpenClaw 构筑企业级安全防线</h4><p>在“龙虾市集 PLUS ”现场，百度智能体安全技术负责人季石磊围绕 OpenClaw 的安全治理与落地建议展开深度分享。他指出，智能体能力的边界拓宽，往往意味着安全风险的同步放大。比如，一些网页或文档里夹带了隐藏指令， AI 如果没分辨出来，就可能“照做不误”。还有一些更容易忽视的风险：如装了来源不明的 Skill 插件、默认配置暴露、弱口令及权限随手共享等问题，都可能埋下数据泄露的隐患。</p><p>针对上述安全风险，季石磊建议大家优先选择官方认证 Skill ，避免运行陌生代码，开启身份白名单验证，并对敏感信息进行脱敏处理；企业侧则需强化统一部署、权限管控与审计机制，构建完善的安全防护体系。总结起来，龙虾的使用要坚持“少给权限、做好隔离、应急预案”三点原则。</p><p>为实现企业级的安全管理服务，季石磊介绍了百度开发的灵盾智能体（ Agent Shield ），它像一道安全防护栏，能识别高危操作并防护、管控精细化权限、治理技能插件风险和全链路合规审计，让 OpenClaw 不只是“能用”，更能“敢用、可控地用、规模化地用”。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664335" alt="图片" title="图片" loading="lazy"/></p>]]></description></item><item>    <title><![CDATA[养龙虾，别“虾”浪！直击龙虾市集 PLUS「安全实战工坊」！ 百度安全 ]]></title>    <link>https://segmentfault.com/a/1190000047664349</link>    <guid>https://segmentfault.com/a/1190000047664349</guid>    <pubDate>2026-03-19 18:09:04</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>AI Day &amp; 龙虾市集 PLUS 在3月17日火热开张……<br/>现场很快聚起人，气氛热烈 <br/>但是在沉浸式养龙虾之前，有件事得提醒一句——</p><h3>龙虾随便养，但安全别“虾”浪！</h3><p>OpenClaw 爆火后，大家成为蓄谋已久的“云养虾人”，纷纷来到龙虾市集 PLUS ，体验一把 AI 发展带来的便利。</p><p>百度工程师们现场一对一帮助安装部署 OpenClaw ，演示特设 Skill 完成任务“高能场面”，甚至还有套圈龙虾、抓龙虾娃娃机、钓活龙虾活动，把“小龙虾”开心抱回家。但由于较高的系统访问权限和脆弱的默认安全配置，养龙虾容易产生安全风险。</p><p>为给大家科普 API Keys 、Token 等凭证及核心机密在龙虾中的基本概念与重要性，百度安全这次把摊位搬到了龙虾市集 PLUS 现场，面对面教大家如何识别龙虾安全隐患。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664351" alt="图片" title="图片"/></p><p>现场的安全实战工坊共有两个模块，帮助大家从意识到操作两个层面，养好用好小龙虾：</p><h4>⭐️ 第一关：“小龙虾”安全意识小剧场</h4><p>近期，国家网络安全通报中心与工信部等监管部门相继发布了针对 OpenClaw 开源智能体的安全风险预警与“六要六不要”防范建议。响应监管号召，百度安全在此次市集中特别设立防线。我们致力于全面提升公众与厂内同学的“安全养虾”意识，带大家看清 OpenClaw 繁荣生态背后潜藏的四大核心风险：</p><ul><li>架构风险：龙虾的多层架构设计存在安全缺陷，在执行任务时可能越权操作，被绕过认证，造成数据删除、信息泄露或设备被接管</li><li>配置风险：龙虾默认开放公网访问且缺少认证，敏感信息可能被明文存储，易未经授权访问</li><li>插件风险：龙虾的部分插件技能可能包含恶意代码或加载不可信内容，存在被投毒或远程控制的风险场景</li><li>应用风险：在办公、运维、个人助手或金融交易等场景中，可能引发内网渗透、敏感信息泄露或错误操作，应加强隔离部署、权限控制和审计监测</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664352" alt="图片" title="图片" loading="lazy"/></p><p>没有现场参与的同学，可以线上小试牛刀，学习龙虾安全小 Tips 呦<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047664353" alt="图片" title="图片" loading="lazy"/><br/>以上场景小原则总结出简单一句话——</p><h3>龙虾越火，安全这件事越不能“虾”搞！</h3><h4>⭐️ 第二关：“小龙虾”原生安全 Workshop</h4><p>OpenClaw 不仅仅是“能聊天”，更是“能干活”的数字员工。正所谓“能力越大，风险越大”，一旦遭受恶意插件投毒或提示词注入，极易引发严重后果。百度安全专家在现场为参与者提供实机体验和答疑，让“小龙虾”拒绝“裸奔”！在专家的指导下，实际体验企业级智能体安全 Skill ——灵盾（ Agent Shield ） ，让小龙虾不只是“能用”，更要“敢用、可控地用”！在现场由专家带领参与者直击安全策略的拦截效果：</p><p>场景 1【高危操作识别与防护，防“手滑”与失控】：现场模拟触发“删除邮件”、“删除文档”等破坏性高危指令，体验系统如何精准识别风险、实时阻断并强制触发用户的二次确认流程。</p><p>场景 2【 Prompt 指令注入攻击防御，防“钓龙虾”】：揭秘恶意指令如何隐藏在内容中诱导 AI 执行。实测灵盾如何拦截角色篡改、窃密外发等越权行为。<br/>Workshop 中大家积极体验灵盾 Skill 的强大之处，安全工程师们细心讲解，从实操体验帮大家安全使用龙虾。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047664354" alt="图片" title="图片" loading="lazy"/><br/>龙虾市集 PLUS 收摊……<br/>Skill 工具包装上了<br/>安全知识也要一并打包带走‼️<br/>如果你有关于养虾的安全困惑或者解决妙招欢迎在评论区讨论</p>]]></description></item><item>    <title><![CDATA[巡检管理系统如何选择？基于实践经验的系统性判断方法 外勤管理研究所 ]]></title>    <link>https://segmentfault.com/a/1190000047664370</link>    <guid>https://segmentfault.com/a/1190000047664370</guid>    <pubDate>2026-03-19 18:08:18</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>作者：王博涵 小步外勤产品总监，外勤管理数字化专家</p><p>当企业想要一套<strong>巡检管理系统</strong>时，往往是已经遇到了管理瓶颈，例如人员在外无法核查真实性，巡检标准难统一，轨迹数据无法沉淀，费用与行为脱节，管理层缺少客观依据等等。</p><p>通过长期在巡检系统选型与落地一线的经验积累，我这里确定了一个判断核心：评价一套巡检管理系统的好坏，本质上看的不是功能列表有多长，而是它<strong>是否具备三项基础能力——真实性、适配企业业务流程与持续落地能力</strong>。以上任何一项的缺失，都将导致系统在上线后难以持续发挥管理效能。</p><p>这里我将按如下顺序依次展开：</p><p>1、4种常见的巡检场景类型以及适配的系统；</p><p>2、如何验证巡检管理系统产品能力；</p><p>3、如何判断一套巡检管理系统是否具备长期价值。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664372" alt="" title=""/></p><h2>一、选型前：了解清楚 4 种巡检场景类型</h2><p>很多企业在选巡检系统时会直接进入功能对比阶段，但更合理的路径其实是先明确巡检管理的核心目标，因为不同场景对应的系统能力完全不同。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664373" alt="" title="" loading="lazy"/></p><h3>1、定位监管型巡检：核心是人员在岗真实性</h3><p>在能源、石油、政府单位等行业，管理重点通常集中在<strong>人员是否真实在岗</strong>，以及是否存在虚假打卡、轨迹异常等情况。</p><p>而在评估这类巡检管理系统时，需要重点确认以下能力：是否支持多源定位？是否具备电子围栏与脱岗报警机制？是否可以识别虚拟定位软件？弱网或室内环境下是否仍可形成完整轨迹？</p><p><strong>真实性是巡检系统的底层逻辑</strong>。如果数据来源无法保证可靠性，那么后续统计分析与绩效考核都将失去依据。</p><p>在外勤管理领域，成熟产品例如<strong>小步外勤</strong>，已经在定位监管场景中形成了较完整的防作弊体系，并通过了大规模企业应用进行验证。这类系统在稳定性和成熟度上通常更具优势。</p><h3>2、动作执行型巡检：核心是巡检质量与标准落实</h3><p>在制造业、物业管理、设备运维等行业，管理重点并不只是人是否到场，更是<strong>巡检是否按标准执行</strong>。</p><p>因此，在选型过程中应重点关注：</p><p>是否支持按天制定巡检计划？是否可限制巡检顺序？是否支持点位与线路灵活组合？是否具备轨迹回放功能？巡检动作是否可配置。</p><p><strong>复杂巡检场景通常涉及多条线路、多类检查项</strong>，如果系统无法限制顺序或无法还原巡检路径，巡检质量就难以量化。</p><h3>3、动销监督型巡检：核心是费用与行为数据是否匹配</h3><p>在快消、连锁、商超等行业，巡检与动销费用高度相关。企业不仅需要确认是否到店，还需要<strong>验证陈列是否执行、费用是否真实发生</strong>。</p><p>此时需要重点判断：是否支持到店真实性验证？是否具备照片、时间与定位绑定机制？是否能够将巡店动作与费用数据关联？</p><p>如果巡检系统无法实现行为数据与费用数据的统一管理，<strong>管理闭环就无法形成</strong>。</p><h3>4、行程费用型管理：核心是成本可控性</h3><p>在销售外勤团队规模较大的企业中，里程记录与报销管理往往成为风险点。</p><p>此时关键的判断因素便是：<br/>系统是否支持<strong>轨迹自动记录</strong>？是否能够<strong>自动计算里程补贴</strong>？是否可实现<strong>行程与签到关联</strong>？</p><p>当轨迹数据、签到数据与报销数据能够形成一致逻辑时，<strong>费用管控才具备客观依据</strong>。</p><h2>二、巡检系统选型必须进行的重要验证</h2><p>巡检管理系统的评估不能停留在演示阶段，必须通过实际测试验证核心能力。</p><h3>1、真实性验证</h3><p>应进行<strong>虚拟定位测试、弱网环境测试以及电子围栏越界测试</strong>，观察系统是否能够识别异常行为并生成完整记录。真实性能力不足的巡检软件，很难支撑长期管理。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664374" alt="" title="" loading="lazy"/></p><h3>2、计划与线路能力验证</h3><p>应现场配置真实巡检线路，并测试<strong>是否支持顺序限制、是否具备最优路径规划、是否可以回放历史轨迹</strong>。复杂巡检场景对线路能力要求较高，这一步不应省略。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664375" alt="" title="" loading="lazy"/></p><h3>3、动作与表单灵活性验证</h3><p>企业制度与检查标准会不断变化，因此<strong>系统是否支持动作自定义与表单灵活配置</strong>至关重要。如果系统结构过于固定，后期调整成本会迅速上升。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664376" alt="" title="" loading="lazy"/></p><h3>4、服务与实施能力验证</h3><p>在多个项目复盘中可以发现，巡检系统落地成败往往与服务体系相关，而不仅仅取决于功能数量。</p><p>应确认<strong>是否提供方案设计、是否安排前期陪跑、是否提供角色分层培训、是否具备定期回访与持续升级机制</strong>。</p><p>小步外勤的全周期服务体系与持续升级机制，便可在长期应用中能够有效降低实施风险。</p><p><strong>系统本身只是工具，服务机制决定落地效果。</strong></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664377" alt="" title="" loading="lazy"/></p><h2>三、如何判断一套巡检管理系统是否具备长期价值</h2><p>在最终决策阶段，可以从三个维度综合判断：</p><p><strong>是否覆盖多种外勤场景：</strong></p><p>成熟的产品通常拥有完整的版本结构，能够覆盖定位监管、动作执行、动销监督、行程费用等多种外勤管理场景，这直接反映了系统架构的灵活性与扩展能力。</p><p><strong>是否经过大规模客户验证：</strong></p><p>行业覆盖广度、服务企业规模、用户续费率等指标，是产品稳定性与市场适配度的客观证明。经过大规模客户验证的系统，其真实性与可靠性更具说服力。</p><p><strong>系统是否具备持续升级能力：</strong><br/>行业监管政策与企业内部制度始终处于动态变化中，系统能否紧跟变化、持续迭代，是保障长期适配性的核心前提。</p><p>当这三个维度同时成立时，巡检系统才具备长期使用基础。</p><h2>巡检系统选型，是一套结构化决策过程</h2><p>选择合适的巡检管理系统，不应止步于简单对比功能多寡，而应建立一套<strong>围绕真实性保障、业务场景适配与持续落地能力展开的结构化决策</strong>流程。</p><p>具体而言，企业应先明确自身的巡检管理场景，再通过实地测试验证系统的核心能力，最后结合供应商的实施与服务体系进行综合评估。按此步骤推进，才能有效规避选型失误。</p><p><strong>巡检系统的真正价值，不在于界面的功能展示，而在于能否构建真实的数据体系，能否支撑可持续的管理机制。</strong>当企业面临巡检真实性难核查、执行标准难落实、费用管控难闭环等问题时，应始终紧扣上述三个核心维度，以系统化方式完成选型决策。</p>]]></description></item><item>    <title><![CDATA[开源同行，感谢有你｜IvorySQL 社区邀您领取贡献者证书 IvorySQL ]]></title>    <link>https://segmentfault.com/a/1190000047664392</link>    <guid>https://segmentfault.com/a/1190000047664392</guid>    <pubDate>2026-03-19 18:07:33</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>在开源的星辰大海中，每一次代码的提交、每一个 Issue 的精准反馈、每一行文档的打磨完善，都是推动开源项目稳步前行的微光，无数微光汇聚，便成了 IvorySQL 成长的星河。</p><p>IvorySQL 作为一款兼容 Oracle 的 PostgreSQL 开源数据库，其发展与壮大，始终离不开全球开发者的热忱参与和持续深耕。从内核技术的迭代优化到生态工具的适配开发，从文档体系的补全完善到社区交流的积极分享，越来越多的开发者奔赴而来，以专业与热爱，共同浇灌 IvorySQL 开源数据库生态的繁茂生长。</p><p>为铭记每一位贡献者的付出，感谢大家对社区的信任与支持，IvorySQL 社区正式为 2026 年新晋贡献者颁发社区贡献者电子证书，同时也再次致敬 2025 年一路同行的社区伙伴，开放证书长期领取通道。这一纸证书，不仅是对每一位开发者开源付出的认可与纪念，更镌刻着大家在 IvorySQL 社区留下的珍贵足迹。</p><h2>🏅 2026 年一季度 IvorySQL 社区贡献者</h2><p>2026 年伊始，开源的脚步从未停歇，多位开发者率先加入 IvorySQL 社区建设的行列，以代码提交、问题反馈、生态共建等多种方式，为项目的早期迭代注入关键力量，用实际行动诠释开源精神。</p><p>社区在此向各位新晋贡献者致以最衷心的感谢，也邀大家领取专属于自己的贡献者证书，留存这份开源印记。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047664394" alt="2026.jpg" title="2026.jpg"/><br/>证书示例</p><h3>贡献者名单</h3><table><thead><tr><th>Cédric Villemain</th><th>Fawei Zhao</th><th>Ge Sui</th></tr></thead><tbody><tr><td>Grant Zhou</td><td>Oreo Yang</td><td>Pierre Forstmann</td></tr><tr><td>Rophy Tsai</td><td>Shuntian Jiao</td><td>Steven Niu</td></tr><tr><td>Xiangyu Liang</td><td>Xiaohui Liu</td><td>Xinjie LYU</td></tr><tr><td>Xueyu Gao</td><td>Yanliang Lei</td><td>Yasir Hussain Shah</td></tr><tr><td>Yuan Li</td><td>Zheng Tao</td><td>Zhenhao Pan</td></tr><tr><td>Zhe Zhang</td><td>Zhuoyan Shi</td><td>xiaoyu509</td></tr></tbody></table><p>以上贡献者通过提交 PR、反馈 Issue、社区推广等核心方式，深度参与 IvorySQL 项目研发与社区建设，为项目的功能优化、问题解决和生态拓展做出了重要贡献。</p><h3>证书领取方式</h3><p>本次发放的 IvorySQL 社区贡献者证书为电子版证书。</p><p>获得证书的贡献者可通过以下链接领取：</p><p><strong><em><a href="https://link.segmentfault.com/?enc=iJsXUrmG%2BDJm%2BytbAYybXg%3D%3D.yXPSZzfNKTnjw4AUVfT3G1evS6fKzbGwKYmHtgqEnfQQekGtmPo8zIpyANG1IqD0ppZdjul90sXNDO0x7UF2m4LGOO0%2BBxXvjN3vFUrkhhs%3D" rel="nofollow" target="_blank">https://github.com/IvorySQL/community/tree/main/certification-2026</a></em></strong></p><h2>🌟 再次致谢｜2025 年 IvorySQL 社区全体贡献者</h2><p>回首 2025，是 IvorySQL 扎实成长的一年，项目完成 5.0、5.1 重磅版本发布，斩获多项生态认证，亮相国内外数十场开源盛会，而这一切的背后，离不开 2025 年全体社区贡献者的一路同行与倾力支持。</p><p>在 <a href="https://link.segmentfault.com/?enc=NMu1noCLAazxLD3lAzo0Dg%3D%3D.HJU4ahJtJNE5fIsyZnzUJ6eY16PVY8KoTr%2BeDbB0fuLQle5Tb1GfGY89vRRi%2FtNFy59lZfefPvMZm%2FxkkyaIOA%3D%3D" rel="nofollow" target="_blank">2025 年社区年度总结</a>中，IvorySQL 社区已为所有贡献者定制专属电子证书，为让每一位伙伴都能便捷获取这份荣誉，社区持续开放 2025 年贡献者证书领取通道，再次向每一位 2025 年的贡献者致以最诚挚的感谢！<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047664395" alt="2025.png" title="2025.png" loading="lazy"/><br/>证书示例</p><h3>2025 年社区贡献者完整名单</h3><table><thead><tr><th>Alex Guo</th><th>Amberwww1</th><th>Bei Fu</th><th>caffiendo</th></tr></thead><tbody><tr><td>Carlos Chong</td><td>Cary Huang</td><td>ccwxl</td><td>Cédric Villemain</td></tr><tr><td>Dapeng Wang</td><td>Denis Lussier</td><td>Fawei Zhao</td><td>flyingbeecd</td></tr><tr><td>Gavin LYU</td><td>Ge Sui</td><td>Grant Zhou</td><td>huchangqiqi</td></tr><tr><td>Hulin Ji</td><td>Imran Zaheer</td><td>jerome-peng</td><td>JiaoShuntian</td></tr><tr><td>Kang Wang</td><td>Lily Wang</td><td>luss</td><td>Martin Gerhardy</td></tr><tr><td>Mingran Feng</td><td>omstack</td><td>Oreo Yang</td><td>otegami</td></tr><tr><td>Pedro Lopez</td><td>Renli Zou</td><td>Rophy Tsai</td><td>RRRRhl</td></tr><tr><td>Ruike Sun</td><td>Ruohang Feng</td><td>shangwei007</td><td>Shaolin Chu</td></tr><tr><td>Shawn Yan</td><td>shlei6067</td><td>Shoubo Wang</td><td>Shuisen Tong</td></tr><tr><td>sjw1933</td><td>Steven Niu</td><td>tiankongbuqi</td><td>Xiangyu Liang</td></tr><tr><td>Xiaohui Liu</td><td>xuexiaoganghs</td><td>Xueyu Gao</td><td>yangchunwanwusheng</td></tr><tr><td>Yanliang Lei</td><td>Yasir Hussain Shah</td><td>Yuan Li</td><td>Zhe Zhang</td></tr><tr><td>Zheng Tao</td><td>Zhenhao Pan</td><td>Zhibin Wang</td><td>Zhuoyan Shi</td></tr></tbody></table><h3>证书领取方式</h3><p>获得证书的贡献者可通过以下链接领取：</p><p><strong><em><a href="https://link.segmentfault.com/?enc=ToVzPyWTS6F54XcYUeVpnQ%3D%3D.09ZTtKNI%2BqdTt5Y4%2Fs5M4aXZAizVbnyIWIhHwfzwEn7EsE1ZgK6b%2FZHMvHyYbivj57SeUo1aFHWgC6juQX4EWA3054%2F%2FjWk5j1MVgB9DRhY%3D" rel="nofollow" target="_blank">https://github.com/IvorySQL/community/tree/main/certification-2025</a></em></strong></p><h2>🚀 2026 年 IvorySQL 社区贡献者激励计划全新升级</h2><p>开源之路，步履不停；感恩同行，未来可期。为回馈社区贡献者的付出，同时吸引更多开发者加入 IvorySQL 开源生态，2026 年社区对贡献者激励机制进行全面升级，围绕代码贡献、文档共建、生态适配、社区布道、问题解答等多个维度，打造更完善、更具吸引力的激励体系，让每一份开源付出都能得到认可与回馈。</p><h3>多元参与，人人皆可做贡献</h3><p>IvorySQL 社区始终坚持「开源无门槛，贡献无大小」的理念，为开发者提供多样化的贡献路径，无论你是资深的开发工程师，还是刚入门的开源爱好者，都能找到适合自己的参与方式：</p><ul><li>代码类贡献：内核开发、功能迭代、Bug 修复、插件开发、生态工具适配、参与代码评审等；</li><li>非代码类贡献：问题反馈、文档完善、技术翻译、社区问答、线下 / 线上技术分享、案例征集、迁移实战经验总结等。</li></ul><p>若你有意参与代码类贡献，IvorySQL社区已为你准备好专属贡献指南，助力降低参与门槛，快速上手开源贡献：<a href="https://link.segmentfault.com/?enc=F6xfVCW%2B64RmHkeyiHmM6w%3D%3D.%2FPRqA%2BC6spy%2BnlvrajkbhTntaDcBQX7ifmhIXf9a77nAFdbqohKQSdH0BK8hesK9XuGTcFkKE6rtNnDsooc49A%3D%3D" rel="nofollow" target="_blank">https://www.ivorysql.org/zh-cn/contribution-guidelines</a></p><h3>2026 年全新贡献者激励政策</h3><p>2026 年，IvorySQL 社区将为不同类型、不同等级的贡献者提供多维度激励支持，包括但不限于：</p><ul><li>多维荣誉体系： 颁发专属社区认证电子证书，并将贡献者 GitHub 头像永久植入 IvorySQL 官网“个人荣誉殿堂”（贡献者墙），记录开源足迹；</li><li>“灯塔”导师计划： 建立资深专家一对一带教机制，提供专属技术支持与代码评审（Code Review），助力开发者实现从使用者到核心贡献者的进阶蜕变；</li><li>核心活动权益： 享有 HOW 2026（PostgreSQL&amp;IvorySQL 技术生态大会）等技术活动的演讲席位及免费参会名额；</li><li>年度评选激励： 开展年度优秀贡献者评选，入选者可获得精美社区周边礼品、行业资源对接及全渠道宣传曝光。</li></ul><h2>✨ 开源同行，未来可期</h2><p>开源的魅力，在于一群人向着同一个目标，携手前行。IvorySQL 的成长，始终离不开每一位开发者的信任与投入；而 IvorySQL 也始终以开放、包容的姿态，迎接每一位热爱开源的伙伴。</p><p>2026 年，IvorySQL 将继续深耕 PostgreSQL 开源生态，持续推进技术创新与生态建设，也期待更多开发者加入社区，以代码为桥，以热爱为帆，一起在开源的世界里，共探技术边界，共筑生态未来，让开源的力量链接更多可能！</p>]]></description></item>  </channel></rss>
+(18 rows)</code></pre><h2>四、 内存结构</h2><p>openGauss的内存结构分为两种不同的类型，它们分别是本地内存和共享内存。它们的关系如下图所示：<br/><img width="723" height="342" referrerpolicy="no-referrer" src="/img/bVdn9SP" alt="image.png" title="image.png" loading="lazy"/></p><h3>4.1 共享内存</h3><p>openGauss的共享内存是指每个后台进程（backend process）共同使用的内存区域，下列举了openGauss中的共享内存以及它们的作用。<br/><img width="723" height="332" referrerpolicy="no-referrer" src="/img/bVdn9SQ" alt="image.png" title="image.png" loading="lazy"/></p><h3>4.2 本地内存</h3><p>openGauss的本地内存是指每个后台线程自己使用的内存区域，下表列举了openGauss中的本地内存以及它们的作用。<br/><img width="723" height="359" referrerpolicy="no-referrer" src="/img/bVdn9SS" alt="image.png" title="image.png" loading="lazy"/></p>]]></description></item><item>    <title><![CDATA[懂镜头的AI编剧助手来了！阿里云AnalyticDB让大模型学会“导演思维” 数据Cool ]]></title>    <link>https://segmentfault.com/a/1190000047664719</link>    <guid>https://segmentfault.com/a/1190000047664719</guid>    <pubDate>2026-03-19 19:05:00</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>在数字化浪潮的推动下，短剧作为新兴的娱乐形式正在全球范围内蓬勃发展。然而，传统的剧本创作模式面临着前所未有的挑战，专业编剧的稀缺性和高昂的创作成本成为制约行业发展的瓶颈。随着人工智能技术的飞速发展，特别是OpenClaw等Agent技术发展，一个全新的创作时代正在到来——AI短剧编剧不仅能够理解剧情逻辑，更能够精准把握镜头语言，为这个行业带来革命性的效率提升。</p><p>阿里云瑶池旗下的云原生数据仓库 AnalyticDB PostgreSQL 版（以下简称ADB-PG）基于内置的 GraphRAG 与长记忆技术，构建了一款 AI 编剧助手。区别于传统“提示词+视频生成”的模式，AI 编剧助手构建了具备角色一致性、剧情连贯性、个性化叙事和持续进化能力的智能创作系统——为短剧行业提供从小说改编、剧本创作到分镜落地的全流程智能支撑。</p><h2>1、业务背景：短剧市场的机遇与挑战</h2><h3>1.1 短剧市场蓬勃发展</h3><p> <br/>近年来，中国短剧市场呈现出爆发式增长的态势。据行业数据显示，2023年中国微短剧市场规模已突破373亿元，预计2027年将达到1000亿元规模。海外市场同样表现亮眼，特别是在东南亚、欧美等地区，中国制作的短剧正在获得越来越多的关注。</p><h3>1.2 AI技术降低创作门槛</h3><p>通过智能化的工具和降低的技术门槛，普通用户也可以参与到剧本和短剧的创作中来。这不仅大幅降低了创作成本，还极大地丰富了创作主体的多样性。普通创作者不再需要深厚的编剧功底，就能够通过AI工具创作出具有专业水准的剧本。</p><h3>1.3 懂镜头的编剧极为稀缺</h3><p>传统影视编剧往往需要数年的专业训练和丰富的创作经验，而短剧作为一种新兴形式，既要求编剧具备传统的故事构建能力，又需要掌握短时长、快节奏的叙事技巧。这种复合型人才的培养周期长、成本高，远远跟不上市场需求的增长速度。一部优质短剧的剧本创作成本动辄数万甚至十几万元，而且创作周期长达数周甚至数月。这种高成本、长周期的创作模式严重制约了内容的产出效率，成为行业发展的最大痛点。</p><h2>2、AI剧本创作的核心挑战</h2><h3>2.1 剧本质量决定最终成败</h3><ul><li>在短剧制作的整个流程中，剧本无疑是最核心的要素。一个优秀的剧本需要在有限的时长内完成完整的故事叙述，这对剧情节奏的把控提出了极高的要求。</li><li>节奏控制的艺术：短剧通常只有几分钟的时长，必须在极短的时间内完成人物塑造、情节推进和情感渲染。这要求每一个情节点都必须精确计算，每一句台词都要承载多重功能。传统编剧往往需要多年经验才能掌握这种节奏感，而AI需要通过算法来学习和模拟这种创作直觉。</li><li>伏笔与反转的布局：优秀的短剧往往具有精妙的伏笔设置和意想不到的反转效果。这种叙事技巧不仅考验逻辑思维，更需要对人性和情感的深刻理解。AI必须学会在前期埋下合理的线索，并在适当的时机揭示真相，形成强烈的戏剧冲突。</li><li>对镜头的精准把控：现代短剧制作越来越依赖多模态大模型，这就要求剧本不仅要有精彩的对话和情节，还要包含详细的镜头描述、场景布局、人物动作等视觉化信息。编剧需要像导演一样思考，为每个场景提供足够的视觉指导。</li></ul><h3>2.2 AI生成剧本的四大痛点</h3><p>通过对现有AI剧本生成工具的深入分析，我们发现了四个核心问题：</p><ul><li>前后矛盾问题：AI在生成长篇剧本时，经常出现人物性格前后不一致、事件逻辑相互冲突的情况。例如，前一集中设定的某个角色特征，在后续章节中被完全忽略或颠覆，导致整个故事的连贯性受损。</li><li>节奏拖沓问题：AI往往难以把握故事的核心主线，容易在次要情节上过度展开，导致整体节奏缓慢。特别是在短剧这种对节奏要求极高的形式中，这种问题尤为突出。</li><li>钩子设置问题：优秀的短剧需要在每一集结尾设置悬念钩子，吸引观众继续观看。然而，AI生成的钩子往往显得生硬和突兀，缺乏自然的情感递进和逻辑铺垫。</li><li>质量评估缺失：目前的AI工具缺乏有效的质量评估机制，无法对生成的剧本进行客观评价，更缺乏基于评估结果的自动优化能力。</li></ul><p><img width="723" height="399" referrerpolicy="no-referrer" src="/img/bVdn9VO" alt="" title=""/></p><h2>3、AnalyticDB PostgreSQL 版 AI 剧本创作解决方案</h2><h3>3.1 结合上下文图谱、个性化记忆与多Agent协同技术架构</h3><p>为了解决上述问题，我们构建了一个由四个专业Agent组成的协同创作系统：<br/>▶︎ 知识图谱架构师 - 数据基座的构建者</p><ul><li>多格式解析能力：能够处理TXT、PDF格式的小说文本，以及通过OCR和图像识别技术解析漫画内容；</li><li>智能实体抽取：自动识别并抽取人物、地点、道具等关键实体，基于ADB-PG GraphRAG 能力构建详细的角色档案和关系图谱；</li><li>时空脉络梳理：建立事件链条、人物关系网和时空坐标系统，确保剧本的逻辑一致性；</li><li>高效数据存储：采用向量引擎存储语义信息，图引擎存储逻辑关系，实现20倍于开源产品的性能提升。</li></ul><p>▶︎ 编剧老师 - 创作的核心驱动</p><ul><li>结构化策划：根据用户设定的风格、时长、目标受众等参数，利用知识图谱中的脉络信息进行剧本大纲设计和分集规划；</li><li>精细化创作：基于ADB-PG长记忆能力将人物性格特征总结成人物个性化记忆，生成符合角色设定的台词，在每一集中精心设置悬念点和高潮段落；</li><li>原著还原控制：通过RAG技术动态检索原始文档，确保改编剧本不偏离原著的核心精神。<br/>▶︎ 审核专家 - 质量把关的守门员</li><li>多维度评分系统：从结构完整性、内容一致性、原著还原度、节奏控制等多个维度进行自动化评分；</li><li>智能迭代引擎：识别评分低于设定阈值的问题环节，生成具体的修改建议，并触发相关Agent进行重写优化。<br/>▶︎ 视觉导演 - 镜头语言的翻译官</li><li>专业术语转换：将剧本中的动作描述转化为标准的电影拍摄术语，如特写、拉镜头、俯瞰视角等；</li><li>视觉一致性控制：基于场景描述生成详细的光影效果、材质纹理、色调风格等视觉指导；</li><li><p>标准化输出：生成适配各种多模态大模型的标准Prompt格式。</p><h3>3.2 从剧本生成到质量检查全流程</h3><p>▶︎ 个性化配置能力支持用户级的剧本定制，包括时长控制、改编模式选择、节奏偏好设定等多个维度的个性化配置，真正做到千人千面的创作体验。<br/>▶︎ 题材转换能力创新性地推出小说框架仿写功能，能够保留原作的叙事结构和情节框架，辅助用户通过AI创作新的题材、世界观和人物设定。目前支持现代都市、玄幻修仙、科幻未来等六种主流题材。</p></li></ul><p><img width="723" height="674" referrerpolicy="no-referrer" src="/img/bVdn9VP" alt="" title="" loading="lazy"/><br/>▶︎ 智能AI审核内置质量评分和自动迭代优化功能，支持AI一键优化。<br/><img width="723" height="393" referrerpolicy="no-referrer" src="/img/bVdn9VQ" alt="" title="" loading="lazy"/><br/>支持用户手动调整到符合要求的质量。<br/><img width="723" height="393" referrerpolicy="no-referrer" src="/img/bVdn9VQ" alt="" title="" loading="lazy"/><br/>▶︎ AI助手交互式优化同时提供AI助手进行交互式调优，让创作过程更加智能化和人性化。<br/><img width="723" height="401" referrerpolicy="no-referrer" src="/img/bVdn9VS" alt="" title="" loading="lazy"/><br/>▶︎ 镜头语言提示词不仅生成高质量的剧本文本，还能自动生成适用于视频制作的镜头提示词和详细的质量评估报告，为后续的制作流程提供全面支持。<br/><img width="723" height="372" referrerpolicy="no-referrer" src="/img/bVdn9VT" alt="" title="" loading="lazy"/><br/>▶︎ 剧本质量报告与一键优化<br/><img width="723" height="470" referrerpolicy="no-referrer" src="/img/bVdn9V3" alt="" title="" loading="lazy"/></p><h3>3.3 产品开通与Agent Skills开放</h3><p>考虑到不同用户的使用习惯和技术背景，我们提供了两种接入方式：控制台登录：面向专业用户提供功能完整的Web界面；开放Agent Skills接入：通过OpenClaw等Agent工具快速集成。</p><h2>4、总结与展望</h2><p>随着人工智能技术的不断发展，AI短剧编剧正在从概念走向现实，从辅助工具演进为创作主体。ADB-PG 所构建的这套解决方案不仅解决了当前 AI 剧本生成的核心痛点，更重要的是为整个短剧行业提供了一种全新的创作范式。技术发展的必然趋势：AI编剧技术将朝着更加智能化、个性化的方向发展。未来的系统将能够更好地理解用户意图，生成更加符合个人风格的作品。同时，随着多模态技术的发展，AI将能够更好地处理视觉、音频等多种媒体形式，实现真正的全媒体创作。</p><p>懂镜头的AI短剧编剧已经来了，它不仅仅是一个技术产品，更是创作方式的一次革命。在这个充满无限可能的时代，让我们共同期待AI为短剧创作带来的精彩未来。</p><p>💬 如有问题或建议，欢迎加入「AnalyticDB AI编剧助手」用户交流群。</p><p>钉钉交流群钉钉群号：154575028158<br/>🔗ADB-PG GraphRAG：<a href="https://link.segmentfault.com/?enc=snh%2BQIjmKSvIyRbO%2FgjyYw%3D%3D.0G1x9TB0srBLsTBbKJXyS43JASJb8ARH3Od8Ylo5hRbuILHgK20%2FDr4w4lB7iNBf9m2qc0Rb8JvMGTRqA3F8G9Nvt4AkVBuhQplEj5npoRKWSh1%2FlN6FR5NIiBvnjjZY2pdoq5OvbP%2BI0DWxp7cw6Q%3D%3D" rel="nofollow" target="_blank">https://help.aliyun.com/zh/analyticdb/analyticdb-for-postgres...</a>🔗ADB-PG 长记忆：<a href="https://link.segmentfault.com/?enc=Cxky8yrrjjO4IicjQwrGRg%3D%3D.OFczfFEQn4nalRFRcX%2BLUDHd%2FtjRh%2BJB%2B9xD7hEwmOVFlECye1okUn23ZVGRyGr%2B9xc3HxcG2YjPyYlXGOByy5rT%2BQiVeYPf4fvicTZXyhy7WfLvD3735v7LGvOY8IE1D03K3a3JgXUxrg%2Fiursstv76ACz84xG1NJsmSJjE4DBJC%2FHIUF9epqRSWuF8cxViAVGFg6pA8yI1rN25XBZ2Qw%3D%3D" rel="nofollow" target="_blank">https://help.aliyun.com/zh/analyticdb/analyticdb-for-postgres...</a></p>]]></description></item>  </channel></rss>
