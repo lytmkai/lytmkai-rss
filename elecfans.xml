@@ -1,4 +1,413 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[你的OpenClaw只会答不会做？Skills帮你构建主动执行能力]]></title>    <link>https://www.elecfans.com/d/7759488.html</link>    <guid>https://www.elecfans.com/d/7759488.html</guid>    <pubDate>2026-03-20 17:20:00</pubDate>    <description><![CDATA[<p><span style="background-color:rgb(255,255,255);color:rgba(0,0,0,0.9);">在</span><span style="background-color:rgb(255,255,255);color:rgb(34,93,171);"><strong><u>OpenClaw这么火，用它做个飞书助手怎么样</u>？</strong>（进入<a href="https://bbs.elecfans.com/group_727" target="_blank"><u>飞凌嵌入式</u></a>账号主页，上一篇文章就是）</span><span style="background-color:rgb(255,255,255);color:rgba(0,0,0,0.9);">一文中，讲解了将OpenClaw部署在OK1126B-S开发板，并通过飞书调用部署在服务器上的本地模型，从而实现一个属于我们自己的本地<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>助手的方法。本篇文章，我们将进一步深入挖掘OpenClaw的核心能力之一 —— Skills。</span></p><p/><h2><span style="color:rgb(34,93,171);"><strong>1、OpenClaw Skills 生态</strong></span></h2><p style="margin-left:10px;text-align:justify;">如果说模型本身是“大脑”，那么Skills更像是“经验+行动指南”。通过编写Skills，我们可以让OpenClaw不再只是被动回答问题，而是能够按照既定规则，主动完成复杂任务。</p><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;">截至发稿前，ClawHub社区中发布的Skills数量已达到了2.6w+，但这些Skills中超过99%都是面向Windows/x86 <a href="https://bbs.elecfans.com/group_300" target="_blank"><u>Linux</u></a>/Mac且聚焦于办公、网页自动化等方面，面向<a href="https://bbs.elecfans.com/group_1121" target="_blank"><u>嵌入式</u></a>Linux的Skills数量极少且成熟度较低，缺乏对嵌入式外设（GPIO、<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>、SPI、<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>、<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>、<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>、摄像头）的标准化封装与驱动适配，并且没有针对边缘计算、低功耗、实时性场景（如<a href="https://m.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>、<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>、<a href="https://m.elecfans.com/v/tag/663/" target="_blank"><u>智能家居</u></a>、车载等）的专用技能集。</p><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;">难道嵌入式领域就不配吃"龙虾"吗？！</p><img src="https://file1.elecfans.com/web3/M00/4F/F3/wKgZPGm9C3GADrYJAAN4K5s2Wiw332.png" alt="wKgZPGm9C3GADrYJAAN4K5s2Wiw332.png"/><p style="margin-left:10px;text-align:justify;"><br/>本文，小编将以一个“控制OK1126B-S开发板上的<a href="https://www.hqchip.com/app/1721" target="_blank"><u>Led</u></a>灯闪烁节奏”的<span style="color:rgb(51,51,51);">简单案例做演示，</span>从基础开始逐步<a href="https://m.elecfans.com/v/tag/899/" target="_blank"><u>拆解</u></a>Skills的设计与使用方法。<br/></p><h2><span style="color:rgb(34,93,171);"><strong>2、什么是Skills?</strong></span></h2><p style="margin-left:10px;text-align:justify;">从本质上来说，Skills就是一本“操作手册”。它并不是直接帮AI完成任务，而是告诉AI在什么情况下应该做什么，以及如何去做。</p><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;"><strong>我们用一个简单的类比来理解：</strong></p><p style="margin-left:10px;text-align:justify;">在射击游戏中，玩家的目标是击败敌人。枪作为工具，它的职责非常单一：</p><blockquote><ul><li style="text-align:justify;">输入：扣动扳机</li><li style="text-align:justify;">输出：发射子弹</li></ul></blockquote><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;">至于子弹打到哪里，枪本身并不关心。而这个Skill的作用，则类似于“战术手册”。它会告诉AI：</p><blockquote><ul><li>什么时候可以开枪（检测到敌人）</li><li>什么时候不该开枪（有友军在前）</li><li>什么时候停止（敌人血量归零）</li></ul></blockquote><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;">通过这些规则约束，AI就不再是一个<a href="https://m.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>执行指令的工具，而是开始具备初步的判断能力与决策逻辑，开始“像人一样思考”。</p><p style="margin-left:10px;text-align:justify;"/><h3 style="margin-left:0px;text-align:justify;"><strong>2.1 Skill的基本构成</strong></h3><p style="margin-left:10px;text-align:justify;">在OpenClaw中，一个Skill实际上是一个结构化的目录，通常存放在：</p><p>~/.openclaw/worksp<a href="https://www.hqchip.com/app/1703" target="_blank"><u>ac</u></a>e/skills/${SKILL_NAME}</p><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;">一个完整的Skill由四个部分组成：</p><img src="https://file1.elecfans.com/web3/M00/4F/DF/wKgZPGm82q2ANhWkAAAsJMSP5rs294.png" alt="wKgZPGm82q2ANhWkAAAsJMSP5rs294.png"/><p style="margin-left:10px;text-align:justify;"><br/><strong>命名规范：</strong></p><p style="margin-left:10px;text-align:justify;">Skill的目录名称必须符合规范，否则无法被识别：</p><blockquote><ul><li style="text-align:justify;">只能使用：小写字母+数字+连字符（-）</li><li style="text-align:justify;">示例：gpio-led-control</li></ul></blockquote><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;">这个规范虽然简单，但在实际开发中非常关键，很多Skill无法加载的问题，往往就出在这里。</p><p style="margin-left:10px;text-align:justify;"/><h3 style="margin-left:0px;text-align:justify;"><strong>2.2 SKILL.md 详细解释</strong></h3><p style="margin-left:10px;text-align:justify;">SKILL.md是整个Skill的核心，可以理解为“说明书+行为指南”。它由两部分组成：</p><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;"><strong>① 前置元数据（Met<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>ad</u></a>ata）</strong></p><p style="margin-left:10px;text-align:justify;">使用<strong>---</strong>包裹，主要用于定义Skill的基本信息，这些信息的作用是：</p><blockquote><ul><li style="text-align:justify;">帮助OpenClaw识别Skill</li><li style="text-align:justify;">提供语义匹配（Skill触发关键词）</li></ul></blockquote><p style="margin-left:10px;text-align:justify;">例如：</p><p>--- name: gpio-led-control # 必填项 description: 开发板 GPIO LED 灯控制技能。 # 必填项 （以下列出部分可选项， 仅供参考） user-invocable: true # 可选:是否可被用户直接调用 ---</p><p style="margin-left:10px;text-align:justify;"><br/></p><p style="margin-left:10px;text-align:justify;"><strong>②正文（操作手册）</strong></p><p style="margin-left:10px;text-align:justify;">正文部分则就是具体的操作指导手册了，可以根据需求灵活组织，以我们已经提前写好的"gpio-led-control"下的SKILL.md 简化版为例进行展示：</p><p># GPIO LED Control - 开发板 LED 灯控制 控制 OK1126B-S 等开发板上的系统 LED 灯（work/net 等）。 ## 快速开始 ### 查看可用 LED ### 控制 LED 亮灭 ## 使用场景示例 ## 权限说明 ## 注意事项</p><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;">在实际编写时，可以根据需要扩展，例如：增加判断逻辑（何时执行）、增加错误处理、增加参数说明、增加示例输入输出等。除了核心的<strong>SKILL.md</strong>之外，其余三个目录属于辅助结构，各自承担不同角色。</p><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;">其中，<strong>scripts</strong>目录主要用来存放可直接运行的脚本文件，适合那些执行逻辑固定、无需频繁改动的任务场景，例如控制LED灯的亮灭转换等。这类脚本可以被直接调用运行，从而减少重复生成代码的过程，提高整体执行效率与稳定性。</p><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;"><strong>references</strong>目录则用于整理各类参考资料，例如：A<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>文档、数据库结构说明或操作手册等。这些内容并不会在一开始全部加载，而是根据实际需要按需引入上下文，既避免了无关信息占用资源，也能在关键时刻为AI提供更深入、专业的知识支持。</p><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;">而<strong>assets</strong>目录用于存放各类资源文件，例如模板、图片等。与 references 不同，这里的内容不会参与模型上下文推理，而是服务于最终结果的生成，例如报告模板、输出所需图片等，用于提升Skill输出的表现力和完整度。</p><p style="margin-left:10px;text-align:justify;"/><h3 style="margin-left:0px;text-align:justify;"><strong>2.3 自定义Skill编写流程</strong></h3><p style="margin-left:10px;text-align:justify;">理解结构之后，我们就可以开始编写自己的Skill了。编写Skill的整个流程可以总结为：</p><p style="margin-left:10px;text-align:justify;"><strong>需求分析→资源规划→初始化→编写→打包→测试</strong></p><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;"><span style="color:rgb(34,93,171);"><strong>第一步：需求分析</strong></span></p><p style="margin-left:10px;text-align:justify;">在动手之前，必须明确：</p><blockquote><ul><li style="text-align:justify;">Skill要解决什么问题？</li><li style="text-align:justify;">使用场景是什么？</li><li style="text-align:justify;">用户会怎么触发它？</li><li style="text-align:justify;">输入输出是什么？</li></ul></blockquote><p style="margin-left:10px;text-align:justify;">触发条件一定要清晰，否则会出现Skill无法被调用或被错误调用的情况<br/></p><p style="margin-left:10px;text-align:justify;"><span style="color:rgb(34,93,171);"><strong>第二步：资源规划</strong></span></p><p style="margin-left:10px;text-align:justify;">根据需求判断是否需要：</p><blockquote><ul><li style="text-align:justify;">scripts（是否需要执行代码）</li><li style="text-align:justify;">references（是否需要文档支持）</li><li style="text-align:justify;">assets（是否需要输出资源）</li></ul></blockquote><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;">提前规划可以避免后期结构混乱以及反复修改导致的冗余<br/></p><p style="margin-left:10px;text-align:justify;"><span style="color:rgb(34,93,171);"><strong>第三步：编写与调试</strong></span></p><p style="margin-left:10px;text-align:justify;">我们可以借助OpenClaw，在指定目录中自动生成一份符合规范的Skill初始模板，并在此基础上进行二次完善。不过需要注意的是，这类自动生成的Skill只是一个“起点”，通常无法直接满足实际需求。要想真正落地使用，仍然需要结合具体场景，对其内容进行逐步调整与反复测试，最终打磨出符合预期的功能效果。</p><p style="margin-left:0px;text-align:justify;"/><h2><span style="color:rgb(34,93,171);"><strong>3、Skill实战展示</strong></span></h2><p style="margin-left:10px;text-align:justify;">为了更直观地理解，我们编写了一个简单的Skill并放在了对应的目录下，该Skill用于控制OK1126B-S开发板上两颗 LED灯的闪烁。</p><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;">在<span style="color:rgb(34,93,171);"><strong><u>OpenClaw这么火，用它做个飞书助手怎么样</u>？</strong></span>一文中，我们已经将安装在开发板上的OpenClaw接入了飞书，因此，我们此时可以直接用飞书对OpenClaw下达命令。<br/></p><p style="margin-left:10px;text-align:justify;">接入不同的Skill后，OpenClaw会：<strong>识别用户意图→匹配对应Skill→根据SKILL.md的规则执行→调用scripts中的脚本→返回执行结果</strong>。<br/></p><p style="margin-left:10px;text-align:justify;">整个过程无需人工干预，实现真正的“自然语言控制硬件”。<br/></p><h2><strong>4、</strong><span style="color:rgb(34,93,171);"><strong>总结</strong></span></h2><p style="margin-left:10px;text-align:justify;">我们通过拆解Skills的核心概念、结构，并结合LED控制简易实操案例，清晰展现了Skills的落地应用逻辑。即便只是基础的硬件控制场景，这个案例也直指Skills的核心价值：<strong>把复杂业务流程封装成可复用的标准化能力单元</strong>。</p><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;">Skills的设计初衷，就是实现<strong>指令化调用、规范化执行</strong>：完成Skills搭建后，仅需一句指令即可驱动AI按预设规则完成任务，既彻底规避重复开发、重复调试的冗余劳动，又能保障全场景任务执行的稳定性与一致性，在<a href="https://www.elecfans.com/v/tag/232/" target="_blank"><u>嵌入式开发</u></a>、自动化运维、智能设备管控等领域具备极强的实用价值。</p><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;"><strong>嵌入式领域是OpenClaw生态落地的核心突破口</strong>，既是实现硬件实时交互、落地边缘智能的关键入口，也是整个生态中增长潜力最大、优质能力供给最紧缺的赛道。只有持续打造丰富、易用、高可靠的嵌入式Skills能力池，OpenClaw才能突破桌面工具的定位局限，真正成长为覆盖<strong>“云-边-端”全链路</strong>的完整智能执行框架。</p>]]></description></item><item>    <title><![CDATA[SGMNM10330：30V单N沟道PDFN封装MOSFET的深度解析]]></title>    <link>https://www.elecfans.com/d/7759446.html</link>    <guid>https://www.elecfans.com/d/7759446.html</guid>    <pubDate>2026-03-20 17:20:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_7759446" value="https://file1.elecfans.com/web3/M00/4F/F4/wKgZPGm9ELCAA8B-AAmVrkj8JE4061.pdf"/><h1>SGMNM10330：30V单N沟道PDFN封装<a href="https://www.elecfans.com/tags/mosfet/" target="_blank"><u>MOSFET</u></a>的深度解析</h1>
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[安科瑞解锁能源管理新范式：高渗透率零碳园区+源网荷储一体化]]></title>    <link>https://www.elecfans.com/d/7759403.html</link>    <guid>https://www.elecfans.com/d/7759403.html</guid>    <pubDate>2026-03-20 17:04:00</pubDate>    <description><![CDATA[<p>
+	安科瑞 187谢6150飞0784</p>
+<p>
+	“双碳”目标之下，零碳园区成为产业转型的核心载体，而高<a href="https://www.elecfans.com/v/tag/293/" target="_blank"><u>新能源</u></a>渗透率则是零碳园区的鲜明<a href="https://m.hqchip.com/tags" target="_blank"><u>标签</u></a>。</p>
+<p>
+	但随之而来的，是风光分布式能源出力波动、园区负荷需求多变的双重难题——光伏装机多少才不浪费？储能配置多大能实现收益大化？<a href="https://www.elecfans.com/tags/充电桩/" target="_blank"><u>充电桩</u></a>如何布局更合理？传统能源调度模式难以适配，导致能源浪费、运营成本居高不下，成为很多园区推进零碳转型的“拦路虎”。</p>
+<p>
+	今天，就为大家带来一套高新能源渗透率园区的完整解决方案，从科学规划到智能调度，从硬件配套到平台管控，破解园区能源管理痛点，助力园区实现清洁低碳、安全、经济可控的能源转型。</p>
+<p>
+	先规划，再落地——让每一笔新能源都有回报</p>
+<p>
+	园区新能源建设，“盲目投入”只会得不偿失。安科瑞微电网容量规划工具，以数据为支撑，帮你破解规划难题，让回报看得见、算得清。</p>
+<p>
+	✅ 光伏容量规划：测算，收益可控</p>
+<p>
+	无需凭经验猜测，软件结合当地光照资源、园区负荷历史用电数据，自动优装机容量，同步评估自发自用比例与发电收益。</p>
+<p>
+	举个例子：某园区通过工具测算，光伏装机容量982.32kW，总147.35万元，预计8年回本，累计收益可达304.62万元，每一笔投入都心中有数。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/4F/F4/wKgZPGm9DXiAOS17AACz8m5emUA117.jpg" alt="wKgZPGm9DXiAOS17AACz8m5emUA117.jpg"/></p>
+<p>
+	✅ 储能容量规划：灵活适配，峰谷套利</p>
+<p>
+	结合光伏容量与负荷数据，根据当地峰谷电价政策，自动调度储能充放电，匹配负荷需求，大化挖掘峰谷套利空间。</p>
+<p>
+	测算显示，某园区储能容量1882.35kWh，总150.59万元，预计2年左右即可回收成本，累计收益高达849.77万元，大幅降低园区用电成本。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/4F/F3/wKgZO2m9DXmAQ9YqAACVfUDn5Uo540.jpg" alt="wKgZO2m9DXmAQ9YqAACVfUDn5Uo540.jpg"/></p>
+<p>
+	✅ 充电桩智能规划：按需配置，场景适配</p>
+<p>
+	支持直流/交流桩比例自定义，可预览实物布局，一键生成配置方案与容量需求，适配园区员工通勤、物流车辆充电等多种场景，避免资源闲置或供给不足。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/4F/F4/wKgZPGm9DXuAJMUfAACXZ8K24yA064.jpg" alt="wKgZPGm9DXuAJMUfAACXZ8K24yA064.jpg"/></p>
+<p>
+	✅ 多策略<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>：可视化决策，规避风险</p>
+<p>
+	负荷曲线、光伏出力、电价策略可视化，涵盖防逆流控制、新能源消纳、峰谷套利、需量控制等多种运行策略，提前模拟不同场景下的运行效果，助力决策更、更稳妥。</p>
+<p>
+	从光伏、储能到充电桩，从单一配置到多能源协同，这套规划工具让园区新能源配置更简单、更、更便捷，真正实现“有回报，用能更”。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/4F/F3/wKgZO2m9DXuAIADWAADaiLtzFcM952.jpg" alt="wKgZO2m9DXuAIADWAADaiLtzFcM952.jpg"/></p>
+<p>
+	智能调度：破解波动难题，实现源网荷储协同优</p>
+<p>
+	规划落地后，如何实现能源利用？核心在于“智能调度”。微电网能源优化调度作为一个非线性、多约束的高维优化问题，安科瑞通过三大核心技术，破解新能源“出力不可控”、负荷“需求不可测”的痛点。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/4F/F4/wKgZPGm9DXyAdihPAAEhpI2n4X0241.jpg" alt="wKgZPGm9DXyAdihPAAEhpI2n4X0241.jpg"/></p>
+<p>
+	1. 光功率预测：提前预判，规避波动风险</p>
+<p>
+	光伏发电受云层、天气、季节等因素影响，出力具有强随机性。安科瑞光功率预测技术，可提前预判短期、超短期光伏实际输出功率，准确率高达97.5%以上，避免因出力突变导致的调度失衡、弃光或供电缺口，让光伏出力“可控可测”。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/4F/F3/wKgZO2m9DXyAeYTIAACp1B-UakY415.jpg" alt="wKgZO2m9DXyAeYTIAACp1B-UakY415.jpg"/></p>
+<p>
+	2. 负荷预测：预判，匹配供需平衡</p>
+<p>
+	园区用电负荷受生产计划、季节气候、错峰用电等因素影响，峰谷波动明显。负荷预测技术可提前预判不同时段的负荷需求，合格率达98.51%，为多能源协同调度提供的需求侧数据支撑，避免供电过剩或缺口问题。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/4F/F4/wKgZPGm9DX2ATio_AACoUgTPEmc574.jpg" alt="wKgZPGm9DX2ATio_AACoUgTPEmc574.jpg"/></p>
+<p>
+	3. 经济优化调度：<a href="https://m.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>赋能，实现成本低</p>
+<p>
+	基于数值天气预报、光功率预测和负荷预测，采用线性求解器、群智能算法等优化模型，为风光储荷微电网提供动态运行策略，输出可调节设备的优运行功率曲线，实现总运行成本低、环境效益好、综合效益大的目标。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/4F/F3/wKgZO2m9DX2AFfT9AACfCZYu9aw451.jpg" alt="wKgZO2m9DX2AFfT9AACfCZYu9aw451.jpg"/></p>
+<p>
+	一站式解决方案：<a href="https://www.hqchip.com/app/1703" target="_blank"><u>Ac</u></a>relEMS，零碳园区的“能源大脑”</p>
+<p>
+	如果说规划工具是“前置保障”，智能调度是“核心手段”，那么AcrelEMS园区微电网智慧能源管理系统，就是串联起所有环节的“能源大脑”。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/4F/F4/wKgZPGm9DX6AHaocAAFm0R0CvT8749.jpg" alt="wKgZPGm9DX6AHaocAAFm0R0CvT8749.jpg"/></p>
+<p>
+	这套系统为园区能源规划、运营维护、优化调度提供数字化平台解决方案，通过“预测先行、调度优化、场景适配”的核心模式，既满足园区降本、保供的核心需求，又为电网提供灵活的调节资源，成为连接能源生产与消费的关键纽带。</p>
+<p>
+	配套硬件：全链条支撑，稳定可靠</p>
+<p>
+	除了软件平台，安科瑞还提供全套配套硬件设备，形成“平台+硬件”一站式解决方案，涵盖：</p>
+<p>
+	分布式光伏、储能系统二次设备：防孤岛/防逆流保护装置、电能质量在线监测装置、箱变测控装置、智能仪表等，保障光伏、储能系统稳定并网运行；</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/4F/F3/wKgZO2m9DX6Ae13MAADdfY7JteY854.jpg" alt="wKgZO2m9DX6Ae13MAADdfY7JteY854.jpg"/><img src="https://file1.elecfans.com//web3/M00/4F/F4/wKgZPGm9DX-AYTbkAACuLP_CGlU428.jpg" alt="wKgZPGm9DX-AYTbkAACuLP_CGlU428.jpg"/><img src="https://file1.elecfans.com//web3/M00/4F/F3/wKgZO2m9DX-AGIftAABZ7qfBr1U673.jpg" alt="wKgZO2m9DX-AGIftAABZ7qfBr1U673.jpg"/></p>
+<p>
+	新能源协调控制及智能网关：协调<a href="https://m.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>可实时控制光伏出力、储能充放电、充电桩运行，智能网关实现数据采集、协议转换、安全加密，确保系统稳定运行。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/4F/F4/wKgZPGm9DYCAdKamAACdAd2xERg803.jpg" alt="wKgZPGm9DYCAdKamAACdAd2xERg803.jpg"/></p>
+<p>
+	结语：以智能技术，赋能零碳园区高质量发展</p>
+<p>
+	高新能源渗透率是零碳园区建设的核心特征，也是能源转型的必然趋势。面对新能源波动、源荷不匹配等难题，单纯的硬件投入或粗放式管理，早已无法满足园区转型需求。</p>
+<p>
+	安科瑞通过“科学规划+智能调度+平台管控+硬件支撑”的全链条解决方案，有效破解园区能源管理痛点，让清洁能源利用、让运营成本持续降低、让零碳转型稳步推进。</p>
+<p>
+	<br/>
+	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[如何通过淘宝API接口根据商品ID获取商品评论]]></title>    <link>https://www.elecfans.com/d/7759434.html</link>    <guid>https://www.elecfans.com/d/7759434.html</guid>    <pubDate>2026-03-20 17:18:00</pubDate>    <description><![CDATA[<p>
+	​</p>
+<p>
+	淘宝开放平台（Taobao Open Platform）为<a href="https://bbs.elecfans.com/group_1231" target="_blank"><u>开发者</u></a>提供了丰富的A<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a><a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>，允许开发者通过<a href="https://www.hqchip.com/ask/" target="_blank"><u>商品</u></a>ID获取商品评论数据。这在电商分析、用户反馈收集等场景中非常有用。本文将逐步介绍如何实现这一功能，包括注册平台、调用API、处理响应等。整个过程基于淘宝开放平台的官方文档，确保真实可靠。但请注意，API细节可能随平台更新而变化，建议开发者始终参考淘宝开放平台官方文档。</p>
+<p>
+	步骤1: 注册淘宝开放平台并获取API权限</p>
+<p>
+	要使用淘宝API，首先需要注册成为开发者并创建应用：</p>
+<p>
+	访问淘宝开放平台官网，注册账号并登录。</p>
+<p>
+	创建新应用，选择“自用型应用”或“工具型应用”，填写基本信息。</p>
+<p>
+	审核通过后，获取应用密钥：App Key和App Secret。这些用于API<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>。</p>
+<p>
+	步骤2: 查找获取商品评论的API接口</p>
+<p>
+	淘宝开放平台提供了多个API接口来获取商品信息。获取评论的接口通常是taobao.i<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>m.review.list.get（接口名称可能变化，请以官方文档为准）。该接口需要传入商品ID作为参数。</p>
+<p>
+	关键参数：</p>
+<p>
+	item_id: 商品的唯一ID，可通过商品详情页URL或淘宝API获取。</p>
+<p>
+	其他可选参数：如分页参数（page_no、page_size）、排序方式等。</p>
+<p>
+	在官方文档中搜索“商品评论API”或类似关键词，确认接口名称和参数列表。</p>
+<p>
+	步骤3: 调用API的步骤</p>
+<p>
+	调用API的一般流程包括认证、构建请求、发送请求和处理响应。以下是详细步骤：</p>
+<p>
+	<strong>认证</strong>：淘宝API使用OAuth 2.0认证。首先获取<a href="https://www.hqchip.com/app/1703" target="_blank"><u>Ac</u></a>cess Token：</p>
+<p>
+	使用App Key和App Secret调用taobao.oauth.token.create接口。</p>
+<p>
+	返回的Access Token用于后续API调用，有效期通常为24小时。</p>
+<p>
+	<strong>构建请求</strong>：</p>
+<p>
+	API请求URL格式：https://eco.taobao.com/router/rest（REST端点）。</p>
+<p>
+	请求方法：POST或GET（根据接口文档指定）。</p>
+<p>
+	请求参数：</p>
+<p>
+	method: API接口名称，如taobao.item.review.list.get。</p>
+<p>
+	item_id: 商品ID。</p>
+<p>
+	session: 或access_token（认证令牌）。</p>
+<p>
+	其他参数：如fields（指定返回字段）、page_no等。</p>
+<p>
+	<strong>发送请求</strong>：使用HTTP客户端发送请求。以下是一个<a href="https://www.elecfans.com/tags/python/" target="_blank"><u>Python</u></a>示例代码，使用requests库：</p>
+<p>
+	</p>
+<pre>
+import requests
+
+def get_item_reviews(item_id, access_token):
+    # API端点
+    url = "https://eco.taobao.com/router/rest"
+    
+    # 请求参数
+    pa<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>ram</u></a>s = {
+        "method": "taobao.item.review.list.get",  # 实际接口名以文档为准
+        "item_id": item_id,
+        "access_token": access_token,
+        "fields": "review_id,content,score,created",  # 指定返回字段
+        "page_no": 1,  # 分页页码
+        "page_size": 10,  # 每页数量
+        "format": "json"  # 响应格式
+    }
+    
+    # 发送GET请求
+    response = requests.get(url, params=params)
+    
+    # 检查响应状态
+    if response.status_code == 200:
+        return response.json()  # 返回JSON数据
+    else:
+        raise Exception(f"API调用失败: {response.status_code}")
+
+# 示例调用
+access_token = "your_access_token"  # 替换为实际Access Token
+item_id = "1234567890"  # 替换为实际商品ID
+reviews_data = get_item_reviews(item_id, access_token)
+print(reviews_data)
+</pre>
+<img src="https://file1.elecfans.com/web2/M00/03/FB/poYBAGDYdXCAWkKMAAAAK8RNs4s030.png" alt="poYBAGDYdXCAWkKMAAAAK8RNs4s030.png"/><p>
+	</p>
+<p>
+	<strong>处理响应</strong>：</p>
+<p>
+	API响应通常是JSON格式，包含评论列表、分页信息等。</p>
+<p>
+	示例响应结构（简化）：</p>
+<p>
+	</p>
+<pre>
+{
+  "item_review_list_get_response": {
+    "reviews": [
+      {
+        "review_id": "1001",
+        "content": "商品质量很好",
+        "score": 5,
+        "created": "2023-01-01 12:00:00"
+      },
+      // 更多评论...
+    ],
+    "total_results": 50,
+    "page_no": 1
+  }
+}
+</pre>
+<img src="https://file1.elecfans.com/web2/M00/03/FB/poYBAGDYdXCAWkKMAAAAK8RNs4s030.png" alt="poYBAGDYdXCAWkKMAAAAK8RNs4s030.png"/><p>
+	</p>
+<p>
+	解析JSON数据，提取所需字段如评论内容、评分、时间等。</p>
+<p>
+	步骤4: 注意事项</p>
+<p>
+	调用淘宝API时需注意以下事项：</p>
+<p>
+	<strong>频率限制</strong>：淘宝API有调用频率限制（如QPS），避免频繁请求导致账号被封。</p>
+<p>
+	<strong>数据权限</strong>：确保应用权限允许获取评论数据，否则请求可能失败。</p>
+<p>
+	<strong>错误处理</strong>：检查响应中的错误码（如error_code和error_msg），常见错误包括无效token或参数错误。</p>
+<p>
+	<strong>数据更新</strong>：评论数据可能不是实时同步，调用前确认API的延迟性。</p>
+<p>
+	<strong>安全合规</strong>：遵守淘宝平台的使用条款，不得用于非法目的。</p>
+<p>
+	结论</p>
+<p>
+	通过淘宝开放平台的API接口，开发者可以高效地根据商品ID获取商品评论数据，为数据分析、用户洞察提供支持。关键步骤包括注册平台、获取认证、调用taobao.item.review.list.get接口（或类似接口）并处理响应。本文提供的示例代码基于Python，但类似逻辑可应用于其他语言如<a href="https://m.elecfans.com/v/tag/852/" target="_blank"><u>Java</u></a>或JavaScript。</p>
+<p>
+	在实际开发中，务必以淘宝开放平台官方文档为准，因为接口名称和参数可能更新。如有问题，可在淘宝开发者社区寻求帮助。希望这篇技术帖能助您快速实现功能！</p>
+<p>
+	​审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[牵手海尔、TCL，INDEMIND家用具身陪伴机器人AI平台加速家庭AI陪伴落地]]></title>    <link>https://www.elecfans.com/d/7759435.html</link>    <guid>https://www.elecfans.com/d/7759435.html</guid>    <pubDate>2026-03-20 17:19:00</pubDate>    <description><![CDATA[<p>
+	AWE 2026已经落幕，但家庭<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>的热度仍在升温。相比以往偏重概念展示或单点功能演示，行业正加速向真实场景落地探索。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/4F/F4/wKgZO2m9ESuAevWnAADr26ssJu099.jpeg" alt="wKgZO2m9ESuAevWnAADr26ssJu099.jpeg"/></p>
+<p>
+	行业转变的背后，是发展逻辑的理性回归。过去，大家更容易被形态、动作和单点功能吸引，但现在，真正决定产品能否走进家庭的，不是外观有多新奇，而是空间理解、精准的物体识别、灵活的环境适应能力，以及在复杂家庭环境中持续提供可靠服务的能力。换句话说，家庭具身智能正在从“展示能力”走向“解决问题”。</p>
+<p>
+	这一趋势也与INDEMIND的技术判断高度契合。家庭环境的复杂性，决定了机器人无法依赖单次识别或固定逻辑完成服务。因此，机器人要能在家庭空间中形成自己的认知和判断，能够持续感知环境变化、理解人的行为与意图，并在复杂场景中自主决策如何提供服务。</p>
+<p>
+	INDEMIND认为，家庭机器人要真正落地，不能依靠单一功能的叠加，而必须构建一整套涵盖感知、认知、决策、交互与执行的底层技术闭环。INDEMIND家用具身陪伴机器人<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>平台正是在此背景下推出。</p>
+<p>
+	通过以ROBOMIND机器人物理AI大脑为核心，集成自研硬件，聚焦高自由度AI交互、智能作业核心能力，以实现机器人感知、认知、推理、决策全链路智能化及初级类人交互能力，精准适配养老看护、宠物陪伴、家庭安防等家庭机器人应用场景。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/4F/F5/wKgZPGm9ESuAFO0hAACeiOQi-Go57.jpeg" alt="wKgZPGm9ESuAFO0hAACeiOQi-Go57.jpeg"/></p>
+<p>
+	值得一提的是，基于ROBOMIND的“低算力端侧感知+全参数云端推理”协同架构，平台能够以纯视觉方案实现低成本、高泛化的家庭环境适配，且端侧核心硬件成本可控制在千元级，是目前市面上少有的能够满足开发要求的消费级家用具身机器人解决方案。</p>
+<p>
+	在AWE 2026展会现场，INDEMIND与海尔合作打造的HI-VA海娃机器人，为这一技术平台提供了具体的落地案例。海娃搭载人脸与声纹双模态识别系统，可实现家庭成员的长期记忆，同时依托情绪感知技术，将语音语调分析与面部微表情识别相结合，使机器人从“会回应”向“会理解”迈进一步。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/4F/F4/wKgZO2m9ESyABqlYAAE6Gq-kxwQ69.jpeg" alt="wKgZO2m9ESyABqlYAAE6Gq-kxwQ69.jpeg"/></p>
+<p>
+	更重要的是，作为全屋移动智慧中枢，海娃的能力不再是“移动的<a href="https://www.elecfans.com/tags/智能音箱/" target="_blank"><u>智能音箱</u></a>”。在用户离家模式下，可自动完成全屋巡检、门窗状态检查、冗余家电关闭等安全防护任务；针对银发群体，更贴心提供跌倒预警、智能跟随、主动寻人、用药提醒等个性化服务。这意味着产品价值不再只是“会移动、会说话”，而是开始真正参与家庭日常。</p>
+<p>
+	此外，除了海娃，去年CES发布，今年再度亮相的TCL Ai Me儿童陪伴机器人同样是与INDEMIND的合作产品，也是此次展会中的明星产品。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/4F/F5/wKgZPGm9ES6AI7GkAAFTSs2gJJU00.jpeg" alt="wKgZPGm9ES6AI7GkAAFTSs2gJJU00.jpeg"/></p>
+<p>
+	<strong>最后</strong></p>
+<p>
+	从行业角度看，家庭机器人正在从单机智能走向系统智能，从单点交互走向场景协同，从功能展示走向生活服务。真正的竞争，也不再是某个炫目的功能点，而是谁能把底层技术、场景理解和产品体验真正连成一条线。</p>
+<p>
+	INDEMIND的愿景，正是为家庭具身智能构建支撑持续进化的技术底座。不追求短期的概念热度，而是用完善的底层技术、贴合场景的产品，推动家用具身陪伴机器人真正走进普通家庭。<br/><br/>
+	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[是德科技推出全新多通道误码仪FITS-8CH]]></title>    <link>https://www.elecfans.com/d/7759456.html</link>    <guid>https://www.elecfans.com/d/7759456.html</guid>    <pubDate>2026-03-20 17:19:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	覆盖全互连生命周期的真实环境误码性能验证，以降低风险、节约成本并确保组件、子组件及完整线缆组件的可靠性</p>
+<p style="text-indent:2em;">
+	<a href="https://www.elecfans.com/tags/是德科技/" target="_blank"><u>是德科技</u></a>（NYSE：KEYS）近日推出功能性互联测试解决方案FITS-8CH多通道误码仪。FITS-8CH 提供用于网络设备和生产网络基础设施的高速<a href="https://m.elecfans.com/v/tag/4854/" target="_blank"><u>光学</u></a>与铜互连误码率（BER）以及前向纠错（FEC）性能验证。</p>
+<p align="center">
+	<img src="https://file1.elecfans.com/web3/M00/4F/F5/wKgZPGm9EqqAIwEpAAKoCbRR720864.png" style="width:600px;height:256px;" alt="ef4b67ee-23f8-11f1-90a1-92fbcf53809c.png"/></p>
+<p style="text-indent:2em;">
+	随着互连速度不断提升且设计日益复杂，芯片、光学和铜互连以及网络设备制造商面临越来越大的压力，需要在产品进入大规模生产前以及整个制造过程中确保可靠性。传统的物理层测试工具在验证<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>通道是否符合行业规范方面发挥了重要作用，为建立坚实的一致性基准提供支持。在此基础上，系统级验证可进一步洞察全互连及子组件在实际环境中的性能，包括误码行为。</p>
+<p style="text-indent:2em;">
+	只有对所有电气或光学通道进行高速误码性能验证，才能准确评估真实系统条件。如果缺乏此类测试，将增加生产延迟或现场故障的风险。这包括验证支撑当前 400GE、800GE 和 1.6T <a href="https://m.hqchip.com/app/1720" target="_blank"><u>以太网</u></a>网络架构的高速 PAM4 电气通道在 53 Gb/s、106 Gb/s 和 212 Gb/s 下的误码性能。</p>
+<p style="text-indent:2em;">
+	FITS-8CH通过提供多通道误码性能验证，解决了系统级误码性能检测的缺口，支持所有相关电气通道速度下的 PAM4 误码性能评估，超越物理层测量能力，实现从设计、开发到制造的可靠验证，以便在大规模网络部署中使用。该机箱还可与 Keysight 的物理层测试解决方案集成，扩展了可支持的应用和拓扑类型。</p>
+<p style="text-indent:2em;">
+	FITS-8CH 以可靠性、可扩展性和制造就绪性为设计基础，能够满足当前网络测试的需求。在这些应用中，即便是微小的误码性能问题也可能对大规模部署产生影响。其主要优势包括：</p>
+<p style="text-indent:2em;">
+	•多通道 BER 和 FEC 验证：支持八个发射和八个接收通道的双向实时测试，支持PAM4 <a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>速率从 53 Gb/s 到 212.5 Gb/s。使用 BER 和 FEC 测试系统级误码性能，可验证完整光学和铜互连组件，而不仅是关键阶段的独立测量。适用于研发、产品开发、生产测试、终端测试及系统级验证，帮助制造商自信地将验证通过的预生产设计投放大规模生产，并在真实操作条件下验证可靠性。</p>
+<p style="text-indent:2em;">
+	•灵活的通道架构：两组互补通道：高驱动输出和芯片到模块（C2M）<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>，支持更广泛的电气夹具和互连拓扑，提供更大灵活性，可支持多种电气夹具、以太网互连、有源线缆及硅拓扑，而无需重新设计测试设置或降低信号完整性。</p>
+<p style="text-indent:2em;">
+	•高质量信号生成：符合 IEEE P802.3dj 标准，即使在复杂条件下也能提供优异信号完整性。为所有支持通道速率提供准确的 BER 和 FEC 测量所需的干净、可控的发射信号，可基于真实设备或互连的行为评估误码性能，而非测试环境限制。</p>
+<p style="text-indent:2em;">
+	•自动通道调优：按通道优化 PAM4 信号输出，自动调整发射 tap 设置，打开每个通道的电眼，提高测量一致性和可重复性，降低因边缘或临界误码性能组件通过测试而带来的风险。</p>
+<p style="text-indent:2em;">
+	•提前发现制造和配置问题：可在在制或终端测试过程中识别<a href="https://m.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>错位、热故障、<a href="https://m.hqchip.com/app/1381" target="_blank"><u>数字信号</u></a><a href="https://www.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>（<a href="https://www.hqchip.com/app/1378" target="_blank"><u>DSP</u></a>）tap 设置不优化或错误等问题，降低有缺陷产品流向客户的风险及成本。</p>
+<p style="text-indent:2em;">
+	UDE 公司高速互连产品经理 Kenji Liao 表示：</p>
+<p style="text-indent:2em;">
+	“借助FITS-8CH，是德科技提供了我们所需的误码性能分析，可在实际运行条件下验证1.6T AEC BER/Lane。能够在完整互连组件中表征通道级误码行为，帮助我们提前发现裕量问题，并在设计转入量产时保持一致性。将该解决方案集成到我们的研发和制造流程中，增强了我们对 UDE 高速互连满足客户严格性能要求的信心。UDE 与 Keysight 的合作，使我们能够在研发和制造过程中支持误码性能验证。”</p>
+<p style="text-indent:2em;">
+	Keysight 网络测试与安全解决方案副总裁兼总经理 <a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>Ram</u></a> Periakaruppan 表示：</p>
+<p style="text-indent:2em;">
+	“随着验证需求从物理层上升，客户越来越需要能覆盖研发、制造和部署全过程的解决方案。FITS-8CH 是 Keysight 在数字域互连验证方面的拓展，将多年深厚的测量专业经验与全球支持及产品组合连续性结合起来，满足 <a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a> 数据<a href="https://m.hqchip.com/tags" target="_blank"><u>中心</u></a>等生产环境需求。这是我们 FITS 产品组合的首款产品，一个旨在支持全生命周期误码性能验证的新系列解决方案。”</p>
+<p style="text-indent:2em;">
+	Keysight 已于 2026 年 3 月 17-19 日 OFC 大会（洛杉矶会议中心南馆，展位 #1300）展示 FITS 及其他网络验证解决方案。</p>
+<p style="text-indent:2em;">
+	关于是德科技</p>
+<p style="text-indent:2em;">
+	是德科技（NYSE：KEYS）启迪并赋能创新者，助力他们将改变世界的技术带入生活。作为一家标准普尔 500 指数公司，我们提供先进的设计、<a href="https://bbs.elecfans.com/zhuti_proteus_1.html" target="_blank"><u>仿真</u></a>和测试解决方案，旨在帮助<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>在整个产品生命周期中更快地完成开发和部署，同时控制好风险。我们的客户遍及全球<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>、<a href="https://www.elecfans.com/v/tag/633/" target="_blank"><u>工业自动化</u></a>、航空航天与国防、汽车、<a href="https://www.hqchip.com/gongsi.html" target="_blank"><u>半导体</u></a>和通用电子等市场。我们与客户携手，加速创新，创造一个安全互联的世界。</p>]]></description></item><item>    <title><![CDATA[京东平台商品评论API接口技术指南]]></title>    <link>https://www.elecfans.com/d/7759437.html</link>    <guid>https://www.elecfans.com/d/7759437.html</guid>    <pubDate>2026-03-20 17:19:00</pubDate>    <description><![CDATA[<p>
+	​</p>
+<p>
+	一、<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>概述</p>
+<p>
+	通过京东开放平台的<a href="https://www.hqchip.com/ask/" target="_blank"><u>商品</u></a>评论A<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>，<a href="https://bbs.elecfans.com/group_1231" target="_blank"><u>开发者</u></a>可获取指定商品的用户评价数据。该接口采用HTTPS协议，返回格式为JSON，需通过OAuth2.0<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>获取访问令牌。</p>
+<p>
+	二、核心参数说明</p>
+<p>
+	<strong>商品ID</strong>：skuId（必填）</p>
+<p>
+	格式：数字字符串，如100000000001</p>
+<p>
+	获取方式：商品详情页URL中的数字标识</p>
+<p>
+	<strong>分页参数</strong>：</p>
+<p>
+	</p>
+<pre>
+pa<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>ram</u></a>s = {
+    "page": 1,       # 当前页码
+    "pageSize": 10   # 每页条数（最大值50）
+}
+</pre>
+<img src="https://file1.elecfans.com/web2/M00/03/FB/poYBAGDYdXCAWkKMAAAAK8RNs4s030.png" alt="poYBAGDYdXCAWkKMAAAAK8RNs4s030.png"/><p>
+	</p>
+<p>
+	三、API调用示例（<a href="https://www.elecfans.com/tags/python/" target="_blank"><u>Python</u></a>）</p>
+<p>
+	</p>
+<pre>
+import requests
+
+def get_jd_comments(sku_id, <a href="https://www.hqchip.com/app/1703" target="_blank"><u>ac</u></a>cess_token):
+    url = "https://api.jd.com/rou<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>rjson"
+    params = {
+        "method": "jd.biz.product.getComment",
+        "sku_id": sku_id,
+        "access_token": access_token,
+        "page": 1,
+        "pageSize": 20
+    }
+    he<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>ad</u></a>e<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>rs</u></a> = {"Content-Type": "application/json"}
+    
+    try:
+        response = requests.get(url, params=params, headers=headers)
+        data = response.json()
+        
+        if data.get("code") == 0:
+            comments = data["result"]["comments"]
+            for comment in comments:
+                print(f"用户: {comment['nickname']}")
+                print(f"评分: {comment['score']}星")
+                print(f"内容: {comment['content']}n")
+        else:
+            print(f"错误: {data['msg']}")
+            
+    except Exception as e:
+        print(f"请求异常: {str(e)}")
+
+# 调用示例
+get_jd_comments("100000000001", "your_access_token_here")
+</pre>
+<img src="https://file1.elecfans.com/web2/M00/03/FB/poYBAGDYdXCAWkKMAAAAK8RNs4s030.png" alt="poYBAGDYdXCAWkKMAAAAK8RNs4s030.png"/><p>
+	</p>
+<p>
+	四、返回数据结构解析</p>
+<p>
+	</p>
+<pre>
+{
+  "code": 0,
+  "result": {
+    "comments": [
+      {
+        "id": 123456,
+        "content": "商品质量很好",
+        "score": 5,
+        "creation<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>Ti</u></a>me": "2023-06-01 10:30:00",
+        "nickname": "jd_******",
+        "productColor": "黑色",
+        "productSize": "L"
+      }
+    ],
+    "total": 1280
+  }
+}
+</pre>
+<img src="https://file1.elecfans.com/web2/M00/03/FB/poYBAGDYdXCAWkKMAAAAK8RNs4s030.png" alt="poYBAGDYdXCAWkKMAAAAK8RNs4s030.png"/><p>
+	</p>
+<p>
+	五、注意事项</p>
+<p>
+	<strong>频率限制</strong>：单账号每分钟不超过100次请求</p>
+<p>
+	<strong>数据时效</strong>：接口返回最近180天内的评论</p>
+<p>
+	<strong>敏感字段</strong>：用户昵称自动脱敏处理</p>
+<p>
+	<strong>认证要求</strong>：需提前在京东开放平台创建应用获取app_key和app_secret</p>
+<p>
+	提示：完整API文档请参考京东开放平台ProductCommentAPI模块，建议使用官方<a href="https://m.hqchip.com/app/1522" target="_blank"><u>SD</u></a>K处理签名验证等复杂逻辑。</p>
+<p>
+	该技术帖提供了可直接运行的代码示例和关键参数说明，帮助开发者快速实现商品评论数据采集功能。实际使用时需注意遵守平台数据使用规范。</p>
+<p>
+	​审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[你的OpenClaw只会答不会做？Skills帮你构建主动执行能力]]></title>    <link>https://www.elecfans.com/d/7759488.html</link>    <guid>https://www.elecfans.com/d/7759488.html</guid>    <pubDate>2026-03-20 17:20:00</pubDate>    <description><![CDATA[<p><span style="background-color:rgb(255,255,255);color:rgba(0,0,0,0.9);">在</span><span style="background-color:rgb(255,255,255);color:rgb(34,93,171);"><strong><u>OpenClaw这么火，用它做个飞书助手怎么样</u>？</strong>（进入<a href="https://bbs.elecfans.com/group_727" target="_blank"><u>飞凌嵌入式</u></a>账号主页，上一篇文章就是）</span><span style="background-color:rgb(255,255,255);color:rgba(0,0,0,0.9);">一文中，讲解了将OpenClaw部署在OK1126B-S开发板，并通过飞书调用部署在服务器上的本地模型，从而实现一个属于我们自己的本地<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>助手的方法。本篇文章，我们将进一步深入挖掘OpenClaw的核心能力之一 —— Skills。</span></p><p/><h2><span style="color:rgb(34,93,171);"><strong>1、OpenClaw Skills 生态</strong></span></h2><p style="margin-left:10px;text-align:justify;">如果说模型本身是“大脑”，那么Skills更像是“经验+行动指南”。通过编写Skills，我们可以让OpenClaw不再只是被动回答问题，而是能够按照既定规则，主动完成复杂任务。</p><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;">截至发稿前，ClawHub社区中发布的Skills数量已达到了2.6w+，但这些Skills中超过99%都是面向Windows/x86 <a href="https://bbs.elecfans.com/group_300" target="_blank"><u>Linux</u></a>/Mac且聚焦于办公、网页自动化等方面，面向<a href="https://bbs.elecfans.com/group_1121" target="_blank"><u>嵌入式</u></a>Linux的Skills数量极少且成熟度较低，缺乏对嵌入式外设（GPIO、<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>、SPI、<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>、<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>、<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>、摄像头）的标准化封装与驱动适配，并且没有针对边缘计算、低功耗、实时性场景（如<a href="https://m.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>、<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>、<a href="https://m.elecfans.com/v/tag/663/" target="_blank"><u>智能家居</u></a>、车载等）的专用技能集。</p><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;">难道嵌入式领域就不配吃"龙虾"吗？！</p><img src="https://file1.elecfans.com/web3/M00/4F/F3/wKgZPGm9C3GADrYJAAN4K5s2Wiw332.png" alt="wKgZPGm9C3GADrYJAAN4K5s2Wiw332.png"/><p style="margin-left:10px;text-align:justify;"><br/>本文，小编将以一个“控制OK1126B-S开发板上的<a href="https://www.hqchip.com/app/1721" target="_blank"><u>Led</u></a>灯闪烁节奏”的<span style="color:rgb(51,51,51);">简单案例做演示，</span>从基础开始逐步<a href="https://m.elecfans.com/v/tag/899/" target="_blank"><u>拆解</u></a>Skills的设计与使用方法。<br/></p><h2><span style="color:rgb(34,93,171);"><strong>2、什么是Skills?</strong></span></h2><p style="margin-left:10px;text-align:justify;">从本质上来说，Skills就是一本“操作手册”。它并不是直接帮AI完成任务，而是告诉AI在什么情况下应该做什么，以及如何去做。</p><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;"><strong>我们用一个简单的类比来理解：</strong></p><p style="margin-left:10px;text-align:justify;">在射击游戏中，玩家的目标是击败敌人。枪作为工具，它的职责非常单一：</p><blockquote><ul><li style="text-align:justify;">输入：扣动扳机</li><li style="text-align:justify;">输出：发射子弹</li></ul></blockquote><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;">至于子弹打到哪里，枪本身并不关心。而这个Skill的作用，则类似于“战术手册”。它会告诉AI：</p><blockquote><ul><li>什么时候可以开枪（检测到敌人）</li><li>什么时候不该开枪（有友军在前）</li><li>什么时候停止（敌人血量归零）</li></ul></blockquote><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;">通过这些规则约束，AI就不再是一个<a href="https://m.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>执行指令的工具，而是开始具备初步的判断能力与决策逻辑，开始“像人一样思考”。</p><p style="margin-left:10px;text-align:justify;"/><h3 style="margin-left:0px;text-align:justify;"><strong>2.1 Skill的基本构成</strong></h3><p style="margin-left:10px;text-align:justify;">在OpenClaw中，一个Skill实际上是一个结构化的目录，通常存放在：</p><p>~/.openclaw/worksp<a href="https://www.hqchip.com/app/1703" target="_blank"><u>ac</u></a>e/skills/${SKILL_NAME}</p><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;">一个完整的Skill由四个部分组成：</p><img src="https://file1.elecfans.com/web3/M00/4F/DF/wKgZPGm82q2ANhWkAAAsJMSP5rs294.png" alt="wKgZPGm82q2ANhWkAAAsJMSP5rs294.png"/><p style="margin-left:10px;text-align:justify;"><br/><strong>命名规范：</strong></p><p style="margin-left:10px;text-align:justify;">Skill的目录名称必须符合规范，否则无法被识别：</p><blockquote><ul><li style="text-align:justify;">只能使用：小写字母+数字+连字符（-）</li><li style="text-align:justify;">示例：gpio-led-control</li></ul></blockquote><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;">这个规范虽然简单，但在实际开发中非常关键，很多Skill无法加载的问题，往往就出在这里。</p><p style="margin-left:10px;text-align:justify;"/><h3 style="margin-left:0px;text-align:justify;"><strong>2.2 SKILL.md 详细解释</strong></h3><p style="margin-left:10px;text-align:justify;">SKILL.md是整个Skill的核心，可以理解为“说明书+行为指南”。它由两部分组成：</p><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;"><strong>① 前置元数据（Met<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>ad</u></a>ata）</strong></p><p style="margin-left:10px;text-align:justify;">使用<strong>---</strong>包裹，主要用于定义Skill的基本信息，这些信息的作用是：</p><blockquote><ul><li style="text-align:justify;">帮助OpenClaw识别Skill</li><li style="text-align:justify;">提供语义匹配（Skill触发关键词）</li></ul></blockquote><p style="margin-left:10px;text-align:justify;">例如：</p><p>--- name: gpio-led-control # 必填项 description: 开发板 GPIO LED 灯控制技能。 # 必填项 （以下列出部分可选项， 仅供参考） user-invocable: true # 可选:是否可被用户直接调用 ---</p><p style="margin-left:10px;text-align:justify;"><br/></p><p style="margin-left:10px;text-align:justify;"><strong>②正文（操作手册）</strong></p><p style="margin-left:10px;text-align:justify;">正文部分则就是具体的操作指导手册了，可以根据需求灵活组织，以我们已经提前写好的"gpio-led-control"下的SKILL.md 简化版为例进行展示：</p><p># GPIO LED Control - 开发板 LED 灯控制 控制 OK1126B-S 等开发板上的系统 LED 灯（work/net 等）。 ## 快速开始 ### 查看可用 LED ### 控制 LED 亮灭 ## 使用场景示例 ## 权限说明 ## 注意事项</p><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;">在实际编写时，可以根据需要扩展，例如：增加判断逻辑（何时执行）、增加错误处理、增加参数说明、增加示例输入输出等。除了核心的<strong>SKILL.md</strong>之外，其余三个目录属于辅助结构，各自承担不同角色。</p><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;">其中，<strong>scripts</strong>目录主要用来存放可直接运行的脚本文件，适合那些执行逻辑固定、无需频繁改动的任务场景，例如控制LED灯的亮灭转换等。这类脚本可以被直接调用运行，从而减少重复生成代码的过程，提高整体执行效率与稳定性。</p><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;"><strong>references</strong>目录则用于整理各类参考资料，例如：A<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>文档、数据库结构说明或操作手册等。这些内容并不会在一开始全部加载，而是根据实际需要按需引入上下文，既避免了无关信息占用资源，也能在关键时刻为AI提供更深入、专业的知识支持。</p><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;">而<strong>assets</strong>目录用于存放各类资源文件，例如模板、图片等。与 references 不同，这里的内容不会参与模型上下文推理，而是服务于最终结果的生成，例如报告模板、输出所需图片等，用于提升Skill输出的表现力和完整度。</p><p style="margin-left:10px;text-align:justify;"/><h3 style="margin-left:0px;text-align:justify;"><strong>2.3 自定义Skill编写流程</strong></h3><p style="margin-left:10px;text-align:justify;">理解结构之后，我们就可以开始编写自己的Skill了。编写Skill的整个流程可以总结为：</p><p style="margin-left:10px;text-align:justify;"><strong>需求分析→资源规划→初始化→编写→打包→测试</strong></p><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;"><span style="color:rgb(34,93,171);"><strong>第一步：需求分析</strong></span></p><p style="margin-left:10px;text-align:justify;">在动手之前，必须明确：</p><blockquote><ul><li style="text-align:justify;">Skill要解决什么问题？</li><li style="text-align:justify;">使用场景是什么？</li><li style="text-align:justify;">用户会怎么触发它？</li><li style="text-align:justify;">输入输出是什么？</li></ul></blockquote><p style="margin-left:10px;text-align:justify;">触发条件一定要清晰，否则会出现Skill无法被调用或被错误调用的情况<br/></p><p style="margin-left:10px;text-align:justify;"><span style="color:rgb(34,93,171);"><strong>第二步：资源规划</strong></span></p><p style="margin-left:10px;text-align:justify;">根据需求判断是否需要：</p><blockquote><ul><li style="text-align:justify;">scripts（是否需要执行代码）</li><li style="text-align:justify;">references（是否需要文档支持）</li><li style="text-align:justify;">assets（是否需要输出资源）</li></ul></blockquote><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;">提前规划可以避免后期结构混乱以及反复修改导致的冗余<br/></p><p style="margin-left:10px;text-align:justify;"><span style="color:rgb(34,93,171);"><strong>第三步：编写与调试</strong></span></p><p style="margin-left:10px;text-align:justify;">我们可以借助OpenClaw，在指定目录中自动生成一份符合规范的Skill初始模板，并在此基础上进行二次完善。不过需要注意的是，这类自动生成的Skill只是一个“起点”，通常无法直接满足实际需求。要想真正落地使用，仍然需要结合具体场景，对其内容进行逐步调整与反复测试，最终打磨出符合预期的功能效果。</p><p style="margin-left:0px;text-align:justify;"/><h2><span style="color:rgb(34,93,171);"><strong>3、Skill实战展示</strong></span></h2><p style="margin-left:10px;text-align:justify;">为了更直观地理解，我们编写了一个简单的Skill并放在了对应的目录下，该Skill用于控制OK1126B-S开发板上两颗 LED灯的闪烁。</p><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;">在<span style="color:rgb(34,93,171);"><strong><u>OpenClaw这么火，用它做个飞书助手怎么样</u>？</strong></span>一文中，我们已经将安装在开发板上的OpenClaw接入了飞书，因此，我们此时可以直接用飞书对OpenClaw下达命令。<br/></p><p style="margin-left:10px;text-align:justify;">接入不同的Skill后，OpenClaw会：<strong>识别用户意图→匹配对应Skill→根据SKILL.md的规则执行→调用scripts中的脚本→返回执行结果</strong>。<br/></p><p style="margin-left:10px;text-align:justify;">整个过程无需人工干预，实现真正的“自然语言控制硬件”。<br/></p><h2><strong>4、</strong><span style="color:rgb(34,93,171);"><strong>总结</strong></span></h2><p style="margin-left:10px;text-align:justify;">我们通过拆解Skills的核心概念、结构，并结合LED控制简易实操案例，清晰展现了Skills的落地应用逻辑。即便只是基础的硬件控制场景，这个案例也直指Skills的核心价值：<strong>把复杂业务流程封装成可复用的标准化能力单元</strong>。</p><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;">Skills的设计初衷，就是实现<strong>指令化调用、规范化执行</strong>：完成Skills搭建后，仅需一句指令即可驱动AI按预设规则完成任务，既彻底规避重复开发、重复调试的冗余劳动，又能保障全场景任务执行的稳定性与一致性，在<a href="https://www.elecfans.com/v/tag/232/" target="_blank"><u>嵌入式开发</u></a>、自动化运维、智能设备管控等领域具备极强的实用价值。</p><p style="margin-left:10px;text-align:justify;"/><p style="margin-left:10px;text-align:justify;"><strong>嵌入式领域是OpenClaw生态落地的核心突破口</strong>，既是实现硬件实时交互、落地边缘智能的关键入口，也是整个生态中增长潜力最大、优质能力供给最紧缺的赛道。只有持续打造丰富、易用、高可靠的嵌入式Skills能力池，OpenClaw才能突破桌面工具的定位局限，真正成长为覆盖<strong>“云-边-端”全链路</strong>的完整智能执行框架。</p>]]></description></item><item>    <title><![CDATA[SGMNM10330：30V单N沟道PDFN封装MOSFET的深度解析]]></title>    <link>https://www.elecfans.com/d/7759446.html</link>    <guid>https://www.elecfans.com/d/7759446.html</guid>    <pubDate>2026-03-20 17:20:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_7759446" value="https://file1.elecfans.com/web3/M00/4F/F4/wKgZPGm9ELCAA8B-AAmVrkj8JE4061.pdf"/><h1>SGMNM10330：30V单N沟道PDFN封装<a href="https://www.elecfans.com/tags/mosfet/" target="_blank"><u>MOSFET</u></a>的深度解析</h1>
 <p>在电子设计领域，MOSFET作为关键的功率开关元件，其性能直接影响着整个电路的效率和稳定性。今天，我们将深入探讨SGMICRO推出的SGMNM10330这款30V单N沟道PDFN封装MOSFET，详细剖析其特性、参数及应用场景。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_7759446" target="_blank">SGMNM10330.pdf</a></p>
 <h2>产品特性亮点</h2>
 <h3>强大的功率和<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>处理能力</h3>
@@ -3702,161 +4111,4 @@ openclaw skill install coding-helper    # 代码辅助
 <p style="text-indent:2em;">
 	Vene<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>ti</u></a>an Expo Booth 2134 Las Vegas, NV</p>
 <p style="text-indent:2em;">
-	亲身体验最新边缘 AI 技术与创新产品。</p>]]></description></item><item>    <title><![CDATA[从“微”到“精”，半导体封装产业的“毫厘之战”与电子生产设备进阶革命]]></title>    <link>https://www.elecfans.com/d/7759365.html</link>    <guid>https://www.elecfans.com/d/7759365.html</guid>    <pubDate>2026-03-20 16:44:00</pubDate>    <description><![CDATA[<div class="vditor-preview__action"/><div class="vditor-reset"><p>2026年3月25至27日，2026慕尼黑上海电子生产设备展（productronica Shanghai）将在上海新国际博览<a href="https://m.hqchip.com/tags" target="_blank"><u>中心</u></a>（E1-E5, W1-W4馆）盛大举办。作为电子制造行业重要的展示与交流平台，本届展会以近100,000平方米展示面积、超1,100家参展企业的规模，聚焦汽车、工业、通讯电子、<a href="https://www.elecfans.com/soft/data/39-96/" target="_blank"><u>医疗电子</u></a>等多领域需求，旨在为行业呈现一场覆盖电子生产全产业链的“创新盛宴”，重点聚焦智慧工厂、<a href="https://m.elecfans.com/v/tag/293/" target="_blank"><u>新能源</u></a>汽车技术及数字化未来。</p><p><img src="https://file1.elecfans.com/web3/M00/4F/F2/wKgZPGm9CK6ABjLiAAKUvUAPlwI457.png" alt="图片1.png"/></p><p>随着<a href="https://www.hqchip.com/gongsi.html" target="_blank"><u>半导体</u></a>产业向<a href="https://m.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>、高集成、小型化快速进阶，封装、热处理、点胶等核心制造环节的技术门槛持续提升，成为决定芯片性能、可靠性与量产效率的关键。从<a href="https://bbs.elecfans.com/group_67" target="_blank"><u>芯片封装</u></a>的精密贴装、高效热处理，到封装环节的微量点胶，每一个工序都离不开专业设备的支撑。即将于2026年3月25-27日在上海新国际博览中心举办的慕尼黑上海电子生产设备展将汇聚一众行业厂商，用适配行业需求的<a href="https://www.elecfans.com/v/tag/8112/" target="_blank"><u>半导体制造</u></a>专用设备，以创新推动工艺升级，为产业发展注入奠定基础。</p><p>SMT精密智造，赋能半导体封装与热处理关键流程</p><p>半导体封装作为芯片与终端应用衔接的核心环节，随着SiP、WLCSP等先进封装技术的普及，对贴装精度、热处理效率、精密切割等设备提出了更高要求。封装质量直接决定芯片后续检测难度与点胶适配性，多家厂商聚焦封装流程，推出针对性设备，助力企业突破量产瓶颈，实现半导体制造全链条的高效联动。</p><p>在SiP（系统级封装）等半导体制造领域，FUJI凭借强劲的技术实力与全自动化解决方案，精准攻克封装贴装环节的行业痛点——面对贴装点多导致效率下降、微型锡球元件/密间距适配能力不足、元件/锡膏受冲击引发品质波动等难题，给出了针对性的全链条解决方案：以行业前沿的贴装速度（如2RV模组实现120,000cph高效产出）保障生产效率，通过丰富的功能单元适配不同元件高度与拼板定位需求，依托先进的<a href="https://www.elecfans.com/article/88/142/" target="_blank"><u>传感技术</u></a>精准匹配微型元件、密间距等复杂场景，再配合品质追溯功能实现生产全流程的稳定管控。其SiP半导体制造解决方案也将通过富士德中国、佳力科技、北亚美亚电子科技、技鼎机电等代理商在国内市场广泛落地。</p><p>随着半导体产业向高精度、高集成、小型化快速进阶，封装环节的技术门槛持续提升，成为决定芯片性能、可靠性与量产效率的核心。迈康尼 MY700JP 锡膏喷印机以全软件驱动与精准体积控制的核心优势，为半导体封装产业提供高效解决方案。面对SIP封装的多阶台、凹坑等工艺难题，其突破传统阶梯钢网局限，以微米级精度精准控制点焊参数，保障焊点的体积重复性与稳定性；而在大 <a href="https://www.elecfans.com/tags/gpu/" target="_blank"><u>GPU</u></a> 封装场景中，其自动电路板变形补偿功能可有效应对热力翘曲，确保锡膏喷印均匀一致。MY700JP 搭载 100% 全软件驱动系统，无需人工即可实现锡膏体积精准可控，结合基准点飞行识别等功能，从根源上减少人工操作与误差。其双喷头设计可同步完成最小 BGA、01005 元件的小间距精细喷印，以及 QFN、<a href="https://www.hqchip.com/app/1515" target="_blank"><u>连接器</u></a>的大点喷印。同时，设备支持 108 万点 / 时的高速喷印，几分钟内即可完成 CAD/Gerber 设置，成为高端封装场景打造高品质焊点的优选设备。</p><p>腾盛精密针对半导体底部填充工艺中填充不饱满、空洞形成、热管理等核心技术难点，结合不同封装场景需求，开发了数款专业化底部填充设备，精准适配晶圆级、面板级、板级等多类型先进封装需求，衔接前端贴装、热处理工艺与后端检测、点胶环节，为半导体封装可靠性提供有力支撑。例如针对板级底部填充的Sherpa900采用一体式铸造成型工艺，搭载龙门双驱U型直线<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>，点胶快准稳。同时其支持选配倾斜旋转机构，实现芯片四边的倾斜点胶，对于提升Fillet，减小KOZ效果显著，适用于FCBGA、FCCSP、SiP等封装中的倒装技术。</p><p>锐德热力VisionX系列回流焊接系统，其中全新Visio<a href="https://www.elecfans.com/tags/nxp/" target="_blank"><u>nXP</u></a>+ 和 VisionXP+ V<a href="https://m.hqchip.com/app/1703" target="_blank"><u>AC</u></a>两款机型，在节能、工艺稳定性及可持续性上树立行业新基准，为半导体贴装强效助力。该系列机型具备卓越能效，集成EC风机、优化气流设计与智能软件ProMetrics，可精准维持温度曲线，实现资源高效利用；搭载独有的进出口机电一体化专利帘幕，能降低氮气消耗高达20%，兼顾节能与成本控制；其中VAC机型配备集成真空腔，支持甲酸焊接工艺，可实现免助焊剂、无空洞且极度洁净的焊点，完美适配半导体封装对焊点品质的高要求；同系列VisionXC机型则凭借紧凑设计与智能功能，可适配任何生产环境，提升场景兼容性。</p><p>德国埃莎（E<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>A）推出了HO<a href="https://m.hqchip.com/app/1522" target="_blank"><u>TF</u></a>LOW THREE思睿系列高端回流焊炉，专为<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>算力板焊接量身打造，精准破解AI算力板大尺寸多层<a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>、超大GPU/BGA与微型器件共存的焊接痛点，完美匹配高可靠焊接、低氧环境的严苛需求。该产品凭借四大核心技术实现工艺突破：AI大模型驱动的CFD热流设计，有效减小大小器件间温差；温区独立风速可调，大幅拓宽制程工艺窗口；“大盆地” 式残氧分布，提升产品可焊性并保护敏感器件；多组松香热解技术，分解残留物降低滴油风险，减少维护成本，为AI算力板高端焊接提供稳定、高效的热处理解决方案。</p><p>精准化点胶，护航半导体芯片高精密封装品质</p><p>半导体点胶是封装环节的关键配套工序，主要用于芯片底部填充、Dome Coating、Dam &amp; fill、Glob top等场景，核心作用是保护芯片、增强芯片稳定性、实现绝缘密封，其点胶精度、胶量控制直接取决于前端封装工艺与检测结果，更是芯片最终品质达标的重要保障。随着半导体芯片小型化、高集成化趋势加剧，对点胶设备的微量涂覆、精准控制、速度稳定性提出极高要求。</p><p>武藏（MU<a href="https://www.hqchip.com/app/1686" target="_blank"><u>SAS</u></a>HI）作为专业点胶设备制造商，凭借高精度流体控制技术与丰富的产品阵容，为半导体封装提供全方位点胶解决方案。例如pl和nl级别的超微流体控制技术，可精确控制胶水等流体材料的分配，其研发生产的点胶机，在半导体封装中，针对芯片粘贴、引线键合等工序所需的微量胶水涂抹，能够实现精准定量、均匀涂布，有效保障封装的质量和可靠性，为半导体制造向小型化、微型化方向发展提供有力支撑。同时，武藏拥有丰富的产品阵容，涵盖点胶头<a href="https://m.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>、控制精密点胶的台式<a href="https://m.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>臂、全自动点胶设备以及喷嘴、注射器等各类相关产品，可满足半导体高精密封装的核心需求，为客户量身提供适宜的点胶解决方案。</p><p>铭赛科技SS300高精度Panel级点胶系统，专为FoPLP Unde<a href="https://www.elecfans.com/tongxin/rf/" target="_blank"><u>rf</u></a>ill工艺需求开发，具备优异的精度和效率。支持标准600<em>600mm/515</em>510mm以内的面板尺寸。单台设备可实现四阀同时作业，效率提升3.7倍；支持四阀同步带插补作业与独立作业模式。抗翘曲能力高达10mm，有效解决Void或Flowmark问题。智能胶水控制<a href="https://www.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>，确保胶量动态平衡，配备智能补胶系统。丰富的工艺模块，四点校正、针头挂胶检测等，提升作业稳定性。支持OHT/AGV/RGV/PGV，符合AMHS自动化工厂趋势，且符合SEMI S2和SEMI STANDARD 3D20标准。</p><p>轴心自控深耕半导体精密点胶领域，精准对接半导体前段制程（含<a href="https://www.elecfans.com/v/tag/167/" target="_blank"><u>电路设计</u></a>、涂层、腐蚀、切片、贴片、封装、测试等）的复杂点胶需求，其半导体精密点胶设备可适配半导体行业各类点胶工艺——涵盖芯片固定用红胶、<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>连接固定用银浆、<a href="https://www.elecfans.com/v/tag/7888/" target="_blank"><u>MEMS</u></a>器件固定用硅胶、COB封装防护用环氧胶、芯片锡球保护（Underfill）用环氧胶等多种胶水应用，同时兼容时间压力式、螺杆式、柱塞式、喷射式、压电式等多种点胶方式，全方位满足半导体点胶核心需求。旗下Au系列全自动点胶设备可处理多种不同基板尺寸的产品，支持双轨、双阀、倾斜、底部加热等多种功能模块灵活配置，通用平台可适配多种点胶工艺及胶水，实现机种快速更换，契合半导体芯片小型化、高集成化的点胶需求。</p><p>广东凯特精密是集滚动功能部件研发、生产、制造、销售服务于一体的高新技术企业，其核心产品覆盖精密滚动直线导轨副及其关键功能部件、滚珠丝杠副、钳制器、阻尼器等十大系列上百个规格型号，广泛应用于半导体、<a href="https://www.elecfans.com/v/tag/949/" target="_blank"><u>数控</u></a>机床、<a href="https://www.elecfans.com/v/tag/633/" target="_blank"><u>工业自动化</u></a>等多个领域，为半导体制造设备提供核心精密传动支撑。12 及15规格微小型滚柱直线导轨副兼具小型、高精度、承载大的核心特点，精准匹配半导体、PCB 等行业高端设备的精密传动需求，成功填补国内该领域技术空白，实现高端微小型滚柱直线导轨副的国产替代，为半导体封装、点胶、检测等各类高端设备的高精度运行提供坚实的传动保障。</p><p>同期<a href="https://www.elecfans.com/article/bbs/" target="_blank"><u>论坛</u></a>| 宽禁带半导体先进封装技术产业链技术研讨与产业高峰论坛</p><p>2025至2030年，全球碳化硅(SiC)功率器件市场将进入一个高速增长的黄金周期。其驱动力已从单一的新能源汽车，扩展至数据中心、工业与能源等多元领域。将碳化硅(SiC)功率器件直接埋入印刷电路板(PCB)的封装技术，是当前功率电子领域一项颇具前瞻性的探索。话题将围绕性能突破需求、封装技术演进、材料科学进步、系统集成趋势等维度来深入探讨。</p><p><img src="https://file1.elecfans.com/web3/M00/4F/F2/wKgZPGm9CL6Ac1zqAAMypyFS8Ic548.png" alt="图片2.png"/>同期论坛| 功率半导体与电驱动系统协同发展论坛</p><p>本届论坛旨在搭建<a href="https://bbs.elecfans.com/group_78" target="_blank"><u>汽车电子</u></a>+<a href="www.elecfans.com/article/special/" target="_blank"><u>电力电子</u></a>的跨界平台，打通“芯片-模块-电驱-整车”技术链路，推动产学研用协同突破，促进技术协同与产业融合。</p><p><img src="https://file1.elecfans.com/web3/M00/4F/F2/wKgZPGm9CMyATJ5nAAcIAXfrR7k410.png" alt="图片3.png"/></p><p>半导体产业正沿着高精度、高集成、绿色化、智能化的方向加速迭代，市场需求的持续升级的同时，也为产业链核心设备创新指明了方向——封装环节向更精密、更高效的先进封装技术进阶，热处理环节聚焦节能降耗与工艺稳定，点胶环节追求微量化、精准化与多场景适配…2026慕尼黑上海电子生产设备展（3月25-27日，上海新国际博览中心）正是这场创新浪潮的集中呈现，诚邀观众注册观展来现场直观感受半导体核心制造设备创新风向，沉浸式洞察技术变革带来的产业发展脉络。</p></div>]]></description></item><item>    <title><![CDATA[深入解析LT4294：高效PoE PD接口控制器的卓越之选]]></title>    <link>https://www.elecfans.com/d/7759366.html</link>    <guid>https://www.elecfans.com/d/7759366.html</guid>    <pubDate>2026-03-20 16:45:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_7759366" value="https://file1.elecfans.com/web2/M00/57/C9/poYBAGLjfG2ARPNfAApn3-i1sWU321.pdf"/><h1>深入解析LT4294：高效<a href="https://m.hqchip.com/app/1720" target="_blank"><u>PoE</u></a> PD<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a><a href="https://m.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>的卓越之选</h1>
-<p>在当今的电子设备中，<a href="https://m.hqchip.com/app/1720" target="_blank"><u>以太网</u></a>供电（PoE）技术凭借其能通过单一<a href="https://www.hqchip.com/app/1523" target="_blank"><u>RJ45</u></a><a href="https://www.hqchip.com/app/1515" target="_blank"><u>连接器</u></a>同时提供直流<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>和高速数据的优势，正变得越来越受欢迎。不过，现有的IEEE 802.3at标准所规定的25.5W功率限制，逐渐成为了一些高功率设备发展的瓶颈。今天，我们就来详细了解一下<a href="https://www.elecfans.com/tags/凌力尔特/" target="_blank"><u>凌力尔特</u></a>（现<a href="https://www.elecfans.com/tags/adi/" target="_blank"><u>ADI</u></a>）推出的一款能突破这一限制的产品——LT4294。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_7759366" target="_blank">LT4294.pdf</a></p>
-<h2>一、LT4294概述</h2>
-<p>LT4294是一款符合IEEE 802.3af/at/bt标准的受电设备（PD）接口控制器，它不仅能支持高达71.3W的功率输出，还能与现有的供电设备（PSE）系统保持向后兼容。其T2P输出引脚可指示在符合IEEE 802.3bt标准的互识别和可用功率协商过程中接收到的分类事件数量。此外，它通过控制一个低导通电阻（RDS(ON)）的N沟道<a href="https://www.elecfans.com/tags/mosfet/" target="_blank"><u>MOSFET</u></a>，实现了效率和传输功率的最大化。</p>
-<h2>二、关键特性剖析</h2>
-<h3>2.1 功率支持与分类</h3>
-<ul>
-<li><strong>高功率支持</strong>：能够支持最高71.3W的PD设备，满足了许多高功率应用的需求，如高功率无线数据系统、户外安全摄像头设备等。</li>
-<li><strong>5 - 事件分类感应</strong>：通过5次分类事件的感应，能更精准地与PSE进行功率协商，确保设备获得合适的功率分配。</li>
-</ul>
-<h3>2.2 保护特性</h3>
-<ul>
-<li><strong>卓越的浪涌保护</strong>：具备100V的绝对最大耐压值，可有效抵御以太网电缆浪涌带来的过电压事件，保障设备的稳定运行。</li>
-<li><strong>过温保护</strong>：内置过温保护功能，当结温超过过温阈值时，会自动拉低HSGATE引脚并禁用分类，防止设备因过热而损坏。</li>
-</ul>
-<h3>2.3 其他特性</h3>
-<ul>
-<li><strong>宽结温范围</strong>：工作结温范围为 - 40°C至125°C，能适应各种恶劣的工作环境，包括高温工业应用场景。</li>
-<li><strong>集成签名<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a></strong>：内部集成了签名电阻，方便PSE检测到PD的存在并请求供电，同时该电阻经过精确校准和温度补偿，能确保检测的准确性。</li>
-<li><strong>外部热插拔N沟道MOSFET</strong>：采用外部热插拔N沟道MOSFET，可实现最低的功率损耗和最高的系统效率，减少了散热设计的难度。</li>
-<li><strong>可配置辅助电源支持</strong>：支持低至9V的可配置辅助电源，为系统设计提供了更多的灵活性。</li>
-<li><strong>引脚兼容</strong>：与LT4275A/B/C引脚兼容，便于在LTPoE++ PD和IEEE 802.3bt PD之间进行轻松迁移。</li>
-</ul>
-<h2>三、工作模式详解</h2>
-<h3>3.1 检测签名阶段</h3>
-<p>在检测阶段，PSE会寻找一个25k的签名电阻来识别设备是否为PD。LT4294在VPORT和GND引脚之间呈现一个经过精确校准和温度补偿的24.4k电阻，以补偿IEEE要求的电桥或基于LT4321的理想<a href="https://www.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>电桥引入的额外串联电阻，让PSE能准确识别到PD的存在并为其供电。</p>
-<h3>3.2 分类签名和标记阶段</h3>
-<p>分类/标记过程会根据PSE的类型而有所不同。PSE在成功检测到PD后，可能会施加一个14.5V至20.5V的分类探测电压，并测量PD的分类签名<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>。之后，PSE会将PD电压恢复到标记电压范围，再进行下一次分类探测或为PD供电。IEEE 802.3bt PSE在为PD供电之前，最多可施加5次分类事件。</p>
-<h3>3.3 功率分配与降级</h3>
-<p>IEEE 802.3bt定义了物理分类机制，允许PD向连接的PSE请求功率分配，同时PSE也能告知PD其可用功率。如果PD请求的功率级别在PSE处不可用，则会进行降级处理，PD必须进入低功率状态运行。PSE发出的分类/标记事件数量直接表明了分配给PD的功率。</p>
-<h2>四、外部接口与组件选择</h2>
-<h3>4.1 PoE输入桥</h3>
-<p>PD需要对其输入电压进行极性校正，常见的桥整流器有硅二极管、<a href="https://m.hqchip.com/app/1558" target="_blank"><u>肖特基</u></a>二极管和理想二极管等。硅二极管桥会消耗高达4%的可用功率，且存在配对不平衡的问题；肖特基二极管桥虽然能降低正向电压降，但可能不适用于高温PD应用，因为会存在温度引起的漏电流。而LT4294支持基于LT4321的PoE理想二极管桥，可将每个二极管的正向电压降从0.7V降低到20mV，同时保持IEEE 802.3标准的合规性。</p>
-<h3>4.2 辅助输入二极管桥</h3>
-<p>对于需要从辅助电源接收交流或直流电源的PD，通常需要一个二极管桥来进行电压整流和极性校正。在高效应用或低辅助输入电压应用中，LT4294可配置基于LT4320的理想二极管桥，以恢复二极管电压降并简化散热设计。</p>
-<h3>4.3 输入<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a></h3>
-<p>为了满足IEEE 802.3标准的输入阻抗要求并对LT4294进行适当的旁路，需要在VPORT和GND之间连接一个0.1μF的电容。当与LT4321一起使用时，还需分别在每个器件上使用0.047μF的电容进行本地旁路，以确保总<a href="https://m.hqchip.com/app/1808" target="_blank"><u>端口</u></a>电容在规定范围内。</p>
-<h3>4.4 瞬态电压抑制器</h3>
-<p>为了保护LT4294免受因以太网电缆浪涌导致的过电压事件的影响，需要在VPORT和GND引脚之间安装一个单向瞬态电压抑制器（<a href="https://m.hqchip.com/app/1587" target="_blank"><u>TVS</u></a>），如SMAJ58A。对于需要辅助电源输入的PD应用，还需在VIN和GND之间安装TVS。</p>
-<h2>五、布局注意事项</h2>
-<p>在<a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>布局时，需要注意避免RCLASS和RCLASS++引脚出现过大的寄生电容，并将电阻RCLS和RCLS++尽可能靠近LT4294放置。同时，为了实现最大程度的保护，应将0.1μF的输入电容和瞬态电压抑制器尽可能靠近LT4294。当与LT4321一起工作时，还需将0.047μF的电容分别靠近LT4294的VPORT和GND引脚以及LT4321的OUTP和OUTN引脚放置。</p>
-<h2>六、总结</h2>
-<p>LT4294作为一款高性能的IEEE 802.3bt PD接口控制器，凭借其高功率支持、卓越的保护特性、灵活的工作模式以及丰富的外部接口配置选项，为<a href="https://www.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>在设计高功率PoE设备时提供了一个可靠而高效的解决方案。在实际应用中，<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>们可以根据具体的需求，合理选择外部组件并优化布局，以充分发挥LT4294的性能优势。大家在使用LT4294的过程中，有没有遇到过什么特别的问题或者有什么独特的应用经验呢？欢迎在评论区分享交流。 </p>]]></description></item><item>    <title><![CDATA[LTC4257-1：IEEE 802.3af PD的理想电源接口控制器]]></title>    <link>https://www.elecfans.com/d/7759367.html</link>    <guid>https://www.elecfans.com/d/7759367.html</guid>    <pubDate>2026-03-20 16:45:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_7759367" value="https://file1.elecfans.com/web2/M00/5C/D3/pYYBAGLuOrKARIaoAAQ6LZRGYYc974.pdf"/><h1>LTC4257-1：IEEE 802.3af PD的理想<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a><a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a><a href="https://m.hqchip.com/app/1716" target="_blank"><u>控制器</u></a></h1>
-<p>作为一名<a href="https://www.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>，在设计符合IEEE 802.3af标准的受电设备（PD）时，选择合适的电源接口控制器至关重要。今天，我将为大家详细介绍<a href="https://www.elecfans.com/tags/linear/" target="_blank"><u>Linear</u></a> <a href="https://www.elecfans.com/tags/te/" target="_blank"><u>Te</u></a>chnology的LTC4257-1，这是一款功能强大的<a href="https://m.hqchip.com/app/1720" target="_blank"><u>以太网</u></a>供电（<a href="https://m.hqchip.com/app/1720" target="_blank"><u>PoE</u></a>）接口控制器。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_7759367" target="_blank">LTC4257-1.pdf</a></p>
-<h2>1. 产品概述</h2>
-<p>LTC4257-1为IEEE 802.3af受电设备提供了完整的签名和电源接口功能。它将25k签名<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>、分类<a href="https://www.hqchip.com/app/1725" target="_blank"><u>电流源</u></a>、输入<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>限制、欠压锁定、热过载保护、签名禁用和电源良好<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>等功能集成在一个单一的8引脚封装中，大大简化了PD的设计。同时，它还内置了一个100V、400mA的功率<a href="https://www.elecfans.com/tags/mosfet/" target="_blank"><u>MOSFET</u></a>，不仅降低了成本，还节省了电路板空间。</p>
-<h2>2. 主要特性</h2>
-<h3>2.1 完整的电源接口</h3>
-<p>LTC4257-1为PD提供了完整的电源接口，包括签名检测、分类和功率传输等功能，完全符合IEEE 802.3af标准。</p>
-<h3>2.2 双级电流限制</h3>
-<p>该控制器具有精确的双级电流限制功能，能够在启动时限制涌入电流，避免对电源设备（PSE）造成过大的冲击。在负载<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>充电完成后，它会切换到高电流限制模式，以满足PD的正常工作需求。</p>
-<h3>2.3 可<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a>分类电流</h3>
-<p>通过连接一个外部电阻到RCLASS引脚，可以设置PD的分类电流，从而实现不同功率等级的分类（Class 0 - 4）。</p>
-<h3>2.4 欠压锁定（UVLO）</h3>
-<p>UVLO功能可以确保只有当输入电压达到一定阈值时，PD才会开始工作，避免在低电压下不稳定运行。</p>
-<h3>2.5 热过载保护</h3>
-<p>LTC4257-1内置了热过载<a href="https://www.elecfans.com/tags/保护电路/" target="_blank"><u>保护电路</u></a>，当芯片温度过高时，会自动关闭功率MOSFET，以保护芯片免受损坏。</p>
-<h3>2.6 电源良好信号（PWRGD）</h3>
-<p>PWRGD信号用于指示PD的电源是否正常，方便系统进行<a href="https://www.hqchip.com/app/1731" target="_blank"><u>电源管理</u></a>。</p>
-<h2>3. 应用领域</h2>
-<p>LTC4257-1适用于多种应用场景，如IP电话、无线接入点和电信电源控制等。这些设备通常需要稳定的电源供应，而LTC4257-1能够提供可靠的电源接口解决方案。</p>
-<h2>4. 工作模式</h2>
-<h3>4.1 检测模式</h3>
-<p>在检测模式下，PSE会在电缆上施加-2.8V至-10V的电压，寻找25k的签名电阻。LTC4257-1会连接一个内部25k电阻，向PSE表明PD的存在。</p>
-<h3>4.2 分类模式</h3>
-<p>一旦PSE检测到PD，它可以选择对PD进行分类。LTC4257-1通过RCLASS引脚设置的电阻来确定分类电流，PSE根据测量的负载电流来确定PD的功率等级。</p>
-<h3>4.3 功率传输模式</h3>
-<p>当输入电压超过UVLO开启阈值时，LTC4257-1会开启内部功率MOSFET，将功率传输到PD负载。</p>
-<h2>5. 外部接口和组件选择</h2>
-<h3>5.1 变压器</h3>
-<p>以太网网络中的节点通常通过隔离变压器与外界接口。对于PD，隔离变压器必须在媒体（电缆）侧包含一个<a href="https://m.hqchip.com/tags" target="_blank"><u>中心</u></a>抽头。选择合适的变压器和正确的端接方法对于确保系统的性能至关重要。</p>
-<h3>5.2 <a href="https://www.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>桥</h3>
-<p>由于IEEE 802.3af允许电源布线采用两种不同的配置，因此通常需要在PD的主输入和备用输入上安装二极管桥，以适应不同的极性。</p>
-<h3>5.3 辅助电源</h3>
-<p>在某些应用中，可以使用辅助电源（如墙式变压器）为PD供电。辅助电源可以在不同的位置注入PD，需要根据具体情况选择合适的注入方式。</p>
-<h3>5.4 分类电阻选择</h3>
-<p>根据PD的功率需求，选择合适的RCLASS电阻值来设置分类电流。电阻的精度应在1%或更好，以确保分类电路的准确性。</p>
-<h3>5.5 电源良好接口</h3>
-<p>PWRGD信号可以通过不同的接口电路来控制PD负载。在某些应用中，可以使用电容来过滤PWRGD信号，以忽略短暂的电源不良情况。</p>
-<h3>5.6 签名禁用接口</h3>
-<p>通过将SIGDISA引脚连接到GND或驱动其相对于VIN为高电平，可以禁用25k签名电阻。</p>
-<h3>5.7 负载电容</h3>
-<p>IEEE 802.3af规范要求PD保持至少5µF的负载电容。LTC4257-1能够在热问题出现之前为非常大的负载电容充电，但需要注意避免负载电容过大导致PSE意外断电。</p>
-<h2>6. 布局和保护</h2>
-<h3>6.1 布局</h3>
-<p>在布局时，应避免RCLASS引脚存在过多的寄生电容。如果使用DD封装，应包括一个<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>隔离的散热器，以提高散热性能。同时，应采用<a href="https://m.elecfans.com/v/tag/873/" target="_blank"><u>高压</u></a>布局技术，以确保系统的安全性。</p>
-<h3>6.2 静电放电和浪涌抑制</h3>
-<p>为了保护LTC4257-1免受静电放电和浪涌的影响，建议在<a href="https://www.elecfans.com/tags/桥接器/" target="_blank"><u>桥接器</u></a>和LTC4257-1之间安装瞬态电压抑制器。</p>
-<h2>7. 总结</h2>
-<p>LTC4257-1是一款功能强大、性能可靠的IEEE 802.3af PD电源接口控制器。它的集成度高、功能丰富，能够满足各种PD设计的需求。在实际应用中，电子工程师可以根据具体的应用场景和要求，合理选择外部组件和布局方式，以确保系统的稳定性和可靠性。你在使用LTC4257-1或其他类似控制器时，遇到过哪些问题呢？欢迎在评论区分享你的经验和见解。 </p>]]></description></item><item>    <title><![CDATA[联合光电即将亮相美国ISC West 2026]]></title>    <link>https://www.elecfans.com/d/7759371.html</link>    <guid>https://www.elecfans.com/d/7759371.html</guid>    <pubDate>2026-03-20 16:45:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	3月25日至27日，2026年ISC West将在美国拉斯维加斯举行。展会预计将吸引超过2.9万名来自全球各地的专业人士，汇聚750家以上的参展品牌。行业相关系统集成商、制造商与终端用户将在此共商、共创、共享智能物联与实体安全深度融合成果。</p>
-<p style="text-indent:2em;">
-	在<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>oT时代，设备的“眼睛”决定了智能的上限。作为全球高倍率变焦<a href="https://m.elecfans.com/v/tag/4854/" target="_blank"><u>光学</u></a>领域的领军者，联合<a href="https://www.elecfans.com/v/tag/2800/" target="_blank"><u>光电</u></a>在这一细分赛道积累了二十年的研发经验，填补了国内变焦技术的空白，多项技术指标达到行业领先水平。近年来，联合光电专注技术研发迭代，持续创新光学结构设计，实现了大倍率、小体积、小畸变、高质量成像智能物联镜头的升级与量产。企业黑光全彩技术、光学稳像防抖技术、超低反技术的诞生与应用更是为AIoT的视觉模块增添了更多彩、更稳定、更清晰的可能。</p>
-<p style="text-indent:2em;">
-	依托企业在光学领域的深厚积累，目前联合光电的业务版图已覆盖多个高增长赛道。<a href="https://www.elecfans.com/soft/data/39-96/" target="_blank"><u>消费电子</u></a>领域，联合光电研发生产的产品具有超广角、低畸变的优越性能，支持广角拼接、日夜共焦技术方案，实现视讯、直播、全景多领域应用。智能驾驶领域，联合光电全面布局高端<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>AS产品，全玻/玻塑混合产品全栈自研，为出行安全构建多<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>融合的“视觉核心”。</p>
-<p style="text-indent:2em;">
-	2026年的ISC West，将呈现出AIoT技术如何深度重塑产业面貌：智能物联设备不再只是数据的采集器，而是构成可信任体系的关键节点。在此，联合光电诚挚邀请全球行业伙伴、系统集成商及终端用户莅临展位。我们期待与您共同探讨在多维感知时代，如何通过光学技术构建更智能的未来世界。</p>]]></description></item><item>    <title><![CDATA[深入解析 LT4321：PoE 理想二极管桥控制器的卓越之选]]></title>    <link>https://www.elecfans.com/d/7759368.html</link>    <guid>https://www.elecfans.com/d/7759368.html</guid>    <pubDate>2026-03-20 16:45:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_7759368" value="https://file1.elecfans.com/web2/M00/5C/DF/pYYBAGLu29iAKCOKAAdfa3CMJbY823.pdf"/><h1>深入解析 LT4321：<a href="https://m.hqchip.com/app/1720" target="_blank"><u>PoE</u></a> 理想<a href="https://www.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>桥控制器的卓越之选</h1>
-<p>在当今的电子设备中，<a href="https://m.hqchip.com/app/1720" target="_blank"><u>以太网</u></a>供电（PoE）技术凭借其便捷性和高效性，在众多领域得到了广泛的应用。而 <a href="https://www.elecfans.com/tags/adi/" target="_blank"><u>ADI</u></a> 公司的 LT4321 作为一款专门为 PoE 应用设计的理想二极管桥控制器，为<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>们提供了一种高效、可靠的<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>解决方案。今天，我们就来深入了解一下这款产品。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_7759368" target="_blank">LT4321.pdf</a></p>
-<h2>一、LT4321 产品概述</h2>
-<p>LT4321 是一款双理想二极管桥<a href="https://m.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>，它能够让以太网供电（PoE）受电设备（PD）从 RJ - 45 数据对、备用对或两者中以任意电压极性接收电力。该控制器与八个 N 沟道 <a href="https://www.elecfans.com/tags/mosfet/" target="_blank"><u>MOSFET</u></a> 配合使用，取代了传统被动 PoE <a href="https://www.hqchip.com/app/1565" target="_blank"><u>整流桥</u></a>中的八个二极管，有效减轻了热设计负担，并提高了供电功率。</p>
-<h2>二、核心特性亮点</h2>
-<h3>高效节能</h3>
-<ul>
-<li><strong>降低热量产生</strong>：通过使用 MOSFET 替代传统二极管，大大减少了正向电压降，从而降低了功耗和热量产生，解决了热设计难题。</li>
-<li><strong>提高功率效率</strong>：最大限度地提高了功率效率，减少了能量损失，使得设备能够更高效地运行。</li>
-<li><strong>低静态<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a></strong>：静态工作电流小于 800µA，在节能方面表现出色。</li>
-</ul>
-<h3>兼容性强</h3>
-<ul>
-<li><strong>符合标准</strong>：完全兼容 IEEE 802.3af/at/bt 检测和分类标准，与各种 PoE 系统无缝对接。</li>
-<li><strong>多对应用支持</strong>：适用于 2 对和 4 对 PoE 应用，兼容 PoE、PoE +、PoE ++ 和 LTPoE ++ 等多种供电标准。</li>
-</ul>
-<h3>高可靠性</h3>
-<ul>
-<li><strong>高耐压能力</strong>：具备 100V 的绝对最大电压，能够承受较高的电压冲击。</li>
-<li><strong>宽温度范围</strong>：H 级版本可在高达 125°C 的环境下正常工作，适应各种恶劣环境。</li>
-</ul>
-<h2>三、<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>特性剖析</h2>
-<h3>工作电源范围</h3>
-<p>|IN12 – IN36|、|IN45 – IN78|、OUTP 的工作电源范围为 20V 至 80V，能够满足大多数 PoE 应用的需求。</p>
-<h3>欠压锁定</h3>
-<p>欠压锁定（VUVLO）电压为 15V 至 18V，确保在电压不足时，设备能够稳定工作。</p>
-<h3>不同模式下的电流</h3>
-<ul>
-<li><strong>检测区域总电源电流（IS(DET)）</strong>：当 OUTP &lt; 10V 时，总电源电流为 0.8µA 至 5µA。</li>
-<li><strong>关断模式总电源电流（IS(OFF)）</strong>：当 OUTP &gt; 12V，EN &lt; VIL 且 EN &gt; VIH 时，总电源电流为 32µA 至 60µA。</li>
-<li><strong>正常工作总电源电流（IS(ON)）</strong>：当 EN &gt; VIH 或 EN &lt; VIL，OUTP &gt; 20V 时，总电源电流为 0.5mA 至 0.8mA。</li>
-</ul>
-<h3><a href="https://m.hqchip.com/app/1715" target="_blank"><u>栅极驱动</u></a>电压</h3>
-<ul>
-<li><strong>顶部栅极驱动（TGn）</strong>：当 INn = OUTP + ∆V<a href="https://m.hqchip.com/app/1522" target="_blank"><u>SD</u></a>(MAX) + 5mV，有 10µA 输出时，驱动电压为 7.7V 至 11V。</li>
-<li><strong>底部栅极驱动（BGn）</strong>：有 10µA 输出时，驱动电压为 10V 至 13V。</li>
-</ul>
-<h2>四、工作模式详解</h2>
-<h3>理想二极管桥模式</h3>
-<p>当 OUTP 大于 VUVLO 且 EN 或 EN 被激活时，LT4321 进入理想桥模式。在该模式下，它会根据输入电压与输出电压的比较结果，决定开启哪些外部 MOSFET。具体来说，输入被分为 IN12/IN36 和 IN45/IN78 两对，每对中一个输入电压必须大于 OUTP，另一个必须小于 OUTN，相关的外部 MOSFET 才会被启用。</p>
-<h3>关断模式</h3>
-<p>当 OUTP &lt; VUVLO 时，LT4321 始终处于关断模式。此外，通过使 EN 和 EN 引脚无效，可在整个工作电压范围内将其保持在关断模式。在关断模式下，外部 MOSFET 的栅极和源极短路，桥电流由 MOSFET 的体二极管承载，类似于两个传统的二极管桥。在轻负载情况下，体二极管的正向压降所消耗的功率小于 LT4321 的静态电流，因此在低功率睡眠模式的应用中，如果负载电流小于 20mA，可选择关闭 LT4321 以节省功率。</p>
-<h2>五、应用信息及组件选择</h2>
-<h3>旁路<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a></h3>
-<ul>
-<li>在 OUTP 和 OUTN 引脚之间必须放置一个 0.1μF 的陶瓷电容。在 PD 应用中，IEEE 802.3 标准将 PD <a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>处的<a href="https://m.hqchip.com/app/1808" target="_blank"><u>端口</u></a>电容（ (C<em>{PD}) ）限制为 0.12μF。LT4321 和 PD 接口控制器都需要本地旁路电容，它们可以共享同一个 0.1μF 电容。如果无法将两者靠近共享旁路电容，则可将 (C</em>{PD}) 电容分开，在 LT4321 附近放置一个 0.047μF 的陶瓷电容，在 PD 接口控制器附近放置另一个 0.047μF 的陶瓷电容。</li>
-<li>当 LT4321 启用时，必须在 OUTP 和 OUTN 引脚之间连接一个 10μF 或更大的电容。在 PoE 应用中， (CPORT) 电容可由 PD 接口控制器的热插拔 FET 连接；在非 PoE 应用中， (CPORT) 电容可永久连接在 OUTP 和 OUTN 之间。</li>
-</ul>
-<h3>瞬态电压抑制器</h3>
-<p>为保护 LT4321，应在 OUTP 和 OUTN 之间安装一个单向瞬态电压抑制器（<a href="https://m.hqchip.com/app/1587" target="_blank"><u>TVS</u></a>），如 SMAJ60A，并尽可能靠近 LT4321 安装。对于极高的电缆放电和浪涌保护，可联系 <a href="https://bbs.elecfans.com/group_65" target="_blank"><u>Analog</u></a> Devices 应用部门。</p>
-<h3>MOSFET 选择</h3>
-<p>选择外部 MOSFET 时，其漏源击穿电压应高于最大输入电压。对于 PoE 系统，漏源击穿电压至少应为 100V，且栅极阈值最小为 2V。LT4321 节省的功率取决于外部 MOSFET 的通道<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a> (RDS(ON)) ，为了最大化性能和功率节省，应选择 (R<em>{DS(ON)}) ，使正向电压降 (V</em>{F}) 在 20mV 至 70mV 之间。例如，对于 PoE + 4 类 PD 的最大平均电流 (I_{AVG}) 为 600mA，选择 MOSFET 正向电压降为 40mV 时，可将功耗降低至 B2100 <a href="https://m.hqchip.com/app/1558" target="_blank"><u>肖特基</u></a>二极管桥的 1/15。</p>
-<h3>启用引脚</h3>
-<p>当 OUTP 大于 VUVLO 时，启用引脚 EN 和 (overline{EN}) 可控制 LT4321 处于关断模式还是理想桥模式。EN 和 EN 可由 3.3V 或 5V 逻辑<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>驱动，也可使用开漏或集电极驱动。 (overline{EN}) 引脚通过内部 250kΩ 电阻上拉至内部生成的电压 (V_{overline{ENOC}}) ，EN 引脚通过内部 250kΩ 电阻下拉至 OUTN。当 OUTP 小于 12V 时，启用引脚为高阻抗，以防止这些电阻影响 PoE 检测。</p>
-<h2>六、典型应用案例</h2>
-<h3>高效 25W PD 解决方案</h3>
-<p>结合 12V<a href="https://www.hqchip.com/app/1703" target="_blank"><u>DC</u></a> 和 24V<a href="https://m.hqchip.com/app/1703" target="_blank"><u>AC</u></a> 辅助输入，LT4321 可构建高效的 25W PD 解决方案。通过合理选择 MOSFET 和其他外部组件，能够满足不同应用场景的需求。</p>
-<h3>LTPoE ++ 70W 受电设备</h3>
-<p>在 LTPoE ++ 70W 受电设备中，LT4321 同样发挥着重要作用，为设备提供稳定可靠的电源供应。</p>
-<h2>七、总结与思考</h2>
-<p>LT4321 作为一款优秀的 PoE 理想二极管桥控制器，凭借其高效节能、兼容性强、可靠性高等特点，为 PoE 应用提供了出色的解决方案。在实际设计中，工程师们需要根据具体的应用需求，合理选择外部组件，以充分发挥 LT4321 的性能优势。同时，我们也可以思考，随着 PoE 技术的不断发展，LT4321 未来还可以在哪些方面进行优化和改进，以适应更复杂、更高功率的应用场景。</p>
-<p>希望通过本文的介绍，能让大家对 LT4321 有更深入的了解，在实际设计中能够更好地运用这款产品。你在使用 LT4321 或其他 PoE 相关产品时，遇到过哪些问题呢？欢迎在评论区分享你的经验和见解。 </p>]]></description></item>  </channel></rss>
+	亲身体验最新边缘 AI 技术与创新产品。</p>]]></description></item>  </channel></rss>
