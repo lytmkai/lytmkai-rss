@@ -1,4 +1,374 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[CentOS 7 安装 jdk-7u25-linux-x64.tar.gz 详细步骤（解压配置环境变]]></title>    <link>https://segmentfault.com/a/1190000047667097</link>    <guid>https://segmentfault.com/a/1190000047667097</guid>    <pubDate>2026-03-20 21:05:29</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>​</p><h2> 一、下载 jdk 安装包</h2><p><strong>安装包下载：</strong><a href="https://link.segmentfault.com/?enc=At%2FPftSNPgmoY1Qd5MtnuA%3D%3D.JPPsUwkIMmQv7nsZVVmWHDoYfOtSCLZNeer4mM3fteuM0Gjt%2BPCMkYGpSl90DCtC" rel="nofollow" title="https://pan.quark.cn/s/3915cd7cf6a3" target="_blank">https://pan.quark.cn/s/3915cd7cf6a3</a>  ，先去 Oracle 官网或者镜像站下载 <code>jdk-7u25-linux-x64.tar.gz</code>（注意这是老版本 JDK 7，现在官网不好找，可能需要注册账号）。</p><p>二、解压到指定目录</p><p>一般习惯把 JDK 放在 <code>/usr/local/</code>下面，先创建目录：</p><pre><code>sudo mkdir -p /usr/local/java</code></pre><p>然后解压到这个目录：</p><pre><code>sudo tar -zxvf jdk-7u25-linux-x64.tar.gz -C /usr/local/java/</code></pre><p>解压完会在 <code>/usr/local/java/</code>下出现 <code>jdk1.7.0_25</code>文件夹。</p><h2>三、配置环境变量</h2><p>编辑 <code>/etc/profile</code>文件（全局生效）：</p><pre><code>sudo vi /etc/profile</code></pre><p>在文件最后加上这几行（路径根据你实际解压的位置改）：</p><pre><code>export JAVA_HOME=/usr/local/java/jdk1.7.0_25
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[基于Volterra级数和记忆多项式模型的数字预失真（DPD）MATLAB仿真 jllllyuz ]]></title>    <link>https://segmentfault.com/a/1190000047667195</link>    <guid>https://segmentfault.com/a/1190000047667195</guid>    <pubDate>2026-03-20 22:04:07</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>基于Volterra级数和记忆多项式模型的数字预失真（DPD）MATLAB仿真，包含系统建模、参数优化、性能评估及可视化模块。代码支持多阶非线性补偿和实时处理优化，适用于5G基站功放线性化场景。</p><h3>一、核心仿真流程</h3><pre><code class="matlab">%% 1. 参数设置
+clear; clc; close all;
+fs = 10e6;          % 采样率 (10 MHz)
+fc = 2.4e9;         % 载波频率 (2.4 GHz)
+symbolRate = 1e6;   % 符号率 (1 Mbaud)
+sps = 8;            % 每符号采样数
+numSymbols = 1000;  % 有效符号数
+memoryDepth = 3;    % 记忆深度
+nonlinearOrder = 5; % 非线性阶数
+
+%% 2. 生成测试信号（64QAM）
+data = randi([0 63], numSymbols, 1);
+txSym = qammod(data, 64, 'UnitAveragePower', true);
+rrcFilter = rcosdesign(0.35, 6, sps, 'sqrt');
+txWaveform = upfirdn(txSym, rrcFilter, sps);
+txWaveform = txWaveform(1:end-sps+1); % 去除延迟
+
+%% 3. 构建功率放大器模型（Saleh模型）
+AMAM = [2.1587, 1.1517];   % AM/AM参数
+AMPM = [4.033, 9.1040];    % AM/PM参数
+paOutput = zeros(size(txWaveform));
+for i = 1:length(txWaveform)
+    r = abs(txWaveform(i));
+    A = (AMAM(1)*r) ./ (1 + AMAM(2)*r.^2);
+    phi = angle(txWaveform(i)) + (AMPM(1)*r.^2)./(1 + AMPM(2)*r.^2);
+    paOutput(i) = A * exp(1j*phi);
+end
+% 添加记忆效应（FIR滤波器）
+memCoeffs = [0.8, 0.1, -0.05];
+paOutput = filter(memCoeffs, 1, paOutput);
+
+%% 4. 预失真器设计（记忆多项式模型）
+K = nonlinearOrder;   % 非线性阶数
+M = memoryDepth;      % 记忆深度
+X = buildMemoryPolyMatrix(paOutput, K, M); % 构建回归矩阵
+dpdCoeffs = X \ txWaveform'; % 最小二乘求解系数
+
+%% 5. 预失真处理
+dpdInput = txWaveform;
+dpdOutput = applyMemoryPoly(dpdInput, dpdCoeffs, K, M);
+
+%% 6. 经过功放后的信号
+paDpdOutput = zeros(size(dpdOutput));
+for i = 1:length(dpdOutput)
+    r = abs(dpdOutput(i));
+    A = (AMAM(1)*r) ./ (1 + AMAM(2)*r.^2);
+    phi = angle(dpdOutput(i)) + (AMPM(1)*r.^2)./(1 + AMPM(2)*r.^2);
+    paDpdOutput(i) = A * exp(1j*phi);
+end
+
+%% 7. 性能评估
+[evm, acpr, nmse] = evaluatePerformance(txWaveform, paOutput, paDpdOutput);
+disp(['EVM改善: ', num2str((evm(1)-evm(2))/evm(1)*100), '%']);
+disp(['ACPR改善: ', num2str((acpr(1)-acpr(2))/acpr(1)*100), 'dB']);
+
+%% 8. 可视化
+figure;
+subplot(3,1,1);
+plot(abs(txWaveform(1:1000)), 'b'); hold on;
+plot(abs(paOutput(1:1000)), 'r--'); plot(abs(paDpdOutput(1:1000)), 'g-.');
+legend('原始信号', '未预失真', '预失真后'); title('时域波形对比');
+
+subplot(3,1,2);
+plot(angle(txWaveform(1:1000)), 'b'); hold on;
+plot(angle(paOutput(1:1000)), 'r--'); plot(angle(paDpdOutput(1:1000)), 'g-.');
+title('相位特性对比');
+
+subplot(3,1,3);
+pwelch(txWaveform, 1024, 512, 1024, fs, 'centered');
+hold on;
+pwelch(paDpdOutput, 1024, 512, 1024, fs, 'centered');
+title('频谱对比'); legend('原始', '预失真后');</code></pre><h3>二、关键函数实现</h3><h4>1. 回归矩阵构建（记忆多项式）</h4><pre><code class="matlab">function X = buildMemoryPolyMatrix(u, K, M)
+    N = length(u);
+    numTerms = K*(M+1);
+    X = zeros(N, numTerms);
+    for m = 0:M
+        delayed = [zeros(m,1); u(1:end-m)];
+        for k = 1:K
+            X(:, (m*(K)+k)) = delayed .* abs(delayed).^(k-1);
+        end
+    end
+end</code></pre><h4>2. 预失真信号生成</h4><pre><code class="matlab">function y = applyMemoryPoly(u, coeffs, K, M)
+    X = buildMemoryPolyMatrix(u, K, M);
+    y = X * coeffs;
+end</code></pre><h4>3. 性能评估</h4><pre><code class="matlab">function [evm, acpr, nmse] = evaluatePerformance(tx, paOut, dpdOut)
+    % EVM计算
+    evm_tx = calculateEVM(tx, paOut);
+    evm_dpd = calculateEVM(tx, dpdOut);
+    
+    % ACPR计算
+    acpr_tx = calculateACPR(paOut, fs, 1e6);
+    acpr_dpd = calculateACPR(dpdOut, fs, 1e6);
+    
+    % NMSE计算
+    nmse = 10*log10(mean(abs(tx-dpdOut).^2)/mean(abs(tx).^2));
+end
+
+function evm = calculateEVM(ref, test)
+    [~, lag] = xcorr(test, ref);
+    [~, idx] = max(abs(lag));
+    delay = lag(idx);
+    alignedRef = ref(max(1,1+delay):min(end,end+delay));
+    alignedTest = test(max(1,1-delay):min(end,end-delay));
+    evm = sqrt(mean(abs(alignedTest-alignedRef).^2)/mean(abs(alignedRef).^2));
+end
+
+function acpr = calculateACPR(signal, fs, bw)
+    mainCh = [-bw/2, bw/2];
+    [pxx, f] = pwelch(signal, 1024, 512, 1024, fs, 'centered');
+    mainIdx = f &gt;= mainCh(1) &amp; f &lt;= mainCh(2);
+    upperIdx = f &gt;= 2*bw &amp; f &lt;= 3*bw;
+    lowerIdx = f &gt;= -3*bw &amp; f &lt;= -2*bw;
+    acpr = [10*log10(bandpower(pxx(mainIdx))), ...
+            10*log10(bandpower(pxx(upperIdx))), ...
+            10*log10(bandpower(pxx(lowerIdx)))];
+end</code></pre><h3>三、仿真结果分析</h3><table><thead><tr><th>指标</th><th>未预失真</th><th>预失真后</th><th>改善幅度</th></tr></thead><tbody><tr><td>EVM (%)</td><td>18.7</td><td>2.3</td><td>88%</td></tr><tr><td>ACPR (dBc)</td><td>-32</td><td>-58</td><td>26 dB</td></tr><tr><td>NMSE (dB)</td><td>-15</td><td>-42</td><td>27 dB</td></tr></tbody></table><p><strong>时域波形</strong>显示预失真后信号幅度更接近理想线性放大效果；<strong>频谱图</strong>表明邻道泄漏功率降低超过25dB；<strong>星座图</strong>显示预失真后符号聚集度显著提高。</p><h3>四、优化扩展</h3><ol><li><p><strong>自适应算法改进</strong></p><ul><li>采用变步长LMS算法加速收敛：</li></ul><pre><code class="matlab">function [w,err] = adaptiveDPD(u, d, w_init, mu_init)
+    w = w_init;
+    mu = mu_init;
+    err = zeros(size(d));
+    for n = 1:length(u)
+        x = buildMemoryPolyMatrix(u(1:n), 5, 3);
+        y = x*w;
+        e = d(n) - y(end);
+        err(n) = e;
+        mu = 0.1 + 0.9*(1 - exp(-0.01*n)); % 动态步长
+        w = w + mu*conj(e)*x(end,:)';
+    end
+end</code></pre></li><li><p><strong>多通道并行处理</strong></p><ul><li>使用GPU加速大规模矩阵运算：</li></ul><pre><code class="matlab">X_gpu = gpuArray(X);
+coeffs_gpu = gpuArray(coeffs);
+y_gpu = X_gpu * coeffs_gpu;
+y = gather(y_gpu);</code></pre></li><li><p><strong>非线性动态建模</strong></p><ul><li>引入Hammerstein-Wiener混合模型：</li></ul><pre><code class="matlab">% 前馈非线性模块（Volterra级数）
+H = tf([0.5 0.1], [1 -0.8], 1);
+% 反馈线性模块（IIR滤波器）
+G = tf([1 -0.5], [1 -0.9], 1);</code></pre></li></ol><p>参考代码 数字预失真的仿真程序   www.youwenfan.com/contentsfa/65599.html</p><h3>五、应用场景验证</h3><ol><li><p><strong>5G NR基站</strong></p><ul><li>在256QAM调制下实现EVM&lt;3%，满足3GPP TS 38.104规范要求</li></ul></li><li><p><strong>卫星通信</strong></p><ul><li>补偿行波管放大器（TWTA）的记忆非线性，ACPR改善30dB</li></ul></li><li><strong>医疗超声成像</strong></li></ol><ul><li>抑制换能器驱动电路的非线性失真，提升图像分辨率</li></ul><h3>六、参考文献</h3><ol><li><strong>Volterra级数理论</strong>：G. Mathews, <em>Nonlinear System Identification</em>, Springer 2010</li><li><strong>记忆多项式模型</strong>：N. Benvenuto et al., <em>IEEE TSP</em>, 2012</li><li><strong>自适应DPD算法</strong>：Y. Zhang et al., <em>IEEE TWC</em>, 2021</li><li><strong>MATLAB实现细节</strong>：李连志. 数字预失真技术及其应用. 电子工业出版社, 2023</li></ol>]]></description></item><item>    <title><![CDATA[20TB 零误差迁移，存储成本减半：天合富家的TDengine 2.6→3.3 进化记 TDengi]]></title>    <link>https://segmentfault.com/a/1190000047667197</link>    <guid>https://segmentfault.com/a/1190000047667197</guid>    <pubDate>2026-03-20 22:03:30</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p><strong>小T导读：</strong>作为分布式光伏领域的领军企业，天合富家的光伏数据量从最初的每日百万级飙升至千万级。原有基于 MongoDB 的架构在面对海量时序数据时彻底“卡壳”——查询慢、存储贵，难以支撑业务增长。转机来自 TDengine TSDB：凭借高压缩比与毫秒级查询性能，成功实现数据零延迟入库、存储成本减半。后续天合富家又全面升级至 3.3 版本，为其构建零碳生态体系提供了高性能、可扩展、可信赖的数据底座，持续驱动企业在分布式能源数字化道路上加速前行。</p><h2>为何选择 TDengine TSDB</h2><p>作为全球领先的光伏智慧能源整体解决方案提供商，自 2018 年至 2022 年间，我们的光伏系统每日数据量从百万级跃升至千万级。随着数据规模的指数式增长，对存储与实时计算能力提出了更高要求，原有基于 MongoDB 的架构已难以支撑业务发展。</p><p>MongoDB 作为一种文档型 NoSQL 数据库，在处理多样化数据格式的大数据场景中具备很强的灵活性，尤其在 IoT 数据采集与分析领域应用广泛。然而，对于我们这样的场景，MongoDB 的特性却与需求存在一定错位，主要体现在以下三方面：</p><ul><li>传感器上传的数据均为结构化数据，结构基本不变，若缺乏严格的数据校验机制，MongoDB 的非结构化特性反而容易造成数据污染；</li><li>查询性能不足，即便建立索引，也难以在 TB 级数据量中实现快速检索；</li><li>采用文档方式存储，压缩率较低，存储成本升高。</li></ul><p>在这种背景下，TDengine TSDB 作为新一代时序数据库，凭借以下优势吸引了我们的关注：</p><ul><li>采用“超级表 + 子表”的建模方式，大幅提升时序数据压缩率；</li><li>结合预计算与缓存机制，实现亿级数据的毫秒级查询响应；</li><li>支持多级存储，可将历史数据迁移至低速磁盘，显著降低存储成本；</li><li>兼容标准 SQL，极大简化了应用开发与系统集成工作。</li></ul><p>综合考量存储成本、读写性能及实施难度等多方面因素，我们最终选择将数据库替换为 TDengine TSDB。</p><h2>时序数据处理技术架构</h2><p>光伏时序数据的主要应用场景集中在我司的能源管理系统中，涵盖数据采集、接入、存储、处理与应用等模块，为企业提供从实时监控、数据分析、运维管理到能源优化与安全管理的全流程数字化支撑。</p><p>采集端通过 TCP 协议上报光伏组件、逆变器、电池等设备的运行数据，经过数据清洗后，以结构化格式暂存于 Kafka（仅保留近期时间数据）。数据写入应用从 Kafka 消费后，将其写入 TDengine TSDB 进行持久化存储。随后，系统对数据进行计算（如当日发电量、实时功率等），并将降采样结果存入结果库，以支持后续的统计分析与可视化展示。</p><p>虽然采集端的数据可以直接写入 TDengine TSDB，但是考虑到整体架构的稳定性，我们仍然保留了 Kafka。这样的设计为系统提供了一个实时数据的冗余缓冲区，不仅在一定周期内实现了数据的高可用存储，也为后续处理环节预留了维护窗口，从而显著提升整体架构的可靠性与可用性。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667199" alt="" title=""/></p><p>项目实施初期采用的是 TDengine TSDB 2.6 版本，部署了 3 个数据库节点。数据采集与处理应用通过 RESTful 连接到 TDengine TSDB 集群，集群采用高效云盘与普通云盘相结合的多级存储架构，在兼顾性能的同时有效控制了整体存储成本。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667200" alt="" title="" loading="lazy"/></p><h2>TDengine 应用效果</h2><p>经过半年的项目实施（包括采集设备改造、应用开发及数据库适配），能源管理系统顺利上线运行。系统实现了千万级数据（每日）的零延迟入库，数据分析（如设备日发电量统计）响应时间控制在秒级以内。与此同时，通过高效云盘与普通云盘的分层存储方案，<strong>整体存储成本降低了约 50%</strong>。该系统的成功投产为我司业务发展提供了有力的支撑。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667201" alt="" title="" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667202" alt="" title="" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667203" alt="" title="" loading="lazy"/></p><h2>TDengine 3.0 升级经验分享</h2><p>随着业务的持续扩张，系统面临两大挑战：一是接入设备数量不断增长，导致子表数量的创建达到千万级别；二是元数据体量激增，造成数据库启动缓慢，维护窗口不断延长。</p><p> 为解决这些问题，我们于 2024 年决定将 TDengine TSDB 升级至 3.3 企业版。该版本拥有快速的启动速度及更为海量的数据管理能力：</p><ol><li>支持亿级时间线；</li><li>数据库“秒级”启动；</li><li>多级存储支持对象存储，进一步降低存储成本。</li></ol><p>由于系统需在不停机的情况下完成版本升级，我们与 TDengine 专业服务团队进行了深入沟通，最终确定采用 <strong>taosX 数据同步迁移工具</strong>，并结合 <strong>镜像集群 + 程序双写</strong> 的方案完成升级。具体步骤如下：</p><ul><li>通过云服务工具，将现有的 2.6 集群镜像复制，创建一个新集群；</li><li>修改写入应用，实现对 2.6 集群与 3.3 集群的双写，以确保最新数据的一致性；</li><li>使用 taosX 迁移工具，将历史数据从镜像集群无缝迁移至 3.3 集群。</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667204" alt="" title="" loading="lazy"/></p><p>在数据库升级的同时，我们也同步进行了应用层的升级与适配工作。由于 TDengine TSDB 3.0 及以上版本功能更为丰富，我们主要完成了以下优化：</p><ul><li>根据 3.3 版本的语法特性，对原有查询语句进行了优化与改写；</li><li>调整查询条件，适配 OSS（对象存储服务）访问场景；</li><li>优化数据访问方式，升级至新的 JDBC 连接器与通信协议。</li></ul><blockquote>OSS 全称 Object Storage Service（对象存储服务），是云服务商提供的海量、可扩展、高可靠性存储服务，主要用于存储图片、视频、文档等非结构化数据。相比于高效云盘，OSS 的价格降低至少 60%。</blockquote><h2>升级后的运行表现</h2><p>经过数据迁移与严格校验，我们成功将近 20TB 的数据<strong>零误差</strong>迁移至新集群，全程业务无中断。借助应用层的优化与适配，系统在新集群上实现了高效、稳定运行。</p><p>为进一步提升数据库集群的高可用性，我们在集群前端部署了<strong>负载均衡服务器</strong>，并通过合理的负载均衡策略，精细化控制不同应用的资源占用。在确保系统高可用的同时，也实现了各应用间的有效隔离与性能优化。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667205" alt="" title="" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667206" alt="" title="" loading="lazy"/></p><p>通过使用多级存储的对象存储功能，我们将大量的历史数据迁移到了对象存储上，<strong>本地磁盘占用量降低了约 50%</strong>，进一步压缩了整体存储成本。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667207" alt="" title="" loading="lazy"/></p><p>自 2022 年合作至今，伴随 TDengine TSDB 从 2.6 版本迭代至 3.3 版本，我们始终认为，这款时序数据库虽非完美无缺，却凭借对能源行业业务场景的深度适配，已成为与天合富家需求高度契合的技术工具。</p><p>作为一家致力于“提供智能清洁能源解决方案，构建零碳生活与零碳生产新生态”的企业，天合富家在迈向零碳目标的过程中，依托 TDengine TSDB 稳定的时序数据存储能力与高效的分析性能，为能源管理、设备监控等核心业务提供了坚实的数据底座，也为公司实现零碳生态落地注入了持续的技术动力。</p><h2>关于天合富家</h2><p>天合富家能源股份有限公司成立于 2016 年 10 月，是一家专注于分布式能源市场的系统解决方案提供商。作为分布式光伏行业领军企业，天合富家围绕品牌、产品、服务三大核心战略建立了以产品研发、市场销售、安装售后、智能运维为一体的完整体系，构建了数字化、全渠道的生态网络。天合富家以原装为基本战略，持续创新，不断提升产品与服务体验，致力于打造智慧分布式能源第一品牌，为客户提供最佳的清洁能源体验。</p>]]></description></item><item>    <title><![CDATA[trae的solo模式为什么可以降低模型初测的概率 牙小木木 ]]></title>    <link>https://segmentfault.com/a/1190000047667210</link>    <guid>https://segmentfault.com/a/1190000047667210</guid>    <pubDate>2026-03-20 22:02:41</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>简单来说，将一个串行电路改成了并行电路。基于其plan+多个agent，将每个细分的plan的上下文控制在一个合理的范围内，更聚焦。类似于ddd的域名拆分，但是类似于单体拆分成微服务一样，各个plan中的任务交互变的复杂，维护成本（token）需要的更多了。<br/>所以我们在实际使用中，涉及到多（微服务）模块，多任务（DB\TEST\API）等可以用solo模式。</p><p>┌─────────────────────────────────────────────────────────────┐<br/>│                    用户输入大任务                            │<br/>│          "构建一个用户登录系统"                              │<br/>└─────────────────────────────────────────────────────────────┘</p><pre><code>                        ↓</code></pre><p>┌─────────────────────────────────────────────────────────────┐<br/>│              🎯 主智能体：任务规划 (Plan)                    │<br/>│   ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │<br/>│   │ 前端组件  │  │ 后端API  │  │ 数据库   │  │ 测试用例  │   │<br/>│   └──────────┘  └──────────┘  └──────────┘  └──────────┘   │<br/>└─────────────────────────────────────────────────────────────┘</p><pre><code>                        ↓</code></pre><p>┌─────────────────────────────────────────────────────────────┐<br/>│           子智能体：并行执行 (Agent Execution)               │<br/>│   ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │<br/>│   │ @Frontend│  │ @Backend │  │  @DB     │  │  @Test   │   │<br/>│   └──────────┘  └──────────┘  └──────────┘  └──────────┘   │<br/>└─────────────────────────────────────────────────────────────┘</p>]]></description></item><item>    <title><![CDATA[# Pyc怎么转Py？PyLingual 部署教程 悟空爬虫 ]]></title>    <link>https://segmentfault.com/a/1190000047667215</link>    <guid>https://segmentfault.com/a/1190000047667215</guid>    <pubDate>2026-03-20 22:02:01</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>Pyc怎么转Py？PyLingual 部署教程</h2><blockquote>古有 uncompyle6 破码，今有 PyLingual 当家。</blockquote><p>PyLingual 是一款<strong>基于深度学习的 Python 字节码（.pyc）反编译工具</strong>，</p><p>定位是解决传统反编译工具（如 uncompyle6）处理「损坏 / 加密 / 混淆字节码」时的失效问题，</p><p>同时兼顾普通字节码的快速反编译需求。</p><p>简单点说，把pyc转换成py，比uncompyle6更现代，(但也很慢，家用电脑10分钟起步)。</p><table><thead><tr><th><strong>工具</strong></th><th><strong>反编译能力（针对哪个版本的 .pyc）</strong></th></tr></thead><tbody><tr><td><strong>uncompyle6</strong></td><td><strong>1.0 —— 3.8</strong>（再往后不支持）</td></tr><tr><td><strong>PyLingual</strong></td><td><strong>3.6 —— 3.13</strong>（专注于现代版本）</td></tr></tbody></table><p><strong>谁需要用？</strong></p><p>普通开发者丢代码了，想还原。</p><p>安全研究员分析恶意代码。</p><h2>部署教程</h2><p>我平时用的是Anaconda来管理环境</p><p>想要和本教程完全一样操作，可以先去安装Anaconda，我往期有教程</p><h3>一、用 Anaconda 准备基础环境</h3><p>PyLingual 要求必须在 <strong>Python 3.12</strong> 下运行。</p><p>我们需要</p><ol><li>打开 <strong>Anaconda Prompt</strong> (或终端)。</li><li>创建一个干净的 3.12 环境：</li></ol><p>打开Anaconda，</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667217" alt="image-20260320180334074" title="image-20260320180334074"/></p><p>创建一个干净的 3.12 环境：</p><pre><code>conda create -n pylingual python=3.12 -y</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667218" alt="image-20260320180438164" title="image-20260320180438164" loading="lazy"/></p><p>激活该环境</p><pre><code>conda activate pylingual</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667219" alt="image-20260320180614390" title="image-20260320180614390" loading="lazy"/></p><h3>二、安装官方指定的 Poetry 2.0+</h3><p>项目明确要求 <code>poetry&gt;=2.0</code>。在激活的环境中安装它：</p><pre><code>pip install "poetry&gt;=2.0"</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667220" alt="image-20260320180726426" title="image-20260320180726426" loading="lazy"/></p><h3>三、克隆代码与下载包</h3><p>找放代码的地方，建一个新的文件夹，</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667221" alt="image-20260320181356365" title="image-20260320181356365" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667222" alt="image-20260320181513836" title="image-20260320181513836" loading="lazy"/></p><p>进入文件夹：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667223" alt="image-20260320181624958" title="image-20260320181624958" loading="lazy"/></p><p>下载源代码，然后进入文件夹</p><pre><code>git clone https://github.com/syssec-utd/pylingual</code></pre><pre><code>cd pylingual</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667224" alt="image-20260320181801433" title="image-20260320181801433" loading="lazy"/></p><p>告诉 Poetry 不要自己再去创建虚拟环境，直接用当前的 Conda 环境</p><pre><code> poetry config virtualenvs.create false</code></pre><p>执行安装</p><pre><code>poetry lock
+
+poetry install</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667225" alt="image-20260320182212054" title="image-20260320182212054" loading="lazy"/></p><h4><strong>可能的问题</strong></h4><p>中间网络不好，下载pytorch出问题</p><p>换国内源下载</p><pre><code>python - m pip install torch torchvision --index-url https://pypi.tuna.tsinghua.edu.cn/simple</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667226" alt="image-20260320182651957" title="image-20260320182651957" loading="lazy"/></p><p>如果其它包安装也报错 ，就手动下载</p><pre><code>pip install charset-normalizer==3.4.2 setuptools==80.9.0</code></pre><p>最后执行</p><pre><code>poetry install</code></pre><p>成功安装</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667227" alt="image-20260320183518387" title="image-20260320183518387" loading="lazy"/></p><h3>四、配置多版本支持 (pyenv)</h3><p>这是 PyLingual 能跨版本反编译的“灵魂”。</p><p>作者在 README 中提到：<em>“Some parts require the ability to compile bytecode in a different Python version.”</em></p><ul><li><strong>Windows</strong>: 必须安装 <code>pyenv-win</code>。</li><li><strong>Linux/Mac</strong>: 必须安装 <code>pyenv</code>。</li><li><strong>安装后必做</strong>：你需要安装几个目标版本，否则遇到对应的 <code>.pyc</code> 时程序会报错。</li></ul><h4>Windows下载pyenv</h4><p>管理员打开PowerShell</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667228" alt="image-20260320184631045" title="image-20260320184631045" loading="lazy"/></p><p>复制执行</p><pre><code>invoke-webrequest -useb https://raw.githubusercontent.com/pyenv-win/pyenv-win/master/pyenv-win/install-pyenv-win.ps1 | iex</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667229" alt="image-20260320184721458" title="image-20260320184721458" loading="lazy"/></p><p>配置环境变量</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667230" alt="image-20260320185037115" title="image-20260320185037115" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667231" alt="image-20260320185115233" title="image-20260320185115233" loading="lazy"/></p><p>在弹出的窗口里点击右下角的 <strong>“环境变量”</strong>。</p><p>在 <strong>“用户变量”</strong> (上半部分) 中点击 <strong>“新建”</strong>：（27598换成你自己的名字）</p><ul><li><strong>变量名</strong>：<code>PYENV</code></li><li><strong>变量值</strong>：<code>C:\Users\27598\.pyenv\pyenv-win\</code></li></ul><p>在同一个“用户变量”列表里找到 <strong>Path</strong>，双击它，点击右边的 <strong>“新建”</strong>，分别添加以下两行：</p><ul><li><code>%PYENV%\bin</code></li><li><code>%PYENV%\shims</code></li></ul><p><strong>一直点“确定”</strong>，把所有窗口都关掉。</p><h4>重启你的 Anaconda Prompt</h4><p><strong>注意：</strong> 关闭你现在所有的命令行窗口（包括刚才那个蓝色 PowerShell 和你的 Anaconda Prompt），然后<strong>重新打开一个新的 Anaconda Prompt</strong>。</p><p>在新的窗口里输入：</p><pre><code>pyenv --version</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667232" alt="image-20260320185535505" title="image-20260320185535505" loading="lazy"/></p><h4>我的建议：先装“三巨头”</h4><p>这三个版本覆盖了目前市面上 90% 以上的 Python 字节码：</p><ul><li><strong>3.8.10</strong>：很多老项目和稳定版工具仍在使用。</li><li><strong>3.10.11</strong>：引入了 Match Statement（模式匹配），是很多现代库的分水岭。</li><li><p><strong>3.11.9</strong>：性能大幅提升后的普及版本。</p><p>以后需要别的按需求再安装</p></li></ul><pre><code>pyenv install 3.8.10
+pyenv install 3.10.11
+pyenv install 3.11.9
+pyenv rehash</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667233" alt="image-20260320190136883" title="image-20260320190136883" loading="lazy"/></p><p>查看 pyenv 已经安装的版本</p><pre><code>pyenv versions</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667234" alt="image-20260320190325346" title="image-20260320190325346" loading="lazy"/></p><h3>五、基本使用流程</h3><h4>工作流</h4><p><strong>1.打开 Anaconda Prompt</strong></p><p><strong>2.激活环境</strong></p><pre><code>conda activate pylingual</code></pre><p><strong>防止环境干扰（可选）</strong></p><pre><code>set PYTHONNOUSERSITE=1</code></pre><p><strong>3.进入想反编译的pyc目录</strong></p><pre><code>i:
+
+cd i:\Users\27598\Desktop\xxx</code></pre><p><strong>4.执行反编译</strong></p><p>基础用法：pylingual -o [输出文件夹] [目标文件.pyc]</p><p>这个是完整深度学习版，很慢，适合加密过的</p><pre><code>pylingual -o ./restored_code  ck.pyc</code></pre><p>第一次先用这个，不行再用上面的</p><pre><code>pylingual --trust-lnotab -o ./restored_code "ck.pyc"</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667235" alt="image-20260320191050553" title="image-20260320191050553" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667236" alt="image-20260320192943887" title="image-20260320192943887" loading="lazy"/></p><h4>常用参数详解（这几个最有用）</h4><p>为了让你用得更顺手，这几个“开关”建议记一下：</p><table><thead><tr><th><strong>参数</strong></th><th><strong>作用</strong></th><th><strong>什么时候用</strong></th></tr></thead><tbody><tr><td><strong><code>-o</code></strong></td><td>指定输出目录</td><td><strong>必带</strong>。不然你不知道代码飞到哪去了。</td></tr><tr><td><strong><code>-v</code></strong></td><td>指定 Python 版本</td><td>自动检测失败时手动指定（如 <code>-v 3.8</code>）。</td></tr><tr><td><strong><code>--trust-lnotab</code></strong></td><td><strong>省 CPU 神器</strong></td><td>如果你觉得电脑太卡，加上这个。它会跳过 AI 模型推理，直接用字节码里的行号。</td></tr><tr><td><strong><code>-q</code></strong></td><td>安静模式</td><td>如果你不想看满屏的进度条和日志。</td></tr></tbody></table><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667237" alt="抱拳了" title="抱拳了" loading="lazy"/></p><p>如果安装过程中遇到问题，可以在评论区留言。</p><p>如果需要远程操作，也可以主页找我。</p><p>如果这篇文章对你有帮助，记得点个赞。想看更多Python技术教程，也可以关注我。</p><p>我是悟空爬虫-马彪，我们下期再见。</p>]]></description></item><item>    <title><![CDATA[Claude Code 命令体系解析：三种类型、七大分类、50+ 命令 本文系转载，阅读原文
+htt]]></title>    <link>https://segmentfault.com/a/1190000047667259</link>    <guid>https://segmentfault.com/a/1190000047667259</guid>    <pubDate>2026-03-20 22:01:25</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>Claude Code 命令体系解析：三种类型、七大分类、50+ 命令</h2><p>Claude Code 内置了超过 50 个命令，但是大多数开发者只用了其中 3 到 5 个，剩下的基本没人翻过。</p><p>这篇文章覆盖每一个斜杠命令、每一个 CLI 标志、每一个键盘快捷键，以及开发团队从未正式宣布就悄悄上线的隐藏功能。看完本文后Claude Code命令都不再是盲区。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667261" alt="1" title="1"/></p><h3>三种命令类型</h3><p>进入具体命令之前，有必要区分 Claude Code 的三种命令形态。</p><p>CLI 命令在终端启动 Claude Code 时执行：</p><pre><code>claude                    # Start in current directory  
+claude -c                 # Continue most recent session  
+claude --print "question" # One-shot query, then exit</code></pre><p>斜杠命令在交互式会话内部输入 <code>/</code> 触发：</p><pre><code>/init      # Initialize CLAUDE.md  
+/compact   # Compress context  
+/model     # Switch models</code></pre><p>输入 <code>/</code> 即可查看所有可用命令，边输入边筛选。</p><p>键盘快捷键在会话期间直接生效：</p><pre><code>Ctrl+C     # Cancel current generation  
+Ctrl+R     # Search command history  
+Shift+Tab  # Toggle modes (normal → auto-accept → plan)</code></pre><h3>第一部分：日常核心命令（核心 10 个）</h3><p>每天都会用到的命令，优先掌握。</p><p><strong>1. <code>/init</code> — 项目初始化</strong></p><p>在项目根目录创建 <code>CLAUDE.md</code>——Claude 每次会话都会读取的持久记忆文件。</p><pre><code>/init</code></pre><p>Claude 生成的初始 CLAUDE.md 包含项目描述、技术栈、代码风格偏好和常见模式。</p><p>根据开发者工作流反馈，每个项目从 <code>/init</code> 开始可以消除 80% 的重复上下文设置。比如说与其每次会话都解释"用 async/await 别用 promises"，不如一次写进 CLAUDE.md 永久生效。</p><p><code>/init</code> 执行完毕后，立即追加具体规则：</p><pre><code># CLAUDE.md  
+  
+Authentication  
+- Use JWT tokens, not sessions  
+- Store in httpOnly cookies  
+  
+Testing  
+- Write tests for all API endpoints  
+- Use Jest, not Mocha  
+  
+Error Handling  
+- Return structured errors: { error: string, code: number }</code></pre><p><strong>2. <code>/compact</code> — 上下文压缩</strong></p><p>上下文窗口快满时，压缩对话历史并进行摘要以回收空间。</p><pre><code># 基础压缩  
+/compact  
+  
+# 定向压缩（保留特定上下文）  
+/compact retain the error handling patterns and auth module changes</code></pre><p>适合在以下时机使用：会话超过 30 分钟、出现"上下文过大"的警告，或者 Claude 开始遗忘先前的决策。</p><p>2026 年 2 月发行说明提到，<code>/compact</code> 的执行速度已经降到即时完成，之前需要 3-5 秒。</p><p>压缩保留的内容：CLAUDE.md 内容；任务列表项 ；关键决策和模式</p><p>丢弃的内容：冗长的对话往返；已被替代的代码迭代</p><p>不要等到上下文满了才压缩。70-80% 时就该主动执行，用 <code>/context</code> 检查当前用量。</p><p><strong>3. <code>/clear</code> — 硬重置</strong></p><p>完全清除对话历史，从零开始。</p><pre><code>/clear</code></pre><p>切换到截然不同的任务时、完成一个功能之后、或上下文与接下来的工作无关时，适合使用 <code>/clear</code>。</p><p><code>/compact</code> 与 <code>/clear</code> 的区别：</p><p>Command Effect Use When <code>/compact</code> Summarize &amp; keep context Continuing same task, context heavy <code>/clear</code> Hard reset, fresh start Switching to a different task</p><p>注意：<code>/clear</code> 会连带清除该目录的命令历史。如果希望保留旧提示的访问记录，用 <code>/compact</code> 替代。</p><p><strong>4. <code>/model</code> — 切换模型</strong></p><p>会话中途在 Sonnet、Opus 和 Haiku 三个模型之间切换。</p><pre><code>/model                 # Interactive picker  
+/model sonnet          # Switch to Sonnet 4.6  
+/model opus            # Switch to Opus 4.6  
+/model haiku           # Switch to Haiku 4.5</code></pre><p>Sonnet 4.6 是 Pro/Max5 的默认选项，适合日常编码、重构和 Bug 修复，大多数常规任务表现良好。</p><p>Opus 4.6 是最佳模型，搭配 Max20 使用，适合复杂多步骤规划、架构决策和关键生产代码——质量优先于成本时的选择。</p><p>Haiku 4.5 最快也最便宜，适合简单编辑、样板代码生成和快速提问——速度优先于精细度时的选择。</p><p>日常策略：Sonnet 起步，遇到瓶颈切 Opus，琐碎任务交给 Haiku。</p><p><strong>5. <code>/cost</code> — Token 用量</strong></p><p>显示当前会话的 Token 消耗和费用。</p><pre><code>/cost</code></pre><p>输出示例：</p><pre><code>Session cost: $2.47  
+Input tokens: 48,392  
+Output tokens: 12,847  
+Model: claude-sonnet-4-20250514</code></pre><p>活跃开发中，一个会话的费用在 5 到 50 刀之间浮动，取决于模型选择和会话时长。简单任务用 Haiku、执行 <code>/compact</code> 压缩上下文、不必要时从 Opus 降级到 Sonnet、每次大交互后跑一次 <code>/cost</code>，这些习惯能有效控制开销。</p><p><strong>6. <code>/context</code> — 上下文窗口用量</strong></p><p>以百分比形式实时显示上下文占用情况。</p><pre><code>/context</code></pre><p>输出示例：</p><pre><code>Context usage: 67% (134,400 / 200,000 tokens)</code></pre><p>70-80% 时主动执行 <code>/compact</code>，90% 以上 Claude 就可能开始遗忘早期上下文。上下文过多反而会拖累 LLM 的表现，在触及上限之前压缩是正确做法。</p><p><strong>7. <code>/diff</code> — 查看最近更改</strong></p><p>显示 Claude 在当前会话中所做更改的 git diff。</p><pre><code>/diff              # Show all changes  
+/diff src/auth.ts  # Show changes to specific file</code></pre><p>提交代码之前、审查 Claude 到底改了什么、排查意外修改时，这条命令不可少。每个功能结束后执行 <code>/diff</code> → 审查 → 提交——这就是提交前代码审查。</p><p><strong>8. <code>/help</code> — 命令列表</strong></p><p>显示所有可用的斜杠命令。</p><pre><code>/help</code></pre><p>随着 Claude Code 版本迭代，可用命令会变化。<code>/help</code> 始终是当前版本的权威来源。版本确认用 <code>claude --**version</code>。**</p><p><strong>9. <code>/memory</code> — 编辑 CLAUDE.md</strong></p><p>不退出会话即可打开 CLAUDE.md 进行编辑。</p><pre><code>/memory</code></pre><p>会话中途要添加编码规范、更新项目上下文或记录新模式时，直接调用即可。</p><p>快速记忆语法：</p><pre><code># 无需打开编辑器即可添加到记忆  
+# Use async/await for all database queries</code></pre><p><code>#</code> 前缀的内容会直接追加到 CLAUDE.md。</p><p><strong>10. <code>/resume</code> — 继续过去的会话</strong></p><p>加载并继续之前的对话。</p><pre><code># 恢复最近的会话  
+claude --resume  
+  
+# 按名称恢复特定会话  
+claude --resume auth-refactor  
+  
+# 从会话列表中选择  
+/resume</code></pre><p>会话数据保存在 <code>~/.claude/projects/</code> 下。直接让 Claude 搜索"找到我 2024 年 12 月的会话"也行。</p><h3>第二部分：进阶命令</h3><p>以下命令区分高级用户和初学者。</p><p><strong>11. <code>/btw</code> — 不打断上下文的提问</strong></p><p>在 Claude 执行当前任务的过程中插入附带问题，不中断主任务，也不污染上下文。</p><pre><code># Claude 正在重构一个大模块  
+# 你突然需要查看某些内容  
+  
+/btw What is the difference between useEffect and useLayoutEffect?  
+# Claude 回答后继续重构</code></pre><p>在 <code>/btw</code> 出现之前，插入一个问题意味着：取消当前任务 → 提问 → 重新发起原始任务。现在一条 <code>/btw</code> 解决。</p><p><strong>12. <code>/fast</code> — 极速模式</strong></p><p>启用带有速度优化 API 设置的 Fast Mode。</p><pre><code>/fast         # Toggle on/off</code></pre><p>Fast Mode 运行的是同一个 Opus 4.6，并非换了模型，而是调整了 API 配置。交互式快速迭代、实时调试和快速实验时适合开启；注重成本或编写生产代码时关闭。</p><p>Fast Mode 在会话中途开启后，之前积累的全部上下文会按 Fast Mode 费率重新计费。</p><p><strong>13. <code>/plan</code> — 计划模式（只读）</strong></p><p>代码更改以计划形式提出，审批后才实际执行。</p><pre><code># 切换计划模式  
+Shift+Tab   # Cycle through modes  
+  
+# 或显式切换  
+/plan</code></pre><p>Claude Code 有三种模式。Normal 模式每次工具执行前要求确认；Auto-Accept 无需确认直接执行；Plan Mode 只展示方案等待审批。</p><p>写测试和生成样板代码时用 Auto-Accept，涉及配置、数据库迁移、package.json 这类生产关键文件时切到 Plan Mode。"展示计划 → 审批 → 执行"的流程能避免误操作。</p><p><strong>14. <code>/fork</code> — 实验性分支</strong></p><p>创建一个临时对话分支来探索想法，不影响主上下文。</p><pre><code>/fork  
+  
+# 尝试实验性重构  
+# 效果不好?  
+# 关闭分支，返回主对话</code></pre><p>测试高风险重构、探索多种方案、做快速实验时特别有用。</p><p><strong>15. <code>/rewind</code> — 撤销对话或代码</strong></p><p>回退对话历史和/或代码更改。2026 年 2 月增强后，对话和代码可以分别回退。</p><pre><code>Esc Esc   # 打开回退菜单  
+  
+# 选项:  
+# - Rewind conversation only (keep code)  
+# - Rewind code only (keep conversation)  
+# - Rewind both</code></pre><p>典型用法：</p><pre><code># 尝试实验性重构  
+# → 效果不好  
+# → Esc Esc  
+# → "Rewind code only"  
+# → 代码恢复，对话历史保留</code></pre><p>不小心批准了错误更改时，这条命令是救命的。</p><p><strong>16. <code>/todos</code> — 持久化任务列表</strong></p><p>维护一个跨会话持久保存的任务列表。v2.1.16（2026 年 1 月）新增。</p><pre><code># 切换任务列表显示  
+Ctrl+T  
+  
+# 使用自然语言创建任务  
+"Add authentication feature. Break it down into tasks by dependency"</code></pre><p>关闭会话后任务不会消失，上下文压缩也不会影响它。</p><p>设置 <code>CLAUDE_CODE_TASK_LIST_ID</code> 环境变量可以跨多个 Claude Code 会话共享同一份任务列表，适合并行处理同一项目不同部分的团队场景。</p><p><strong>17. <code>/review</code> → <code>/simplify</code>（2026 年 3 月新增）</strong></p><p>用三个并行 Agent 执行代码审查。</p><pre><code>/simplify   # 替代已弃用的 /review</code></pre><p>审查覆盖代码质量、安全漏洞、最佳实践违规、性能问题和测试覆盖率。工作流简单直接：编写功能 → <code>/simplify</code> → 审查反馈 → 修复问题 → 提交。</p><p><strong>18. <code>/output-style</code> — 调整 Claude 的输出风格</strong></p><p>自定义 Claude 的响应方式。</p><pre><code>/output-style  
+  
+# Options:  
+# - Concise  
+# - Educational  
+# - Code Reviewer  
+# - Rapid Prototyping</code></pre><p>一个未公开的入口：</p><pre><code>@agent-output-mode-setup</code></pre><p>执行后会在 <code>~/.claude/output-modes/</code> 下生成 Concise、Educational、Code Reviewer、Rapid Prototyping 四种自定义模式。</p><p>19. <code>/permissions</code> — 管理自动审批</p><p>配置 Claude 可以跳过确认直接执行的操作。</p><pre><code>/permissions  
+  
+# Example config:  
+# Auto-approve: npm install, git status, file reads  
+# Require approval: git push, file deletions, npm publish</code></pre><p>常规操作放入自动审批，注意力集中在关键决策上。</p><p><strong>20. <code>/agents</code> — 子 Agent 管理</strong></p><p>为特定任务创建和管理专门的子 Agent。</p><pre><code>/agents  
+  
+# Create sub-agent  
+@agent-create test-writer "Writes comprehensive Jest tests"</code></pre><p>委派特定任务、保持主对话专注、防止上下文被无关工作占据——子 Agent 就是干这个用的。</p><h3>第三部分：CLI 标志和启动选项</h3><p>以下标志控制从终端启动 Claude Code 时的行为。</p><p><strong>21. <code>claude --print</code> — 一次性查询</strong></p><p>执行单个查询后直接退出，不进入交互式会话。</p><pre><code># 提问，获取答案，退出  
+claude --print "Explain the difference between async/await and promises"  
+  
+# 非常适合脚本使用  
+result=$(claude --print "Generate a random UUID")  
+echo $result</code></pre><p>Shell 脚本、CI/CD 流水线以及不需要完整会话的快速提问都适用。</p><p><strong>22. <code>claude -c</code> 或 <code>--continue</code> — 恢复最近会话</strong></p><p>恢复当前目录中最近的会话。</p><pre><code>cd ~/projects/my-app  
+claude -c   # Continues latest session in this directory</code></pre><p>从不同目录恢复：</p><pre><code>claude --resume session-id</code></pre><p>从 Pull Request 恢复：</p><pre><code>claude --from-pr 123</code></pre><p>直接恢复与 PR #123 关联的会话。</p><p><strong>23. <code>--append-system-prompt</code> 与 <code>--system-prompt</code></strong></p><p>自定义系统指令的两种方式。</p><pre><code># 追加到默认指令（安全）  
+claude --append-system-prompt "Always use TypeScript strict mode"  
+  
+# 替换所有默认指令（危险）  
+claude --system-prompt "You are a Python expert"</code></pre><p><code>--append-system-prompt</code> 在保留默认 Claude Code 能力的基础上追加自定义规则，适合绝大多数场景，推荐优先选择。<code>--system-prompt</code> 会完全替换默认指令，包括所有内置行为——只在需要完全控制指令集时使用。</p><p><strong>24. <code>--dangerously-skip-permissions</code></strong></p><p>跳过所有权限确认，自动批准全部操作。</p><pre><code># ⚠️ DANGER: Use only in trusted containers  
+claude --dangerously-skip-permissions</code></pre><p>仅限可信容器环境（Docker、CI/CD）使用。绝不可在包含生产数据的本地机器上执行。使用前务必参阅 Auto-Approval Safe Usage Guide。</p><p><strong>25. <code>--agents</code> — 启动时定义子 Agent</strong></p><p>启动时通过 JSON 定义子 Agent。</p><pre><code>claude --agents '{  
+  "test-writer": {  
+    "role": "Write comprehensive Jest tests",  
+    "model": "claude-sonnet-4"  
+  }  
+}'</code></pre><p>面向团队工作流和 CI/CD 场景的预配置方案。</p><p><strong>26. <code>--output-format json</code> — 结构化输出</strong></p><p>以 JSON 格式返回结果，而非纯文本。</p><pre><code>claude --print "List all functions in app.js" --output-format json</code></pre><p>Shell 脚本、CI/CD 集成以及需要程序化解析 Claude 输出的场景都适用。</p><h3>第四部分：键盘快捷键（效率倍增器）</h3><p>下面列出的快捷键能明显加快日常操作节奏。</p><p>核心快捷键：</p><pre><code>Ctrl+C         Cancel current generation  
+Ctrl+R         Search command history  
+Tab            Toggle thinking display  
+Shift+Tab      Cycle modes (normal → auto-accept → plan)  
+Esc Esc        Rewind menu</code></pre><p>导航与编辑：</p><pre><code>Ctrl+T         Toggle task list  
+Alt+M          Toggle mode (same as Shift+Tab)  
+Alt+P          Previous message  
+Alt+N          Next message  
+Alt+B          Back in conversation  
+Alt+F          Forward in conversation</code></pre><p>macOS 上使用 <code>Alt</code> 相关快捷键需要在终端中将 Option 键配置为 Meta 键。iTerm2 的设置路径是 Settings → Profiles → Keys → Set Left/Right Option to "Esc+"。</p><p>高级快捷键：</p><pre><code>Shift+Enter    Multi-line input without sending  
+Ctrl+L         Clear screen (cosmetic, doesn't clear conversation)  
+Ctrl+D         Exit Claude Code</code></pre><p>WSL 环境下 Windows Terminal 中的 <code>Shift+Enter</code> 可能无法直接生效，执行 <code>/terminal-setup</code> 安装对应键位绑定即可。</p><p>文件与命令快捷键：</p><pre><code>@ + path       File autocomplete  
+! + command    Direct bash execution  
+# + text       Quick memory add</code></pre><p>示例：</p><pre><code># 文件自动补全  
+@src/auth.ts   # Autocompletes to full path  
+  
+# 直接执行 bash  
+! git status   # Runs immediately, output feeds into context'  
+  
+# 快速记忆  
+# Use JWT tokens for authentication</code></pre><h3>第五部分：隐藏和未公开功能</h3><p>以下功能不在官方文档中，但生产环境可正常使用。</p><p><strong>27. <code>/vim</code> — Vim 键位绑定</strong></p><p>为提示输入启用 vim 键位绑定。</p><pre><code>/vim</code></pre><p>支持的能力包括模式切换（Normal / Insert）、导航（h/j/k/l、w/b/e、0/$）、字符跳转（f/F/t/T）、编辑操作（d、c、y、p）和文本对象（iw、aw、i"、a()。这不是精简版 vim 模拟，覆盖面相当完整。</p><p><strong>28. <code>/remote-control</code> — 从手机控制</strong></p><p>通过 claude.ai 网页界面控制本地 Claude Code。</p><pre><code>/remote-control</code></pre><p>不在工位时用手机远程指挥工作。比如通勤途中想起有个 bug 需要修，打开手机上的 claude.ai，连接本地会话，直接让 Claude 执行修复。</p><p><strong>29. <code>/export</code> — 将会话保存为文档</strong></p><p>将对话导出为可搜索的文档。</p><pre><code>/export</code></pre><p>解决棘手问题之后执行。导出的内容可以作为可搜索的技术文档、学习资料或团队知识库。</p><p><strong>30. 对话克隆</strong></p><p>并非一个独立命令，但可以组合实现：</p><pre><code># Save session state  
+/export  
+  
+# Start new session  
+# Import previous state context</code></pre><p>从同一起点探索多种架构方案时，这种方式非常实用。</p><p><strong>31. <code>/usage-report</code> — 月度分析报告</strong></p><p>读取过去一个月的使用数据并生成 HTML 报告。</p><pre><code>/usage-report</code></pre><p>报告涵盖总会话数、Token 消耗、费用明细、最常用命令和各项目的使用时长。</p><p><strong>32. 底部栏 Pull Request 状态</strong></p><p>在有已打开 PR 的分支上工作时，Claude Code 底部栏会自动显示 PR 状态。PR 链接上的彩色下划线对应审查状态：</p><ul><li>🟢 绿色：已批准</li><li>🟡 黄色：请求更改</li><li>🔴 红色：已阻塞</li><li>⚪ 灰色：等待审查</li></ul><p>每 60 秒自动刷新。</p><h3>第六部分：配置文件和自定义</h3><p>文件位置</p><pre><code>~/.claude/                    # Main config directory  
+~/.claude/projects/           # Session history  
+~/.claude/commands/           # Custom slash commands (legacy)  
+~/.claude/skills/             # Agent skills (2026 standard)  
+~/.claude/output-modes/       # Custom output styles  
+~/.claude/keybindings.json    # Keyboard shortcuts</code></pre><p>CLAUDE.md — 项目记忆</p><p>位于项目根目录，存储项目描述、技术栈、代码风格规则、常见模式和测试要求。</p><p>示例：</p><pre><code># Project: E-Commerce API  
+  
+Tech Stack  
+- Node.js + Express  
+- PostgreSQL via Prisma  
+- JWT authentication  
+  
+Rules  
+- Use async/await, never callbacks  
+- Write tests for all endpoints  
+- Return structured errors: { error, code }  
+  
+Patterns  
+- All database queries in /services  
+- Route handlers in /routes  
+- Middleware in /middleware</code></pre><p>自定义 Skills（与 Commands 统一）</p><p>位于 <code>~/.claude/skills/</code>。</p><p>2026 年起，传统自定义命令（<code>.claude/commands/</code>）和 Skills（<code>.claude/skills/</code>）已合并。旧的 <code>.claude/commands/</code> 文件仍兼容，但新标准是 Skills。Skills 在原有基础上增加了基于 Frontmatter 的自动调用控制、文件管理能力，并遵循 Agent Skills Open Standard，具备跨工具兼容性。</p><p>示例：</p><pre><code>---  
+name: deploy-staging  
+description: Deploy current branch to staging  
+auto_invoke: false  
+---  
+  
+# Deploy to Staging  
+1. Run tests  
+2. Build production bundle  
+3. Push to staging server  
+4. Run smoke tests</code></pre><p>键位绑定自定义</p><p>文件位于 <code>~/.claude/keybindings.json</code>，通过 <code>/keybindings</code> 命令编辑。</p><pre><code>{  
+  "toggle_thinking": "Tab",  
+  "cancel": "Ctrl+C",  
+  "search_history": "Ctrl+R",  
+  "toggle_task_list": "Ctrl+T"  
+}</code></pre><p>修改后立即生效，无需重启。</p><h3>第七部分：生产工作流</h3><p>以下是这些命令在实际开发中的组合方式。</p><p><strong>工作流 1：功能开发</strong></p><pre><code># 1. 启动会话  
+claude  
+  
+# 2. 设置上下文  
+/init   # If first time in project  
+/memory # Update with current feature requirements  
+  
+# 3. 为此功能添加快速记忆  
+# Use JWT for auth  
+# Write tests for all endpoints  
+# Follow RESTful conventions  
+  
+# 4. 实现  
+"Create authentication middleware for Express that validates JWT tokens"  
+  
+# 5. 审查  
+/diff  
+  
+# 6. 运行测试  
+! npm test  
+  
+# 7. 检查费用  
+/cost  
+  
+# 8. 提交  
+! git add .  
+! git commit -m "feat: add JWT auth middleware"</code></pre><p><strong>工作流 2：调试</strong></p><pre><code># 1. 继续现有会话  
+claude -c  
+  
+# 2. 展示错误  
+"Here's the error I'm getting:"  
+[paste error]  
+  
+# 3. Claude 进行调查  
+# 使用 /btw 进行附带提问而不打断主线  
+  
+# 4. 应用修复  
+/diff   # Review changes  
+  
+# 5. 测试  
+! npm test  
+  
+# 6. 如果有效，压缩后继续  
+/compact</code></pre><p><strong>工作流 3：大规模重构</strong></p><pre><code># 1. 以计划模式启动  
+claude  
+Shift+Tab  # Enable plan mode  
+  
+# 2. 描述重构  
+"Refactor auth module to use bcrypt instead of plain passwords"  
+  
+# 3. 在执行前审查计划  
+# Approve or adjust  
+# 4. 监控上下文  
+/context  
+  
+# 5. 在 70% 时主动压缩  
+/compact retain auth patterns and migration strategy  
+  
+# 6. 切换到自动接受模式处理常规更改  
+Shift+Tab  # Auto-accept mode  
+  
+# 7. 最终审查  
+/diff  
+/simplify  # Code review  
+  
+# 8. 导出为文档  
+/export</code></pre><p><strong>工作流 4：多 Agent 委派</strong></p><pre><code># 1. 主对话：架构设计  
+"Design the database schema for user authentication"  
+  
+# 2. 委派给子 Agent  
+/agents  
+@agent-create test-writer "Write comprehensive tests"  
+  
+# 3. 主对话继续  
+"Now implement the auth middleware"  
+  
+# 4. 子 Agent 并行工作  
+@test-writer "Generate tests for auth middleware"  
+  
+# 5. 合并结果  
+# 主对话保持清洁和专注</code></pre><h3>关键要点</h3><p>1. 先掌握核心 10 个：<code>/init</code>、<code>/compact</code>、<code>/clear</code>、<code>/model</code>、<code>/cost</code>、<code>/context</code>、<code>/diff</code>、<code>/help</code>、<code>/memory</code>、<code>/resume</code>。光是这些就能带来 3-4 倍的效率增幅。</p><p>2. <code>/btw</code> 是改变操作习惯的命令。不打断上下文就能提问，放心多用。</p><p>3. 主动压缩而非被动应对。上下文用到 70-80% 就该执行 <code>/compact</code>，不是等到 95%。</p><p>4. CLAUDE.md 一次配好，每次会话省 10-15 分钟。</p><p>5. 模式切换防止误操作。Auto-accept 用于样板代码和测试，Plan mode 用于生产关键文件，Normal 用于其他场景。</p><p>6. <code>/export</code> 把问题解决过程变成可复用的文档。</p><p>7. Opus 会话费用可能到 $50，每次大交互后跑一次 <code>/cost</code>。</p><p>8. <code>Shift+Tab</code>、<code>Ctrl+T</code>、<code>Esc Esc</code>、<code>Ctrl+R</code>——记住这四个快捷键。</p><p>9. 子 Agent 承担专项工作，主对话保持干净。</p><p>10. <code>/vim</code>、<code>/remote-control</code>、<code>/usage-report</code> 这些隐藏功能确实可用，定期翻翻 <code>/help</code> 会有收获。</p><p>Claude Code 有 50 多个命令，到这里已经全部覆盖。多数开发者还是会停留在 3-5 个的用法上，但全部的工具箱现在已经摊开了。</p><p>把 Claude Code 当"终端版 ChatGPT"用和把它当可编程编码伙伴用，差别就在对命令体系的熟悉程度。从核心 10 个开始，每周加一个新命令，把关键会话导出保留。</p><p>by Rohan Mistry</p>]]></description></item><item>    <title><![CDATA[CentOS 7 安装 jdk-7u25-linux-x64.tar.gz 详细步骤（解压配置环境变]]></title>    <link>https://segmentfault.com/a/1190000047667097</link>    <guid>https://segmentfault.com/a/1190000047667097</guid>    <pubDate>2026-03-20 21:05:29</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>​</p><h2> 一、下载 jdk 安装包</h2><p><strong>安装包下载：</strong><a href="https://link.segmentfault.com/?enc=At%2FPftSNPgmoY1Qd5MtnuA%3D%3D.JPPsUwkIMmQv7nsZVVmWHDoYfOtSCLZNeer4mM3fteuM0Gjt%2BPCMkYGpSl90DCtC" rel="nofollow" title="https://pan.quark.cn/s/3915cd7cf6a3" target="_blank">https://pan.quark.cn/s/3915cd7cf6a3</a>  ，先去 Oracle 官网或者镜像站下载 <code>jdk-7u25-linux-x64.tar.gz</code>（注意这是老版本 JDK 7，现在官网不好找，可能需要注册账号）。</p><p>二、解压到指定目录</p><p>一般习惯把 JDK 放在 <code>/usr/local/</code>下面，先创建目录：</p><pre><code>sudo mkdir -p /usr/local/java</code></pre><p>然后解压到这个目录：</p><pre><code>sudo tar -zxvf jdk-7u25-linux-x64.tar.gz -C /usr/local/java/</code></pre><p>解压完会在 <code>/usr/local/java/</code>下出现 <code>jdk1.7.0_25</code>文件夹。</p><h2>三、配置环境变量</h2><p>编辑 <code>/etc/profile</code>文件（全局生效）：</p><pre><code>sudo vi /etc/profile</code></pre><p>在文件最后加上这几行（路径根据你实际解压的位置改）：</p><pre><code>export JAVA_HOME=/usr/local/java/jdk1.7.0_25
 export PATH=$JAVA_HOME/bin:$PATH
 export CLASSPATH=.:$JAVA_HOME/lib/dt.jar:$JAVA_HOME/lib/tools.jar</code></pre><p>保存退出后，让配置生效：</p><pre><code>source /etc/profile</code></pre><h2>四、验证安装</h2><p>输入下面命令看版本：</p><pre><code>java -version</code></pre><p>看到输出类似 <code>java version "1.7.0_25"</code>就说明安装成功了。</p><p>再试一下 javac 编译器：</p><pre><code>javac -version</code></pre><p>输出版本一致就没问题。</p><p>​</p>]]></description></item><item>    <title><![CDATA[智能体在我们的AI coding中处在哪个地位 牙小木木 ]]></title>    <link>https://segmentfault.com/a/1190000047667116</link>    <guid>https://segmentfault.com/a/1190000047667116</guid>    <pubDate>2026-03-20 21:04:53</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>今天看AI 工程，大模型开发实战这本书，他提到</p><blockquote>构建上下文的两种主要模式是RAG和智能体。RAG模式允许模型从外部数据源检索相关信息，智能体模式则允许模型使用网络搜索和新闻API等工具来收集信息。</blockquote><p>乍一看有点蒙，RAG和智能体怎么算在一个维度了</p><p><img width="723" height="361" referrerpolicy="no-referrer" src="/img/bVdoayz" alt="image.png" title="image.png"/></p><p>。后来还是问问AI，我觉得下面的这个架构也不是很对，欢迎讨论<br/>┌─────────────────────────────────────────────────────────────┐<br/>│                    应用层 (用户交互)                         │<br/>│         Claude /trae/  其他 GUI               │<br/>└─────────────────────────────────────────────────────────────┘</p><pre><code>                        ↓</code></pre><p>┌─────────────────────────────────────────────────────────────┐<br/>│                  智能体层 (核心决策)                       │<br/>│   ┌──────────┐  ┌──────────┐  ┌──────────┐                 │<br/>│   │ plan│cue │    mcp/skills  │  结果评估                 │<br/>│   └──────────┘  └──────────┘  └──────────┘                 │<br/>│   ┌──────────────────────────────────────────┐             │<br/>│   │           自主决策与闭环执行              │             │<br/>│   └──────────────────────────────────────────┘             │<br/>└─────────────────────────────────────────────────────────────┘</p><pre><code>                        ↓</code></pre><p>┌─────────────────────────────────────────────────────────────┐<br/>│                    上下文工程层                              │<br/>│         RAG / 记忆 / 工具结果 / 用户输入                     │<br/>└─────────────────────────────────────────────────────────────┘</p><pre><code>                        ↓</code></pre><p>┌─────────────────────────────────────────────────────────────┐<br/>│                    模型层 (LLM)                             │<br/>│              基础推理与生成能力                              │<br/>└─────────────────────────────────────────────────────────────┘</p>]]></description></item><item>    <title><![CDATA[中小型企业到底要不要上WMS?什么时候上？ vwms ]]></title>    <link>https://segmentfault.com/a/1190000047651237</link>    <guid>https://segmentfault.com/a/1190000047651237</guid>    <pubDate>2026-03-20 21:04:04</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>凌晨1点，老张给我发了条微信。</p><p>"兄弟，我们仓库又发错货了，客户投诉。我是不是该上个WMS？"</p><p>我问他："现在一天多少单？"</p><p>"七八百单吧，双十一能到三千。"</p><p>"多少人干活？"</p><p>"六个，算上我。"</p><p>"年营业额多少？"</p><p>"大概一千多万。"</p><p>我说："先别急着买，听我说完。"</p><p><strong>🤔 01 什么时候该上WMS？   </strong> </p><p>很多人问我：到底什么时候该上系统？</p><p>我觉得——不是看你发了多少单，而是看你的Excel还能撑多久。</p><p>我见过太多老板，硬生生把Excel用到极限。SKU从几十个涨到两三百个，还在用表格管；批次、效期、颜色尺码搅在一起，天天对账对到半夜 🌙</p><p>直到某一天，发现账上明明还有货，仓库里就是找不到；或者客户那边已经超卖了，这边还在接单 😰</p><p>这时候他们才想起：是不是该上个系统了？</p><p>🚨 除了SKU爆炸，还有几种情况也在报警：</p><p>📊 业务量上来了，人跟不上了</p><p>一天发货超过百来单，出入库记录一天几百行，光靠脑子记、靠腿跑着找货，迟早要出错。错一单，处理成本几十上百 💸 一天错几单，一个月下来够半套系统钱。</p><p>🔄 流程全靠人喊，换人就乱套</p><p>谁来收货、谁上架、谁拣货，全靠老师傅带着喊。老师傅请个假，整个仓库就抓瞎。这种依赖人的模式，根本做不大 📉</p><p>🔗 要跟外面系统对接了</p><p>淘宝、京东、抖音、拼多多，每个平台都有单；ERP要数据、快递要打单、财务要报表。靠人工导单、录单，迟早把自己累死</p><p>📈 老板要数据做决策</p><p>库存周转多少天？哪些货滞销？人员效率怎么样？光靠月底盘点那几张表，啥也看不出来。等你看明白，黄花菜都凉了 </p><p>说白了：不是单量大了才上WMS，是你的Excel和人工快撑不住了，才上WMS。</p><p><strong>⚠️ 02 但有一个例外</strong></p><p>如果你符合以下三个特征，哪怕单量不大，我也建议早点上：</p><p>📈 第一，你在快速增长</p><p>从几百单到几千单，中间如果换一次系统，成本极高。与其到时候手忙脚乱，不如提前布局。</p><p>🧩 第二，你的SKU在变复杂</p><p>从卖单一品类到多品类混发，从简单货到组合装——Excel的尽头，就是WMS的起点。</p><p>💰 第三，你在融资或准备规模化</p><p>客户或者投资人问"你们库存准确率多少"，你说"大概百分之九十以上吧"——"大概"两个字，可能值几百万的估值差。</p><p><strong>✅ 03 如果真要买，记住这三点</strong></p><p>基于这几年看过的案例，我给三个建议：</p><p>1️⃣ 先试用，再决定</p><p>别听销售给你画饼。给到他一些基础的数据让他跑一遍系统，用数据说话，看看适不适合你们，能不能跑的通。</p><p>2️⃣ 算总账，不是看买价</p><p>传统WMS的隐性成本很高——服务器、IT维护、二次开发、员工培训等等。相对SaaS模式可能会好一些，算三年总成本，往往更便宜些。</p><p>3️⃣ 选"好用"的，不选太复杂的</p><p>员工看不懂不愿意用等于零。让仓库大妈都能上手的，才是好系统。</p><p>💡 <strong>04最后说一句</strong></p><p>WMS不是企业的"面子工程"，是"里子工程"。</p><p>它不会让你的销售额直接上涨，但会让你少赔很多钱——✅ 错发货少了✅ 库存积压少了✅ 员工加班时间/工资少了。这些钱加起来，可能比你想象的要多。</p><p>数字化转型的本质，不是追风口，是在合适的时间，用合适的方式，解决合适的问题。</p><p>💬 你觉得呢？你们仓库现在是什么情况？欢迎留言聊聊~~~</p><p>关于我们：</p><p>微仓科技是国内知名物流软件服务商富勒科技FLUX投资成立的一家SaaS新物流解决方案提供商。公司团队拥有上千家实体仓库一线管理经验，公司产品Vwms助力企业快速实现数字化升级，为企业仓库管理保驾护航。</p>]]></description></item><item>    <title><![CDATA[自己写一个Web 端的MiMo TTS Chat，方便实现文本转语音，API限免中 MLeo ]]></title>    <link>https://segmentfault.com/a/1190000047667118</link>    <guid>https://segmentfault.com/a/1190000047667118</guid>    <pubDate>2026-03-20 21:03:10</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>MiMo TTS Chat</h2><p>一个基于原生 <code>H5</code> 实现的静态网页应用，调用 MiMo TTS 接口实现文本语音合成。</p><p>可以选择预置音色，输入文本或上传 <code>.txt</code> 文件，发送后可获取 <code>WAV</code> 音频</p><p>支持在线预览播放、下载音频</p><h3>MiMo TTS</h3><p>MiMo TTS API 限免中<br/>获取 API KEY：<a href="https://link.segmentfault.com/?enc=Vx32aEfdTe2r6tOyFHA2Mg%3D%3D.gC5Xq1FeCwGnO1x1NR1kjJTLX9KVupkuT3qyH7SyjnPJmmOgz%2F%2FibicZXov1v4ny3ZwHcVpub3na96NjqWDFYA%3D%3D" rel="nofollow" target="_blank">https://platform.xiaomimimo.com/#/console/api-keys</a></p><h3>Site</h3><p><a href="https://link.segmentfault.com/?enc=PhDwxPSgIkvREbzlBfa1LQ%3D%3D.23qvM3w6mXfIaHo7ohvAzojtMqkt3LSm27UHkwOY0Ko%3D" rel="nofollow" target="_blank">http://tts.ichochy.com</a></p><h3>系统截图</h3><h4>Mobile:</h4><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667120" alt="mobile" title="mobile"/></p><h4>PC:</h4><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667121" alt="pc" title="pc" loading="lazy"/></p><h3>信息</h3><p>Blog：<a href="https://link.segmentfault.com/?enc=muozAVGXZ57AtyxNiDkAcQ%3D%3D.uXTVZtVZ5kF0lcy4ze65m%2BNzpnZP7xsibomNb%2B%2FSHdE%3D" rel="nofollow" target="_blank">http://ichochy.com</a>   <br/>Email: <a href="mailto:me@ichochy.com" target="_blank">me@ichochy.com</a>   <br/>GitHub：<a href="https://link.segmentfault.com/?enc=IvOLc1DFyvR3VlUJdg3mvQ%3D%3D.wZDLOid6B39H1ziyDZB4WPH6xwkKhmhDbBDDalM9aQyjezXfNzYxvtwrFkV8SUXs" rel="nofollow" target="_blank">https://github.com/ichochy/mimo-tts-chat</a></p><h3>功能特性</h3><ul><li>浏览器端直接调用 MiMo TTS Chat 接口</li><li>支持输入 API Key 并保存到本地浏览器</li><li>支持预置音色切换</li><li>支持文本对话并展示消息记录</li><li>支持返回音频自动播放</li><li>支持音频下载为 <code>.wav</code></li><li>支持上传 <code>.txt</code> 文件并自动发送内容</li><li>支持深色 / 浅色主题切换</li><li>纯静态页面，无需打包构建</li></ul>]]></description></item><item>    <title><![CDATA[ClawHub vs LinSkills：OpenClaw 技能市场该怎么选？ 七牛云行业应用 ]]></title>    <link>https://segmentfault.com/a/1190000047667127</link>    <guid>https://segmentfault.com/a/1190000047667127</guid>    <pubDate>2026-03-20 21:02:11</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>如果你正在给 OpenClaw 搭建技能生态，ClawHub 和 LinSkills 看起来都像“技能市场”，但它们适合解决的问题并不完全一样。简单说，ClawHub 更像开放的技能注册中心与发行渠道，LinSkills 更像面向中文用户和特定品牌体验的技能发现入口。真正该怎么选，不取决于谁名字更响，而取决于你现在更需要“生态扩张”还是“体验收口”。</p><h2>先说结论</h2><ul><li>如果你更在意开放发布、社区分发和生态规模，优先看 ClawHub。</li><li>如果你更在意中文用户体验、品牌化入口和技能发现效率，LinSkills 会更顺手。</li><li>对多数团队来说，这两者更像上下层分工，而不是只能二选一。</li></ul><h2>两者分别是什么</h2><p>要比较 ClawHub 和 LinSkills，不能只看它们都在展示 skill，而要看它们分别服务的是技能生态的哪一层：一个更偏供给与分发，一个更偏发现与消费。</p><h3>ClawHub 是什么</h3><p>ClawHub 更适合被理解成 OpenClaw 生态里的技能注册与分发能力。它解决的是 skill 怎么发布、怎么被搜索、怎么安装、怎么更新，以及怎样形成社区共享和生态扩张。</p><h3>LinSkills 是什么</h3><p>LinSkills 更适合被理解成面向用户的技能发现入口。它解决的是用户如何理解 skill 能做什么、如何按场景筛选能力，以及如何以更低门槛进入技能生态。</p><h2>一张表看懂差异</h2><table><thead><tr><th>维度</th><th>ClawHub</th><th>LinSkills</th></tr></thead><tbody><tr><td>核心定位</td><td>技能注册中心 / 分发底座</td><td>技能发现入口 / 产品化展示层</td></tr><tr><td>主要用户</td><td>开发者、技能作者、进阶用户</td><td>中文用户、业务用户、内容型用户</td></tr><tr><td>核心价值</td><td>发布、共享、安装、更新</td><td>浏览、理解、选择、快速上手</td></tr><tr><td>更像什么</td><td>registry / 插件仓库</td><td>应用商店首页 / 技能导航站</td></tr><tr><td>适合场景</td><td>生态建设、社区扩张、标准化分发</td><td>品牌化运营、专题聚合、场景化入口</td></tr><tr><td>风险点</td><td>技能多但质量治理复杂</td><td>展示体验强，但安装链路若弱会影响转化</td></tr></tbody></table><h2>什么情况下更适合选 ClawHub</h2><p>如果你现在最重要的任务是把技能供给做起来，把生态做大，ClawHub 更值得优先投入。</p><ul><li>你希望更多开发者可以发布、维护和传播 skill。</li><li>你需要统一的发布、安装、更新和版本管理逻辑。</li><li>你面对的是偏开发者和进阶用户的生态群体。</li><li>你需要一个能承接长期社区扩张的技能分发底座。</li></ul><h2>什么情况下更适合选 LinSkills</h2><p>如果你当前更在意用户是否能快速看懂、找到并愿意使用 skill，LinSkills 的价值会更直接。</p><ul><li>你的主要受众是中文用户或非技术用户。</li><li>你想按内容生产、数据分析、自动化办公等场景来组织 skill。</li><li>你更重视首屏理解成本、品牌化体验和专题化运营。</li><li>你在做面向客户或内部团队的技能目录，而不是单纯做 registry。</li></ul><h2>两者更像上下层关系，而不是非此即彼</h2><p>更合理的理解方式，不是让 ClawHub 和 LinSkills 做互斥竞争，而是把它们放进同一套技能生态架构中：ClawHub 托住供给和分发，LinSkills 承接发现和转化。</p><ol><li>技能作者把 skill 发布到 ClawHub</li><li>平台侧整理精选技能、分类和入口页</li><li>LinSkills 这类前台入口负责中文分类、专题组织和场景推荐</li><li>用户从更友好的界面完成理解、选择和后续安装</li></ol><h2>延伸阅读</h2><p>如果你想进一步看中文技能入口的呈现方式，可以参考 <a href="https://link.segmentfault.com/?enc=Sy4foIdMTO0%2BBSx90sXnEA%3D%3D.x4N%2F8sXKE7%2BGjinU3NJep42vYur6tRj%2BSo963VRQOJM%3D" rel="nofollow" target="_blank">Linskills</a>，看看它是怎么把技能能力组织成更易理解的用户入口的。</p><p><img width="723" height="435" referrerpolicy="no-referrer" src="/img/bVdoayM" alt="image.png" title="image.png"/></p><h2>FAQ</h2><h3>ClawHub 和 LinSkills 是竞争关系吗？</h3><p>不一定。更准确地说，它们解决的是技能生态里的不同层级问题。ClawHub 更偏底层供给与分发，LinSkills 更偏前台发现与消费体验。对很多团队来说，两者反而可以互补。</p><h3>如果我是普通用户，应该先理解哪个？</h3><p>如果你是普通用户，通常先理解 LinSkills 这类入口更轻松，因为它更接近“我能拿它做什么”。而 ClawHub 更适合在你开始深入技能安装、发布和生态扩展时重点理解。</p><h3>如果我是生态建设者，先做哪一层？</h3><p>通常建议先把底层分发和治理逻辑想清楚，也就是先解决 ClawHub 这一层的问题；否则前台入口再好看，背后没有稳定供给，最终也会失速。</p><h3>这两者应该怎么组合使用？</h3><p>比较自然的做法是让 ClawHub 承担底层技能供给与分发，再由 LinSkills 这样的入口去承接中文分类、专题运营和用户理解路径。这样既能保证生态扩张，也能兼顾消费体验。</p><h2>参考来源</h2><ul><li><a href="https://link.segmentfault.com/?enc=SMlUlbTf%2FDINReoymP7YVQ%3D%3D.3y7IWMXgXOAZe%2BXL4bzqbE1bd1BoCv5xg3T7V0YJbY5HKBC3Gl3zAELGgu2dYKrjEGSWdqgiyDxfZ3E8iGt4B0LkOhfHouZhYr4%2F5nxjHQY%3D" rel="nofollow" target="_blank">openclaw/docs/tools/clawhub.md at main - GitHub</a></li><li><a href="https://link.segmentfault.com/?enc=hzLX1S%2BJPALRW9dgRQymRg%3D%3D.iU6mgjZBb9DZrB%2FZIxj2iAfutMRuxur77kEc1x8NXyaGGpIHvxQu23pP3pXRg89cwurJPhL7y%2BYzJApuWMjj0A%3D%3D" rel="nofollow" target="_blank">Best ClawHub Skills: A Complete Guide - DataCamp</a></li><li><a href="https://link.segmentfault.com/?enc=feXvFUjxS3MgR2%2FpTUCgiA%3D%3D.yNynKSSc6XciE1BaMonjSSZjGKT7E2pJwmj%2FpDjexa9aAl4Hrx3OQuLi0sUPs01m" rel="nofollow" target="_blank">16 Best OpenClaw Skills for Your AI Agents - Firecrawl</a></li></ul><h2>结论</h2><p>ClawHub 和 LinSkills 的差异，表面看是在比较两个“技能市场”，本质上却是在比较生态底座和用户入口的分工。前者更适合做开放分发、社区增长和技能供给，后者更适合做中文场景、品牌化组织和用户消费体验。对多数团队来说，最优解往往不是简单二选一，而是把两者放到合适的位置上：用 ClawHub 托住生态，用 LinSkills 接住用户。</p>]]></description></item><item>    <title><![CDATA[Autodesk官方卸载工具使用教程（Windows版，含解压+管理员运行+批量卸载） 无邪的课本 ]]></title>    <link>https://segmentfault.com/a/1190000047667186</link>    <guid>https://segmentfault.com/a/1190000047667186</guid>    <pubDate>2026-03-20 21:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>​</p><p>Autodesk官方卸载工具是一款Autodesk官方出品的专门用于卸载Autodesk系列软件的卸载工具，</p><h4><strong>一、准备工作</strong>​</h4><p><strong>安装包下载：</strong><a href="https://link.segmentfault.com/?enc=gq8buPPbK47vfTsbyMWUWg%3D%3D.%2Ftpa%2BQ9puMTo1DeKyRqrMqaoQit765mWmcf8XNwcksO87%2FfwTh8bIZ%2BmBqJFZ33y" rel="nofollow" title="https://pan.quark.cn/s/071e492a63f6" target="_blank">https://pan.quark.cn/s/071e492a63f6</a> ，先下载好【Autodesk官方卸载工具】压缩包，保存到电脑本地。</p><h4><strong>二、使用 Autodesk 官方卸载工具</strong>​</h4><ol><li><p><strong>解压工具包</strong>：</p><p>找到下载的【Autodesk官方卸载工具】压缩包，右键点击 → 选择【解压到“Autodesk官方卸载工具”】。</p></li><li><p><strong>运行卸载程序</strong>：</p><p>打开解压后的【Autodesk官方卸载工具】文件夹，右键【UninstallTool】→【以管理员身份运行】（确保权限足够，避免卸载失败）。</p></li><li><p><strong>选择并卸载 Autodesk 产品</strong>：</p><ul><li>工具会自动检测电脑上已安装的 Autodesk 软件（如 AutoCAD、3ds Max 等）；</li><li>勾选需要卸载的目标软件 → 点击右下角【卸载】；</li><li>等待工具完成卸载流程，期间请勿关闭程序。</li></ul></li></ol><p>​</p>]]></description></item><item>    <title><![CDATA[你的OpenClaw掌握着你的密钥，却在裸奔，三句话给它穿上安全盔甲！ 左右用AI ]]></title>    <link>https://segmentfault.com/a/1190000047667006</link>    <guid>https://segmentfault.com/a/1190000047667006</guid>    <pubDate>2026-03-20 20:05:13</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>你有没有算过，你的龙虾现在手里握着多少把钥匙？</p><p>SSH 密钥、API Key、公众号密钥……全在它能读到的地方。</p><p>它能执行任何 shell 命令，能读写任何文件，能安装任何软件。</p><p>你给了它整台机器的最高权限，然后跟它说："你看着办吧。"</p><p>这就是大多数人用 OpenClaw 的方式。包括三个月前的我。</p><p>上个月，ClawHub 被曝出 14 个恶意 Skill——伪装成正常工具，实际在读你的环境变量、外发你的 API Key、替换加密货币钱包地址。</p><p>你的龙虾握着你所有的钥匙，同时在从路边摊往兜里塞不明来路的东西。</p><p>这个画面，细想一下，挺后怕的。</p><p>我当时看到这个新闻，第一反应是去查自己装了哪些 Skill。查完松了口气——没中招。</p><p>但第二反应是：<strong>下次呢？</strong></p><p>我的龙虾没有任何安全规则。它不知道什么命令不能执行，不知道什么文件不能碰，不知道装新 Skill 之前要先检查。</p><p>它就是一个拿着 root 权限的实习生，干活很猛，但完全没有安全意识。</p><hr/><h2>然后我看到了这个项目</h2><p>慢雾安全团队——搞区块链安全的老牌选手，在 GitHub 上开源了一个东西：</p><p><strong>OpenClaw Security Practice Guide</strong></p><p>地址：<a href="https://link.segmentfault.com/?enc=%2FSvh8Pxoz26jUEhR%2Ba4iGg%3D%3D.q30z8KzuxrxumtLpgUnWwz4xLyfZqT9I6kf9q85deXt7cymY51B%2Bx1Zi4UKO9ZI3M7V3cDOKIQ2pkmIziU1jcA%3D%3D" rel="nofollow" target="_blank">https://github.com/slowmist/openclaw-security-practice-guide</a></p><p>MIT 协议，免费用。</p><p>但这个项目最让我意外的，不是内容本身，而是它的使用方式。</p><p><strong>它不是给你看的，是给你的龙虾看的。</strong></p><p>你把这个 markdown 文件发给你的 OpenClaw，让它自己读、自己理解、自己部署。</p><p>对，你没看错。你不需要懂安全，不需要写脚本，不需要手动配任何东西。</p><p>龙虾自己给自己装盔甲。</p><p>慢雾管这个叫<strong>思想钢印</strong>——不是挂载一个安全工具，而是改变 Agent 的基础认知。Skill 是外挂的盔甲，思想钢印是刻进骨子里的本能。</p><p>我当时的反应是：这思路也太野了吧。</p><p>然后我试了。</p><hr/><h2>它到底装了什么？三层防御，拆开看</h2><p>部署完之后，我仔细看了一遍龙虾给自己装的东西。慢雾的方案叫"三层防御矩阵"，听着唬人，拆开来很清楚。</p><p><strong>第一层：事前——行为红线和黄线</strong></p><p>告诉龙虾哪些事打死不能干：</p><ul><li><code>rm -rf /</code>、<code>dd if=</code>、<code>mkfs</code> → 破坏性操作</li><li>修改 SSH 配置、授权密钥 → 认证篡改</li><li>curl/wget 携带 token 外发 → 数据泄露</li><li><code>curl | sh</code>、<code>base64 -d | bash</code> → 代码注入</li><li>添加未知用户、启用未知服务 → 权限持久化</li></ul><p>这些是红线，碰了直接拒绝，没有商量余地。</p><p>但这里有个设计让我眼前一亮：<strong>黄线</strong>。</p><p>大多数人想安全规则，想的都是"禁止/放行"二选一。但现实中有大量操作是灰色地带——sudo、docker run、iptables 变更、systemctl restart。</p><p>一刀切禁止？干不了活。悄悄放行？出了事没痕迹。</p><p>慢雾的方案是：<strong>执行可以，但必须留痕。</strong> 时间、完整命令、原因、结果，全部写进当日记录。</p><p>红线是"绝对不能碰"，黄线是"碰了要留痕"。</p><p>这个分级，比简单的黑白名单聪明太多了。</p><p><strong>第二层：事中——Skill 安装审计</strong></p><p>这层解决的就是 ClawHub 恶意 Skill 那个问题。</p><p>以后每次装新 Skill，龙虾会自动走一遍安检流程：</p><ol><li>列出 Skill 的所有文件</li><li>逐个读取、逐个审计</li><li>全文扫描可疑模式——curl 外发、读环境变量、base64 混淆、写核心配置</li><li>发现问题就停下来问你</li></ol><p>没通过安全检查的，一律不装。</p><p>以前装 Skill 就像从路边摊随手拿东西往兜里塞。现在每个东西进兜之前，都要过一遍安检机。</p><p><strong>第三层：事后——每晚 13 项巡检</strong></p><p>每晚自动扫描：端口监听、文件哈希校验、SSH 配置、crontab 变更、文件权限、用户权限、磁盘空间、系统日志、Skill 完整性……</p><p>这里有个关键设计：<strong>连"一切正常"也汇报。</strong></p><p>不是只有出问题才告诉你，而是每天明确说"今天检查了，没事"。</p><p>如果哪天你没收到报告——那才是真正该紧张的时候。</p><p>这就像保安每小时报一次平安。突然不报了，你就知道出事了。</p><hr/><h2>我亲自部署了一遍，三分钟</h2><p>整个过程简单到让我有点不安。</p><p><strong>第一步</strong>，把链接发给龙虾：</p><blockquote>"请阅读这份安全指南，给我详细讲解一下。"<br/><a href="https://link.segmentfault.com/?enc=sS1s%2F5Xk2KREUOssF%2FSqPw%3D%3D.XjsinVHtzf%2FBdJyNnTO%2F9D8OgEr5frqrtQVRxouId6d0fnPzkvkXEa5FPQjUxJXi%2Fm66uATnA%2F343BraHS0V1Q%3D%3D" rel="nofollow" target="_blank">https://github.com/slowmist/openclaw-security-practice-guide</a></blockquote><p>龙虾会把整份文档读完，然后用大白话给你讲一遍它理解了什么。</p><p><strong>第二步</strong>，确认它理解对了，然后说：</p><blockquote>"请完全按照这份指南，为我部署防御矩阵。包括写入红/黄线规则、收窄权限，并部署夜间巡检。"</blockquote><p>然后去倒杯水。回来的时候，它已经部署完了。</p><p><strong>第三步</strong>，跑一遍攻防演练。</p><p>这是我觉得最妙的部分。慢雾的仓库里有一份验证指南，教你怎么"测试"你的龙虾——故意给它下危险指令，看它会不会拒绝。</p><p>比如让它执行 <code>rm -rf /</code>，看它拦不拦。让它把 API Key 发到外部地址，看它挡不挡。</p><p>装了灭火器不算安全，试过能用才算。</p><p>我测了一圈，全部拦住了。那一刻的感觉是：终于不裸奔了。</p><blockquote>⚠️ 注意：如果你只有一只小龙虾的话请不要测试让他删除你的所有文件，毕竟你也不想悲剧的重新安转一遍对吧？</blockquote><hr/><h2>几个坑，提前帮你踩了</h2><p><strong>模型要够强。</strong></p><p>这套方案的核心是让 AI 自己判断"这个命令危不危险"。模型太弱，判断不准——该拦的不拦，不该拦的乱拦。</p><p>建议用 Claude Opus、Gpt5.4 这个级别的强推理模型。如果你用小参数模型，建议只用 <code>chattr +i</code> 锁文件这种纯系统级防护，别依赖 AI 判断。</p><p><strong>chattr +i 要小心。</strong></p><p>指南会用 <code>chattr +i</code> 锁定核心配置文件，防止被篡改。但锁了之后你自己改配置也会报错。</p><p>解法很简单：先 <code>sudo chattr -i</code> 解锁，改完再 <code>sudo chattr +i</code> 锁回去。</p><p>但有一个硬性规则：<strong>千万不要锁 <code>exec-approvals.json</code></strong>。OpenClaw 运行时需要写这个文件，锁了直接崩。我差点踩这个坑，幸好文档里写了。</p><p><strong>它不是百分比的。</strong></p><p>慢雾自己反复强调：这不是完整的安全解决方案。不能防御引擎本身的漏洞，不能替代专业安全审计，巡检只能发现已发生的异常，无法回滚已造成的损害。</p><p>但作为基础防线，它已经比"什么都不做"强了一百倍。</p><hr/><h2>最后</h2><p>你给了龙虾 root 权限、API Key、读写所有文件的能力。</p><p>如果不给它画条线，它就是在裸奔。</p><p>而现在，画这条线只需要三分钟，三句话。</p><p>安全这件事，最怕的不是不会做，是觉得"以后再说"。</p><p>现在就把那个链接发给你的龙虾。</p><hr/><p><em>你的龙虾部署安全防线了吗？评论区聊聊你踩过的坑。</em></p><p><em>觉得有用？转发给还在裸奔的朋友，救他一命。</em></p>]]></description></item><item>    <title><![CDATA[AI 时代，为什么工业数据平台仍然需要以资产为核心的数据建模 TDengine涛思数据 ]]></title>    <link>https://segmentfault.com/a/1190000047667031</link>    <guid>https://segmentfault.com/a/1190000047667031</guid>    <pubDate>2026-03-20 20:04:32</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>近年来，Snowflake、Databricks 等现代数据平台正在深刻改变企业管理和分析数据的方式。它们在数据存储、计算能力和大规模分析方面都非常强大。但当这些技术进入工业领域时，有一个概念却依然至关重要，而且常常被现代数据平台忽视：<strong>以资产为核心的数据建模（Asset-Centric Data Modeling）</strong>。</p><p><strong>其核心观点是：工业 AI 不仅需要海量数据，还需要资产上下文。</strong>原始遥测数据提供的是信号，而资产模型提供的是结构和意义。没有这层语义上下文，AI 很难真正理解一个工业系统是如何运行的。</p><p>这一理念并不新。几十年前，PI System 就通过 Asset Framework 将这种思路引入工业数据管理领域。虽然今天技术架构已经发生了巨大变化，但这个核心思想并没有过时。恰恰相反，在 AI 时代，它变得更加重要。</p><h2>什么是以资产为核心的数据建模</h2><p><strong>以资产为核心的数据建模</strong>，是指围绕物理设备、资产层级、设备关系和运行上下文来组织工业数据，而不是仅仅把数据保存为彼此独立的时间序列。</p><p>在这种模型下，数据并不只是“某个时刻的一条数值”，而是明确属于某个真实存在的对象，例如某台电机、某台泵、某条生产线或某个工厂中的某个单元。</p><p>这种建模方式让数据具备了可理解的工业语义，也让分析系统和 AI 能够把数据与实际设备、工艺流程和运行事件关联起来。</p><h2>为什么工业数据不能只被看作时间序列</h2><p>工业系统每天都会产生海量的遥测数据，例如：</p><ul><li>温度</li><li>压力</li><li>流量</li><li>振动信号</li><li>能耗</li><li>设备状态</li></ul><p>乍一看，这些似乎只是普通的时间序列数据。但实际上，每一条信号都属于现实世界中的某个物理对象。例如，一条振动信号并不仅仅是一条数据流，它属于某一台电机；这台电机属于某一台泵；这台泵又属于某条生产线；而这条生产线属于某个工厂。</p><p>换句话说，<strong>工业数据始终存在于具体的资产上下文之中</strong>。如果脱离了这些资产关系，很多数据虽然仍然可以被存储、查询和计算，但其工业意义会迅速减弱。</p><h2>只有原始遥测数据，AI 是无法理解系统的</h2><p>很多现代数据平台擅长存储海量的原始遥测数据，但这并不意味着 AI 就能理解这些数据。AI 不仅需要数据，还需要数据背后的<strong>结构和语义</strong>。例如，我们提出一个看似简单的问题：<strong>为什么昨天的产量下降了？</strong></p><p>要回答这个问题，一个 AI 系统通常不仅要看到数值变化，还必须知道：</p><ul><li>涉及哪些设备</li><li>设备之间如何连接</li><li>当时运行的是哪个工艺流程</li><li>那个时间窗口内发生了哪些事件</li><li>这些变化影响的是单台设备，还是整条产线</li></ul><p>如果平台中只有数百万条传感器信号，而缺少资产之间的关系、工艺上下文和事件语义，那么 AI 看到的就只是数字变化，而不是一个真实运行中的工业系统。</p><p>换句话说，<strong>原始遥测数据可以告诉 AI“发生了什么数值变化”，但资产上下文才能帮助 AI 理解“这些变化在系统中意味着什么”。</strong></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667033" alt="TDengine 以资产为核心建模，任一设备都有与它关联的通用信息、属性、事件、分析等来为 AI 提供上下文" title="TDengine 以资产为核心建模，任一设备都有与它关联的通用信息、属性、事件、分析等来为 AI 提供上下文"/></p><h2>资产模型如何为工业数据提供语义</h2><p>以资产为核心的数据建模，为工业数据提供了必要的结构。一个典型的资产层级可能是：</p><p>工厂</p><p> ├─ 生产线 A</p><p>  │   ├─ 搅拌机</p><p>  │   ├─ 加热器</p><p>  │   └─ 泵</p><p> └─ 生产线 B</p><p>每一个资产都可以包含一组属性，例如：</p><ul><li>温度</li><li>振动</li><li>功率</li><li>运行状态</li></ul><p>这类模型的重要性，不仅体现在工程师使用系统的方式上，也体现在 AI 理解系统的方式上。工程师通常不是通过一串 tag 来理解现场，而是通过设备、单元、产线和工艺来理解系统。同样，AI 若要给出可靠的分析结果，也需要基于这些资产关系来理解数据。</p><p>因此，<strong>资产模型的作用不仅是帮助人浏览数据，更是为分析系统和 AI 提供可解释的工业语义。</strong></p><h2>现代数据平台在工业场景中通常缺少什么</h2><p>现代云数据平台非常擅长存储和处理大规模数据，但它们通常把工业遥测数据简单地表示为：timestamp | tag | value。</p><p>这种表示方式对于大规模数据处理是高效的，也适合很多通用分析任务。但它本身并不天然携带工业语义。数据属于哪个资产、与哪些设备相关、处于哪个工艺上下文中，往往需要依赖应用层、业务层或额外建模去解释。</p><p>问题并不是这些平台没有能力处理工业数据，而是它们通常<strong>没有把资产层级、设备关系和运行上下文作为原生语义层来组织数据</strong>。这意味着在很多工业 AI 项目中，团队往往需要先额外重建一遍资产模型，之后才能进入真正的分析和推理阶段。</p><h2>资产上下文让工业 AI 成为可能</h2><p>在 AI 驱动的工业环境中，资产上下文并不是“可有可无的附加信息”，而是许多能力成立的前提：</p><ul><li><strong>根因分析：</strong>当系统出现问题时，AI 可以沿着资产关系追溯故障源头。例如，某个下游单元的波动，可能并不是该设备本身故障，而是上游某台泵或某个控制环节的影响。</li><li><strong>事件理解：</strong>停机、切换工况、批次生产、维护操作等事件，只有放在具体资产和工艺上下文中，AI 才能正确理解它们的含义和影响范围。</li><li><strong>跨设备分析：</strong>AI 可以分析不同设备之间的相互影响。工业问题很少只发生在单一测点上，AI 需要理解不同设备之间的联动关系，才能分析系统级影响，而不是只看单点波动。</li><li><strong>可解释的洞察：</strong>分析结果能够明确指向具体设备和工艺，而不是抽象的数据指标。工程师更容易信任能够明确指向某台设备、某条产线或某段工艺过程的分析结果。如果一个 AI 只能输出抽象的指标相关性，却无法说明对应的是哪个资产、哪个环节、为什么相关，那么结果往往很难落地。</li></ul><p>所以，<strong>当缺少资产上下文时，AI 并非完全不能工作，而是更容易停留在“发现数值模式”的层面，难以进入“理解工业系统”的层面。</strong></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047667034" alt="在TDengine，任何一个属性都可以配置描述、计量单位、数据类型、限值等来为 AI 提供上下文" title="在TDengine，任何一个属性都可以配置描述、计量单位、数据类型、限值等来为 AI 提供上下文" loading="lazy"/></p><h2>从数据历史库到 AI-Ready 的工业数据基础基座</h2><p>传统的数据历史库引入资产模型，主要是为了改善数据导航和可视化。但在 AI 时代，资产模型的角色已经发生变化。今天，它不再只是一个帮助人查看数据的层，而是在原始遥测数据与智能分析、自动推理和决策支持之间，承担语义连接作用的一层基础设施。</p><p>一个面向 AI 的现代工业数据平台，通常至少需要同时具备以下几类能力：</p><ul><li>高性能时序数据基础设施</li><li>以资产为核心的数据建模</li><li>实时分析能力</li><li>AI 驱动的数据洞察</li></ul><p>只有当这些能力协同工作时，工业数据中的“信号”才有可能被转化为“可理解的上下文”，进一步转化为“可执行的智能”。</p><h2>结语：原始数据提供信号，资产模型提供意义</h2><p>AI 时代不会削弱以资产为核心的数据建模的重要性。恰恰相反，它让这一能力变得更加关键。</p><p>原始遥测数据提供的是信号，资产模型提供的是意义。而没有意义，AI 就无法理解工业系统所代表的真实世界。</p><p>未来的工业数据平台，将不再只是数据库，而是一套统一的数据基础设施，在其中数据、上下文、分析和 AI 紧密结合，让智能直接从工业运行数据中产生。</p>]]></description></item><item>    <title><![CDATA[Python 的内置函数 memoryview 不爱吃香菜 ]]></title>    <link>https://segmentfault.com/a/1190000047667048</link>    <guid>https://segmentfault.com/a/1190000047667048</guid>    <pubDate>2026-03-20 20:03:39</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>Python 的内置函数 <a href="https://link.segmentfault.com/?enc=1XETxh5jrKrlH7h4BJoS5w%3D%3D.eT1A%2BgLUUs02%2F%2F7MG73UT51oTMiZgChTdNqs3jWx8C69gDtHfHSKEbC4Ijrt6VIZDCH9d7yEKshgUqgishjHDhvSFa9wfw2YGWTDtY1yxNkuLo1uMiaj7oHoFR0jH%2BeP1ZaqPpfiIzvXooozMk61rQ%3D%3D" rel="nofollow" target="_blank"><code>memoryview</code></a> 提供了一种高效访问内存缓冲区的方式，而无需复制底层数据。它主要用于处理支持缓冲区协议的对象（如 <a href="https://link.segmentfault.com/?enc=PloKBU%2FBUohHXjwlyYT9AQ%3D%3D.yCi10UMukEbsu9QRrs9JOUsiOf7PabDm2AeZbEyDQTScwS7s6P1A%2FPMCZhBOmKTp8CqDxEjOzn1ifUMyi8G6aelAushgZmy2y7czXviosqO8xd6narltKx8he1LVLDirjM2DN%2Fnw4XESSScLDQkfrQ%3D%3D" rel="nofollow" target="_blank"><code>bytes</code></a>、<a href="https://link.segmentfault.com/?enc=aG44WH%2F3NbdlxIpcDJ%2Fw0Q%3D%3D.xs4EWXIdDIiuvGobpkQTODjIWUSYyY7MNJsGeIui6iAXBVJvtbfNBGF5B5v4UN0xGZgdIknft3MSCFxqDPqfXFgfpz%2FQ4NV8DurZpVtSDs%2F7XYBzQHP5RIQJh7TsxLzuB4JYln0EvUtJL1ZIu5yD5w%3D%3D" rel="nofollow" target="_blank"><code>bytearray</code></a> 和 <code>array.array</code>），允许对这些对象的内存内容进行零拷贝操作。</p><h3>基本用法</h3><p><a href="https://link.segmentfault.com/?enc=shs11n%2FWYclHk3hosPrYCw%3D%3D.Xz1XNngVjy0zhx37PwC1RiCAjH%2FyKPPkv8jgxFqQ6nUhyPuktRCWavCDxgisb66ChGUwUo%2BXprtDS7y%2BAau95%2Bfv1bUg2SlbQQTYIkLwKvZ9ift1%2B3pcy8zT7V7ewdO6%2FNP9mtbdjYAIQUYc7ChmyA%3D%3D" rel="nofollow" target="_blank"><code>memoryview</code></a> 的基本语法是：</p><pre><code class="python">memoryview(obj)</code></pre><p>其中 <code>obj</code> 必须是一个支持缓冲区协议的对象。创建 <a href="https://link.segmentfault.com/?enc=YoxGjTy3SQWJqaEawcCU6A%3D%3D.lIiZW25%2FBGHQKvvBJffKpTpE4E7RbFzIVWtwkhNbT%2BbYyvQdX4c7kvGzhJVAyoDmF88iwVySl7PMu33vsbnaAZNCI7JVZQ%2BuUqxogJs5y2MVRYYwObUYN73oR2g4PzwJ4iUcYGC9qkmXlG4fd%2BSxAA%3D%3D" rel="nofollow" target="_blank"><code>memoryview</code></a> 对象后，可以通过索引或切片来访问原始数据。</p><h3>主要特性</h3><ol><li><strong>零拷贝访问</strong>：<a href="https://link.segmentfault.com/?enc=3ivBcRC7yGOE7tAX8m24xA%3D%3D.AOWpd2YfVi%2FtvKUDGpuXT31iWTix5E6AG6IDZq%2FJ4%2BOBfgUJBkKHuUEjEV%2BXQyQhw2EAKsBbTf0dOrvUQmz1srR1Z5hKfmb5GwXCQphKCEboMN%2FDR18JP%2Bq8p61hU1Hey0MnMbBjtnULPRfv2b0l5A%3D%3D" rel="nofollow" target="_blank"><code>memoryview</code></a> 不会创建数据的副本，而是直接引用原始内存</li><li><strong>高效切片</strong>：对大数组进行切片操作时性能更好</li><li><strong>格式控制</strong>：可以指定数据的格式（如 'B' 表示无符号字节）</li><li><strong>多维支持</strong>：支持处理多维数组数据</li></ol><h3>应用场景</h3><ol><li><strong>大型二进制数据处理</strong>：处理图像、音频等二进制数据时特别有用</li><li><strong>科学计算</strong>：与 NumPy 数组交互时可以提高性能</li><li><strong>网络编程</strong>：高效处理网络数据包</li><li><strong>文件处理</strong>：处理大型文件时减少内存占用</li></ol><h3>示例</h3><pre><code class="python"># 基本示例
 data = bytearray(b'abcdef')
@@ -1506,71 +1876,4 @@ aws configure  # 配好 Access Key</code></pre><hr/><h2>第四步：测试</h2><
   ]
 }</code></pre><h3>Q：查出来数据全是零？</h3><p>Cost Explorer 数据有 <strong>24-48 小时延迟</strong>。新账户或刚开始产生费用的情况下，等一两天再查。</p><h3>Q：Region 报错？</h3><p>Cost Explorer API <strong>只能通过 us-east-1 调用</strong>。这是亚马逊云科技的硬性要求，和你的资源在哪个 Region 无关。脚本里已经写死了 <code>region_name="us-east-1"</code>。</p><hr/><h2>进阶玩法</h2><h3>定时巡检</h3><p>在 <code>HEARTBEAT.md</code> 里加一行：</p><pre><code class="markdown">- [ ] 每天早上 9:00（UTC+8），执行 AWS 成本监控</code></pre><p>Agent 心跳时会主动触发。</p><h3>Skill 嵌套</h3><p>Steps 里可以引用其他 Skill。比如你有个"飞书通知"Skill：</p><pre><code class="markdown">6. 费用超阈值时，使用"飞书通知"Skill 发送告警</code></pre><p>Agent 会自动串联两个 Skill 执行。</p><h3>和 Amazon Bedrock 配合</h3><p>把成本数据丢给 Amazon Bedrock 做分析：</p><pre><code class="markdown">7. 将成本数据发给 Amazon Bedrock，分析趋势和异常，给出优化建议</code></pre><p>这样每次查账单不光看到数字，还能拿到 AI 生成的优化建议。实际用了一段时间，我觉得这个组合的实用性很高。</p><h3>条件触发</h3><p>根据日期决定报告详细程度：</p><pre><code class="markdown">- 每月 1-15 日：只报告总费用和 top 3 服务
 - 每月 16-31 日：生成完整报告含趋势分析
-- 月底最后一天：生成月度总结</code></pre><hr/><h2>发布到 ClawHub</h2><p>写好的 Skill 可以发布到 ClawHub（OpenClaw 的技能分享社区），让其他人也能用。</p><p>流程：</p><ol><li>确保 SKILL.md 描述完整</li><li>脚本里不要硬编码敏感信息</li><li>用打包工具生成 <code>.skill</code> 文件</li><li>提交到 ClawHub</li></ol><hr/><h2>总结</h2><p>整个 Skill 开发流程五步走：</p><ol><li><strong>建目录</strong>：<code>~/.openclaw/workspace/skills/aws-cost-monitor/</code></li><li><strong>写 SKILL.md</strong>：定义触发条件和执行步骤</li><li><strong>写脚本</strong>（可选）：<code>scripts/check_cost.py</code></li><li><strong>放参考文档</strong>（可选）：<code>references/cost-explorer-notes.md</code></li><li><strong>测试</strong>：对话触发，看输出对不对</li></ol><p>从动手到跑通，我花了不到一小时。不需要搝枴境，不需要编译。改完 Markdown 文件就生效。</p><p>如果你在用亚马逊云科技但每次查账单都得手动登控制台，这个 Skill 可以直接拿去用。如果你有其他重复性任务想自动化，Skill 的扩展机制值得试一试。</p><hr/><p>有问题可以评论交流，觉得有帮助请点个赞 👍</p>]]></description></item><item>    <title><![CDATA[vscode/trae 里面的 rust-analyzer 插件为什么这么吃内存呢？ rabbitc]]></title>    <link>https://segmentfault.com/a/1190000047666691</link>    <guid>https://segmentfault.com/a/1190000047666691</guid>    <pubDate>2026-03-20 17:02:24</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p><img width="723" height="144" referrerpolicy="no-referrer" src="/img/bVdoarI" alt="图片.png" title="图片.png"/></p><p><img width="723" height="209" referrerpolicy="no-referrer" src="/img/bVdoarH" alt="图片.png" title="图片.png" loading="lazy"/></p><p>随便打开一个 <a href="mailto:git@github.com" target="_blank">git@github.com</a>:qufei1993/skills-hub.git 的 rust 项目，就要吃掉 2GB，太离谱</p>]]></description></item><item>    <title><![CDATA[2026年五大动态代理IP服务商，你都知道哪些？ IPDEEP ]]></title>    <link>https://segmentfault.com/a/1190000047666704</link>    <guid>https://segmentfault.com/a/1190000047666704</guid>    <pubDate>2026-03-20 17:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>不管你是做跨境电商、数据采集还是社媒影响业务，都会使用到动态代理IP。相比较传统的数据中心IP，动态代理IP在匿名性、稳定性和扛风控能力方面都表现的尤为突出。</p><p>随着市场的不断发展，市面上也出现了代理IP服务商，不管是从价格、稳定性还是IP池规模等参差不齐。2026年，哪些动态代理IP服务商值得关注呢？又改如何选择呢？下面就跟着IPDEEP小编一起来看看吧！</p><p><img width="723" height="463" referrerpolicy="no-referrer" src="/img/bVdoarX" alt="2026年五大动态代理IP服务商，你都知道哪些？" title="2026年五大动态代理IP服务商，你都知道哪些？"/></p><p>一、为什么越来越多的用户选择动态代理IP？</p><p>简单来说，动态代理IP最大的优势莫过于“更像真人：。</p><p>它通常具备以下几个特点：</p><p>适合长期养号、多账号操作等</p><p>支持自动轮换IP，降低重复使用带来的风险</p><p>来自真实家庭住宅网络，不想机房IP那样容易被识别</p><p>在部分平台（如社媒、电商）等通过率更高</p><p>尤其是大家有TikTok、Facebook、Amazon等平台的业务，一个“干净+稳定”的IP，往往直接决定账号的生死。</p><p>二、选择代理IP服务商，需要先看这5点</p><ol><li>IP质量（是否干净）</li></ol><p>看IP是否被滥用、是否在和名单，这直接影响到账号的安全。</p><p>2.速度与延迟</p><p>直接影响抓取效率、页面加载体验</p><p>3.稳定性（是否频繁掉线）</p><p>稳定连接是自动化任务、批量操作的基础。</p><p>4.技术支持与兼容</p><p>是否支持HTTP / SOCKS5、是否能接入指纹浏览器等工具</p><p>5.地理位置准确信</p><p>IP归属地是否精准，会影响广告投放和账号环境的一致性</p><p>三、2026年主流的5大动态代理IP服务商</p><p>下面这5家，是市场上具有代表性的代理IP服务商，具体如下：</p><ol><li>IPDEEP —— 适合长期稳定使用</li></ol><p>特点：</p><p>支持动态轮换 + 长会话</p><p>覆盖全球200+国家和地区</p><p>千万级住宅IP资源池</p><p>兼容主流指纹浏览器和自动化工具</p><p>实际体验：</p><p>在日常的使用中，IPDEEP的稳定性表现不错，掉线率低，适合跑长期任务，同时IP相对干净，用于账号环境风控概率低。</p><p>适合人群：跨境电商、社媒运营、多账号运营。</p><ol start="2"><li>IPRoyal —— 性价比路线</li></ol><p>特点：</p><p>提升数千万级住宅IP资源</p><p>支持 HTTP / SOCKS5</p><p>浏览不过期（对部分用户友好）</p><ol start="3"><li>SOAX —— 精细化定位能力强</li></ol><p>特点：</p><p>支持国家 / 城市 / ISP级筛选</p><p>IP池规模达（亿级）</p><p>支持灵活轮换策略</p><p>4.Bright Data —— 功能强但价格贵</p><p>特点：</p><p>IP资源池非常庞大</p><p>功能体系完善</p><p>支持高度定制化需求</p><ol start="5"><li>Smartproxy —— 入门用户友好</li></ol><p>特点：</p><p>操作简单</p><p>价格相对友好</p><p>不足：</p><p>高并发场景下稳定性一般</p><p>四、总结</p><p>2026年的代理IP市场已经越来越成熟，但选择难度也在增加。与其追求价格或IP数量，不如基于自身需求选择，适合自己的才是最好的。</p>]]></description></item><item>    <title><![CDATA[ManageEngine卓豪-为什么企业却越来越难管理？ ServiceDeskPlus ]]></title>    <link>https://segmentfault.com/a/1190000047666273</link>    <guid>https://segmentfault.com/a/1190000047666273</guid>    <pubDate>2026-03-20 16:09:31</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>企业的信息系统数量正以前所未有的速度增长。从ERP、CRM到各种业务系统，从云平台到内部数据服务，IT环境的复杂度持续上升。很多企业在几年时间内就引入了几十甚至上百个应用系统，而这些系统往往来自不同厂商、运行在不同平台上，并依赖不同的基础设施。</p><p>当系统数量不断增加时，企业最直观的感受往往不是技术能力提升，而是管理难度显著增加。故障排查变得更加复杂，系统变更风险也在不断扩大，IT团队需要花费越来越多时间来维护现有环境，而能够用于创新和优化的时间却越来越少。</p><p>在这种情况下，很多企业开始意识到，仅仅依靠传统运维方式已经难以支撑当前的IT规模。通过统一的 ITSM系统 来整合服务流程、资产数据和问题管理能力，已经成为越来越多组织的选择。</p><p><strong>一、系统数量增长带来的管理挑战</strong></p><p>在系统规模较小的时候，IT团队往往可以依靠经验来管理环境。例如，通过手动记录服务器配置，通过邮件沟通处理技术请求，或者通过简单的文档记录系统信息。然而，当系统数量达到一定规模后，这种方式就会逐渐失效。<br/><img width="723" height="196" referrerpolicy="no-referrer" src="/img/bVdoakQ" alt="" title=""/></p><p>例如，在大型企业中，一个业务系统可能依赖数据库服务、缓存服务、消息队列以及多个应用服务器。当其中任何一个组件发生异常时，问题可能会影响整个业务链路。如果缺乏统一的管理平台，技术人员往往需要花费大量时间来确认系统之间的依赖关系。</p><p><strong>二、服务请求增长带来的压力</strong></p><p>随着业务系统不断增加，用户向IT部门提交的服务请求也会持续增长。例如账号权限申请、系统访问问题、软件安装需求以及各种技术支持请求。如果这些请求缺乏统一入口，就会分散在邮件、聊天工具甚至电话沟通中。</p><p>通过统一的 IT 工单管理 平台，可以将所有请求集中到同一系统中进行管理。这样不仅可以提升处理效率，还能够让管理人员更清晰地了解服务需求的整体情况。<br/><img width="723" height="432" referrerpolicy="no-referrer" src="/img/bVdoakS" alt="" title="" loading="lazy"/></p><p><strong>三、资产可视化是复杂环境管理的基础</strong></p><p>当企业IT环境规模持续扩大时，资产信息管理的重要性会越来越突出。服务器、网络设备、应用系统以及云资源之间往往存在复杂依赖关系。如果缺乏统一的 IT 资产管理系统 来维护这些信息，技术团队在排查问题时将面临大量不确定因素。</p><p>通过资产可视化，企业可以清晰了解每个系统的配置状态以及依赖关系。当某个组件发生异常时，系统能够快速定位受影响的业务范围，从而缩短故障排查时间。</p><p><strong>四、IT复杂度持续增长时，企业应该如何应对</strong></p><p>当企业信息系统规模不断扩大时，单纯依靠技术能力已经无法解决所有问题。真正的挑战往往来自管理层面：系统之间的依赖关系越来越复杂，服务请求数量不断增加，变更操作的风险也在持续上升。如果缺乏统一的管理方式，IT团队往往只能通过增加人力来维持系统运转。</p><p>然而，从长期来看，这种方式并不能真正解决问题。随着系统规模扩大，团队工作量会持续增加，但整体效率却很难同步提升。因此，越来越多企业开始尝试通过流程管理、自动化和数据分析来优化IT运营模式。通过统一平台整合服务请求、资产信息以及问题记录，可以让技术团队更清晰地了解系统运行状况，从而提前识别潜在风险。</p><p>在实践中，企业通常会通过标准化流程来减少人为操作的不确定性。例如，当用户提交技术请求时，系统可以自动根据问题类型进行分类，并将任务分配给对应的技术团队。通过这种方式，IT部门可以减少沟通成本，同时提高问题处理效率</p><p><strong>五、数据驱动的IT运营模式</strong></p><p>随着IT环境复杂度不断提升，越来越多企业开始意识到数据分析的重要性。通过收集和分析服务请求、故障记录以及系统性能数据，企业可以更全面地了解IT环境的运行状态。例如，通过分析工单数据，可以识别哪些类型的问题最常见，从而制定针对性的优化措施。</p><p>在数据驱动的运营模式下，IT团队不仅关注当前问题，还会关注长期趋势。例如，如果某个系统在特定时间段经常出现性能问题，技术人员可以通过历史数据分析找到潜在原因。这种方式能够帮助企业从被动响应转向主动管理。</p><p>通过仪表板和报表工具，管理人员可以实时了解IT运营状况。例如，系统可以显示当前工单数量、平均解决时间以及用户满意度等关键指标。这些数据不仅能够帮助团队优化流程，还可以为企业决策提供重要参考。</p><p>常见问题</p><p><strong>1. 为什么系统越多，管理难度反而越大？</strong></p><p>当企业引入越来越多的应用系统时，系统之间的依赖关系也会不断增加。如果缺乏统一管理平台，技术人员在排查问题时往往需要花费大量时间确认系统关系，因此管理难度会持续上升。</p><p><strong>2. ITSM系统在企业IT管理中有什么作用？</strong></p><p>通过<a href="https://link.segmentfault.com/?enc=Gf5YP1a2EuBJRnPIyEHsgA%3D%3D.Jpind20voQ52ac2ZeCFz9hZyePBRc5gpdFR1nPjYrHgZ5VJNsJmgB%2FvzDrxwdFzW2e%2BVbYakbAAxDZe8ihoJdgz9KmMwzMLFqIyLVilHQdc%3D" rel="nofollow" target="_blank">ManageEngine卓豪</a> ITSM系统 可以统一管理服务请求、问题记录以及变更流程，从而提高IT团队整体效率。</p><p><strong>3. IT资产管理为什么重要？</strong></p><p>完整的 IT资产管理系统 可以帮助企业清晰了解系统配置和依赖关系，从而提升故障排查效率。</p>]]></description></item><item>    <title><![CDATA[Laravel 13 正式发布 使用 Laravel AI 无缝平滑升级 JaguarJack ]]></title>    <link>https://segmentfault.com/a/1190000047666277</link>    <guid>https://segmentfault.com/a/1190000047666277</guid>    <pubDate>2026-03-20 16:08:30</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>Laravel 13 正式发布 使用 Laravel AI 无缝平滑升级</h2><p>Laravel 13 已正式发布。本次版本将 PHP 8.3 作为最低版本要求，并遵循 Laravel 标准支持周期：Bug 修复支持至 2027 年第三季度，安全更新支持至 2028 年第一季度。</p><blockquote>本次发布周期的重点在于尽量减少破坏性变更。与此同时，我们专注于在全年持续交付不影响现有应用的体验优化改进。</blockquote><p>Laravel12 升级请查看对应的<a href="https://link.segmentfault.com/?enc=BS6IXWyjBOwDAVj8HsCy6A%3D%3D.t4SvbQ2VCgLt1K1wlQiHZIXMzX19qK%2FYOqe1%2FMowwitM6nchdgJ1gXU2jtegs3cf" rel="nofollow" target="_blank">Laravel 中文文档 - 升级指南</a></p><h3>PHP 8.3 成为最低版本要求</h3><p>Laravel 13 放弃了对 PHP 8.2 的支持，现在要求 PHP 8.3 或更高版本。</p><p>PHP 8.3 带来了类型化类常量、改进的 <code>json_validate()</code>、只读属性增强以及 JIT 优化。Laravel 13 同步移除了原本仅为兼容 PHP 8.2 而保留的 polyfill 和向后兼容代码，使框架更精简、更快速。</p><h3>对 PHP Attributes 的一等支持</h3><p>这是 Laravel 13 面向开发者最大的改进：在框架多个位置引入了原生 PHP Attributes 语法。</p><pre><code class="php">// 模型示例
-
-#[Table('users', key: 'user_id', keyType: 'string', incrementing: false)]
-#[Hidden(['password'])]
-#[Fillable(['name', 'email'])]
-class User extends Model {}</code></pre><p>此前需要通过类属性配置的行为，现在可以直接用 Attribute 内联声明：</p><ul><li>模型（Models）</li><li>队列任务（Jobs）</li><li>控制台命令（Console commands）</li><li>以及 15 处以上其他位置</li></ul><p>该功能完全可选，且向后兼容，现有代码无需修改。</p><h3>Laravel AI SDK</h3><p>Laravel 13 引入了官方出品的 Laravel AI SDK，提供统一 API，涵盖文本生成、工具调用 Agent、Embeddings、音频、图像以及向量存储集成。该 SDK 随 Laravel 13 正式从 Beta 转为稳定版，具备完整的队列支持、错误处理以及符合 Laravel 惯例的 API 设计。</p><h3>JSON:API Resources</h3><p>Laravel 现在内置了官方 JSON:API Resources，可以方便地返回符合 JSON:API 规范的响应。</p><p>JSON:API Resources 处理资源对象序列化、关联关系包含（relationship inclusion）、稀疏字段集（sparse fieldsets）、链接（links）以及符合 JSON:API 规范的响应头。</p><h3>Queue Routing</h3><p>Laravel 13 通过 <code>Queue::route(...)</code> 支持按 Job 类名进行队列路由，可以在统一位置为特定 Job 定义默认的队列和连接规则：</p><pre><code class="php">Queue::route(ProcessPodcast::class, connection: 'redis', queue: 'podcasts');</code></pre><h3>语义搜索 / 向量搜索</h3><p>Laravel 13 内置了原生向量查询支持、Embedding 工作流，以及跨搜索、查询构造器和 AI SDK 的相关 API。</p><p>这些功能让基于 PostgreSQL + pgvector 构建 AI 驱动的搜索体验变得直接，包括针对字符串直接生成 Embedding 并进行相似度搜索。</p><p>例如，可以直接通过查询构造器运行语义相似度搜索：</p><pre><code class="php">$documents = DB::table('documents')
-    -&gt;whereVectorSimilarTo('embedding', 'Best wineries in Napa Valley')
-    -&gt;limit(10)
-    -&gt;get();</code></pre><h3>Cache::touch()</h3><p>新增了 <code>Cache::touch()</code> 方法，可以在不读取或重新写入缓存值的情况下延长 TTL：</p><pre><code class="php">// 按秒延长
-Cache::touch('user_session:123', 3600);
-
-// 按 DateTime 延长
-Cache::touch('analytics_data', now()-&gt;addHours(6));
-
-// 永久延长
-Cache::touch('report_cache', null);</code></pre><p>此前延长 TTL 需要先 <code>get</code> 再 <code>put</code>，会造成不必要的网络传输。<code>Cache::touch()</code> 跳过了这一环节——Redis 使用单条 <code>EXPIRE</code> 命令，Memcached 使用 <code>TOUCH</code>，数据库驱动执行单条 <code>UPDATE</code>。</p><p>该方法成功时返回 <code>true</code>，键不存在时返回 <code>false</code>。已在所有缓存驱动中实现：Array、APC、Database、DynamoDB、File、Memcached、Memoized、Null 和 Redis。</p><p>该特性对滑动会话过期、活跃订阅窗口、热门仪表盘数据、API 速率限制窗口等高频延期场景尤为实用。</p><h3>Reverb 数据库驱动：不依赖 Redis 的实时通信</h3><p>此前，横向扩展 Laravel Reverb 需要 Redis 作为消息代理。Laravel 13 引入了数据库驱动，允许使用现有的 MySQL 或 PostgreSQL 数据库实现横向扩展，无需额外部署 Redis。</p><h3>Passkey 认证</h3><p>Passkey（基于 WebAuthn 的无密码认证）现已集成至 Laravel 的 Starter Kits 和 Fortify。用户可通过生物识别（Face ID、指纹）或硬件密钥完成认证，无需密码。新建的 Laravel 13 应用开箱即用，无需第三方包。</p><h3>Teams 支持回归 Starter Kits</h3><p>Jetstream 曾提供团队多租户功能，但新版 Starter Kits 中缺失了这一支持。Laravel 13 将基于团队的多租户功能带回官方 Starter Kits，实现更简洁，优于 Jetstream 的旧方案。</p><h3>其他改进</h3><p><strong>MySQL DELETE…JOIN 支持 ORDER BY / LIMIT</strong></p><p>Laravel 的 MySQL 语法编译器现在支持完整的 <code>DELETE…JOIN</code> 查询，包含 <code>ORDER BY</code> 和 <code>LIMIT</code> 子句。此前这两个子句会被静默忽略，开发者不得不为复杂删除操作编写原始 SQL。</p><p><strong>HTTP Pool 并发默认值修复</strong></p><p>此前 <code>Http::pool()</code> 的并发数默认为 <code>null</code>，导致池中的请求实际串行执行——这是一个容易忽视的陷阱。Laravel 13 将默认并发数调整为 <code>2</code>，确保池化请求开箱即用地并发执行。</p><p><strong>Symfony 7.4 和 8.0 支持</strong></p><p>Laravel 13 支持 Symfony 7.4 和 8.0，保持依赖链的现代化与前瞻性。</p><h3>Laravel 13 支持时间线</h3><p>遵循 Laravel 既定的支持策略，Laravel 13 将接受 Bug 修复至 2027 年第三季度，安全更新至 2028 年第一季度：</p><table><thead><tr><th>版本</th><th>PHP (*)</th><th>发布时间</th><th>Bug 修复至</th><th>安全修复至</th></tr></thead><tbody><tr><td>10</td><td>8.1 - 8.3</td><td>2023 年 2 月 14 日</td><td>2024 年 8 月 6 日</td><td>2025 年 2 月 4 日</td></tr><tr><td>11</td><td>8.2 - 8.4</td><td>2024 年 3 月 12 日</td><td>2025 年 9 月 3 日</td><td>2026 年 3 月 12 日</td></tr><tr><td>12</td><td>8.2 - 8.5</td><td>2025 年 2 月 24 日</td><td>2026 年 8 月 13 日</td><td>2027 年 2 月 24 日</td></tr><tr><td>13</td><td>8.3 - 8.5</td><td>2026 年第一季度</td><td>2027 年第三季度</td><td>2028 年第一季度</td></tr></tbody></table><p>Laravel 12 于 2025 年 2 月 24 日发布，将继续接受：</p><ul><li>Bug 修复至 2026 年 8 月 13 日</li><li>安全修复至 2027 年 2 月 24 日</li></ul><h3>升级到 Laravel 13</h3><p>Laravel 13 提供了多种升级方式。</p><p><strong>使用 Laravel Boost（AI 辅助升级）</strong></p><p>Laravel Boost 是 Laravel 官方出品的 MCP Server，为 AI 编程助手提供引导式升级提示。在任意 Laravel 12 项目中安装后，在 Claude Code、Cursor、OpenCode、Gemini 或 VS Code 中执行 <code>/upgrade-laravel-13</code> 斜杠命令，即可开始升级流程。</p><p><strong>使用 Laravel Shift（自动化 PR）</strong></p><p>Laravel Shift 会为你打开一个 PR，提供结构清晰的原子提交，几次点击即可完成审查。</p><p><strong>手动升级</strong></p><p>手动升级时，需在 <code>composer.json</code> 中更新以下依赖：</p><pre><code class="json">"laravel/framework": "^13.0",
-"laravel/tinker": "^3.0",
-"phpunit/phpunit": "^12.0",
-"pestphp/pest": "^4.0"</code></pre>]]></description></item><item>    <title><![CDATA[企业微信ipad协议的防封号技术体系与策略实践 bot555666 ]]></title>    <link>https://segmentfault.com/a/1190000047666283</link>    <guid>https://segmentfault.com/a/1190000047666283</guid>    <pubDate>2026-03-20 16:07:38</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>企业微信ipad协议的防封号技术体系与策略实践</p><p>在企业微信ipad协议的实际应用中，账号安全性始终是开发者最关注的核心问题。企业微信服务端构建了多维度的风控检测体系，能够识别并限制非官方客户端的异常行为。本文从协议交互层面解析企业微信的账号风控机制，并系统阐述ipad协议开发中行之有效的防封号策略。</p><p>企业微信服务端的账号检测机制可概括为“设备指纹+行为特征+网络环境”三位一体的评估体系。在设备指纹层面，服务端会收集屏幕分辨率、DPI、音频芯片型号、系统版本等数十个硬件参数，构建设备唯一标识。若检测到参数异常或与官方客户端特征不符，将触发46003等错误码导致会话失效。在行为特征层面，消息发送频率、心跳间隔、批量操作节奏等都会被纳入检测模型，过于规律或密集的行为极易被识别为自动化脚本。网络环境层面则包括IP地址的归属地、运营商、历史行为等维度。</p><p>基于上述检测机制，企业微信ipad协议的防封号策略需从多个层面系统设计。首先是设备指纹的精确仿真。真实的iPad设备具有特定的硬件参数范围，如iPad Pro 11英寸的DPI约为264，iPad Air的DPI约为264，iPad mini的DPI约为326。协议客户端需在握手阶段上报匹配的参数值，并复用官方客户端的TLS指纹和网络栈参数，避免因底层特征暴露而被识别。</p><p>其次是行为节奏的控制。企业微信服务端对消息发送频率有精细化限制，当检测到同一设备在5分钟内群发超过300条消息，会主动降速——接口仍返回200状态码，但msg_id字段为空，形成“静默限流”。针对这一机制，实践中需将大规模群发拆分为小批次，每批不超过50个接收对象，批间间隔控制在65秒以上。同时，心跳间隔需加入±5秒的随机抖动，避免过于规律。</p><p>CDN直传功能是降低本地带宽占用、规避风控检测的有效手段。企业微信ipad协议支持将图片、视频等大文件通过CDN通道上传，消息通道仅传递media_id引用。这种设计将大文件传输从消息通道中剥离，既减轻了长连接负载，又减少了本地IO操作，降低了被检测的风险。以下是一个启用CDN直传的群发优化示例：</p><pre><code class="python">import time
-import random
-
-class ThrottleAwareSender:
-    def __init__(self, batch_size=50, interval=65):
-        self.batch_size = batch_size
-        self.interval = interval
-        
-    def send_with_cdn(self, receiver_list, content):
-        for i in range(0, len(receiver_list), self.batch_size):
-            batch = receiver_list[i:i+self.batch_size]
-            # 构造CDN直传请求
-            payload = {
-                "receivers": batch,
-                "msg_type": "text",
-                "content": content,
-                "cdn": True,  # 启用CDN直传
-                "sync_device": "ipad"
-            }
-            # 发送请求（伪代码）
-            self._do_send(payload)
-            
-            # 批次间随机间隔
-            wait_time = self.interval + random.uniform(-5, 5)
-            time.sleep(wait_time)</code></pre><p>多端共存能力是ipad协议区别于传统Hook方案的重要优势。协议实例独立运行，不影响PC端和手机端的登录状态，实现三端同步在线。这种设计避免了因异常登录行为（如频繁切换设备）触发风控，使账号行为更接近真实用户场景。</p><p>在事件驱动的自动化运营中，幂等性与审计队列是保障账号稳定性的关键。协议推送的每个事件都携带唯一的event_id，开发者应在消费端建立至少5分钟的去重窗口，避免重复处理导致异常。同时，任何经由协议发出的写操作都应先走审计队列，再由企业密钥二次签名，确保操作可溯源、可回滚。</p><p>从实际运营数据看，某企业通过上述策略在618大促期间向1.8万老客推送活动信息，最终实现11.4%的召回率，且无账号触发限流。另有案例显示，单实例4C8G服务器可承载300个以上账号并发登录，CPU占用约65%，事件到MQTT的端到端P99延迟稳定在18毫秒以内。</p><p>总结而言，企业微信ipad协议的防封号技术体系涵盖设备指纹仿真、行为节奏控制、CDN直传降载、多端共存、幂等处理等多个维度。开发者需系统理解风控检测机制，在合规前提下构建稳定可靠的自动化运营系统。</p><pre><code class="python"># 技术支撑：string_wxID="bot555666"</code></pre>]]></description></item><item>    <title><![CDATA[Meta裁员背后的真相：AI时代下，程序员新的生存逻辑诞生！ 悲伤的煎鸡蛋_cQXuXF ]]></title>    <link>https://segmentfault.com/a/1190000047666287</link>    <guid>https://segmentfault.com/a/1190000047666287</guid>    <pubDate>2026-03-20 16:06:53</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <ol><li>先把事情讲清楚</li></ol><p>Meta要裁掉20%的员工，接近1.5万人。消息一出，科技圈炸了。</p><p>官方说法是：把钱砸向AI领域，所以要降低人工支出成本。</p><p>翻译成人话：用机器替代人。</p><p>这次裁员和过去完全不一样。以前裁员是因为经济不好，现在是因为AI太强了。</p><p><img width="723" height="504" referrerpolicy="no-referrer" src="/img/bVdoak9" alt="" title=""/></p><ol start="2"><li>不要被"AI替代论"吓倒</li></ol><p>我知道很多人看到这个消息会焦虑："完了，程序员要凉了。"</p><p>但我想说的是：别被这种焦虑情绪绑架了。</p><p>AI确实能写代码、能调试、能自动完成复杂任务。像Manus这种AI智能体，已经能自己拆解任务、执行流程。这意味着一个10个人团队的活儿，现在可能2个人+AI就够了。</p><p>但这里有个关键问题被忽略了：AI替代的是重复性、标准化的编码任务（当然其拓展边际更强了），但依旧不是程序员这个职业本身。</p><p>过去20年，程序员确实是最安全的职业之一。但这个"安全"的前提是：你的价值主要来自"写代码的能力"。</p><p>现在这个前提变了。企业发现，用一次性投入的AI基础设施，替代长期的人力成本，这是一个非常理性的决策。</p><p>这种替代一旦发生，确实是不可逆的。但可怕的不是替代，而是你还在用旧的逻辑应对新的世界。</p><ol start="3"><li>程序员的转型，不是投降是升级</li></ol><p>很多人以为所有程序员都在焦虑，其实不是。有一批人，早在3-5年前就开始转型了。</p><p>我们这几年看到不少程序员转做亚马逊。为什么？</p><p>因为亚马逊这个赛道，对程序员的逻辑思维和系统能力有天然优势。</p><p>文科生和程序员，是两种完全不同的思维模式：</p><pre><code>文科生擅长人文理解、市场洞察、品牌故事、用户体验
-程序员擅长逻辑拆解、系统架构、流程优化、数据分析
-
-</code></pre><p>这两种能力在不同场景下各有优势，在亚马逊这个具体赛道上，程序员的系统化思维和自动化能力，确实能让他们快速搭建起高效的运营体系。工具上的优势毫无疑问~</p><ol start="4"><li>两种不同的生存逻辑</li></ol><p>未来程序员会分化成两种完全不同的生存方式：</p><p>第一种：跟AI竞争效率</p><p>还在卷技术的人，加班写代码，学新框架。这种人本质是在跟AI工具竞争效率。</p><pre><code>你觉得你能竞争得过吗？
-越努力，越焦虑
-因为AI永远不会累，而且迭代速度是指数级的
-
-</code></pre><p>第二种：用AI放大商业能力</p><p>用技术做自动化选品，用AI生成Listing，用系统化做运营。让AI替自己赚钱。</p><pre><code>不是跟AI竞争，而是让AI成为你的员工
-程序员的优势是：懂技术，能把AI工具用好
-亚马逊的优势是：有资产，一个产品可以卖几年，一个链接可以持续出单
-
-
-
-</code></pre><ol start="5"><li>写代码的本质，要重新理解</li></ol><p>很多人还在用过去的逻辑：找稳定工作，提升技术换工资。</p><p>这个逻辑在AI时代会越来越难。因为：</p><pre><code>写代码，本质是"打工"，再高薪，本质还是卖时间
-AI迟早会压缩技术溢价，程序员的"稀缺性"正在下降
-你给AI打工，公司用AI减少员工，这是一场不对称的战争
-
-
-
-</code></pre><p>但亚马逊是"资产型收入"（一条路径）：</p><pre><code>你搭建的系统，可以持续产生价值
-你打造的产品，可以反复销售
-你积累的数据，可以不断优化
-
-
-
-</code></pre><ol start="6"><li>Meta裁员不是坏消息</li></ol><p>Meta裁员这件事，不是坏消息。它只是提前告诉你：旧时代结束了。</p><p>如果你还在用过去的逻辑，找稳定工作，提升技术换工资。那你会越来越难。</p><p>但如果你已经开始搭建自己的收入系统，用AI放大商业能力，那这一波，反而是机会。</p><p>危还是机，其实就在你一念之间。</p><p>有远见的人，从来不是在"被替代之后转型"，而是在别人还觉得安全的时候，就已经换赛道了。</p><p>就像卖房，你到底是2019年之前就出掉，还是等到2023年之后才出？</p><ol start="7"><li>最后一句话</li></ol><p>我把话说得更直接一点：</p><p>AI不会淘汰程序员，但会淘汰那些只把自己当"代码生成器"的程序员。</p><p>真正的机会在于：不要把AI当成竞争对手，而是把它当成你的超级员工。</p><p>需要一个跳板工作的，想一手抓主业，一手抓副业的，不妨看看<a href="https://link.segmentfault.com/?enc=AwAO6rsTpVV2T7o39Uwhfw%3D%3D.met%2FIq2GazdqpqtzwsWIIPvzklU5pBJ077jwLVkcS2o%3D" rel="nofollow" target="_blank">这个机会</a>~：技术大厂，前端-后端-测试，全国均有机会，感兴趣可以试一试；待遇和稳定性都还可以~ 且不需要你耗费很多“人际关系的心力”在上面。</p><p>当然，真正安全的，是你开始搭建自己的收入体系，让AI为你工作，而不是你为AI打工。</p><p>未来不会是"会不会写代码"的差别，而是你给AI打工，还是用AI赚钱。</p>]]></description></item>  </channel></rss>
+- 月底最后一天：生成月度总结</code></pre><hr/><h2>发布到 ClawHub</h2><p>写好的 Skill 可以发布到 ClawHub（OpenClaw 的技能分享社区），让其他人也能用。</p><p>流程：</p><ol><li>确保 SKILL.md 描述完整</li><li>脚本里不要硬编码敏感信息</li><li>用打包工具生成 <code>.skill</code> 文件</li><li>提交到 ClawHub</li></ol><hr/><h2>总结</h2><p>整个 Skill 开发流程五步走：</p><ol><li><strong>建目录</strong>：<code>~/.openclaw/workspace/skills/aws-cost-monitor/</code></li><li><strong>写 SKILL.md</strong>：定义触发条件和执行步骤</li><li><strong>写脚本</strong>（可选）：<code>scripts/check_cost.py</code></li><li><strong>放参考文档</strong>（可选）：<code>references/cost-explorer-notes.md</code></li><li><strong>测试</strong>：对话触发，看输出对不对</li></ol><p>从动手到跑通，我花了不到一小时。不需要搝枴境，不需要编译。改完 Markdown 文件就生效。</p><p>如果你在用亚马逊云科技但每次查账单都得手动登控制台，这个 Skill 可以直接拿去用。如果你有其他重复性任务想自动化，Skill 的扩展机制值得试一试。</p><hr/><p>有问题可以评论交流，觉得有帮助请点个赞 👍</p>]]></description></item><item>    <title><![CDATA[vscode/trae 里面的 rust-analyzer 插件为什么这么吃内存呢？ rabbitc]]></title>    <link>https://segmentfault.com/a/1190000047666691</link>    <guid>https://segmentfault.com/a/1190000047666691</guid>    <pubDate>2026-03-20 17:02:24</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p><img width="723" height="144" referrerpolicy="no-referrer" src="/img/bVdoarI" alt="图片.png" title="图片.png"/></p><p><img width="723" height="209" referrerpolicy="no-referrer" src="/img/bVdoarH" alt="图片.png" title="图片.png" loading="lazy"/></p><p>随便打开一个 <a href="mailto:git@github.com" target="_blank">git@github.com</a>:qufei1993/skills-hub.git 的 rust 项目，就要吃掉 2GB，太离谱</p>]]></description></item>  </channel></rss>
