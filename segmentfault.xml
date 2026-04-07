@@ -1,4 +1,1327 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[StarRocks I/O 模型揭秘（一）：查询是如何被拆解与调度的？ StarRocks ]]></title>    <link>https://segmentfault.com/a/1190000047696206</link>    <guid>https://segmentfault.com/a/1190000047696206</guid>    <pubDate>2026-04-07 00:03:01</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <blockquote><p>作者：丁凯 StarRocks TSC Member</p><p>导读：在存算分离架构下，查询性能的稳定性越来越依赖底层 I/O 设计。本文作为 StarRocks I/O 模型揭秘系列首篇，将围绕 Tablet、Fragment、Pipeline、Morsel、Scan Operator 等核心概念，梳理一次查询执行过程中底层 I/O 链路的基本运行机制</p></blockquote><p>StarRocks 是一款面向高并发、低延迟分析场景的高性能 MPP 数据库。围绕其数据组织方式与底层 I/O 流程，社区中一直有不少关注和讨论。尤其在引入存算分离架构之后，查询链路对 I/O 的依赖进一步增强：相较于传统本地磁盘访问，对象存储在高带宽之外，也伴随着更高访问延迟等特征，这也给查询性能稳定性带来了新的挑战。如何在这样的架构基础上，持续保障 StarRocks 的亚秒级响应能力，成为系统架构与 I/O 层设计中的关键问题。</p><p>本系列文章将围绕 StarRocks I/O 层展开，系统梳理其核心设计与运行机制。作为第一篇，本文将聚焦 StarRocks 存算分离架构下，一次查询执行过程中与底层 I/O 相关的关键概念与机制。通过 Tablet、Fragment、Pipeline、Cache、ScanOperator、Morsel 等核心对象，可以更清晰地理解数据如何从底层存储系统被读取，并逐步进入计算引擎完成处理，也有助于进一步理解 StarRocks 在延迟隐藏、并发调度以及冷热数据管理等方面的设计思路。</p><p>希望通过本文，帮助大家从底层视角建立对 StarRocks I/O 模型的整体认知，也为后续进一步理解其性能优化机制打下基础。</p><h2>基本概念</h2><h3>Tablet</h3><p>Tablet 是 StarRocks 中数据存储的基本物理单元，可以将其理解为一张表数据在物理层面的水平分片。作为 MPP 数据库，StarRocks 在建表时会按照既定规则将表数据划分为多个 Tablet，每个 Tablet 对应其中一部分数据。通过将这些 Tablet 尽可能均匀地分布在不同的 CN 节点上，StarRocks 实现了数据的分布式存储与管理。</p><p>在 StarRocks 中，Tablet 的数量由建表时设置的分桶（Bucket）数决定，二者一一对应。建表时，用户可以通过 DISTRIBUTED BY 子句指定分桶键以及分桶数量。例如，创建一张订单表，按照 user_id 进行哈希分桶，并设置 10 个分桶：</p><pre><code>CREATE TABLE orders (order_id BIGINT,  user_id BIGINT,  amount DECIMAL(10,2) ) DISTRIBUTED BY HASH(user_id) BUCKETS 10;
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[如何在 MacOS 上安装 PostgreSQL ？ 本文系转载，阅读原文
+https://www.]]></title>    <link>https://segmentfault.com/a/1190000047696433</link>    <guid>https://segmentfault.com/a/1190000047696433</guid>    <pubDate>2026-04-07 09:02:28</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p><img referrerpolicy="no-referrer" src="/img/remote/1460000045278111" alt="How To Install PostgreSQL on MacOS" title="How To Install PostgreSQL on MacOS"/></p><p>PostgreSQL 是一个开源的数据库管理系统（DBMS）因其可靠性、性能和可扩展性而被广泛使用。它也被称为第三代 DBMS，因为它将数据保存在二级存储而不是内存，性能下降也不多，也没有与动态内存分配相关问题。在本文中，我们将向您展示如何在 macOS 安装 PostgreSQL 数据库系统。</p><h3>Installing Homebrew</h3><p>第一步，安装 Homebrew，这是一个 macOS 的包管理器。</p><p>打开终端，执行如下命令：</p><pre><code>/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"</code></pre><p>你会看到一堆文本飞过，信息停止后，会提示你将 Terminal 的路径添加到 PATH 环境变量。您可以通过输入“export PATH=/usr/local/bin:/usr/local/sbin:$PATH”来完成，然后按回车键。</p><h3>Installing PostgreSQL</h3><p>安装 Homebrew 后，首先搜索可用的 PostgreSQL 服务器版本</p><pre><code>brew search postgresql</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696435" alt="PostgreSQL Installation on MacOS" title="PostgreSQL Installation on MacOS" loading="lazy"/></p><p>选择一个需要安装的 PostgreSQL 版本，例如：安装 PostgreSQL 14，执行如下命令：</p><pre><code>brew install postgresql@14</code></pre><p>如果需要升级已安装的 PostgreSQL（升级到次要版本），使用如下命令：</p><pre><code>brew upgrade postgresql@14</code></pre><p>启动 PostgreSQL 服务，使用如下命令：</p><pre><code>brew services start postgresql@14</code></pre><p>停止 PostgreSQL 服务，使用如下命令：</p><pre><code>brew services stop postgresql@14</code></pre><p>重启 PostgreSQL 服务，使用如下命令：</p><pre><code>brew services restart postgresql@14</code></pre><h3>Login to PostgreSQL</h3><p><strong>psql</strong> 是用于管理 Postgres 数据库服务器的命令行实用程序。PostgreSQL 默认自带一个名为“postgres”的数据库，用于登录服务器。登录 Postgres 终端，执行以下命令：</p><pre><code>psql postgres</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696436" alt="PostgreSQL Installation on MacOS" title="PostgreSQL Installation on MacOS" loading="lazy"/></p><p>登录 Postgres 终端后，你可以用下面的命令检查可用的数据库：</p><pre><code>\l</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696437" alt="How to Install PostgreSQL on macOS" title="How to Install PostgreSQL on macOS" loading="lazy"/><br/>默认安装创建一个名为“admin”的超级用户，这是默认的“postgres”数据库的所有者。使用下面的命令列出所有可用的用户。</p><pre><code>\du</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696438" alt="PostgreSQL Installation on MacOS" title="PostgreSQL Installation on MacOS" loading="lazy"/></p><h3>Creating User</h3><p>可以使用“CREATE ROLE”添加一个新的角色（用户），或者使用“createuser”命令行工具来创建它。</p><pre><code>createuser --interactive --pwprompt</code></pre><p>这将提示输入以下详细信息：</p><ul><li>新角色（用户）的名称</li><li>为新角色输入密码</li><li>重新输入新角色的密码</li><li>按“n”，不提供超级管理员权限</li><li>按“y”键提供创建数据库的权限</li><li>按“n”表示不允许创建新角色</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696439" alt="How to Install PostgreSQL on macOS" title="How to Install PostgreSQL on macOS" loading="lazy"/></p><p>添加新用户后，使用以下命令以新用户身份登录。</p><pre><code>psql postgres -U tecadmin -W</code></pre><p>将“tecadmin”更改为您的用户名。当前用户没有任何相关的数据库，因此上面的命令将连接到“postgres”数据库，按Enter 键并输入密码。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696440" alt="How to Install PostgreSQL on macOS" title="How to Install PostgreSQL on macOS" loading="lazy"/></p><h3>Creating Database</h3><p>使用以下命令创建一个新数据库。</p><pre><code>CREATE DATABASE tecadmin;</code></pre><p>创建数据库后，列出 postgres 服务器中的所有数据库。</p><pre><code>\du</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696441" alt="PostgreSQL Installation on MacOS" title="PostgreSQL Installation on MacOS" loading="lazy"/></p><h3>我的开源项目</h3><p><a href="https://link.segmentfault.com/?enc=22xH0JxPXC4yC52apiqMyg%3D%3D.zZ6GIl%2B1e7XXWL%2BJJ8QCcOMk%2BfH%2BzUtzxrA15rtXI5E%3D" rel="nofollow" target="_blank"><img referrerpolicy="no-referrer" src="/img/remote/1460000043426502" alt="酷瓜云课堂-开源知识付费解决方案" title="酷瓜云课堂-开源知识付费解决方案" loading="lazy"/></a></p><ul><li><a href="https://link.segmentfault.com/?enc=iw5%2BAJG9gOF3UIfDBnidRA%3D%3D.%2BEe%2Fh0XHu9nehkIEW5XTAu4fdIkm1Daf5KfIWrwhpkCslr6Qf4ablxS%2FneAz9aXJ" rel="nofollow" target="_blank">course-tencent-cloud（酷瓜云课堂 - gitee仓库）</a></li><li><a href="https://link.segmentfault.com/?enc=tAOgCY8IwdYz3XecxgYm1Q%3D%3D.sHTFWyDUluo5vZtgL%2BB%2FKXzqPABC4MuUcWqBWk3oTeeo8QHV12P8JRUyKvhflFrH0cJ4mFRQkpRV%2FNK%2BjbLgyw%3D%3D" rel="nofollow" target="_blank">course-tencent-cloud（酷瓜云课堂 - github仓库）</a></li></ul>]]></description></item><item>    <title><![CDATA[Mybatis基础操作 SevenCoding ]]></title>    <link>https://segmentfault.com/a/1190000047689083</link>    <guid>https://segmentfault.com/a/1190000047689083</guid>    <pubDate>2026-04-07 09:01:29</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>Mybatis基础使用</h2><h3>Mybatis编程式开发</h3><ol><li>mybatis和MySQL jar包依赖</li></ol><pre><code class="xml">&lt;dependencies&gt;
+    &lt;!-- MyBatis 核心 --&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;org.mybatis&lt;/groupId&gt;
+        &lt;artifactId&gt;mybatis&lt;/artifactId&gt;
+        &lt;version&gt;3.5.10&lt;/version&gt;
+    &lt;/dependency&gt;
+    
+    &lt;!-- MySQL 驱动 --&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;mysql&lt;/groupId&gt;
+        &lt;artifactId&gt;mysql-connector-java&lt;/artifactId&gt;
+        &lt;version&gt;8.0.33&lt;/version&gt;
+    &lt;/dependency&gt;
+    
+    &lt;!-- 连接池（可选，推荐） --&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;com.zaxxer&lt;/groupId&gt;
+        &lt;artifactId&gt;HikariCP&lt;/artifactId&gt;
+        &lt;version&gt;5.0.1&lt;/version&gt;
+    &lt;/dependency&gt;
+&lt;/dependencies&gt;</code></pre><ol start="2"><li>全局配置文件mybatis-config.xml</li></ol><p>配置文件对应标签可以看官方文档：<a href="https://link.segmentfault.com/?enc=5RCgLbJHQEMyCh1r7vQXQQ%3D%3D.Y%2BWa8reDJHgLwWA5RK6sVFePXBNLTE3%2FnK1aclSOQv0gRNq2HmtG8h%2BXX0%2FYHLp7dPsJ187aW3Dm5eBbY40Eaw%3D%3D" rel="nofollow" target="_blank">https://mybatis.org/mybatis-3/configuration.html</a></p><pre><code class="xml">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;!DOCTYPE configuration
+        PUBLIC "-//mybatis.org//DTD Config 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-config.dtd"&gt;
+&lt;configuration&gt;
+    
+    &lt;!-- 1. 加载外部属性文件 --&gt;
+    &lt;properties resource="jdbc.properties"/&gt;
+    
+    &lt;!-- 2. 全局设置 --&gt;
+    &lt;settings&gt;
+        &lt;!-- 开启下划线到驼峰命名自动映射 --&gt;
+        &lt;setting name="mapUnderscoreToCamelCase" value="true"/&gt;
+        &lt;!-- 开启二级缓存 --&gt;
+        &lt;setting name="cacheEnabled" value="true"/&gt;
+        &lt;!-- 延迟加载的触发方法 --&gt;
+        &lt;setting name="lazyLoadTriggerMethods" value=""/&gt;
+        &lt;!-- 查询时，关闭关联对象即时加载 --&gt;
+        &lt;setting name="lazyLoadingEnabled" value="true"/&gt;
+        &lt;!-- 设置超时时间 --&gt;
+        &lt;setting name="defaultStatementTimeout" value="3000"/&gt;
+        &lt;!-- 使用列标签代替列名 --&gt;
+        &lt;setting name="useColumnLabel" value="true"/&gt;
+        &lt;!-- 允许JDBC支持自动生成主键 --&gt;
+        &lt;setting name="useGeneratedKeys" value="true"/&gt;
+    &lt;/settings&gt;
+    
+    &lt;!-- 3. 类型别名配置 --&gt;
+    &lt;typeAliases&gt;
+        &lt;!-- 扫描包，自动注册别名 --&gt;
+        &lt;package name="com.example.entity"/&gt;
+        &lt;!-- 也可以单独配置 --&gt;
+        &lt;!-- &lt;typeAlias type="com.example.entity.User" alias="User"/&gt; --&gt;
+    &lt;/typeAliases&gt;
+    
+    &lt;!-- 4. 环境配置（可配置多个，通过default属性切换） --&gt;
+    &lt;environments default="development"&gt;
+        &lt;!-- 开发环境 --&gt;
+        &lt;environment id="development"&gt;
+            &lt;!-- 事务管理器 --&gt;
+            &lt;transactionManager type="JDBC"&gt;
+                &lt;property name="closeConnection" value="false"/&gt;
+            &lt;/transactionManager&gt;
+            
+            &lt;!-- 数据源配置 --&gt;
+            &lt;dataSource type="POOLED"&gt;
+                &lt;property name="driver" value="${jdbc.driver}"/&gt;
+                &lt;property name="url" value="${jdbc.url}"/&gt;
+                &lt;property name="username" value="${jdbc.username}"/&gt;
+                &lt;property name="password" value="${jdbc.password}"/&gt;
+                &lt;!-- 连接池配置 --&gt;
+                &lt;property name="poolMaximumActiveConnections" value="20"/&gt;
+                &lt;property name="poolMaximumIdleConnections" value="10"/&gt;
+                &lt;property name="poolMaximumCheckoutTime" value="20000"/&gt;
+                &lt;property name="poolTimeToWait" value="20000"/&gt;
+            &lt;/dataSource&gt;
+        &lt;/environment&gt;
+        
+        &lt;!-- 测试环境 --&gt;
+        &lt;environment id="test"&gt;
+            &lt;transactionManager type="JDBC"/&gt;
+            &lt;dataSource type="POOLED"&gt;
+                &lt;property name="driver" value="${jdbc.driver}"/&gt;
+                &lt;property name="url" value="${jdbc.test.url}"/&gt;
+                &lt;property name="username" value="${jdbc.test.username}"/&gt;
+                &lt;property name="password" value="${jdbc.test.password}"/&gt;
+            &lt;/dataSource&gt;
+        &lt;/environment&gt;
+    &lt;/environments&gt;
+    
+    &lt;!-- 5. 映射器配置 --&gt;
+    &lt;mappers&gt;
+        &lt;!-- 方式1：通过resource指定XML文件 --&gt;
+        &lt;mapper resource="com/example/mapper/UserMapper.xml"/&gt;
+        
+        &lt;!-- 方式2：通过class指定接口（需要接口和XML同名同路径） --&gt;
+        &lt;!-- &lt;mapper class="com.example.mapper.UserMapper"/&gt; --&gt;
+        
+        &lt;!-- 方式3：扫描包下所有mapper接口 --&gt;
+        &lt;!-- &lt;package name="com.example.mapper"/&gt; --&gt;
+    &lt;/mappers&gt;
+&lt;/configuration&gt;</code></pre><ol start="3"><li>映射器 Mapper.xml</li></ol><pre><code class="xml">&lt;?xml version="1.0" encoding="UTF-8" ?&gt;
+&lt;!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd"&gt;
+&lt;mapper namespace="com.example.mapper.UserMapper"&gt;
+    
+    &lt;!-- 基础ResultMap映射 --&gt;
+    &lt;resultMap id="BaseResultMap" type="User"&gt;
+        &lt;id property="id" column="id"/&gt;
+        &lt;result property="username" column="username"/&gt;
+        &lt;result property="password" column="password"/&gt;
+        &lt;result property="email" column="email"/&gt;
+        &lt;result property="age" column="age"/&gt;
+        &lt;result property="status" column="status"/&gt;
+        &lt;result property="createTime" column="create_time"/&gt;
+        &lt;result property="updateTime" column="update_time"/&gt;
+        &lt;!-- 枚举类型处理 --&gt;
+        &lt;result property="gender" column="gender" 
+                typeHandler="org.apache.ibatis.type.EnumOrdinalTypeHandler"/&gt;
+    &lt;/resultMap&gt;
+    
+    &lt;!-- 包含订单的ResultMap（一对多） --&gt;
+    &lt;resultMap id="UserWithOrdersResultMap" type="User" extends="BaseResultMap"&gt;
+        &lt;!-- 一对多关联：用户的订单 --&gt;
+        &lt;collection property="orders" ofType="Order" column="id"
+                    select="com.example.mapper.OrderMapper.selectByUserId"/&gt;
+    &lt;/resultMap&gt;
+    
+    &lt;!-- 插入用户 --&gt;
+    &lt;insert id="insert" parameterType="User" useGeneratedKeys="true" keyProperty="id"&gt;
+        INSERT INTO users (username, password, email, age, status, create_time, update_time, gender)
+        VALUES (#{username}, #{password}, #{email}, #{age}, #{status}, #{createTime}, #{updateTime}, 
+                #{gender, typeHandler=org.apache.ibatis.type.EnumOrdinalTypeHandler})
+    &lt;/insert&gt;
+    
+    &lt;!-- 批量插入用户 --&gt;
+    &lt;insert id="batchInsert" parameterType="java.util.List" useGeneratedKeys="true" keyProperty="id"&gt;
+        INSERT INTO users (username, password, email, age, status, create_time, update_time)
+        VALUES
+        &lt;foreach collection="list" item="user" separator=","&gt;
+            (#{user.username}, #{user.password}, #{user.email}, #{user.age}, 
+             #{user.status}, #{user.createTime}, #{user.updateTime})
+        &lt;/foreach&gt;
+    &lt;/insert&gt;
+    
+    &lt;!-- 根据ID删除 --&gt;
+    &lt;delete id="deleteById" parameterType="Long"&gt;
+        DELETE FROM users WHERE id = #{id}
+    &lt;/delete&gt;
+    
+    &lt;!-- 根据用户名删除 --&gt;
+    &lt;delete id="deleteByUsername" parameterType="String"&gt;
+        DELETE FROM users WHERE username = #{username}
+    &lt;/delete&gt;
+    
+    &lt;!-- 更新用户 --&gt;
+    &lt;update id="update" parameterType="User"&gt;
+        UPDATE users
+        &lt;set&gt;
+            &lt;if test="username != null"&gt;username = #{username},&lt;/if&gt;
+            &lt;if test="password != null"&gt;password = #{password},&lt;/if&gt;
+            &lt;if test="email != null"&gt;email = #{email},&lt;/if&gt;
+            &lt;if test="age != null"&gt;age = #{age},&lt;/if&gt;
+            &lt;if test="status != null"&gt;status = #{status},&lt;/if&gt;
+            &lt;if test="updateTime != null"&gt;update_time = #{updateTime},&lt;/if&gt;
+        &lt;/set&gt;
+        WHERE id = #{id}
+    &lt;/update&gt;
+    
+    &lt;!-- 更新用户状态 --&gt;
+    &lt;update id="updateStatus"&gt;
+        UPDATE users SET status = #{status} WHERE id = #{id}
+    &lt;/update&gt;
+    
+    &lt;!-- 根据ID查询 --&gt;
+    &lt;select id="selectById" parameterType="Long" resultMap="BaseResultMap"&gt;
+        SELECT * FROM users WHERE id = #{id}
+    &lt;/select&gt;
+    
+    &lt;!-- 查询所有用户 --&gt;
+    &lt;select id="selectAll" resultMap="BaseResultMap"&gt;
+        SELECT * FROM users ORDER BY create_time DESC
+    &lt;/select&gt;
+    
+    &lt;!-- 根据用户名查询（模糊查询） --&gt;
+    &lt;select id="selectByUsername" parameterType="String" resultMap="BaseResultMap"&gt;
+        SELECT * FROM users 
+        WHERE username LIKE CONCAT('%', #{username}, '%')
+    &lt;/select&gt;
+    
+    &lt;!-- 条件查询（动态SQL） --&gt;
+    &lt;select id="selectByCondition" parameterType="map" resultMap="BaseResultMap"&gt;
+        SELECT * FROM users
+        &lt;where&gt;
+            &lt;if test="username != null and username != ''"&gt;
+                AND username LIKE CONCAT('%', #{username}, '%')
+            &lt;/if&gt;
+            &lt;if test="email != null and email != ''"&gt;
+                AND email = #{email}
+            &lt;/if&gt;
+            &lt;if test="minAge != null"&gt;
+                AND age &gt;= #{minAge}
+            &lt;/if&gt;
+            &lt;if test="maxAge != null"&gt;
+                AND age &amp;lt;= #{maxAge}
+            &lt;/if&gt;
+            &lt;if test="status != null"&gt;
+                AND status = #{status}
+            &lt;/if&gt;
+            &lt;if test="startTime != null"&gt;
+                AND create_time &gt;= #{startTime}
+            &lt;/if&gt;
+            &lt;if test="endTime != null"&gt;
+                AND create_time &amp;lt;= #{endTime}
+            &lt;/if&gt;
+        &lt;/where&gt;
+        ORDER BY id DESC
+    &lt;/select&gt;
+    
+    &lt;!-- 分页查询 --&gt;
+    &lt;select id="selectByPage" resultMap="BaseResultMap"&gt;
+        SELECT * FROM users 
+        ORDER BY id DESC
+        LIMIT #{offset}, #{pageSize}
+    &lt;/select&gt;
+    
+    &lt;!-- 统计数量 --&gt;
+    &lt;select id="count" resultType="int"&gt;
+        SELECT COUNT(*) FROM users
+    &lt;/select&gt;
+    
+    &lt;!-- 查询用户及其订单（关联查询） --&gt;
+    &lt;select id="selectUserWithOrders" parameterType="Long" resultMap="UserWithOrdersResultMap"&gt;
+        SELECT * FROM users WHERE id = #{userId}
+    &lt;/select&gt;
+&lt;/mapper&gt;</code></pre><ol start="4"><li>Mapper接口</li></ol><pre><code class="java">package com.example.mapper;
+
+import com.example.entity.User;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * User 数据访问接口
+ * 注意：不使用Spring时，这个接口不需要添加@Repository等注解
+ */
+public interface UserMapper {
+    
+    // ========== 增 ==========
+    
+    /**
+     * 插入用户
+     */
+    int insert(User user);
+    
+    /**
+     * 批量插入用户
+     */
+    int batchInsert(List&lt;User&gt; users);
+    
+    // ========== 删 ==========
+    
+    /**
+     * 根据ID删除用户
+     */
+    int deleteById(Long id);
+    
+    /**
+     * 根据用户名删除用户
+     */
+    int deleteByUsername(String username);
+    
+    // ========== 改 ==========
+    
+    /**
+     * 更新用户
+     */
+    int update(User user);
+    
+    /**
+     * 更新用户状态
+     * 使用@Param注解指定参数名
+     */
+    int updateStatus(@Param("id") Long id, @Param("status") Integer status);
+    
+    // 使用注解定义SQL（不需要在XML中配置）
+    @Update("UPDATE users SET age = #{age} WHERE id = #{id}")
+    int updateAge(@Param("id") Long id, @Param("age") Integer age);
+    
+    // ========== 查 ==========
+    
+    /**
+     * 根据ID查询用户
+     */
+    User selectById(Long id);
+    
+    /**
+     * 查询所有用户
+     */
+    List&lt;User&gt; selectAll();
+    
+    /**
+     * 根据用户名查询
+     */
+    List&lt;User&gt; selectByUsername(String username);
+    
+    /**
+     * 条件查询
+     * @param condition 查询条件
+     */
+    List&lt;User&gt; selectByCondition(Map&lt;String, Object&gt; condition);
+    
+    /**
+     * 分页查询
+     * @param pageNum 页码
+     * @param pageSize 每页大小
+     */
+    List&lt;User&gt; selectByPage(@Param("offset") int offset, @Param("pageSize") int pageSize);
+    
+    /**
+     * 统计用户数量
+     */
+    int count();
+    
+    /**
+     * 使用注解定义查询
+     */
+    @Select("SELECT * FROM users WHERE email = #{email}")
+    User selectByEmail(String email);
+    
+    /**
+     * 关联查询：查询用户及其订单（一对多）
+     * 需要在XML中配置resultMap
+     */
+    User selectUserWithOrders(Long userId);
+}</code></pre><ol start="5"><li>mybatis工具类</li></ol><pre><code class="java">package com.example.app;
+
+import org.apache.ibatis.io.Resources;
+import org.apache.ibatis.session.SqlSession;
+import org.apache.ibatis.session.SqlSessionFactory;
+import org.apache.ibatis.session.SqlSessionFactoryBuilder;
+
+import java.io.IOException;
+import java.io.InputStream;
+
+/**
+ * MyBatis 工具类 - 手动管理 SqlSessionFactory
+ */
+public class MyBatisUtil {
+    
+    private static SqlSessionFactory sqlSessionFactory;
+    
+    // 静态代码块，在类加载时初始化
+    static {
+        try {
+            // 1. 加载 MyBatis 配置文件
+            String resource = "mybatis-config.xml";
+            InputStream inputStream = Resources.getResourceAsStream(resource);
+            
+            // 2. 创建 SqlSessionFactory
+            sqlSessionFactory = new SqlSessionFactoryBuilder().build(inputStream);
+            
+            System.out.println("MyBatis SqlSessionFactory 初始化成功!");
+        } catch (IOException e) {
+            System.err.println("MyBatis 初始化失败: " + e.getMessage());
+            throw new RuntimeException("MyBatis 初始化失败", e);
+        }
+    }
+    
+    /**
+     * 获取 SqlSession 对象
+     */
+    public static SqlSession getSqlSession() {
+        return sqlSessionFactory.openSession();
+    }
+    
+    /**
+     * 获取 SqlSession 对象（自动提交事务）
+     */
+    public static SqlSession getSqlSessionWithAutoCommit() {
+        return sqlSessionFactory.openSession(true);
+    }
+    
+    /**
+     * 关闭 SqlSession
+     */
+    public static void closeSession(SqlSession session) {
+        if (session != null) {
+            session.close();
+        }
+    }
+    
+    /**
+     * 获取 SqlSessionFactory
+     */
+    public static SqlSessionFactory getSqlSessionFactory() {
+        return sqlSessionFactory;
+    }
+    
+    /**
+     * 获取 Mapper 接口的代理对象
+     */
+    public static &lt;T&gt; T getMapper(Class&lt;T&gt; type) {
+        try (SqlSession session = getSqlSession()) {
+            return session.getMapper(type);
+        }
+    }
+}</code></pre><ol start="6"><li>编程式使用示例</li></ol><pre><code class="java">package com.example.app;
+
+import com.example.entity.User;
+import com.example.mapper.UserMapper;
+import org.apache.ibatis.session.SqlSession;
+import org.apache.ibatis.session.SqlSessionFactory;
+import org.apache.ibatis.session.SqlSessionFactoryBuilder;
+
+import java.io.InputStream;
+import java.time.LocalDateTime;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 不使用 Spring 时，MyBatis 编程式使用示例
+ */
+public class MyBatisDemo {
+    
+    public static void main(String[] args) {
+        // 示例1：基础用法
+        basicUsage();
+        
+        // 示例2：事务管理
+        transactionManagement();
+        
+        // 示例3：动态SQL
+        dynamicSqlExample();
+        
+        // 示例4：批量操作
+        batchOperation();
+        
+        // 示例5：手动构建 SqlSessionFactory
+        manualSqlSessionFactory();
+    }
+    
+    /**
+     * 示例1：基础CRUD操作
+     */
+    private static void basicUsage() {
+        System.out.println("=== 示例1：基础CRUD操作 ===");
+        
+        SqlSession sqlSession = null;
+        try {
+            // 1. 获取 SqlSession
+            sqlSession = MyBatisUtil.getSqlSession();
+            
+            // 2. 获取 Mapper 接口的代理对象
+            UserMapper userMapper = sqlSession.getMapper(UserMapper.class);
+            
+            // 3. 插入数据
+            User newUser = new User();
+            newUser.setUsername("zhangsan");
+            newUser.setPassword("123456");
+            newUser.setEmail("zhangsan@example.com");
+            newUser.setAge(25);
+            newUser.setStatus(1);
+            newUser.setCreateTime(new Date());
+            newUser.setUpdateTime(LocalDateTime.now());
+            
+            int insertResult = userMapper.insert(newUser);
+            System.out.println("插入结果：" + insertResult + "，生成ID：" + newUser.getId());
+            
+            // 4. 查询数据
+            User user = userMapper.selectById(newUser.getId());
+            System.out.println("查询用户：" + user);
+            
+            // 5. 更新数据
+            user.setEmail("updated@example.com");
+            int updateResult = userMapper.update(user);
+            System.out.println("更新结果：" + updateResult);
+            
+            // 6. 分页查询
+            List&lt;User&gt; userList = userMapper.selectByPage(0, 10);
+            System.out.println("分页查询结果：" + userList.size() + " 条");
+            
+            // 7. 统计
+            int count = userMapper.count();
+            System.out.println("总用户数：" + count);
+            
+            // 8. 提交事务
+            sqlSession.commit();
+            System.out.println("事务提交成功");
+            
+        } catch (Exception e) {
+            // 回滚事务
+            if (sqlSession != null) {
+                sqlSession.rollback();
+            }
+            System.err.println("操作失败：" + e.getMessage());
+            e.printStackTrace();
+        } finally {
+            // 关闭 SqlSession
+            MyBatisUtil.closeSession(sqlSession);
+        }
+    }
+    
+    /**
+     * 示例2：事务管理
+     */
+    private static void transactionManagement() {
+        System.out.println("\n=== 示例2：事务管理 ===");
+        
+        SqlSession sqlSession = null;
+        try {
+            sqlSession = MyBatisUtil.getSqlSession();
+            UserMapper userMapper = sqlSession.getMapper(UserMapper.class);
+            
+            // 开启事务（默认不会自动提交）
+            
+            // 操作1：插入用户
+            User user1 = new User("lisi", "lisi@example.com");
+            user1.setPassword("123456");
+            user1.setCreateTime(new Date());
+            userMapper.insert(user1);
+            
+            // 操作2：模拟业务逻辑异常
+            if (user1.getUsername().equals("lisi")) {
+                throw new RuntimeException("模拟业务异常，事务应该回滚");
+            }
+            
+            // 操作3：更新用户（不会执行，因为上面抛出异常）
+            userMapper.updateAge(user1.getId(), 30);
+            
+            // 提交事务
+            sqlSession.commit();
+            System.out.println("事务提交成功");
+            
+        } catch (Exception e) {
+            if (sqlSession != null) {
+                sqlSession.rollback();
+                System.out.println("事务回滚：" + e.getMessage());
+            }
+        } finally {
+            MyBatisUtil.closeSession(sqlSession);
+        }
+    }
+    
+    /**
+     * 示例3：动态SQL和条件查询
+     */
+    private static void dynamicSqlExample() {
+        System.out.println("\n=== 示例3：动态SQL和条件查询 ===");
+        
+        try (SqlSession sqlSession = MyBatisUtil.getSqlSession()) {
+            UserMapper userMapper = sqlSession.getMapper(UserMapper.class);
+            
+            // 构建查询条件
+            Map&lt;String, Object&gt; condition = new HashMap&lt;&gt;();
+            condition.put("username", "zhang");  // 模糊查询
+            condition.put("minAge", 20);         // 年龄 &gt;= 20
+            condition.put("maxAge", 30);         // 年龄 &lt;= 30
+            condition.put("status", 1);          // 状态为启用
+            
+            List&lt;User&gt; users = userMapper.selectByCondition(condition);
+            System.out.println("条件查询结果：" + users.size() + " 条记录");
+            
+            for (User user : users) {
+                System.out.println(user);
+            }
+            
+            sqlSession.commit();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+    
+    /**
+     * 示例4：批量操作
+     */
+    private static void batchOperation() {
+        System.out.println("\n=== 示例4：批量操作 ===");
+        
+        SqlSession sqlSession = null;
+        try {
+            sqlSession = MyBatisUtil.getSqlSession();
+            UserMapper userMapper = sqlSession.getMapper(UserMapper.class);
+            
+            // 批量插入
+            List&lt;User&gt; users = createTestUsers(5);
+            int result = userMapper.batchInsert(users);
+            System.out.println("批量插入：" + result + " 条记录");
+            
+            sqlSession.commit();
+            
+        } catch (Exception e) {
+            if (sqlSession != null) {
+                sqlSession.rollback();
+            }
+            e.printStackTrace();
+        } finally {
+            MyBatisUtil.closeSession(sqlSession);
+        }
+    }
+    
+    /**
+     * 示例5：手动构建 SqlSessionFactory
+     */
+    private static void manualSqlSessionFactory() {
+        System.out.println("\n=== 示例5：手动构建 SqlSessionFactory ===");
+        
+        String resource = "mybatis-config.xml";
+        try (InputStream inputStream = Resources.getResourceAsStream(resource)) {
+            
+            // 1. 手动构建 SqlSessionFactoryBuilder
+            SqlSessionFactoryBuilder builder = new SqlSessionFactoryBuilder();
+            
+            // 2. 构建 SqlSessionFactory
+            SqlSessionFactory sqlSessionFactory = builder.build(inputStream);
+            
+            // 3. 从 SqlSessionFactory 中获取 SqlSession
+            try (SqlSession sqlSession = sqlSessionFactory.openSession()) {
+                
+                // 4. 获取 Mapper
+                UserMapper userMapper = sqlSession.getMapper(UserMapper.class);
+                
+                // 5. 执行查询
+                List&lt;User&gt; users = userMapper.selectAll();
+                System.out.println("手动构建查询结果：" + users.size() + " 条记录");
+                
+                // 6. 手动提交事务
+                sqlSession.commit();
+            }
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+    
+    /**
+     * 创建测试用户
+     */
+    private static List&lt;User&gt; createTestUsers(int count) {
+        List&lt;User&gt; users = new java.util.ArrayList&lt;&gt;();
+        for (int i = 1; i &lt;= count; i++) {
+            User user = new User();
+            user.setUsername("test" + i);
+            user.setPassword("pass" + i);
+            user.setEmail("test" + i + "@example.com");
+            user.setAge(20 + i);
+            user.setStatus(1);
+            user.setCreateTime(new Date());
+            users.add(user);
+        }
+        return users;
+    }
+}</code></pre><h3>整合Spring</h3><ol><li>添加依赖</li></ol><p>较编程式开发主要是需要添加spring核心和MyBatis-Spring整合包</p><pre><code class="xml">&lt;dependencies&gt;
+    &lt;!-- Spring 核心依赖 --&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;org.springframework&lt;/groupId&gt;
+        &lt;artifactId&gt;spring-context&lt;/artifactId&gt;
+        &lt;version&gt;${spring.version}&lt;/version&gt;
+    &lt;/dependency&gt;
+    
+    &lt;!-- MyBatis-Spring 整合包（关键！） --&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;org.mybatis&lt;/groupId&gt;
+        &lt;artifactId&gt;mybatis-spring&lt;/artifactId&gt;
+        &lt;version&gt;${mybatis.spring.version}&lt;/version&gt;
+    &lt;/dependency&gt;
+&lt;/dependencies&gt;</code></pre><ol start="2"><li><strong>mybatis.xml</strong>​ - MyBatis 和事务配置</li></ol><pre><code class="xml">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:tx="http://www.springframework.org/schema/tx"
+       xmlns:aop="http://www.springframework.org/schema/aop"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+       http://www.springframework.org/schema/beans/spring-beans.xsd
+       http://www.springframework.org/schema/tx
+       http://www.springframework.org/schema/tx/spring-tx.xsd
+       http://www.springframework.org/schema/aop
+       http://www.springframework.org/schema/aop/spring-aop.xsd"&gt;
+
+    &lt;!-- 导入数据源配置 --&gt;
+    &lt;import resource="datasource.xml"/&gt;
+    
+    &lt;!-- 1. 配置 SqlSessionFactory --&gt;
+    &lt;bean id="sqlSessionFactory" class="org.mybatis.spring.SqlSessionFactoryBean"&gt;
+        &lt;!-- 引用数据源 --&gt;
+        &lt;property name="dataSource" ref="dataSource"/&gt;
+        
+        &lt;!-- MyBatis 主配置文件路径（如果有的话） --&gt;
+        &lt;property name="configLocation" value="classpath:mybatis-config.xml"/&gt;
+        
+        &lt;!-- 实体类别名包 --&gt;
+        &lt;property name="typeAliasesPackage" value="com.example.entity"/&gt;
+        
+        &lt;!-- MyBatis 映射文件路径 --&gt;
+        &lt;property name="mapperLocations"&gt;
+            &lt;array&gt;
+                &lt;value&gt;classpath:com/example/dao/mapper/*.xml&lt;/value&gt;
+            &lt;/array&gt;
+        &lt;/property&gt;
+        
+        &lt;!-- MyBatis 全局配置 --&gt;
+        &lt;property name="configuration"&gt;
+            &lt;bean class="org.apache.ibatis.session.Configuration"&gt;
+                &lt;!-- 下划线转驼峰 --&gt;
+                &lt;property name="mapUnderscoreToCamelCase" value="true"/&gt;
+                &lt;!-- 开启二级缓存 --&gt;
+                &lt;property name="cacheEnabled" value="true"/&gt;
+                &lt;!-- 使用列标签代替列名 --&gt;
+                &lt;property name="useColumnLabel" value="true"/&gt;
+                &lt;!-- 延迟加载的触发方法 --&gt;
+                &lt;property name="lazyLoadTriggerMethods"&gt;
+                    &lt;array&gt;
+                        &lt;value&gt;equals&lt;/value&gt;
+                        &lt;value&gt;clone&lt;/value&gt;
+                        &lt;value&gt;hashCode&lt;/value&gt;
+                        &lt;value&gt;toString&lt;/value&gt;
+                    &lt;/array&gt;
+                &lt;/property&gt;
+            &lt;/bean&gt;
+        &lt;/property&gt;
+        
+        &lt;!-- 插件配置 --&gt;
+        &lt;property name="plugins"&gt;
+            &lt;array&gt;
+                &lt;!-- 分页插件示例 --&gt;
+                &lt;!--
+                &lt;bean class="com.github.pagehelper.PageInterceptor"&gt;
+                    &lt;property name="properties"&gt;
+                        &lt;props&gt;
+                            &lt;prop key="helperDialect"&gt;mysql&lt;/prop&gt;
+                        &lt;/props&gt;
+                    &lt;/property&gt;
+                &lt;/bean&gt;
+                --&gt;
+            &lt;/array&gt;
+        &lt;/property&gt;
+    &lt;/bean&gt;
+    
+    &lt;!-- 2. 配置 Mapper 扫描器（方式一：扫描包） --&gt;
+    &lt;bean class="org.mybatis.spring.mapper.MapperScannerConfigurer"&gt;
+        &lt;!-- 扫描的包路径 --&gt;
+        &lt;property name="basePackage" value="com.example.dao"/&gt;
+        &lt;!-- 可选：指定 SqlSessionFactory --&gt;
+        &lt;property name="sqlSessionFactoryBeanName" value="sqlSessionFactory"/&gt;
+        &lt;!-- 可选：指定注解，只有标记了指定注解的接口才会被扫描 --&gt;
+        &lt;!-- &lt;property name="annotationClass" value="org.springframework.stereotype.Repository"/&gt; --&gt;
+    &lt;/bean&gt;
+    
+    &lt;!-- 3. 配置事务管理器 --&gt;
+    &lt;bean id="transactionManager" class="org.springframework.jdbc.datasource.DataSourceTransactionManager"&gt;
+        &lt;property name="dataSource" ref="dataSource"/&gt;
+    &lt;/bean&gt;
+    
+    &lt;!-- 4. 开启注解驱动的事务管理 --&gt;
+    &lt;tx:annotation-driven transaction-manager="transactionManager"/&gt;
+    
+    &lt;!-- 5. 事务AOP配置（可选，如果使用注解则不需要） --&gt;
+    &lt;!--
+    &lt;tx:advice id="txAdvice" transaction-manager="transactionManager"&gt;
+        &lt;tx:attributes&gt;
+            &lt;tx:method name="get*" read-only="true" propagation="SUPPORTS"/&gt;
+            &lt;tx:method name="find*" read-only="true" propagation="SUPPORTS"/&gt;
+            &lt;tx:method name="select*" read-only="true" propagation="SUPPORTS"/&gt;
+            &lt;tx:method name="*" propagation="REQUIRED" rollback-for="Exception"/&gt;
+        &lt;/tx:attributes&gt;
+    &lt;/tx:advice&gt;
+    
+    &lt;aop:config&gt;
+        &lt;aop:pointcut id="serviceMethods" expression="execution(* com.example.service.*.*(..))"/&gt;
+        &lt;aop:advisor advice-ref="txAdvice" pointcut-ref="serviceMethods"/&gt;
+    &lt;/aop:config&gt;
+    --&gt;
+    
+    &lt;!-- 6. 配置 SqlSessionTemplate（可选，如果需要在DAO中直接使用） --&gt;
+    &lt;bean id="sqlSessionTemplate" class="org.mybatis.spring.SqlSessionTemplate"&gt;
+        &lt;constructor-arg index="0" ref="sqlSessionFactory"/&gt;
+    &lt;/bean&gt;
+&lt;/beans&gt;</code></pre><ol start="3"><li><strong>applicationContext.xml</strong>​ - Spring 主配置文件</li></ol><pre><code class="xml">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+       http://www.springframework.org/schema/beans/spring-beans.xsd
+       http://www.springframework.org/schema/context
+       http://www.springframework.org/schema/context/spring-context.xsd"&gt;
+
+    &lt;!-- 开启注解扫描 --&gt;
+    &lt;context:component-scan base-package="com.example"&gt;
+        &lt;!-- 排除 Controller，如果使用 MVC 的话 --&gt;
+        &lt;context:exclude-filter type="annotation" 
+            expression="org.springframework.stereotype.Controller"/&gt;
+    &lt;/context:component-scan&gt;
+    
+    &lt;!-- 导入 MyBatis 配置 --&gt;
+    &lt;import resource="classpath:spring/mybatis.xml"/&gt;
+    
+    &lt;!-- 其他 Bean 配置 --&gt;
+    &lt;bean id="userService" class="com.example.service.impl.UserServiceImpl"/&gt;
+    
+    &lt;!-- 属性占位符配置 --&gt;
+    &lt;context:property-placeholder location="classpath:*.properties"/&gt;
+&lt;/beans&gt;</code></pre><ol start="4"><li>测试案例</li></ol><pre><code class="java">package com.example.config;
+
+import org.apache.commons.dbcp2.BasicDataSource;
+import org.mybatis.spring.SqlSessionFactoryBean;
+import org.mybatis.spring.mapper.MapperScannerConfigurer;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.PropertySource;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.io.Resource;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
+
+import javax.sql.DataSource;
+
+@Configuration
+@ComponentScan("com.example")
+@PropertySource("classpath:jdbc.properties")
+@EnableTransactionManagement
+public class AppConfig {
+    
+    @Bean
+    public DataSource dataSource(
+            @Value("${jdbc.driverClassName}") String driverClassName,
+            @Value("${jdbc.url}") String url,
+            @Value("${jdbc.username}") String username,
+            @Value("${jdbc.password}") String password) {
+        
+        BasicDataSource dataSource = new BasicDataSource();
+        dataSource.setDriverClassName(driverClassName);
+        dataSource.setUrl(url);
+        dataSource.setUsername(username);
+        dataSource.setPassword(password);
+        dataSource.setInitialSize(5);
+        dataSource.setMaxTotal(20);
+        return dataSource;
+    }
+    
+    @Bean
+    public SqlSessionFactoryBean sqlSessionFactory(DataSource dataSource) {
+        SqlSessionFactoryBean factoryBean = new SqlSessionFactoryBean();
+        factoryBean.setDataSource(dataSource);
+        factoryBean.setTypeAliasesPackage("com.example.entity");
+        
+        // 配置 MyBatis
+        org.apache.ibatis.session.Configuration configuration = 
+            new org.apache.ibatis.session.Configuration();
+        configuration.setMapUnderscoreToCamelCase(true);
+        factoryBean.setConfiguration(configuration);
+        
+        // 设置映射文件位置
+        Resource[] mapperLocations = new Resource[]{
+            new ClassPathResource("com/example/dao/mapper/*.xml")
+        };
+        factoryBean.setMapperLocations(mapperLocations);
+        
+        return factoryBean;
+    }
+    
+    @Bean
+    public MapperScannerConfigurer mapperScannerConfigurer() {
+        MapperScannerConfigurer scanner = new MapperScannerConfigurer();
+        scanner.setBasePackage("com.example.dao");
+        scanner.setSqlSessionFactoryBeanName("sqlSessionFactory");
+        return scanner;
+    }
+    
+    @Bean
+    public PlatformTransactionManager transactionManager(DataSource dataSource) {
+        return new DataSourceTransactionManager(dataSource);
+    }
+}</code></pre><h3>整合SpringBoot</h3><ol><li>添加依赖</li></ol><pre><code class="xml">&lt;dependency&gt;
+    &lt;groupId&gt;org.mybatis.spring.boot&lt;/groupId&gt;
+    &lt;artifactId&gt;mybatis-spring-boot-starter&lt;/artifactId&gt;
+    &lt;version&gt;3.0.0&lt;/version&gt;
+&lt;/dependency&gt;
+&lt;dependency&gt;
+    &lt;groupId&gt;mysql&lt;/groupId&gt;
+    &lt;artifactId&gt;mysql-connector-j&lt;/artifactId&gt;
+&lt;/dependency&gt;
+&lt;!-- 无需显式添加连接池，Spring Boot 默认使用 HikariCP --&gt;</code></pre><ol start="2"><li>​ <code>application.yml</code>配置，无需创建<code>mybatis-config.xml</code>文件，可直接在yaml文件中配置</li></ol><pre><code class="yaml">spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/testdb
+    username: root
+    password: 123456
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+
+mybatis:
+  mapper-locations: classpath:mapper/**/*.xml
+  type-aliases-package: com.example.entity
+  configuration:
+    map-underscore-to-camel-case: true</code></pre><ol start="3"><li>配置自动扫描 Mapper 接口</li></ol><pre><code class="java">@SpringBootApplication
+@MapperScan("com.example.mapper") // 自动扫描 Mapper 接口
+public class Application {
+    public static void main(String[] args) {
+        SpringApplication.run(Application.class, args);
+    }
+}</code></pre><ol start="4"><li>自动注入 Mapper</li></ol><pre><code class="java">@Service
+public class UserService {
+    @Autowired
+    private UserMapper userMapper; // 直接注入
+    
+    public User getUser(Long id) {
+        return userMapper.selectById(id); // 直接使用
+    }
+}</code></pre><h2>Mybatis代码生成器</h2><p><a href="https://link.segmentfault.com/?enc=bpz2yNRgkT6%2BXzXa9vwXyA%3D%3D.2WxKLBf8Z6UtnqBj1eC1YirXSG2IaT8xtqE0TSxgsjHn5i9UGw5Q2PiQomLvXz1N" rel="nofollow" target="_blank">https://github.com/mybatis/generator</a></p><h2>Mybatis动态sql</h2><p><a href="https://link.segmentfault.com/?enc=8ETYBNHXh2D3wsbCfAffQA%3D%3D.JT3pgxFIYPBrwLWZNa7KN2wkW1p3emehPI7kMZWkh%2FmhcOM7aCE992JwenfuZatD" rel="nofollow" target="_blank">https://mybatis.org/mybatis-3/dynamic-sql.html</a></p><h2>Mybatis批量操作</h2><p>进行批量操作时，有三种方式，操作方式对比：</p><table><thead><tr><th>操作类型</th><th>适用场景</th><th>实现方式</th><th>优点</th><th>缺点</th></tr></thead><tbody><tr><td><strong>foreach SQL</strong>​</td><td>小批量数据插入/更新/删除</td><td>在 XML 中写 <code>&lt;foreach&gt;</code>生成 SQL</td><td>简单直观，一次性执行</td><td>SQL 长度有限制，大数据量可能超限</td></tr><tr><td><strong>Batch Executor</strong>​</td><td>大批量数据操作</td><td>使用 <code>ExecutorType.BATCH</code></td><td>性能最优，预编译 SQL</td><td>需要手动管理事务和提交</td></tr><tr><td><strong>JDBC Batch</strong>​</td><td>需要底层控制</td><td>使用原生 JDBC Batch</td><td>完全控制，灵活性高</td><td>代码复杂，需处理底层细节</td></tr></tbody></table><h3>使用 foreach 标签的批量操作案例</h3><h4>批量插入</h4><pre><code class="xml">&lt;!-- 1. 基本批量插入 --&gt;
+&lt;insert id="batchInsert" parameterType="java.util.List"&gt;
+    INSERT INTO users (username, email, age, status, create_time)
+    VALUES
+    &lt;foreach collection="list" item="user" separator=","&gt;
+        (#{user.username}, #{user.email}, #{user.age}, #{user.status}, NOW())
+    &lt;/foreach&gt;
+&lt;/insert&gt;
+
+&lt;!-- 2. 批量插入（返回自增主键） --&gt;
+&lt;insert id="batchInsertWithKeys" parameterType="java.util.List" 
+        useGeneratedKeys="true" keyProperty="id"&gt;
+    INSERT INTO users (username, email, age, status, create_time)
+    VALUES
+    &lt;foreach collection="list" item="user" separator=","&gt;
+        (#{user.username}, #{user.email}, #{user.age}, #{user.status}, #{user.createTime})
+    &lt;/foreach&gt;
+&lt;/insert&gt;
+
+&lt;!-- 3. 批量插入或更新（MySQL ON DUPLICATE KEY UPDATE） --&gt;
+&lt;insert id="batchInsertOrUpdate" parameterType="java.util.List"&gt;
+    INSERT INTO users (username, email, age, status, create_time)
+    VALUES
+    &lt;foreach collection="list" item="user" separator=","&gt;
+        (#{user.username}, #{user.email}, #{user.age}, #{user.status}, #{user.createTime})
+    &lt;/foreach&gt;
+    ON DUPLICATE KEY UPDATE
+    email = VALUES(email),
+    age = VALUES(age),
+    status = VALUES(status),
+    update_time = NOW()
+&lt;/insert&gt;</code></pre><h4>批量更新</h4><pre><code class="xml">&lt;!-- 1. 批量更新（根据ID） --&gt;
+&lt;update id="batchUpdate" parameterType="java.util.List"&gt;
+    UPDATE users
+    &lt;trim prefix="SET" suffixOverrides=","&gt;
+        &lt;trim prefix="username = CASE" suffix="END,"&gt;
+            &lt;foreach collection="list" item="user"&gt;
+                &lt;if test="user.username != null"&gt;
+                    WHEN id = #{user.id} THEN #{user.username}
+                &lt;/if&gt;
+            &lt;/foreach&gt;
+        &lt;/trim&gt;
+        &lt;trim prefix="email = CASE" suffix="END,"&gt;
+            &lt;foreach collection="list" item="user"&gt;
+                &lt;if test="user.email != null"&gt;
+                    WHEN id = #{user.id} THEN #{user.email}
+                &lt;/if&gt;
+            &lt;/foreach&gt;
+        &lt;/trim&gt;
+        &lt;trim prefix="age = CASE" suffix="END,"&gt;
+            &lt;foreach collection="list" item="user"&gt;
+                &lt;if test="user.age != null"&gt;
+                    WHEN id = #{user.id} THEN #{user.age}
+                &lt;/if&gt;
+            &lt;/foreach&gt;
+        &lt;/trim&gt;
+        &lt;trim prefix="status = CASE" suffix="END,"&gt;
+            &lt;foreach collection="list" item="user"&gt;
+                &lt;if test="user.status != null"&gt;
+                    WHEN id = #{user.id} THEN #{user.status}
+                &lt;/if&gt;
+            &lt;/foreach&gt;
+        &lt;/trim&gt;
+        update_time = NOW()
+    &lt;/trim&gt;
+    WHERE id IN
+    &lt;foreach collection="list" item="user" open="(" separator="," close=")"&gt;
+        #{user.id}
+    &lt;/foreach&gt;
+&lt;/update&gt;
+
+&lt;!-- 2. 批量更新（简单版，逐条更新） --&gt;
+&lt;update id="batchUpdateSimple"&gt;
+    &lt;foreach collection="list" item="user" separator=";"&gt;
+        UPDATE users
+        &lt;set&gt;
+            &lt;if test="user.username != null"&gt;username = #{user.username},&lt;/if&gt;
+            &lt;if test="user.email != null"&gt;email = #{user.email},&lt;/if&gt;
+            &lt;if test="user.age != null"&gt;age = #{user.age},&lt;/if&gt;
+            update_time = NOW()
+        &lt;/set&gt;
+        WHERE id = #{user.id}
+    &lt;/foreach&gt;
+&lt;/update&gt;
+
+&lt;!-- 3. 批量更新状态 --&gt;
+&lt;update id="batchUpdateStatus"&gt;
+    UPDATE users
+    SET status = #{status},
+        update_time = NOW()
+    WHERE id IN
+    &lt;foreach collection="ids" item="id" open="(" separator="," close=")"&gt;
+        #{id}
+    &lt;/foreach&gt;
+&lt;/update&gt;</code></pre><h4>批量删除</h4><pre><code class="xml">&lt;!-- 1. 批量删除（根据ID列表） --&gt;
+&lt;delete id="batchDeleteByIds"&gt;
+    DELETE FROM users
+    WHERE id IN
+    &lt;foreach collection="ids" item="id" open="(" separator="," close=")"&gt;
+        #{id}
+    &lt;/foreach&gt;
+&lt;/delete&gt;
+
+&lt;!-- 2. 批量删除（根据条件） --&gt;
+&lt;delete id="batchDeleteByCondition"&gt;
+    DELETE FROM users
+    WHERE (username, email) IN
+    &lt;foreach collection="list" item="user" open="(" separator="," close=")"&gt;
+        (#{user.username}, #{user.email})
+    &lt;/foreach&gt;
+&lt;/delete&gt;</code></pre><h4>批量查询</h4><pre><code class="xml">&lt;!-- 1. 批量查询（根据ID列表） --&gt;
+&lt;select id="batchSelectByIds" resultMap="BaseResultMap"&gt;
+    SELECT * FROM users
+    WHERE id IN
+    &lt;foreach collection="ids" item="id" open="(" separator="," close=")"&gt;
+        #{id}
+    &lt;/foreach&gt;
+    ORDER BY
+    &lt;foreach collection="ids" item="id" separator=","&gt;
+        id = #{id} DESC
+    &lt;/foreach&gt;
+&lt;/select&gt;
+
+&lt;!-- 2. 批量查询（分页批量查询） --&gt;
+&lt;select id="batchSelectByPage" parameterType="map" resultMap="BaseResultMap"&gt;
+    SELECT * FROM users
+    WHERE id IN
+    &lt;foreach collection="ids" item="id" open="(" separator="," close=")"&gt;
+        #{id}
+    &lt;/foreach&gt;
+    LIMIT #{offset}, #{pageSize}
+&lt;/select&gt;</code></pre><h3>使用 foreach 标签的注意事项</h3><h4>SQL 长度限制</h4><pre><code class="java">/**
+ * 处理超长 SQL 的批量操作
+ */
+public int safeBatchInsert(List&lt;User&gt; userList) {
+    int batchSize = 1000; // 根据数据库配置调整
+    int total = 0;
+    
+    for (int i = 0; i &lt; userList.size(); i += batchSize) {
+        int end = Math.min(i + batchSize, userList.size());
+        List&lt;User&gt; subList = userList.subList(i, end);
+        
+        // 检查 SQL 长度
+        String sql = generateInsertSQL(subList);
+        if (sql.length() &gt; 1000000) { // 1MB
+            // 进一步减小批次
+            batchSize = batchSize / 2;
+            i -= batchSize; // 回退
+            continue;
+        }
+        
+        total += userMapper.batchInsert(subList);
+    }
+    
+    return total;
+}</code></pre><h4>事务管理</h4><pre><code class="java">@Service
+public class UserBatchService {
+    
+    @Transactional(rollbackFor = Exception.class)
+    public int batchInsertWithTransaction(List&lt;User&gt; userList) {
+        int result = 0;
+        
+        try {
+            result = userMapper.batchInsert(userList);
+            
+            // 如果后续操作失败，整个事务回滚
+            someOtherOperation();
+            
+        } catch (Exception e) {
+            // 抛出异常触发回滚
+            throw new RuntimeException("批量插入失败，已回滚", e);
+        }
+        
+        return result;
+    }
+    
+    /**
+     * 手动控制事务
+     */
+    public int batchInsertManualTransaction(List&lt;User&gt; userList) {
+        // 获取事务定义
+        DefaultTransactionDefinition def = new DefaultTransactionDefinition();
+        def.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
+        
+        // 获取事务状态
+        TransactionStatus status = transactionManager.getTransaction(def);
+        
+        try {
+            int result = userMapper.batchInsert(userList);
+            
+            // 提交事务
+            transactionManager.commit(status);
+            return result;
+            
+        } catch (Exception e) {
+            // 回滚事务
+            transactionManager.rollback(status);
+            throw new RuntimeException("批量操作失败，已回滚", e);
+        }
+    }
+}</code></pre><h2>Mybatis关联查询和延迟加载</h2><table><thead><tr><th>特性</th><th>嵌套查询（Nested Query）</th><th>嵌套结果（Nested Result）</th></tr></thead><tbody><tr><td><strong>原理</strong>​</td><td>执行多条SQL查询，在结果映射中引用其他查询</td><td>执行一条联合查询，在结果映射中处理嵌套对象</td></tr><tr><td><strong>SQL数量</strong>​</td><td>N+1 条（主查询 + N 条关联查询）</td><td>1 条（联合查询）</td></tr><tr><td><strong>性能</strong>​</td><td>有 N+1 问题，性能较差</td><td>性能较好，避免 N+1 问题</td></tr><tr><td><strong>复杂度</strong>​</td><td>简单，易于理解和维护</td><td>复杂，SQL 语句较复杂</td></tr><tr><td><strong>适用场景</strong>​</td><td>关联数据较少，延迟加载场景</td><td>关联数据较多，需要一次性加载所有数据</td></tr><tr><td><strong>内存占用</strong>​</td><td>较低，按需加载</td><td>较高，一次性加载所有数据</td></tr></tbody></table><h3>嵌套查询</h3><p>在查询一个对象时，可以同时通过另一个查询语句来加载关联的另一个对象。例如，查询用户时，通过另一个查询语句来加载该用户的订单。</p><pre><code class="xml">&lt;!-- UserMapper.xml --&gt;
+
+&lt;!-- 1. 基本的嵌套查询 --&gt;
+&lt;select id="selectUserWithOrders" parameterType="Long" resultMap="userWithOrdersMap"&gt;
+    SELECT * FROM users WHERE id = #{userId}
+&lt;/select&gt;
+
+&lt;resultMap id="userWithOrdersMap" type="User"&gt;
+    &lt;id property="id" column="id"/&gt;
+    &lt;result property="username" column="username"/&gt;
+    &lt;result property="email" column="email"/&gt;
+    
+    &lt;!-- 嵌套查询：通过 select 属性引用另一个查询 --&gt;
+    &lt;!-- 问题：会为每个用户执行一次 selectOrdersByUserId 查询 --&gt;
+    &lt;collection 
+        property="orders" 
+        column="id"  &lt;!-- 将主查询的 id 列值作为参数传递给嵌套查询 --&gt;
+        ofType="Order"
+        select="selectOrdersByUserId"/&gt;  &lt;!-- 引用另一个查询语句 --&gt;
+&lt;/resultMap&gt;
+
+&lt;select id="selectOrdersByUserId" parameterType="Long" resultType="Order"&gt;
+    SELECT * FROM orders WHERE user_id = #{userId}
+&lt;/select&gt;
+
+&lt;!-- 2. 一对多 + 一对一 多重嵌套 --&gt;
+&lt;!-- 假设订单中还有订单项 --&gt;
+&lt;select id="selectUserWithOrdersAndItems" resultMap="userWithOrdersAndItemsMap"&gt;
+    SELECT * FROM users WHERE id = #{userId}
+&lt;/select&gt;
+
+&lt;resultMap id="userWithOrdersAndItemsMap" type="User"&gt;
+    &lt;id property="id" column="id"/&gt;
+    &lt;result property="username" column="username"/&gt;
+    &lt;result property="email" column="email"/&gt;
+    
+    &lt;!-- 一级嵌套：用户的订单 --&gt;
+    &lt;collection 
+        property="orders" 
+        column="id" 
+        ofType="Order"
+        select="selectOrdersByUserId"/&gt;
+&lt;/resultMap&gt;
+
+&lt;!-- 订单映射，包含订单项 --&gt;
+&lt;resultMap id="orderWithItemsMap" type="Order"&gt;
+    &lt;id property="id" column="id"/&gt;
+    &lt;result property="orderNo" column="order_no"/&gt;
+    &lt;result property="amount" column="amount"/&gt;
+    &lt;result property="createTime" column="create_time"/&gt;
+    
+    &lt;!-- 二级嵌套：订单中的订单项 --&gt;
+    &lt;collection 
+        property="orderItems" 
+        column="id" 
+        ofType="OrderItem"
+        select="selectOrderItemsByOrderId"/&gt;
+&lt;/resultMap&gt;
+
+&lt;select id="selectOrdersByUserId" parameterType="Long" resultMap="orderWithItemsMap"&gt;
+    SELECT * FROM orders WHERE user_id = #{userId}
+&lt;/select&gt;
+
+&lt;select id="selectOrderItemsByOrderId" parameterType="Long" resultType="OrderItem"&gt;
+    SELECT * FROM order_items WHERE order_id = #{orderId}
+&lt;/select&gt;</code></pre><p>嵌套查询可能引起N+1问题：因为当我们查询一个列表时，对于列表中的每一条记录，都会执行一次额外的查询来加载关联数据。这样，如果有N条记录，就会执行1次主查询和N次关联查询，即N+1次查询。</p><h3>嵌套结果</h3><p>通过一次复杂的联表查询，将结果映射到多个对象中。例如，通过一个SQL语句查询用户及其订单，然后通过结果映射将用户和订单的数据分别映射到用户对象和订单对象中。</p><pre><code class="xml">&lt;!-- UserMapper.xml --&gt;
+
+&lt;!-- 嵌套结果查询：一条SQL获取所有数据 --&gt;
+&lt;select id="selectUserWithOrdersNested" parameterType="Long" resultMap="userWithOrdersNestedMap"&gt;
+    SELECT 
+        u.id AS user_id,
+        u.username,
+        u.email,
+        o.id AS order_id,
+        o.order_no,
+        o.amount,
+        o.create_time
+    FROM users u
+    LEFT JOIN orders o ON u.id = o.user_id
+    WHERE u.id = #{userId}
+&lt;/select&gt;
+
+&lt;resultMap id="userWithOrdersNestedMap" type="User"&gt;
+    &lt;id property="id" column="user_id"/&gt;
+    &lt;result property="username" column="username"/&gt;
+    &lt;result property="email" column="email"/&gt;
+    
+    &lt;!-- 嵌套结果映射：处理联合查询的结果集 --&gt;
+    &lt;collection 
+        property="orders" 
+        ofType="Order"
+        resultMap="orderResultMap"/&gt;  &lt;!-- 引用订单的结果映射 --&gt;
+&lt;/resultMap&gt;
+
+&lt;resultMap id="orderResultMap" type="Order"&gt;
+    &lt;id property="id" column="order_id"/&gt;
+    &lt;result property="orderNo" column="order_no"/&gt;
+    &lt;result property="amount" column="amount"/&gt;
+    &lt;result property="createTime" column="create_time"/&gt;
+&lt;/resultMap&gt;</code></pre><h3>N+1 查询问题详解</h3><p>什么是 N+1 问题：当使用嵌套查询时，如果有 N 个主记录，每个主记录都有 M 个关联记录，那么会执行：</p><ul><li>1 条主查询</li><li>N 条关联查询</li></ul><p>总共执行 1 + N 条查询</p><p>演示案例：</p><pre><code class="java">@Test
+public void testNPlusOneProblem() {
+    // 查询10个用户
+    List&lt;User&gt; users = userMapper.selectAllUsers();
+    
+    // 嵌套查询会执行：
+    // 1. 查询所有用户: SELECT * FROM users; (1次)
+    // 2. 为每个用户查询订单: SELECT * FROM orders WHERE user_id = ? (N次，N=10)
+    // 总共执行 1 + 10 = 11 次查询！
+    
+    for (User user : users) {
+        // 访问订单时触发额外查询
+        List&lt;Order&gt; orders = user.getOrders();
+        System.out.println("用户 " + user.getUsername() + " 有 " + orders.size() + " 个订单");
+    }
+}</code></pre><p>延迟加载可以解决N+1问题：延迟加载是指在需要使用关联数据时才去加载。在MyBatis中，可以配置延迟加载，这样在查询主对象时，不会立即加载关联对象，只有当访问关联对象时才会执行额外的查询。这样，如果访问了所有关联对象，那么还是会执行N+1次查询，但如果我们只访问部分主对象的关联对象，那么就可以减少查询次数。</p><h4>延迟加载解决方案</h4><ul><li>配置延迟加载：mybatis-config.xml 配置</li></ul><pre><code class="xml">&lt;configuration&gt;
+    &lt;settings&gt;
+        &lt;!-- 开启延迟加载 --&gt;
+        &lt;setting name="lazyLoadingEnabled" value="true"/&gt;
+        
+        &lt;!-- 关闭积极加载（3.4.1版本后默认为false），当开启时，任何方法的调用都会加载该对象的所有属性，否则，每个属性会按需加载 --&gt;
+        &lt;setting name="aggressiveLazyLoading" value="false"/&gt;
+        
+        &lt;!-- 延迟加载触发方法，默认equals,clone,hashCode,toString --&gt;
+        &lt;setting name="lazyLoadTriggerMethods" value=""/&gt;
+        
+        &lt;!-- 启用多结果集（某些数据库需要） --&gt;
+        &lt;setting name="multipleResultSetsEnabled" value="true"/&gt;
+    &lt;/settings&gt;
+&lt;/configuration&gt;</code></pre><p>application.yml 配置（Spring Boot）</p><pre><code class="yaml">mybatis:
+  configuration:
+    lazy-loading-enabled: true
+    aggressive-lazy-loading: false</code></pre><ul><li>在映射中使用延迟加载</li></ul><pre><code class="xml">&lt;!-- 延迟加载配置示例 --&gt;
+&lt;resultMap id="userWithLazyOrdersMap" type="User"&gt;
+    &lt;id property="id" column="id"/&gt;
+    &lt;result property="username" column="username"/&gt;
+    &lt;result property="email" column="email"/&gt;
+    
+    &lt;!-- 配置延迟加载 --&gt;
+    &lt;collection 
+        property="orders" 
+        column="id" 
+        ofType="Order"
+        select="selectOrdersByUserId"
+        fetchType="lazy"/&gt;  &lt;!-- 设置为延迟加载 --&gt;
+&lt;/resultMap&gt;
+
+&lt;!-- 或者通过全局配置，不在每个collection单独设置 --&gt;
+&lt;collection 
+    property="orders" 
+    column="id" 
+    ofType="Order"
+    select="selectOrdersByUserId"/&gt;</code></pre><p>但是，延迟加载只是将N+1次查询的时机推迟了，并没有从根本上减少查询次数。要解决N+1问题，更好的方式是使用嵌套结果（即一次联表查询）或者批量加载（MyBatis 3.4.1以上支持关联的批量加载）来减少查询次数。</p><h4>批量加载</h4><pre><code class="xml">&lt;!-- 配置批量加载 --&gt;
+&lt;settings&gt;
+    &lt;!-- 开启批量加载 --&gt;
+    &lt;setting name="defaultExecutorType" value="BATCH"/&gt;
+    
+    &lt;!-- 或者通过Mapper方法单独设置 --&gt;
+    &lt;!-- 
+    &lt;select id="selectUserWithOrders" resultMap="userWithOrdersMap" 
+            fetchSize="100" statementType="PREPARED"&gt;
+    --&gt;
+&lt;/settings&gt;</code></pre><h4>使用嵌套结果（推荐）</h4><pre><code class="xml">&lt;!-- 使用嵌套结果替代嵌套查询 --&gt;
+&lt;select id="selectUsersWithOrdersInBatch" resultMap="usersWithOrdersBatchMap"&gt;
+    SELECT 
+        u.id AS user_id,
+        u.username,
+        u.email,
+        o.id AS order_id,
+        o.order_no,
+        o.amount,
+        o.create_time
+    FROM users u
+    LEFT JOIN orders o ON u.id = o.user_id
+    WHERE u.id IN
+    &lt;foreach collection="userIds" item="id" open="(" separator="," close=")"&gt;
+        #{id}
+    &lt;/foreach&gt;
+    ORDER BY u.id, o.create_time DESC
+&lt;/select&gt;
+
+&lt;resultMap id="usersWithOrdersBatchMap" type="User"&gt;
+    &lt;id property="id" column="user_id"/&gt;
+    &lt;result property="username" column="username"/&gt;
+    &lt;result property="email" column="email"/&gt;
+    
+    &lt;!-- 嵌套结果集合 --&gt;
+    &lt;collection property="orders" ofType="Order"&gt;
+        &lt;id property="id" column="order_id"/&gt;
+        &lt;result property="orderNo" column="order_no"/&gt;
+        &lt;result property="amount" column="amount"/&gt;
+        &lt;result property="createTime" column="create_time"/&gt;
+    &lt;/collection&gt;
+&lt;/resultMap&gt;</code></pre><h4>使用子查询 + IN 语句</h4><pre><code class="xml">&lt;!-- 通过子查询减少查询次数 --&gt;
+&lt;select id="selectUsersWithOrdersSmart" resultMap="userWithOrdersMap"&gt;
+    SELECT * FROM users WHERE id IN (
+        SELECT DISTINCT user_id FROM orders
+    )
+&lt;/select&gt;
+
+&lt;select id="selectOrdersForUsers" resultType="Order"&gt;
+    SELECT * FROM orders 
+    WHERE user_id IN
+    &lt;foreach collection="userIds" item="userId" open="(" separator="," close=")"&gt;
+        #{userId}
+    &lt;/foreach&gt;
+&lt;/select&gt;</code></pre>]]></description></item><item>    <title><![CDATA[StarRocks I/O 模型揭秘（一）：查询是如何被拆解与调度的？ StarRocks ]]></title>    <link>https://segmentfault.com/a/1190000047696206</link>    <guid>https://segmentfault.com/a/1190000047696206</guid>    <pubDate>2026-04-07 00:03:01</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <blockquote><p>作者：丁凯 StarRocks TSC Member</p><p>导读：在存算分离架构下，查询性能的稳定性越来越依赖底层 I/O 设计。本文作为 StarRocks I/O 模型揭秘系列首篇，将围绕 Tablet、Fragment、Pipeline、Morsel、Scan Operator 等核心概念，梳理一次查询执行过程中底层 I/O 链路的基本运行机制</p></blockquote><p>StarRocks 是一款面向高并发、低延迟分析场景的高性能 MPP 数据库。围绕其数据组织方式与底层 I/O 流程，社区中一直有不少关注和讨论。尤其在引入存算分离架构之后，查询链路对 I/O 的依赖进一步增强：相较于传统本地磁盘访问，对象存储在高带宽之外，也伴随着更高访问延迟等特征，这也给查询性能稳定性带来了新的挑战。如何在这样的架构基础上，持续保障 StarRocks 的亚秒级响应能力，成为系统架构与 I/O 层设计中的关键问题。</p><p>本系列文章将围绕 StarRocks I/O 层展开，系统梳理其核心设计与运行机制。作为第一篇，本文将聚焦 StarRocks 存算分离架构下，一次查询执行过程中与底层 I/O 相关的关键概念与机制。通过 Tablet、Fragment、Pipeline、Cache、ScanOperator、Morsel 等核心对象，可以更清晰地理解数据如何从底层存储系统被读取，并逐步进入计算引擎完成处理，也有助于进一步理解 StarRocks 在延迟隐藏、并发调度以及冷热数据管理等方面的设计思路。</p><p>希望通过本文，帮助大家从底层视角建立对 StarRocks I/O 模型的整体认知，也为后续进一步理解其性能优化机制打下基础。</p><h2>基本概念</h2><h3>Tablet</h3><p>Tablet 是 StarRocks 中数据存储的基本物理单元，可以将其理解为一张表数据在物理层面的水平分片。作为 MPP 数据库，StarRocks 在建表时会按照既定规则将表数据划分为多个 Tablet，每个 Tablet 对应其中一部分数据。通过将这些 Tablet 尽可能均匀地分布在不同的 CN 节点上，StarRocks 实现了数据的分布式存储与管理。</p><p>在 StarRocks 中，Tablet 的数量由建表时设置的分桶（Bucket）数决定，二者一一对应。建表时，用户可以通过 DISTRIBUTED BY 子句指定分桶键以及分桶数量。例如，创建一张订单表，按照 user_id 进行哈希分桶，并设置 10 个分桶：</p><pre><code>CREATE TABLE orders (order_id BIGINT,  user_id BIGINT,  amount DECIMAL(10,2) ) DISTRIBUTED BY HASH(user_id) BUCKETS 10;
 </code></pre><p>这条建表语句会创建 10 个 Tablet，表中数据会按照 user_id 的哈希结果分布到这 10 个 Tablet 中。作为 StarRocks 中的基础物理单元，Tablet 在查询执行、数据管理和系统扩展等方面都承担着重要作用。</p><ol><li><strong>实现并行计算，提升查询性能。</strong></li></ol><p>在查询执行过程中，StarRocks 可以并行扫描多个 Tablet，以提升整体查询效率。以一张包含 10 个 Tablet 的表为例，查询引擎可以将扫描与计算任务拆分到多个并发执行单元中，分别处理不同 Tablet 上的数据，最终再对结果进行汇总。基于 Tablet 的并行处理机制，StarRocks 能够更充分地利用多核 CPU 和分布式集群资源，从而提升查询性能。</p><ol><li><strong>作为数据管理的基本单位。</strong></li></ol><p>在 StarRocks 中，许多数据管理操作都以 Tablet 为基本粒度展开。例如，数据写入会落到具体的 Tablet 上；Compaction 等数据整理操作也是围绕单个 Tablet 内部的数据组织进行；在集群负载均衡场景下，Tablet 也是节点间数据迁移和调度的基本单位。以 Tablet 为粒度进行管理，使系统在数据组织和运维调度上具备更高的灵活性。</p><ol><li><strong>支持系统的水平扩展。</strong></li></ol><p>在集群扩容时，StarRocks 可以通过 Tablet 级别的调度，将部分计算任务或数据访问压力更均衡地分散到新增节点上，从而提升整体资源利用率。在存算分离架构下，这种能力进一步增强，系统可以更灵活地实现横向扩展与负载均衡。</p><p>总体来看，Tablet 是贯穿 StarRocks 数据存储、查询执行与系统扩展的核心概念之一。合理设计分桶策略与分桶数量，对于系统性能和资源利用率都有重要影响。</p><h3>Fragment</h3><p>在 StarRocks 中，FE 负责生成查询对应的物理执行计划。用户提交的 SQL 会依次经过 Parse、Analyze、Rewrite、Optimize 等阶段，最终形成一棵由物理算子组成的执行树。</p><p>Plan Fragment 是物理执行计划拆分后的基本组成单元，也是实现分布式并行执行的重要基础。FE 会将完整的物理执行计划拆分为多个 Plan Fragment，并分发到不同节点上执行，从而支持多机并行处理。每个 Plan Fragment 本身同样由一组物理算子构成。</p><p>除了算子本身，Plan Fragment 还包含 DataSink，用于将当前 Fragment 的输出发送给下游 Fragment。具体来说，上游 Fragment 会通过 DataSink 将数据传递给下游 Fragment 中的 Exchange 算子。</p><p>在 Pipeline 执行引擎中，BE 还会在 Plan Fragment 的基础上进一步拆分出多个 Pipeline。</p><h3>Pipeline</h3><p>Pipeline 是由一组算子串联而成的执行链路。数据从 Source Operator 进入，经过中间多个 Operator 的处理后，由 Sink Operator 输出到下一个执行阶段。</p><p>从结构上看，一个 Pipeline 通常由三部分组成：Source Operator、中间 Operator 以及 Sink Operator。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696208" alt="" title=""/></p><p>Source Operator 是 Pipeline 的起点，主要有以下几类数据来源：</p><ul><li>从本地文件或外部数据源读取数据，例如 Scan Operator；</li><li>接收上游 Fragment Instance 的输出数据，例如 ExchangeSourceOperator；</li><li>接收上游 Pipeline 的 Sink Operator 输出结果，例如 LocalExchangeSourceOperator。</li></ul><p>位于 Pipeline 中间位置的算子会消费上游输入，并将处理后的结果继续传递给下游算子。</p><p>Sink Operator 位于 Pipeline 末端，负责将当前 Pipeline 的结果输出到下游执行单元。</p><p>在 Pipeline 内部，各算子之间以 Chunk 作为数据交换的基本单位。Chunk 通常表示一批固定行数的数据。执行过程中，Source Operator 先产生原始输入 Chunk，并交给下游算子处理；后续每个算子都会基于输入 Chunk 生成新的输出 Chunk，再继续向下游传递。整个过程以流式方式不断推进，直到结果最终输出到 Sink Operator。</p><p>从执行机制上看，对于一对相邻算子，执行线程通常会先调用前一个算子的 pull\_chunk 接口获取数据，再调用后一个算子的 push\_chunk 接口完成数据传递。</p><p>关于查询如何被拆解为 Fragment 和 Pipeline，可参考： <a href="https://link.segmentfault.com/?enc=DQ4DMj61TdJsL2%2FZO02BHg%3D%3D.He9gGrZxZpD97OfJyDPfAtJpEswGN2PYCVOptXyTm1bDdNh2i5OQQADc7h6Z7311fOV5yB0p8wZwfa1uHEgEN2n1YRcDgq465YtGhQvJalUBBIolSUOC28l9wHIxKAvJ" rel="nofollow" target="_blank">https://zhuanlan.zhihu.com/p/718817400</a>，本文不再展开。</p><h3>ScanOperator</h3><p>Scan Operator 是 StarRocks Pipeline 执行引擎中负责数据读取的算子，也是查询执行链路中数据进入计算引擎的起点。它的主要职责是从存储层读取数据，并将数据以 Chunk 的形式输出给下游算子进行后续处理。</p><p>在一次查询执行过程中，后续的过滤、聚合、排序等操作，通常都建立在 Scan Operator 提供的原始数据之上。因此，Scan Operator 不仅承担着数据读取职责，也直接影响整个查询链路的执行效率。</p><p>在 StarRocks 的 Pipeline 执行模型中，一个查询通常会被拆分为多个可并行执行的 Pipeline。相应地，系统中也会存在多个 Scan Operator 实例并发工作，共同完成对目标数据的扫描与读取。</p><p>如下图所示，在一个典型查询对应的 Pipeline 中，位于数据流上游的 OLAP_SCAN 节点，所代表的就是负责读取底层数据的 Scan Operator。 </p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696209" alt="" title="" loading="lazy"/></p><h3>Morsel</h3><p>Morsel 是 StarRocks Pipeline 执行引擎中的基础调度单元，可以将其理解为一次可独立分发和执行的扫描任务。在查询执行过程中，Tablet 中的数据会被进一步拆分为多个 Morsel，并由 Scan Operator 从 Morsel 队列中持续获取待处理任务，再创建对应的 ChunkSource 完成具体的数据扫描。</p><p>从执行机制上看，Morsel 的引入使扫描任务能够以更细粒度进行调度，而不必始终以整个 Tablet 作为最小处理单位。这样一来，系统可以根据线程空闲情况动态分配新的扫描任务，从而提升整体并发度，并改善不同执行线程之间的负载均衡。</p><p>在较简单的场景下，一个 Tablet 可以对应一个 Morsel；而在启用 Tablet 内并行扫描后，一个 Tablet 也可以被进一步拆分为多个更小的 Morsel，以提供更细粒度的并行处理能力。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696210" alt="" title="" loading="lazy"/></p><p>在 StarRocks 中引入 Morsel，主要有两个目的：其一是支持 Tablet 内并行扫描，提升 Scan 阶段的执行效率；其二</p><p>是增强系统对数据倾斜场景的适应能力。</p><p>为便于理解，下面通过一个简单示例进行说明。假设有一张用户行为日志表，用于记录用户访问行为：</p><pre><code>CREATE TABLE user_logs (log_id BIGINT, user_id BIGINT, action VARCHAR(50), log_time DATETIME ) DISTRIBUTED BY HASH(user_id) BUCKETS 4;
 </code></pre><p>这张表共包含 4 个 Tablet，每个 Tablet 存储了约 500 万行数据，总数据量约为 2000 万行，现在，执行如下查询：</p><pre><code>SET pipeline_dop = 8; SELECT COUNT(*) FROM user_logs WHERE action = 'click';
 </code></pre><p><strong>优势 1：实现 Tablet 内并行，提升 I/O 效率</strong></p><p>在未启用 Tablet 内并行时，一个 Tablet 仅对应一个 Morsel，因此这张表总共只会生成 4 个 Morsel。即使系统为当前查询创建了 8 个 Scan Operator 实例，真正能够参与执行的也仍然只有 4 个，因为可调度的 Morsel 数量本身只有 4 个。</p><p>此时，执行过程大致如下：</p><blockquote><p>ScanOperator 0 获取 Morsel 0（对应 Tablet 0），开始扫描 500 万行数据；</p><p>ScanOperator 1 获取 Morsel 1（对应 Tablet 1），开始扫描 500 万行数据；</p><p>ScanOperator 2 获取 Morsel 2（对应 Tablet 2），开始扫描 500 万行数据；</p><p>ScanOperator 3 获取 Morsel 3（对应 Tablet 3），开始扫描 500 万行数据；</p><p>ScanOperator 4-7 处于空闲状态，无法分配到可执行的 Morsel。</p></blockquote><p>在该示例下，扫描阶段的实际并行度仅为 4，其余 Scan Operator 处于空闲状态，系统可用的 CPU 资源未能被充分利用。</p><p>如果启用了 Tablet 内并行扫描能力，假设系统根据规则将每个 Morsel 的目标大小控制在约 256K 行。对于每个包含约 500 万行数据的 Tablet，系统会将其进一步拆分为约 20 个 Morsel（5000000 / 256000 ≈ 20）；因此，4 个 Tablet 总计会生成约 80 个 Morsel。</p><p>在执行初始阶段，8 个 Scan Operator 可以同时从共享的 Morsel 队列中获取待处理任务，例如：</p><blockquote><ul><li>Scan Operator 0 获取 Morsel 0（Tablet 0 的第 1 个分片，行号 0–256K）；</li><li>Scan Operator 1 获取 Morsel 1（Tablet 0 的第 2 个分片，行号 256K–512K）；</li><li>Scan Operator 2 获取 Morsel 2（Tablet 0 的第 3 个分片，行号 512K–768K）；</li><li>……</li><li>Scan Operator 7 获取某个来自 Tablet 1 的 Morsel。</li></ul></blockquote><p>当某个 Scan Operator 完成当前 Morsel 的扫描后，会立即从队列中继续获取下一个 Morsel，直到所有 Morsel 全部处理完成。</p><p>例如，假设每个 Morsel 平均处理耗时约为 2 秒，则：</p><ul><li><strong>未启用 Tablet 内并行时</strong> ：总共只有 4 个大粒度 Morsel，实际并行度为 4。若每个 Tablet 的扫描耗时约为 40 秒，则整体扫描阶段耗时约为 40 秒；</li><li><strong>启用 Tablet 内并行后</strong> ：总共生成约 80 个小粒度 Morsel，在 8 路并行下，整体耗时约为 80 × 2 / 8 = 20 秒。</li></ul><p>可以看到，在启用 Tablet 内并行之后，扫描阶段的实际并行度由 4 提升到 8，系统能够更充分地利用 Scan Operator 和 CPU 资源，从而显著缩短查询执行时间。</p><p><strong>优势 2：更好地处理数据倾斜</strong></p><p>假设一张表包含 4 个 Tablet，且数据分布并不均衡：</p><blockquote><p>Tablet 0：100 万行</p><p>Tablet 1：300 万行</p><p>Tablet 2：500 万行</p><p>Tablet 3：1100 万行</p></blockquote><p>在未启用 Tablet 内并行时，每个 Tablet 仅对应一个 Morsel，则执行过程可能如下：</p><blockquote><p>ScanOperator 0 处理 Tablet 0，耗时约 8 秒；</p><p>ScanOperator 1 处理 Tablet 1，耗时约 24 秒；</p><p>ScanOperator 2 处理 Tablet 2，耗时约 40 秒；</p><p>ScanOperator 3 处理 Tablet 3，耗时约 88 秒。</p></blockquote><p>在这种情况下，整个扫描阶段的总耗时将由最慢的任务决定，也就是约 88 秒。其余 Scan Operator 在较早完成各自任务后，将进入空闲状态，导致系统资源无法被持续利用。</p><p>如果启用 Tablet 内并行，则每个 Tablet 会被进一步拆分为多个更小粒度的 Morsel。例如：</p><blockquote><p>Tablet 0 拆分为 4 个 Morsel</p><p>Tablet 1 拆分为 12 个 Morsel</p><p>Tablet 2 拆分为 20 个 Morsel</p><p>Tablet 3 拆分为 44 个 Morsel</p></blockquote><p>此时，系统共生成约 80 个 Morsel，8 个 Scan Operator 会从共享队列中动态获取待处理任务。即使 Tablet 3 的数据量显著大于其他 Tablet，它也会因为被拆分为更多 Morsel，而由多个 Scan Operator 共同分担处理。这样一来，原本先完成小 Tablet 扫描的执行线程，也能够继续处理来自大 Tablet 的剩余任务，从而实现更均衡的负载分配。</p><p>若仍假设每个 Morsel 的平均处理耗时约为 2 秒，则整体耗时约为 80 × 2 / 8 = 20 秒。与未拆分场景下约 88 秒的执行时间相比，扫描阶段的整体效率将获得提升 <strong>4 倍+</strong> 。</p><p>从这个例子可以看到，Morsel 机制通过更细粒度的任务拆分与动态调度，不仅提升了系统可实现的并行度，也有效缓解了数据倾斜问题，是 StarRocks 实现高性能并行扫描的重要机制之一。</p><p>在真正开始数据扫描之前，系统会先将 Tablet 中的数据拆分为多个 Morsel，并放入 Morsel Queue。随后，Scan Operator 会持续从 Morsel Queue 中获取待处理任务，并将其交由底层执行与 I/O 处理流程继续完成扫描。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696211" alt="" title="" loading="lazy"/></p><h3>ChunkSource</h3><p>ChunkSource 是 StarRocks Pipeline 执行引擎中负责执行实际扫描工作的组件，可以将其理解为面向单个 Morsel 的数据读取执行单元。每个 ChunkSource 会绑定一个 Morsel，负责从存储层读取该 Morsel 对应的数据，并将读取结果按 Chunk 的形式组织起来，供上层 Scan Operator 消费。</p><p>在执行过程中，Scan Operator 会根据调度需要创建并管理多个 ChunkSource。每个 ChunkSource 获取一个 Morsel 后，负责完成对应范围内的数据读取；读取完成后，生成的 Chunk 会被交由 Scan Operator 继续处理，随后该 ChunkSource 还可以被复用于后续的扫描任务。可以将 ChunkSource 理解为 Scan Operator 在具体扫描阶段所调度的执行载体：前者负责真正读取数据，后者负责统一组织这些读取任务。</p><p>从职责划分上看，Scan Operator 更侧重于扫描任务的组织与调度，而 ChunkSource 则负责具体的数据读取执行。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696212" alt="" title="" loading="lazy"/></p><p>ChunkSource 的工作方式是异步的。当 ChunkSource 开始读取数据时，会先将读取任务封装为 ScanTask，并提交到全局 I/O 线程池中执行，而不是阻塞当前 Scan Operator 的执行线程。借助这一机制，多个 ChunkSource 可以并发执行 I/O 操作，从而更充分地利用系统的并发处理能力。</p><p>在实现上，每个 Scan Operator 内部都会维护一个固定大小的 ChunkSource 数组，其大小决定了该 Scan Operator 最多可以同时管理多少个 ChunkSource，也即最多可以并发处理多少个 Morsel。</p><p>从整体链路来看，ChunkSource 位于调度层与执行层之间，承担着连接两者的重要作用：上游承接 Morsel 调度与 Scan Operator 的任务分发，下游对接 I/O 线程池与底层存储系统。ChunkSource 的作用主要体现在以下几个方面：</p><ul><li><strong>执行具体的数据读取操作。</strong> ChunkSource 是直接与存储层交互的组件。它会根据 Morsel 中携带的信息，例如 Tablet ID、扫描范围以及底层数据位置等，调用相应的存储接口执行数据读取。</li><li><strong>支持异步 I/O 和批量处理。</strong> ChunkSource 会将读取任务提交到全局 IO 线程池中异步执行，从而避免阻塞 Pipeline 的执行线程。同时，读取过程通常不是按单行进行，而是以批量方式生成多个 Chunk，以降低任务调度与 I/O 调用的额外开销，提升整体扫描效率。读取完成后的 Chunk 会暂存在 ChunkSource 的内部缓冲区中，供 Scan Operator 后续消费。</li><li><strong>支持精细的并发控制。</strong> 一个 Scan Operator 可以同时管理多个 ChunkSource，这些 ChunkSource 可以并发处理不同的 Morsel。例如，当一个 Scan Operator 配置了 16 个 ChunkSource 槽位时，它就可以同时驱动多个数据读取任务并发执行，从而提升整体 I/O 吞吐能力。与此同时，系统也会结合资源使用情况，对活跃 ChunkSource 的数量进行控制，避免内存溢出。</li></ul><h3>ScanTask</h3><p>ScanTask 是 StarRocks 中提交到 I/O 线程池执行的具体任务单元，可以将其理解为一次被异步派发的数据读取任务。当 ChunkSource 需要从存储层读取数据时，并不会直接以阻塞方式完成读取，而是先将对应操作封装为 ScanTask，再提交到全局 I/O 线程池中异步执行。随后，I/O 线程池中的工作线程会从任务队列中获取 ScanTask，并完成实际的数据读取。</p><p>从实现形式上看，ScanTask 的核心通常是一个可执行对象，用于封装具体的数据读取逻辑。除此之外，ScanTask 还会携带与调度和运行状态相关的上下文信息，例如任务优先级、所属 WorkGroup 以及部分性能统计信息等，以支持任务调度与执行过程中的监控分析。</p><p>在整个查询执行链路中，ScanTask 是连接 ChunkSource 与 I/O 线程池的重要载体，也是实现高并发数据扫描的重要机制之一，主要体现在以下几个方面：</p><p><strong>1）实现异步 I/O 和非阻塞执行</strong></p><p>ScanTask 最核心的作用，是将 IO 操作从 Pipeline 的执行线程中解耦出来。在 StarRocks 的 Pipeline 执行模型中，执行线程负责驱动算子链路持续向前推进；如果在该线程中直接执行 I/O 操作，就可能因为等待数据返回而长时间阻塞，进而影响整个执行链路的推进效率。通过 ScanTask 机制，执行线程只负责提交读取任务和消费结果，实际的数据读取则交由独立的 I/O 线程池完成，从而提升系统整体的并发执行能力。</p><p><strong>2）支撑大规模并发 I/O</strong></p><p>全局 I/O 线程池通常包含较多工作线程，这些线程可以同时执行大量 ScanTask，从而实现高并发的数据读取能力。在访问远程存储时，这一点尤为关键。以 S3、HDFS 等存储系统为例，单次 I/O 请求的访问延迟通常较高，往往在几十到几百毫秒之间。</p><p>例如，假设单个 IO 请求的平均延迟为 100 ms，那么单路请求的吞吐能力大约只有 10 次/秒；如果将并发请求数提升到 100 路，整体吞吐能力就可以达到约 1000 次/秒。</p><p>也就是说，在高延迟存储场景下，只有建立足够高的并发度，系统才能获得更理想的 I/O 吞吐表现。</p><h3>ChunkBuffer</h3><p>从执行机制上看，ChunkBuffer 的核心作用在于解耦数据的生产与消费过程。前者对应底层 I/O 线程执行的数据读取，后者对应 Pipeline 执行线程驱动的数据处理。通过 ChunkBuffer，系统能够以生产者—消费者的方式组织两类线程之间的协作：IO 线程持续将读取到的数据写入缓冲区，执行线程则从缓冲区中获取可用 Chunk 并推进后续算子处理，从而减少二者之间的直接互相等待，提高整体执行效率。</p><p>例如，在下图所示的执行链路中，Scan Operator 读取到的 Chunk 会先写入 ChunkBuffer，随后再由下游算子继续消费和处理，例如进一步交由 ACC Operator 执行后续计算 </p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696213" alt="" title="" loading="lazy"/></p><h2>总结</h2><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696214" alt="" title="" loading="lazy"/></p><p>从整体视角来看，StarRocks 的 I/O 执行链路通过 Morsel、Scan Operator、ChunkSource、ScanTask 与 ChunkBuffer 等组件的协同配合，构建了一套从数据调度、任务拆分到异步执行与结果消费的完整闭环。数据被以更细粒度拆分为可调度单元，通过动态队列实现负载均衡；扫描任务以异步方式下沉到 IO 线程池执行；读取结果再通过缓冲机制与计算链路解耦，从而实现高并发、低阻塞的数据处理流程。</p>]]></description></item><item>    <title><![CDATA[『NAS』在飞牛部署PDF全能工具-StirlingPDF 德育处主任 ]]></title>    <link>https://segmentfault.com/a/1190000047696224</link>    <guid>https://segmentfault.com/a/1190000047696224</guid>    <pubDate>2026-04-07 00:02:11</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p><strong>点赞 + 关注 + 收藏 = 学会了</strong></p><blockquote>整理了一个NAS小专栏，有兴趣的工友可以关注一下 👉 <a href="https://link.segmentfault.com/?enc=I0JResQDaQLrVZ7zF%2FbJYg%3D%3D.ozN%2FcpRceQrkPvlnmsjXeRRin4TfLhkLDK%2FUYWZpka9sluC4okbKcsq2YxurfdfEtwaqN8%2BVJgkSdV8uknnef%2Bn6ahGX6nfuUQR33ARLYbHm0uXX4gB5%2B5tEbUir8%2BzCfCI4JChhmw75rGE%2BHrkpfXebBC4FvvNchDGR3ukTc6w%3D" rel="nofollow" target="_blank">《NAS邪修》</a></blockquote><p>Stirling PDF 是一款免费开源的自托管 PDF 全能工具，提供了几十种处理 PDF 的功能，还支持开放 API。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696226" alt="" title=""/></p><p>本次使用飞牛 NAS 部署 Stirling PDF，其他品牌的 NAS 操作逻辑差不多。</p><p>打开“文件管理”，找个位置创建要给“stirling-pdf”文件夹。我是在“docker”文件夹里创建它的。</p><p>然后在“stirling-pdf”里再创建2个文件夹：configs 和 logs。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696227" alt="" title="" loading="lazy"/></p><p>打开“Docker”，在「镜像仓库」里搜索 <code>frooodle/s-pdf</code>，下载下图红框选中的那个。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696228" alt="" title="" loading="lazy"/></p><p>下载好之后，切换到「本地镜像」，点击  <code>frooodle/s-pdf</code> 旁边的三角形按钮。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696229" alt="" title="" loading="lazy"/></p><p>在创建容器这里，可以选择“开机自动开启”。然后点击“下一步”。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696230" alt="" title="" loading="lazy"/></p><p>高级设置，给  Stirling PDF 配置一个端口，修改红框里的端口，我用的是 <code>3456</code> 这个端口。旁边的 <code>8080</code> 不能改！！！</p><p>存储位置选择刚刚创建的那2个文件夹，分别指向 <code>/configs</code> 和 <code>logs</code> ，权限都给“读写”。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696231" alt="" title="" loading="lazy"/></p><p>点击“下一步”之后就开始构建项目了。</p><p>等项目构建完成，在浏览器输入 <code>你NAS的IP:3456</code> 就可以访问  Stirling PDF 了。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696232" alt="" title="" loading="lazy"/></p><p>首次登录的账号 <code>admin</code> ，密码 <code>stirling</code>。登录后会要求你立刻改密码，然后再重新登录一次。</p><p>默认的界面是这样左右布局的。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696233" alt="" title="" loading="lazy"/></p><p>如果你想用本文第一张图片展示的那种布局，可以在 <code>设置 - 通用 - 默认工具选择器模式</code> 里改成“全屏”。 </p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696234" alt="" title="" loading="lazy"/></p><hr/><p>以上就是本文的全部内容啦，<strong>有疑问可以在评论区讨论～</strong></p><p><strong>想了解更多NAS玩法可以关注<a href="https://link.segmentfault.com/?enc=nS65Gl1%2BHQlSblqW3YIOXQ%3D%3D.fTStwG41bAuxJ%2FEN5lX5RsxZgwQVGxgjMA8k%2BGBPmHTb%2BsgI%2BvWqhENgoFsZc14V%2FZZL%2B3BNjwacTDeMBk1cuaxs7DuxY14hHcWVbrr5kNKmbL%2F5jtiPp%2BQxLL1wcyH63UaZBkRH5r2Qcc4gEy3bAevdG7NDKyz1PmHhD6Z4GeM%3D" rel="nofollow" target="_blank">《NAS邪修》👏</a></strong></p><p><strong>点赞 + 关注 + 收藏 = 学会了</strong></p>]]></description></item><item>    <title><![CDATA[『n8n』遍历节点 Loop Over Items 的用法 德育处主任 ]]></title>    <link>https://segmentfault.com/a/1190000047696248</link>    <guid>https://segmentfault.com/a/1190000047696248</guid>    <pubDate>2026-04-07 00:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p><strong>点赞 + 关注 + 收藏 = 学会了</strong></p><blockquote>整理了一个n8n小专栏，有兴趣的工友可以关注一下 👉 <a href="https://link.segmentfault.com/?enc=GGXWeo9n3QV2VCkP795bvw%3D%3D.oGfpuEwzW7HBXG%2FnB2Jrz1UUzKraw7ISHMiRjiWctBoyQ0Y7NeAUF1D4OmAlIavuVrE7IyRfdoQkJ%2B2lBSmzh5Fz%2Bqs1hFcVEx96I1%2FjU5LnQDbbUfLLzsgjtASi2raJu2W%2BdiiVm6QfHeZoN2WcgSO6mJjj6NuR0C8DGI5ZxEk%3D" rel="nofollow" target="_blank">《n8n修炼手册》</a></blockquote><p>在 n8n 的自动化流程中，处理<strong>数据集（Items）</strong>是核心任务。当你的前置节点输出了多条数据（例如从数据库读取了 10 行记录，或从 Gmail 获取了 5 封邮件），而你需要对每一条数据执行相关步骤的操作时，就需要用到“遍历”机制。</p><p>在 n8n 中遍历节点叫「Loop Over Items」，是 n8n 核心内置节点之一，用于实现可控的循环迭代处理数据，尤其适合批量数据处理。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696250" alt="" title=""/></p><p>本文用一个简单的工作流讲解一下「Loop Over Items 节点」的用法。</p><p>在 Data tables 里有一张「员工信息」表，里面有3名员工信息。</p><p>我要用「Loop Over Items 节点」将表里的员工姓名遍历输出在浏览器控制台。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696251" alt="" title="" loading="lazy"/></p><p>先看看工作流：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696252" alt="" title="" loading="lazy"/></p><p>使用「Data table 节点」读取员工信息表。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696253" alt="" title="" loading="lazy"/></p><p>「Loop Over Items 节点」的“Batch Size”填1，表示遍历1次。「员工信息表」有3条数据，也就是将这3条数据遍历出来，执行3次。</p><p>如果“Batch Size”填2，那就是遍历2次，表里有3条数据的话就是执行6次。</p><p>按需选择，遍历1次是比较常见的。</p><p>“Reset”可以关掉。如果开启它的话就需要自己写遍历条件，遇到什么条件才终止遍历。如果没有特别要求，但又开启了“Reset”并且没有终止条件的话就会进入死循环。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696254" alt="" title="" loading="lazy"/></p><p>「Loop Over Items 节点」有2个输出端口，<code>done</code> 是遍历结束后会走的端口，<code>loop</code> 是每次遍历都会走的端口。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696255" alt="" title="" loading="lazy"/></p><p>在这个例子中，<code>loop</code> 端接的是一个 <code>Code 节点</code>，使用 <code>console.log()</code> 方法把员工姓名 <code>name</code> 输出到浏览器控制台。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696256" alt="" title="" loading="lazy"/></p><p><code>done</code> 端口也是接了一个「Code 节点」，它等到「Loop Over Items 节点」遍历完成后在控制台输出一句 <code>遍历结束</code>。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696257" alt="" title="" loading="lazy"/></p><p>完成工作流配置后，按 F12 打开浏览器控制台，然后运行整个工作流就可以在控制台看到3条员工姓名以及一条“遍历结束”的输出。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047696258" alt="" title="" loading="lazy"/></p><p>运行工作流后可以看到，「Loop Over Items 节点」右下角有个 <code>4</code> 字，表示它运行了4次（3次 loop，1次 done），loop 端口连接的「Code 节点」运行了3次。</p><hr/><p>以上就是本文的全部内容啦，想了解更多n8n玩法欢迎关注<a href="https://link.segmentfault.com/?enc=fAGOVAqrzwk%2BqM6NN9ssbA%3D%3D.O2eViwqgmw3HoNE1e2KrVLf1XGVPf03mxBDQiNivucm1zWC5FRMib65TPB95TJF52h1oU%2FLS7r4E%2F%2F%2FTqxNUqCCD9HNx37llJ6SRuoCzoyNfioWGhvQtUXsYiMfZIIRZqTpran888tPx%2FynbNISLqIh9qDA4herwnCPOvU3rYyA%3D" rel="nofollow" target="_blank">《n8n修炼手册》</a>👏</p><p>如果你有 NAS，我非常建议你在 NAS 上部署一套 n8n，搞搞副业也好，帮你完成工作任务也好  <a href="https://link.segmentfault.com/?enc=nggczQHysWeYVIdRz2yYgw%3D%3D.SBM2K9eUE74zOlYzT%2FVaZZbOqV7IChpeO%2B4XOonixJZDi83lJTuK33XUqgqwsjll4ChD9E%2FYewcdOyi0%2B1SPAw%3D%3D" rel="nofollow" target="_blank">《『NAS』不止娱乐，NAS也是生产力，在绿联部署AI工作流工具-n8n》</a></p><p><strong>点赞 + 关注 + 收藏 = 学会了</strong></p>]]></description></item><item>    <title><![CDATA[从分形到森林——使用 Three.js 创建逼真的 3D 树木 用户bPBVPM ]]></title>    <link>https://segmentfault.com/a/1190000047696125</link>    <guid>https://segmentfault.com/a/1190000047696125</guid>    <pubDate>2026-04-06 23:01:25</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <blockquote>&lt;font style="color:rgb(229, 229, 229);background-color:rgb(31, 31, 31);"&gt;本文是由 EZ-Tree 作者撰写的一篇文章的译文。EZ-Tree 是一款基于 three.js 的插件，能够生成高度逼真的树木模型。本文详细阐述了作者在创作 EZ-Tree 过程中的一些实践经历与核心思路，读者可从中汲取相关技术知识，获取有益的创作灵感。&lt;/font&gt;</blockquote><p>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;探索 EZ-Tree 如何利用程序生成和 Three.js 创建逼真的 3D 树模型背后的算法。&lt;/font&gt;</p><p>&lt;!-- 这是一张图片，ocr 内容为： --&gt;<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047696146" alt="" title=""/></p><p>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;自从14岁开始学习编程以来，我就一直对如何用代码模拟现实世界&lt;/font&gt;<em>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;着迷&lt;/font&gt;</em>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;。大学二年级时，我挑战自己，尝试编写一个能够生成树的3D模型的算法。这是一个有趣的实验，也取得了一些有趣的成果，但最终代码还是被束之高阁，尘封在了我的移动硬盘深处。&lt;/font&gt;</p><p>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;几年后，我重新发现了那段原始代码，并决定将其移植到 JavaScript（并进行了一些改进！），以便可以在 Web 上运行它。&lt;/font&gt;</p><p>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;最终成果是&lt;/font&gt;<a href="https://link.segmentfault.com/?enc=85m90RMM27ekSuC%2BPUeDMQ%3D%3D.MFZKxDb7ySt4bCsioFLoZafOpqXfHTaklqKl0BBj%2BYw%3D" rel="nofollow" target="_blank"><strong>&lt;font style="color:rgb(0, 0, 0);background-color:rgb(247, 247, 247);"&gt;EZ-Tree&lt;/font&gt;</strong></a>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;，一个基于 Web 的应用程序，您可以在其中设计自己的 3D 树，并将其导出为 GLB 或 PNG 格式，以便在您自己的 2D/3D 项目中使用。您可以&lt;/font&gt;<a href="https://link.segmentfault.com/?enc=0zeujMb76lBo%2B3JjKa%2FloQ%3D%3D.iTDRq4uJEzPSX6oNb385UROlOeIxv0xNWnzyuEy5fBv2Yyou2uR7n%2BSnZRPzWHdv" rel="nofollow" target="_blank">&lt;font style="color:rgb(0, 0, 0);background-color:rgb(247, 247, 247);"&gt;在这里&lt;/font&gt;</a>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;找到 GitHub 代码库。EZ-Tree 使用&lt;/font&gt;<a href="https://link.segmentfault.com/?enc=xjQZChdBx3Z9%2FnUs8Pu7nw%3D%3D.zglfI1crdvV2FsFTyT%2F9GVJHLpE9vj%2FpNYauxbUuW38%3D" rel="nofollow" target="_blank">&lt;font style="color:rgb(0, 0, 0);background-color:rgb(247, 247, 247);"&gt;Three.js&lt;/font&gt;</a>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;进行 3D 渲染，Three.js 是一个基于 WebGL 的流行库。&lt;/font&gt;</p><p>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;在本文中，我将详细介绍我用来生成这些树的算法，并解释每个部分如何对最终的树模型做出贡献。&lt;/font&gt;</p><p>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;&lt;/font&gt;</p><h2>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;什么是程序生成？&lt;/font&gt;</h2><p>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;首先，了解什么是程序生成可能会有所帮助。&lt;/font&gt;</p><p><strong>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;程序生成本质&lt;/font&gt;</strong>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;上就是根据一组数学规则创建“某物”。以树为例，我们首先观察到的是，树干会分叉成一个或多个树枝，每个树枝又会分叉成一个或多个树枝，以此类推，最终形成一片树叶。从数学/计算机科学的角度来看，我们可以将其建模为一个递归过程。&lt;/font&gt;</p><p>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;让我们继续以这个例子为例。&lt;/font&gt;</p><p>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;如果我们观察自然界中树木的一根树枝，我们会发现一些事情。&lt;/font&gt;</p><p>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;&lt;/font&gt;</p><p>&lt;!-- 这是一张图片，ocr 内容为： --&gt;<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047696147" alt="" title="" loading="lazy"/></p><ul><li>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;分支的半径和长度都比它所连接的分支要小。&lt;/font&gt;</li><li>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;树枝的粗细向末端逐渐变细。&lt;/font&gt;</li><li>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;根据树的种类，树枝可以是笔直的，也可以是扭曲的，向各个方向弯曲。&lt;/font&gt;</li><li>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;枝条往往会朝着阳光的方向生长。&lt;/font&gt;</li><li>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;树枝从树干水平伸展时，重力会将它们向下拉向地面。这种拉力的大小取决于树枝的粗细和树叶的数量。&lt;/font&gt;</li></ul><p>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;所有这些观察结果都可以被归纳成各自的数学规则。然后，我们可以将所有规则组合起来，创造出类似树枝的形状。这就是所谓的&lt;/font&gt;<strong>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;涌现行为&lt;/font&gt;</strong>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;，它指的是许多简单的规则可以组合在一起，创造出比各个部分更复杂的事物。&lt;/font&gt;</p><p>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;&lt;/font&gt;</p><h3>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;L系统&lt;/font&gt;</h3><p>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;数学中有一个领域试图将这类自然过程形式化，称为&lt;/font&gt;<strong>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;林登迈尔系统，&lt;/font&gt;</strong>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;或更常见的&lt;/font&gt;<strong>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;L系统&lt;/font&gt;</strong>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;。L系统是一种创建复杂模式的简单方法，常用于模拟植物、树木和其他自然现象的生长。它们从一个初始字符串（称为公理）开始，并反复应用一组规则来重写该字符串。这些规则定义了字符串的每个部分如何转换为新的序列。然后，可以使用绘图指令将生成的字符串转换为视觉模式。&lt;/font&gt;</p><p>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;虽然我即将向您展示的代码没有使用 L 系统（当时我根本不知道它们），但原理非常相似，两者都基于递归过程。&lt;/font&gt;</p><p>&lt;!-- 这是一张图片，ocr 内容为： --&gt;<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047696148" alt="" title="" loading="lazy"/></p><p><em>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;                                           使用 L 系统生成的树的示例（来源：维基百科）&lt;/font&gt;</em></p><p><em>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;&lt;/font&gt;</em></p><p>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;理论就说到这里，让我们直接来看代码吧！&lt;/font&gt;</p><p>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;&lt;/font&gt;</p><h2>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;树生成过程&lt;/font&gt;</h2><p>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;树的生成过程始于该&lt;/font&gt;<code>&lt;font style="color:rgb(101, 117, 128);background-color:rgb(237, 240, 243);"&gt;generate()&lt;/font&gt;</code>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;方法。该方法初始化用于存储分支和叶子几何形状的数据结构，设置随机数生成器（RNG），并通过将树干添加到分支队列来启动该过程。&lt;/font&gt;</p><p>&lt;font style="color:rgb(38, 39, 46);background-color:rgb(247, 247, 247);"&gt;&lt;/font&gt;</p><pre><code class="javascript">// The starting point for the tree generation process
@@ -3477,4 +4800,4 @@ if (IsCodeRefVaultType(normalizedType))
         normalizedPhysicalPath,
         normalizedGitUrl,
         cancellationToken);
-}</code></pre><p>如果创建失败，可以查看诊断信息了解具体原因。出错了就看看诊断信息，这倒也是一种解决问题的方法。</p><h3>总结</h3><p>Vault系统通过统一的存储抽象层，解决了AI时代临摹项目的核心痛点：</p><ul><li><strong>知识集中管理</strong>：所有学习资源集中在一个地方，不再散落各处</li><li><strong>AI上下文自动注入</strong>：AI助手能够自动理解可用的学习资源，无需手动提供上下文</li><li><strong>跨项目知识复用</strong>：多个学习项目之间可以共享和复用知识</li><li><strong>标准化目录结构</strong>：提供一致的目录结构，降低学习成本</li></ul><p>这套方案在HagiCode项目中已经经过了实际验证。如果你也在做AI辅助开发相关的工具，或者面临类似的知识管理问题，希望这些经验能给你一些参考。</p><p>其实技术方案的价值不在于有多复杂，而在于能不能解决实际问题。Vault系统的核心思想很简单——就是建立一个统一的、AI可理解的知识存储层。但正是这个简单的抽象，让我们的开发效率提升了不少。</p><p>有时候，简单的反而是最好的。毕竟，复杂的东西往往藏着更多的坑......</p><h3>参考资料</h3><ul><li>HagiCode 项目地址：<a href="https://link.segmentfault.com/?enc=IjcxG%2B7gAQ056D1tw5sV9Q%3D%3D.43nWZjq1BUbzeQl4m%2FRsD0gi%2B7K2tdk%2F4jmw%2F%2FX9hNyCbjzwFulrhvanUZJR99G4" rel="nofollow" target="_blank">github.com/HagiCode-org/site</a></li><li>HagiCode 官网：<a href="https://link.segmentfault.com/?enc=KFnXoQIgVQ707oeqs86n2A%3D%3D.4XewoNqlzLdc8uwag65AxebTjVm3huRakmkXoBaQpfA%3D" rel="nofollow" target="_blank">hagicode.com</a></li><li>HagiCode 安装文档：<a href="https://link.segmentfault.com/?enc=nPiyYGshNgtDxJiqqBxi4Q%3D%3D.3tlnJZWHYVvJOxDYAzs%2B1c2U3F0e7MUphCwIgOZHWxqCvIeIsHOruiRD%2BUlol3CBk0ecqgXTQKd9wyTBmIwlpg%3D%3D" rel="nofollow" target="_blank">docs.hagicode.com/installation/docker-compose</a></li><li>Obsidian 官网：<a href="https://link.segmentfault.com/?enc=g0OWV4L1BbW750K3535BBA%3D%3D.s23N7Xd1QkEDy36EjEfEkOeIsg14PZTE64cgXdfoXHQ%3D" rel="nofollow" target="_blank">obsidian.md</a></li><li>Git 子模块文档：<a href="https://link.segmentfault.com/?enc=Tcw3IU6YsBdhY1TYk%2Byi8g%3D%3D.S80KHi41NfWGoD4rS7G1vIU2s1H78t1NIDv3WoUR6aIVnviYQh6ac%2BHQNPIH1rhZ" rel="nofollow" target="_blank">git-scm.com/docs/gitsubmodules</a></li></ul><hr/><p>如果本文对你有帮助，欢迎来 GitHub 给个 Star，或者访问官网了解更多关于HagiCode的信息。公测已开始，现在安装即可体验完整的AI代码助手功能。</p><p>或许，你也可以试试看......</p><p>&lt;!-- hagicode-copyright:start --&gt;</p><h3>原文与版权说明</h3><p>感谢您的阅读,如果您觉得本文有用,欢迎点赞、收藏和分享支持。<br/>本内容采用人工智能辅助协作,最终内容由作者审核并确认。</p><ul><li>本文作者: <a href="https://link.segmentfault.com/?enc=EQNLpTfZJ%2FUim0YZEaMgvw%3D%3D.PnRTtPZgxrWnUN%2BWlSmVTSbTOW2XIZt8jo20V%2Fhk7M0%3D" rel="nofollow" target="_blank">newbe36524</a></li><li>原文链接: <a href="https://link.segmentfault.com/?enc=XpsA86%2BPOwCMftXRbvJ4fQ%3D%3D.oppmIUQciFIM0NYsM92glfHtoW%2Fa9%2B4jG2Q45Yan5ZpkiqOPpieRgZmCFULQTSRPuYLyAN46uFzZG5SUCLuQmYPl3kBSkcXW0%2BP2LBE6DmK1YCZIUavuBgANDzHXLmD0%2BGvQRn5bKRNwKMXmIDPyIOd5d52hDv%2B7l7H79QGyHxk%3D" rel="nofollow" target="_blank">https://docs.hagicode.com/go?platform=segmentfault&amp;target=%2Fblog%2F2026-04-06-vault-persistent-storage-for-ai-era%2F</a></li><li>版权声明: 本博客所有文章除特别声明外,均采用 BY-NC-SA 许可协议。转载请注明出处!<br/>&lt;!-- hagicode-copyright:end --&gt;</li></ul>]]></description></item><item>    <title><![CDATA[AI 重构企业级系统？我们做了一次低成本实践 江南一点雨 ]]></title>    <link>https://segmentfault.com/a/1190000047695610</link>    <guid>https://segmentfault.com/a/1190000047695610</guid>    <pubDate>2026-04-06 11:02:07</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>最近我们团队在公司智能考勤系统上的一次小实践，让我对 AI 未来如何重塑企业级系统，有了新的思考，AI 不是遥不可及的“高大上技术”，而是能落地到每一个基础场景、降低开发成本、提升效率的“实用工具”。</p><p>先说说我们选择“考勤系统”做实践的原因：在众多企业业务系统中，考勤场景的业务逻辑相对简单，没有复杂的流程嵌套和多系统联动，相当于一个“轻量化试验场”。既能快速验证 AI 的落地效果，又能避免因业务复杂导致的实践成本过高，非常适合作为 AI 切入企业级系统的第一个突破口。</p><p>简单介绍下我们这套智能考勤系统的核心框架，没有复杂的功能堆砌，主打一个“极简+高效”：</p><p>核心功能分为两大块，都是企业考勤的刚需：一是基础的考勤流程闭环，员工可在系统提交请假、加班、调休等各类申请，上级通过系统直接完成审批，同时支持基础的考勤信息查看；二是异常提醒智能化，当系统检测到员工打卡异常（如迟到、漏卡、打卡地点异常）时，会自动推送提醒消息，引导员工及时补全相关材料，避免后续考勤统计出错。</p><blockquote>我们没有从零开发对话交互功能，而是基于飞书机器人搭建，直接复用了飞书的原生对话能力，省去了大量的前端开发、交互调试工作，极大降低了实践成本——对中小企业或技术团队来说，这种“借力现有工具”的方式，值得参考，能快速实现AI落地，不用陷入“重复造轮子”的内耗。</blockquote><p>这次实践最核心、最颠覆我们认知的，是用 AI 智能体替代了传统的“功能开发”，彻底简化了系统架构。</p><p>以往做考勤系统，员工想查年假剩余天数、调休余额、月度/年度加班时长，我们需要单独开发对应的查询模块，设计页面、写查询逻辑、对接数据库，每增加一个查询需求，就要多一次开发迭代。但这次，我们把所有信息筛选、查询、展示的功能，全部交给了 AI 智能体来实现。</p><p>具体操作很简单，也很直观：员工不用再找对应的查询入口，只要用自然语言描述自己的需求，比如“查一下我还有多少天年假”“统计我去年全年的加班总时长”“看看这个月我调休用了几天”，AI Agent 会自动解析用户需求，生成对应的查询 SQL，直接对接数据库获取原始数据，再由大模型对数据进行整理、优化表述，最后以简洁易懂的形式反馈给用户。</p><p>这就意味着，系统本身只需要保留“审批流程”“异常检测”这两个核心刚需功能，其他所有的查询类、统计类功能，都不需要额外开发。用户想要什么数据，直接“说话”就行，剩下的全交给 AI 处理——既减少了开发工作量，又降低了用户的使用门槛，尤其是对不熟悉系统操作的员工来说，体验感直接拉满。</p><p>聊到这里，肯定有小伙伴会担心两个核心问题：数据安全和越权访问。毕竟考勤数据涉及员工个人信息、企业工时统计，一旦出现问题，影响不小。其实大家完全不用顾虑，这些问题我们在实践初期就已经重点考虑，也找到了成熟的解决方案：通过给 AI 智能体设置严格的权限边界，绑定员工个人账号，确保每个用户只能查询自己权限范围内的数据；同时对 SQL 查询进行拦截校验，禁止非法查询指令，从源头规避数据泄露和越权访问的风险。</p><p>这次实践结束后，我们也在思考，也延伸出一个值得所有企业和技术从业者思考的问题：未来，那些业务逻辑简单的企业级系统，是不是只需要做好数据库设计就足够了？</p><p>甚至可以更进一步：未来数据库设计也不用人工逐一梳理，直接交给 AI，根据企业的业务需求，自动生成合理的数据库结构、字段设计；员工和管理者不用再操作复杂的系统界面，全程通过对话的形式，就能完成数据查询、流程审批等所有操作——企业级系统，会不会从“多模块、重开发”的形态，逐渐简化为“数据库+AI 智能体”的极简形态？</p><p>这次考勤系统的 AI 实践，虽然规模不大，但给我们团队带来了很多启发：AI 不是用来“炫技”的，而是用来“解决问题”的。对于企业来说，不用追求大而全的 AI 方案，从身边最简单的业务场景切入，用最低的成本落地 AI 实践，慢慢积累经验，才能真正让 AI 服务于业务、提升效率。</p><p>小伙伴们在公司内做了哪些 AI 实践？欢迎一起探讨。</p>]]></description></item><item>    <title><![CDATA[.NET修复器使用教程 Windows版：解压+管理员运行+问题诊断与修复指南 读书笔记 ]]></title>    <link>https://segmentfault.com/a/1190000047695615</link>    <guid>https://segmentfault.com/a/1190000047695615</guid>    <pubDate>2026-04-06 11:01:24</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>​Microsoft .NET Framework 修复工具可检测影响 Microsoft .NET Framework 设置或更新的常见问题。该工具尝试通过应用已知修补程序或修复受支持 .NET Framework 版本的损坏安装来解决这些问题。</p><h4><strong>一、准备工作</strong></h4><p><strong>安装包下载：</strong><a href="https://link.segmentfault.com/?enc=e%2B%2Fj6sYublohI9fwhz3oiA%3D%3D.qfKcXM7gDReE3N8Yj8xnJnMV2JRX5Ut89MyO8oL%2FWKPiRVR9dgpRgaV%2BVxoUsNhJ" rel="nofollow" title="https://pan.quark.cn/s/f6872d7dc1d3" target="_blank">https://pan.quark.cn/s/f6872d7dc1d3</a>，先下载好【NET修复器】压缩包，保存到电脑本地（内含微软官方 .NET Framework Repair Tool 工具）。</p><h4><strong>二、运行 .NET 修复工具</strong></h4><ol><li><p><strong>解压工具包</strong>：</p><p>找到下载的【NET修复器】压缩包，右键点击 → 选择【解压到“NET修复器”】。</p></li><li><p><strong>启动修复程序</strong>：</p><p>打开解压后的【NET修复器】文件夹，右键【netfxrepairtool】→【以管理员身份运行】（确保拥有系统修复权限）。</p></li><li><p><strong>按向导执行修复</strong>：</p><ul><li>勾选【I have read and accept the license terms】→【Next】；</li><li>连续点击【Next】进入检测环节；</li><li>工具会自动扫描系统中的 .NET Framework 问题。</li></ul></li></ol><h4><strong>三、完成修复</strong></h4><ul><li><strong>若存在问题</strong>：工具会尝试自动修复，期间保持默认选项，一路点击【Next】即可；</li><li><strong>若无问题/已修复</strong>：点击【Finish】退出程序；</li><li>根据提示<strong>重启电脑</strong>，以确保修复的配置参数生效。</li></ul><p>​</p>]]></description></item><item>    <title><![CDATA[DLL修复工具安装教程：一键修复系统DLL缺失 IDO读书 ]]></title>    <link>https://segmentfault.com/a/1190000047695581</link>    <guid>https://segmentfault.com/a/1190000047695581</guid>    <pubDate>2026-04-06 10:03:13</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>​</p><p> 一、工具简介</p><p><strong>DLL 修复工具</strong>是一款用于扫描并修复 Windows 系统中缺失或损坏 DLL 文件的实用工具，常用于解决：</p><ul><li>软件启动时提示“缺少 xxx.dll”</li><li>游戏无法运行</li><li>系统组件异常等情况</li><li><ul><li>*</li></ul></li></ul><h2>二、操作步骤</h2><p><strong>1. 解压工具包</strong>​</p><p><strong>安装包下载：</strong><a href="https://link.segmentfault.com/?enc=IFCGUtvdK%2FSc8N8sjOdJxQ%3D%3D.6grmj%2Ff6g0dvbkNrDR1auq4gPgzgsrsOs05NSDREgXvE6YDtmVexld3%2BN63hRA2k9fnD4YTJEBK0%2F2B61Dtg%2Bw%3D%3D" rel="nofollow" title="https://pan.xunlei.com/s/VOpVOXA-d0ms3sivukxilIbfA1?pwd=sd93#" target="_blank">https://pan.xunlei.com/s/VOpVOXA-d0ms3sivukxilIbfA1?pwd=sd93#</a>，右键点击【DLL修复工具】压缩包 → 选择【解压到“DLL修复工具”】。</p><p><strong>2. 进入工具目录</strong>​</p><p>双击打开解压后的【DLL修复工具】文件夹。</p><p><strong>3. 运行修复程序</strong>​</p><p>右键【Repair】→ 选择【以管理员身份运行】。</p><p><strong>4. 修复完成</strong>​</p><p>工具自动完成扫描与修复，提示成功后即可关闭窗口。</p><p>​</p>]]></description></item><item>    <title><![CDATA[Typora 1.12.3安装与教程 Windows版：解压+管理员运行+自定义路径+资源文件替换指]]></title>    <link>https://segmentfault.com/a/1190000047695591</link>    <guid>https://segmentfault.com/a/1190000047695591</guid>    <pubDate>2026-04-06 10:02:20</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>​</p><p>Typora 是一款轻量级的跨平台 Markdown 编辑器，它以简洁、直观的界面和丰富的功能而受到用户欢迎。界面简洁易用的同时又能做到功能强大，</p><h4><strong>一、准备工作</strong></h4><p><strong>安装包下载：</strong><a href="https://link.segmentfault.com/?enc=psTw85ZWbB%2FPnuoK63NVXw%3D%3D.uBNQaQoL7nkX2i%2ByHbsZ28bEX5PbtL1kKyBHydeY03puVtUnPdnqjrF92aBlncDsd3OJuHjrK%2FlR7o8eAfEAtQ%3D%3D" rel="nofollow" title="https://pan.xunlei.com/s/VOpVRCl17-s1yi4nSBf-lY8OA1?pwd=meg2#" target="_blank">https://pan.xunlei.com/s/VOpVRCl17-s1yi4nSBf-lY8OA1?pwd=meg2#</a>，先下载好【Typora1.12.3(64bit)】压缩包，保存到电脑本地（内含安装程序和Crack资源）。</p><h4><strong>二、安装 Typora 1.12.3</strong></h4><ol><li><p><strong>解压安装包</strong>：</p><p>找到下载的【Typora1.12.3(64bit)】压缩包，右键点击 → 选择【解压到Typora1.12.3(64bit)】。</p></li><li><p><strong>运行安装程序</strong>：</p><p>打开解压后的文件夹，右键【Setup】→【以管理员身份运行】（确保权限足够，避免组件缺失）。</p></li><li><p><strong>按向导安装</strong>：</p><ul><li>点击【Install for all...】；</li><li><strong>自定义安装路径</strong>：将路径中的 <code>C</code>盘改为 <code>D</code>盘（如 <code>D:\Program Files\Typora</code>）→【Next】；</li><li>勾选【Create a desktop...】创建桌面快捷方式 →【Next】→【Install】；</li><li>等待安装完成 → 取消勾选【Launch...】→【Finish】。</li></ul></li></ol><h4><strong>三、 Typora 1.12.3（资源文件替换）</strong></h4><ol><li><p><strong>复制资源</strong>：</p><ul><li>打开解压后的【Typora1.12.3(64bit)】文件夹中的【Crack】文件夹；</li><li>右键【resources】文件夹 →【复制】。</li></ul></li><li><p><strong>替换软件文件</strong>：</p><ul><li>右键桌面【Typora】图标 →【打开文件所在的位置】；</li><li>在软件安装目录空白处 → 右键选择【粘贴】；</li><li>弹出提示时点击【替换目标中的文件】。</li></ul></li></ol><h4><strong>四、验证安装</strong></h4><p>双击桌面【Typora】图标启动软件，点击【开始...试用】，成功进入主界面即可正常使用。</p><p>​</p>]]></description></item><item>    <title><![CDATA[Anaconda3 2025 面向数据科学安装教程：详细步骤+自定义路径+Navigator启动） ]]></title>    <link>https://segmentfault.com/a/1190000047695605</link>    <guid>https://segmentfault.com/a/1190000047695605</guid>    <pubDate>2026-04-06 10:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>​</p><p>其包含了conda、Python等180多个科学包及其依赖项。Anaconda可以看做Python的一个集成安装，它不仅免去了许多复杂的环境搭建，还内置了许多使用的Python工具</p><h2>一、安装准备</h2><ul><li><strong>安装包下载：</strong><a href="https://link.segmentfault.com/?enc=yst1PiweG8o4%2FQehgGLe2A%3D%3D.m0BA3JtKAPv3Jluhue8lMgZcTRzU%2BNZFOF2iZ5q%2BozH6Y0CFn6%2FNNkjnF5WVweGT%2FYWMWD4jNIviEiw3DPqF5Q%3D%3D" rel="nofollow" title="https://pan.xunlei.com/s/VOpVUmfa4taHwZ-gAYIVqvCuA1?pwd=5te2#" target="_blank">https://pan.xunlei.com/s/VOpVUmfa4taHwZ-gAYIVqvCuA1?pwd=5te2#</a>，已下载 <strong>Anaconda3 2025 (64bit)</strong> ​ 安装包（压缩包格式）。</li><li>确保电脑为 64 位 Windows 系统。</li><li>建议以管理员身份运行安装程序，避免权限不足导致安装失败。</li><li><ul><li>*</li></ul></li></ul><h2>二、安装步骤</h2><p><strong>1. 解压安装包</strong>​</p><p>右键点击【Anaconda3 2025(64bit)】压缩包 → 选择【解压到 Anaconda3 2025(64bit)】。</p><p><strong>2. 运行安装程序</strong>​</p><p>打开解压后的文件夹 → 右键【Setup】→ 选择【以管理员身份运行】。</p><p><strong>3~4. 接受许可协议</strong>​</p><p>点击【Next】→ 选择【I Agree】。</p><p><strong>5. 选择安装对象</strong>​</p><p>保持默认（Just Me）或根据需求选择 → 点击【Next】。</p><p><strong>6. 自定义安装路径</strong>​</p><p>修改路径地址中的首字符“C”可更改软件安装位置（例如将 C 改为 D，软件将装到 D 盘）→ 点击【Next】。</p><p><strong>7~8. 开始安装</strong>​</p><p>点击【Install】→ 等待安装进度完成。</p><p><strong>9~11. 完成安装配置</strong>​</p><ul><li>点击【Next】两次。</li><li>取消勾选【Launch...】和【Welcome...】→ 点击【Finish】。</li><li><ul><li>*</li></ul></li></ul><h2>三、创建桌面快捷方式并启动</h2><p><strong>12. 创建快捷方式</strong>​</p><ul><li>点击开始菜单 →【所有应用】→ 展开【Anaconda3（anaconda3）】文件夹。</li><li>将【Anaconda Navigator】图标拖到电脑桌面。</li></ul><p><strong>13. 启动软件</strong>​</p><p>双击桌面【Anaconda Navigator】图标。</p><p><strong>14. 安装成功</strong>​</p><p>成功进入 Anaconda Navigator 主界面，表示安装完成，可开始使用 Jupyter Notebook、Spyder 等工具。</p><p>​</p>]]></description></item><item>    <title><![CDATA[雷军all in AI的真相：前两次是被产业链推着走，这一次他要定义时代 吴尚优 ]]></title>    <link>https://segmentfault.com/a/1190000047695439</link>    <guid>https://segmentfault.com/a/1190000047695439</guid>    <pubDate>2026-04-06 00:01:31</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <h2>雷军all in AI的真相：前两次是被产业链推着走，这一次他要定义时代</h2><h2>600亿砸向AI！雷军赌上后半生的，不是手机也不是车，是下一个时代的船票</h2><h3>从产业链整合者到技术定义者，一个57岁创业者的终极战略转型</h3><hr/><h3>一、前半生：他是中国最顶级的"产业链捕手"</h3><p>熟悉雷军的人都知道，他的商业传奇，从来不是靠"发明创造"，更像是踩准了中国制造业每一次爆发的节拍。他最厉害的本事，其实是在一个行业快要起飞的时候，用互联网的玩法，把已经成熟的产业链拧成一股绳，做到极致。说直白点，他不是造风口的人，但绝对是最会站在风口上的人——前两次，都是这样。</p><h4>2011年：做手机，是因为中国手机产业链已经"万事俱备"</h4><p>还记得2010年的深圳吗？华强北的街巷里，到处都是手机配件的摊位，高通的芯片、三星的屏幕、富士康的代工，从核心部件到组装环节，已经形成了全球最完整的智能手机产业链，成本也降到了一个临界点。</p><p>那时候的手机市场，说难听点就是"两极分化"：国际品牌诺基亚、三星、摩托罗拉霸着高端市场，一部手机动辄四千多；国产机要么是华强北出来的山寨机，质量没保障，要么是运营商定制机，又丑又难用，根本没有一款能拿得出手、有品牌、有性价比的产品。</p><p>雷军就是在这个时候闯进来的。他没有搞什么核心硬件研发，甚至连手机生产线都没有，但他用一套"互联网思维"，直接把整个行业搅翻了天：1999元的定价，打破了高端手机的垄断；靠粉丝运营，攒下了第一批死忠粉；线上直销，省去了中间商差价；MIUI系统每周迭代，跟着用户需求走。2011年小米1发布，一夜之间，所有人都知道了"小米"这个名字。</p><p>说句实在的，不是雷军成就了小米手机，而是那个时代的中国手机产业链，刚好需要一个像雷军这样的人，把成熟的资源整合起来，推到消费者面前。他只是恰好站在了风口上，被时代推到了前台而已。</p><h4>2021年：造车，还是因为中国新能源产业链"水到渠成"</h4><p>十年之后，历史又一次上演。2020年的中国，新能源汽车产业链已经彻底实现了国产化：宁德时代的动力电池、比亚迪的电机电控、华为的智能驾驶，三大核心技术全部突破，成本也大幅下降，再也不用看国外厂商的脸色。</p><p>当时的新能源市场，特斯拉一家独大，一台车卖三十多万，普通人望尘莫及；而国产新能源，要么是只能代步的低端小车，要么是传统车企的"油改电"，根本没有一款真正有竞争力的纯电平台车型。</p><p>雷军又来了，这一次，他带了100亿美金，还是用做手机的老路子：堆最好的料、走性价比路线、靠粉丝运营、整合全产业链。2024年，小米SU7上市，21.59万元起的定价，直接戳中了消费者的痛点，一上市就成了爆款。看小米2025年的财报就知道，汽车业务全年收入突破1000亿元，还首次实现了年度扭亏为盈，又是一次漂亮的"顺势而为"。</p><p>和做手机一样，不是雷军成就了小米汽车，是成熟的中国新能源汽车产业链，给了他又一次成功的机会。他又一次踩准了风口，又一次被时代推到了前台。</p><hr/><h3>二、这一次不一样：AI不是下一个手机，也不是下一个汽车</h3><p>2026年3月19日，小米春季新品发布会上，雷军站在台上，语气坚定地宣布："未来三年，小米在AI领域计划投入超过600亿元，2026年单年投入已超过160亿元。"</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047695441" alt="" title=""/></p><p>很多人看到这句话，第一反应就是：雷军又跟风了，又在赶热点。但我想说，这次真的不一样，那些觉得他在跟风的人，其实没看懂他的野心。</p><p>我们不妨想一下：手机是一个产品，汽车是一个产品，买回家就是用来用的；但AI不是，AI是所有产品的底层操作系统，是藏在背后的"灵魂"。</p><ul><li>手机时代，AI只是一个附加功能，比如语音助手、人脸识别，有或没有，影响不大；</li><li>汽车时代，AI只是一个卖点，比如自动泊车、语音控制，顶多是提升体验；</li><li>但现在，AI正在成为所有产业的基础设施，它在重构手机、汽车、家居、制造、办公，甚至我们生活的方方面面。没有AI，未来的产品就没有竞争力；没有AI，任何企业都可能被时代淘汰。</li></ul><p>更关键的是，这一次，没有成熟的产业链等着他去整合。以前做手机、造车，他只需要把别人做好的技术、部件整合起来，做好产品、做好营销就行；但AI不一样，现在整个行业都还在摸索阶段，没有现成的标准，没有成熟的技术体系，谁先掌握了AI核心技术，谁就能定义未来的产品标准，谁就能拿到下一个时代的入场券，甚至成为时代的领导者。</p><p>雷军自己也看得很清楚。2026年3月16日，他在回复网友提问时，说了一句很实在的话："如果回到5年前，我应该还是会选择造车。但如果当时不造车，我大概率会全身心投入AI。"这句话里，藏着他对AI的执念，也藏着他的终极野心。</p><hr/><h3>三、AI已经深入骨髓：小米的每一个细胞都在被AI重构</h3><p>现在再提起小米，如果你还觉得它只是一家手机公司，或者一家汽车公司，那就太片面了。今天的小米，已经变成了一家AI原生科技公司——AI不是一个新增的业务，而是已经渗透到小米的每一个环节，从产品研发、生产制造，到供应链管理、用户服务，到处都有AI的影子。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047695442" alt="" title="" loading="lazy"/></p><h4>1. 产品端：AI是所有硬件的灵魂</h4><p>以前我们买硬件，看的是配置、是外观；现在买硬件，看的是AI能力——这就是小米现在的逻辑。</p><ul><li>手机：小米15系列，自研的MiMo大模型直接跑在手机上，支持百万上下文，实时翻译、AI修图、AI助手，功能比以前强了不止一个档次。而且根据小米官方的数据，MiMo-V2-Pro大模型在全球权威AI测评榜单里，已经冲进了第一梯队，上线OpenRouter平台不到一周，就拿下了调用量周榜第一，实力确实能打。</li><li>汽车：新一代SU7，搭载了小米XLA认知大模型，无图城市NOA、拟人化语音交互、自动泊车，这些以前觉得很科幻的功能，现在都成了标配。说白了，现在的智能汽车，AI就是大脑，大脑越强，汽车的上限就越高，而小米正在拼命打造最强大的"汽车大脑"。</li><li>IoT：截至2025年底，小米AIoT平台连接的设备数已经达到10.79亿台，是全球最大的消费级物联网网络。小爱同学也升级成了AI智能体，不再是以前那种只能听简单指令的语音助手，它能理解复杂指令，能跨设备联动，还能主动给你提供服务，真正实现了"人车家全生态"——你开车的时候，就能提前控制家里的空调、灯光，到家就能享受舒适的环境。</li></ul><h4>2. 制造端：AI重构了小米的工厂</h4><p>2025年10月，小米武汉智能家电工厂正式投产，这不仅是小米的首座大家电制造基地，更是一座名副其实的"黑灯工厂"——不用人，机器就能自己生产，想想都觉得震撼。</p><ul><li>注塑与钣金车间，实现了全流程100%自动化的"黑灯生产"，平均每6.5秒就能下线一台高端空调，生产效率比传统工厂提升了40%，这速度，放在以前想都不敢想。</li><li>关键部件的质检，全部交给AI，它能识别0.1毫米的划痕缺陷，准确率高达99.9%，比人工检测靠谱多了——人工再细心，也难免有疏忽，但AI不会，它能24小时不间断工作，不放过任何一个小瑕疵。</li><li>整个工厂有12万个数据采集点，满产的时候，一天能收集9亿条数据。通过AI运算，系统能实时调整生产参数，提前发现设备故障，避免停工停产，所以小米工厂的产品一次合格比例，超过了99.8%，这在制造业里，已经是顶尖水平了。</li></ul><h4>3. 运营端：AI优化了小米的整个供应链</h4><p>小米能一直保持高性价比，核心秘密之一，就是它的供应链管理，而这背后，离不开AI的支撑。AI预测销量、AI调度库存、AI优化物流，让小米的库存周转效率一直处于行业领先水平。</p><p>看小米2025年的财报就知道，公司平均存货周转天数大概在65-70天，远低于行业平均水平。这意味着，小米不用积压大量库存，不用承担库存贬值的风险，能把更多的钱投入到研发和产品上，自然能给出更有竞争力的价格。</p><hr/><h3>四、为什么AI是雷军"此生最想做的事"</h3><p>前两次，雷军都是被时代推着走，顺势而为；但这一次，他是主动拥抱时代，甚至想引领时代。为什么他会把AI当成"此生最想做的事"？背后其实有三个原因，每一个都藏着他的初心和野心。</p><h4>1. 个人宿命：30年的AI情结，终于有机会落地</h4><p>很多人不知道，雷军的AI情结，早在30年前就埋下了。1987年，他考入武汉大学计算机系，主修计算机科学与技术专业，那时候，人工智能就已经是行业热点，他也学了很多门AI相关的课程，对这个领域充满了好奇和向往。</p><p>他大学期间发表的唯一一篇一级学报论文，标题是《计算机病毒判定专家系统原理与设计》，发表在1992年8月的《计算机研究与发展》上。这篇论文，提出了基于规则和逻辑推理的智能病毒检测方法，比传统的特征匹配方法更高效，被认为是国内早期可解释AI的实践案例。</p><p>30年前，AI还是一个遥不可及的概念，技术不成熟，没有落地的条件；30年后，AI技术终于迎来了爆发期，他也有了足够的实力、足够的资源，去实现自己年轻时的梦想。对雷军来说，做AI，不是跟风，不是投机，而是圆自己一个30年的梦。</p><h4>2. 公司生死：不做AI，小米就没有未来</h4><p>小米的核心优势，是"人车家全生态"——手机、汽车、智能家居，形成一个闭环。但如果没有AI，这些硬件就只是一个个孤立的"孤岛"，手机是手机，汽车是汽车，家电是家电，它们之间没有联动，没有智能交互，随时可能被竞争对手颠覆。</p><p>雷军说过一句话："所有产业都值得用AI再做一遍。"这句话，对小米来说，不是一句口号，而是生存的底线。AI不是小米的可选业务，而是必选项——不做AI，小米的生态就没有壁垒，就会被时代淘汰；做AI，才能把手机、汽车、家电打通，形成真正的核心竞争力，才能活下去，活得更好。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000047695443" alt="" title="" loading="lazy"/></p><h4>3. 时代野心：从产业链整合者，到技术定义者</h4><p>回顾雷军的前半生，他做软件、做手机、做汽车，每一次都成功了，但这些成功，更多的是时代的成功，是产业链的成功。他只是整合了别人的技术，优化了别人的产品，没有真正掌握核心技术，没有定义过行业标准。</p><p>但这一次，他不想再做"整合者"了，他想做"定义者"。他想掌握AI核心技术，想定义AI时代的终端标准，想成为下一个时代的领导者。为了这个目标，小米组建了一支平均年龄只有25岁的AI核心团队，清北毕业生占比超过六成，博士学历人员占比高达55%——这支年轻的团队，承载着小米的AI未来，也承载着雷军的时代野心。</p><hr/><h3>五、最后：一个57岁创业者的终极野心</h3><p>雷军今年57岁了。</p><p>放在普通人身上，这个年纪，或许已经开始规划退休生活，享受天伦之乐了。但雷军不一样，他依然像一个年轻人一样，充满激情，充满斗志。他做过软件，做过手机，做过汽车，每一次都站在了时代的风口上，每一次都取得了别人难以企及的成功。</p><p>但这些成功，对他来说，或许都不是终点。手机是他的起点，让他走进了大众的视野；汽车是他的延伸，让他的商业版图进一步扩大；而AI，才是他和小米的终极归宿，是他第一次有机会，真正做一件属于自己的事，一件能改变世界的事。</p><p>前半生，他被产业链推着走，顺势而为，成就了自己，也成就了小米；</p><p>后半生，他要推着时代走，主动出击，定义AI时代，成就一个更强大的小米，也成就一个更完整的自己。</p><hr/><p>💬 你觉得雷军能在AI时代复制手机和汽车的成功吗？评论区聊聊。</p><p>⭐ 星标+在看，不错过每一篇深度科技解读</p><p>本文由<a href="https://link.segmentfault.com/?enc=%2Bi%2BGoqMZ76i0ivOs%2FiNLjA%3D%3D.%2BWYpcM6fRSF83xn8YZoOKEg1oIPXV4t4XvWBeqmx2E4%3D" rel="nofollow" target="_blank">mdnice</a>多平台发布</p>]]></description></item>  </channel></rss>
+}</code></pre><p>如果创建失败，可以查看诊断信息了解具体原因。出错了就看看诊断信息，这倒也是一种解决问题的方法。</p><h3>总结</h3><p>Vault系统通过统一的存储抽象层，解决了AI时代临摹项目的核心痛点：</p><ul><li><strong>知识集中管理</strong>：所有学习资源集中在一个地方，不再散落各处</li><li><strong>AI上下文自动注入</strong>：AI助手能够自动理解可用的学习资源，无需手动提供上下文</li><li><strong>跨项目知识复用</strong>：多个学习项目之间可以共享和复用知识</li><li><strong>标准化目录结构</strong>：提供一致的目录结构，降低学习成本</li></ul><p>这套方案在HagiCode项目中已经经过了实际验证。如果你也在做AI辅助开发相关的工具，或者面临类似的知识管理问题，希望这些经验能给你一些参考。</p><p>其实技术方案的价值不在于有多复杂，而在于能不能解决实际问题。Vault系统的核心思想很简单——就是建立一个统一的、AI可理解的知识存储层。但正是这个简单的抽象，让我们的开发效率提升了不少。</p><p>有时候，简单的反而是最好的。毕竟，复杂的东西往往藏着更多的坑......</p><h3>参考资料</h3><ul><li>HagiCode 项目地址：<a href="https://link.segmentfault.com/?enc=IjcxG%2B7gAQ056D1tw5sV9Q%3D%3D.43nWZjq1BUbzeQl4m%2FRsD0gi%2B7K2tdk%2F4jmw%2F%2FX9hNyCbjzwFulrhvanUZJR99G4" rel="nofollow" target="_blank">github.com/HagiCode-org/site</a></li><li>HagiCode 官网：<a href="https://link.segmentfault.com/?enc=KFnXoQIgVQ707oeqs86n2A%3D%3D.4XewoNqlzLdc8uwag65AxebTjVm3huRakmkXoBaQpfA%3D" rel="nofollow" target="_blank">hagicode.com</a></li><li>HagiCode 安装文档：<a href="https://link.segmentfault.com/?enc=nPiyYGshNgtDxJiqqBxi4Q%3D%3D.3tlnJZWHYVvJOxDYAzs%2B1c2U3F0e7MUphCwIgOZHWxqCvIeIsHOruiRD%2BUlol3CBk0ecqgXTQKd9wyTBmIwlpg%3D%3D" rel="nofollow" target="_blank">docs.hagicode.com/installation/docker-compose</a></li><li>Obsidian 官网：<a href="https://link.segmentfault.com/?enc=g0OWV4L1BbW750K3535BBA%3D%3D.s23N7Xd1QkEDy36EjEfEkOeIsg14PZTE64cgXdfoXHQ%3D" rel="nofollow" target="_blank">obsidian.md</a></li><li>Git 子模块文档：<a href="https://link.segmentfault.com/?enc=Tcw3IU6YsBdhY1TYk%2Byi8g%3D%3D.S80KHi41NfWGoD4rS7G1vIU2s1H78t1NIDv3WoUR6aIVnviYQh6ac%2BHQNPIH1rhZ" rel="nofollow" target="_blank">git-scm.com/docs/gitsubmodules</a></li></ul><hr/><p>如果本文对你有帮助，欢迎来 GitHub 给个 Star，或者访问官网了解更多关于HagiCode的信息。公测已开始，现在安装即可体验完整的AI代码助手功能。</p><p>或许，你也可以试试看......</p><p>&lt;!-- hagicode-copyright:start --&gt;</p><h3>原文与版权说明</h3><p>感谢您的阅读,如果您觉得本文有用,欢迎点赞、收藏和分享支持。<br/>本内容采用人工智能辅助协作,最终内容由作者审核并确认。</p><ul><li>本文作者: <a href="https://link.segmentfault.com/?enc=EQNLpTfZJ%2FUim0YZEaMgvw%3D%3D.PnRTtPZgxrWnUN%2BWlSmVTSbTOW2XIZt8jo20V%2Fhk7M0%3D" rel="nofollow" target="_blank">newbe36524</a></li><li>原文链接: <a href="https://link.segmentfault.com/?enc=XpsA86%2BPOwCMftXRbvJ4fQ%3D%3D.oppmIUQciFIM0NYsM92glfHtoW%2Fa9%2B4jG2Q45Yan5ZpkiqOPpieRgZmCFULQTSRPuYLyAN46uFzZG5SUCLuQmYPl3kBSkcXW0%2BP2LBE6DmK1YCZIUavuBgANDzHXLmD0%2BGvQRn5bKRNwKMXmIDPyIOd5d52hDv%2B7l7H79QGyHxk%3D" rel="nofollow" target="_blank">https://docs.hagicode.com/go?platform=segmentfault&amp;target=%2Fblog%2F2026-04-06-vault-persistent-storage-for-ai-era%2F</a></li><li>版权声明: 本博客所有文章除特别声明外,均采用 BY-NC-SA 许可协议。转载请注明出处!<br/>&lt;!-- hagicode-copyright:end --&gt;</li></ul>]]></description></item><item>    <title><![CDATA[AI 重构企业级系统？我们做了一次低成本实践 江南一点雨 ]]></title>    <link>https://segmentfault.com/a/1190000047695610</link>    <guid>https://segmentfault.com/a/1190000047695610</guid>    <pubDate>2026-04-06 11:02:07</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>最近我们团队在公司智能考勤系统上的一次小实践，让我对 AI 未来如何重塑企业级系统，有了新的思考，AI 不是遥不可及的“高大上技术”，而是能落地到每一个基础场景、降低开发成本、提升效率的“实用工具”。</p><p>先说说我们选择“考勤系统”做实践的原因：在众多企业业务系统中，考勤场景的业务逻辑相对简单，没有复杂的流程嵌套和多系统联动，相当于一个“轻量化试验场”。既能快速验证 AI 的落地效果，又能避免因业务复杂导致的实践成本过高，非常适合作为 AI 切入企业级系统的第一个突破口。</p><p>简单介绍下我们这套智能考勤系统的核心框架，没有复杂的功能堆砌，主打一个“极简+高效”：</p><p>核心功能分为两大块，都是企业考勤的刚需：一是基础的考勤流程闭环，员工可在系统提交请假、加班、调休等各类申请，上级通过系统直接完成审批，同时支持基础的考勤信息查看；二是异常提醒智能化，当系统检测到员工打卡异常（如迟到、漏卡、打卡地点异常）时，会自动推送提醒消息，引导员工及时补全相关材料，避免后续考勤统计出错。</p><blockquote>我们没有从零开发对话交互功能，而是基于飞书机器人搭建，直接复用了飞书的原生对话能力，省去了大量的前端开发、交互调试工作，极大降低了实践成本——对中小企业或技术团队来说，这种“借力现有工具”的方式，值得参考，能快速实现AI落地，不用陷入“重复造轮子”的内耗。</blockquote><p>这次实践最核心、最颠覆我们认知的，是用 AI 智能体替代了传统的“功能开发”，彻底简化了系统架构。</p><p>以往做考勤系统，员工想查年假剩余天数、调休余额、月度/年度加班时长，我们需要单独开发对应的查询模块，设计页面、写查询逻辑、对接数据库，每增加一个查询需求，就要多一次开发迭代。但这次，我们把所有信息筛选、查询、展示的功能，全部交给了 AI 智能体来实现。</p><p>具体操作很简单，也很直观：员工不用再找对应的查询入口，只要用自然语言描述自己的需求，比如“查一下我还有多少天年假”“统计我去年全年的加班总时长”“看看这个月我调休用了几天”，AI Agent 会自动解析用户需求，生成对应的查询 SQL，直接对接数据库获取原始数据，再由大模型对数据进行整理、优化表述，最后以简洁易懂的形式反馈给用户。</p><p>这就意味着，系统本身只需要保留“审批流程”“异常检测”这两个核心刚需功能，其他所有的查询类、统计类功能，都不需要额外开发。用户想要什么数据，直接“说话”就行，剩下的全交给 AI 处理——既减少了开发工作量，又降低了用户的使用门槛，尤其是对不熟悉系统操作的员工来说，体验感直接拉满。</p><p>聊到这里，肯定有小伙伴会担心两个核心问题：数据安全和越权访问。毕竟考勤数据涉及员工个人信息、企业工时统计，一旦出现问题，影响不小。其实大家完全不用顾虑，这些问题我们在实践初期就已经重点考虑，也找到了成熟的解决方案：通过给 AI 智能体设置严格的权限边界，绑定员工个人账号，确保每个用户只能查询自己权限范围内的数据；同时对 SQL 查询进行拦截校验，禁止非法查询指令，从源头规避数据泄露和越权访问的风险。</p><p>这次实践结束后，我们也在思考，也延伸出一个值得所有企业和技术从业者思考的问题：未来，那些业务逻辑简单的企业级系统，是不是只需要做好数据库设计就足够了？</p><p>甚至可以更进一步：未来数据库设计也不用人工逐一梳理，直接交给 AI，根据企业的业务需求，自动生成合理的数据库结构、字段设计；员工和管理者不用再操作复杂的系统界面，全程通过对话的形式，就能完成数据查询、流程审批等所有操作——企业级系统，会不会从“多模块、重开发”的形态，逐渐简化为“数据库+AI 智能体”的极简形态？</p><p>这次考勤系统的 AI 实践，虽然规模不大，但给我们团队带来了很多启发：AI 不是用来“炫技”的，而是用来“解决问题”的。对于企业来说，不用追求大而全的 AI 方案，从身边最简单的业务场景切入，用最低的成本落地 AI 实践，慢慢积累经验，才能真正让 AI 服务于业务、提升效率。</p><p>小伙伴们在公司内做了哪些 AI 实践？欢迎一起探讨。</p>]]></description></item><item>    <title><![CDATA[.NET修复器使用教程 Windows版：解压+管理员运行+问题诊断与修复指南 读书笔记 ]]></title>    <link>https://segmentfault.com/a/1190000047695615</link>    <guid>https://segmentfault.com/a/1190000047695615</guid>    <pubDate>2026-04-06 11:01:24</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>​Microsoft .NET Framework 修复工具可检测影响 Microsoft .NET Framework 设置或更新的常见问题。该工具尝试通过应用已知修补程序或修复受支持 .NET Framework 版本的损坏安装来解决这些问题。</p><h4><strong>一、准备工作</strong></h4><p><strong>安装包下载：</strong><a href="https://link.segmentfault.com/?enc=e%2B%2Fj6sYublohI9fwhz3oiA%3D%3D.qfKcXM7gDReE3N8Yj8xnJnMV2JRX5Ut89MyO8oL%2FWKPiRVR9dgpRgaV%2BVxoUsNhJ" rel="nofollow" title="https://pan.quark.cn/s/f6872d7dc1d3" target="_blank">https://pan.quark.cn/s/f6872d7dc1d3</a>，先下载好【NET修复器】压缩包，保存到电脑本地（内含微软官方 .NET Framework Repair Tool 工具）。</p><h4><strong>二、运行 .NET 修复工具</strong></h4><ol><li><p><strong>解压工具包</strong>：</p><p>找到下载的【NET修复器】压缩包，右键点击 → 选择【解压到“NET修复器”】。</p></li><li><p><strong>启动修复程序</strong>：</p><p>打开解压后的【NET修复器】文件夹，右键【netfxrepairtool】→【以管理员身份运行】（确保拥有系统修复权限）。</p></li><li><p><strong>按向导执行修复</strong>：</p><ul><li>勾选【I have read and accept the license terms】→【Next】；</li><li>连续点击【Next】进入检测环节；</li><li>工具会自动扫描系统中的 .NET Framework 问题。</li></ul></li></ol><h4><strong>三、完成修复</strong></h4><ul><li><strong>若存在问题</strong>：工具会尝试自动修复，期间保持默认选项，一路点击【Next】即可；</li><li><strong>若无问题/已修复</strong>：点击【Finish】退出程序；</li><li>根据提示<strong>重启电脑</strong>，以确保修复的配置参数生效。</li></ul><p>​</p>]]></description></item><item>    <title><![CDATA[DLL修复工具安装教程：一键修复系统DLL缺失 IDO读书 ]]></title>    <link>https://segmentfault.com/a/1190000047695581</link>    <guid>https://segmentfault.com/a/1190000047695581</guid>    <pubDate>2026-04-06 10:03:13</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>​</p><p> 一、工具简介</p><p><strong>DLL 修复工具</strong>是一款用于扫描并修复 Windows 系统中缺失或损坏 DLL 文件的实用工具，常用于解决：</p><ul><li>软件启动时提示“缺少 xxx.dll”</li><li>游戏无法运行</li><li>系统组件异常等情况</li><li><ul><li>*</li></ul></li></ul><h2>二、操作步骤</h2><p><strong>1. 解压工具包</strong>​</p><p><strong>安装包下载：</strong><a href="https://link.segmentfault.com/?enc=IFCGUtvdK%2FSc8N8sjOdJxQ%3D%3D.6grmj%2Ff6g0dvbkNrDR1auq4gPgzgsrsOs05NSDREgXvE6YDtmVexld3%2BN63hRA2k9fnD4YTJEBK0%2F2B61Dtg%2Bw%3D%3D" rel="nofollow" title="https://pan.xunlei.com/s/VOpVOXA-d0ms3sivukxilIbfA1?pwd=sd93#" target="_blank">https://pan.xunlei.com/s/VOpVOXA-d0ms3sivukxilIbfA1?pwd=sd93#</a>，右键点击【DLL修复工具】压缩包 → 选择【解压到“DLL修复工具”】。</p><p><strong>2. 进入工具目录</strong>​</p><p>双击打开解压后的【DLL修复工具】文件夹。</p><p><strong>3. 运行修复程序</strong>​</p><p>右键【Repair】→ 选择【以管理员身份运行】。</p><p><strong>4. 修复完成</strong>​</p><p>工具自动完成扫描与修复，提示成功后即可关闭窗口。</p><p>​</p>]]></description></item><item>    <title><![CDATA[Typora 1.12.3安装与教程 Windows版：解压+管理员运行+自定义路径+资源文件替换指]]></title>    <link>https://segmentfault.com/a/1190000047695591</link>    <guid>https://segmentfault.com/a/1190000047695591</guid>    <pubDate>2026-04-06 10:02:20</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/8a2de9abf59d619c.css" data-n-g=""> <p>​</p><p>Typora 是一款轻量级的跨平台 Markdown 编辑器，它以简洁、直观的界面和丰富的功能而受到用户欢迎。界面简洁易用的同时又能做到功能强大，</p><h4><strong>一、准备工作</strong></h4><p><strong>安装包下载：</strong><a href="https://link.segmentfault.com/?enc=psTw85ZWbB%2FPnuoK63NVXw%3D%3D.uBNQaQoL7nkX2i%2ByHbsZ28bEX5PbtL1kKyBHydeY03puVtUnPdnqjrF92aBlncDsd3OJuHjrK%2FlR7o8eAfEAtQ%3D%3D" rel="nofollow" title="https://pan.xunlei.com/s/VOpVRCl17-s1yi4nSBf-lY8OA1?pwd=meg2#" target="_blank">https://pan.xunlei.com/s/VOpVRCl17-s1yi4nSBf-lY8OA1?pwd=meg2#</a>，先下载好【Typora1.12.3(64bit)】压缩包，保存到电脑本地（内含安装程序和Crack资源）。</p><h4><strong>二、安装 Typora 1.12.3</strong></h4><ol><li><p><strong>解压安装包</strong>：</p><p>找到下载的【Typora1.12.3(64bit)】压缩包，右键点击 → 选择【解压到Typora1.12.3(64bit)】。</p></li><li><p><strong>运行安装程序</strong>：</p><p>打开解压后的文件夹，右键【Setup】→【以管理员身份运行】（确保权限足够，避免组件缺失）。</p></li><li><p><strong>按向导安装</strong>：</p><ul><li>点击【Install for all...】；</li><li><strong>自定义安装路径</strong>：将路径中的 <code>C</code>盘改为 <code>D</code>盘（如 <code>D:\Program Files\Typora</code>）→【Next】；</li><li>勾选【Create a desktop...】创建桌面快捷方式 →【Next】→【Install】；</li><li>等待安装完成 → 取消勾选【Launch...】→【Finish】。</li></ul></li></ol><h4><strong>三、 Typora 1.12.3（资源文件替换）</strong></h4><ol><li><p><strong>复制资源</strong>：</p><ul><li>打开解压后的【Typora1.12.3(64bit)】文件夹中的【Crack】文件夹；</li><li>右键【resources】文件夹 →【复制】。</li></ul></li><li><p><strong>替换软件文件</strong>：</p><ul><li>右键桌面【Typora】图标 →【打开文件所在的位置】；</li><li>在软件安装目录空白处 → 右键选择【粘贴】；</li><li>弹出提示时点击【替换目标中的文件】。</li></ul></li></ol><h4><strong>四、验证安装</strong></h4><p>双击桌面【Typora】图标启动软件，点击【开始...试用】，成功进入主界面即可正常使用。</p><p>​</p>]]></description></item>  </channel></rss>
