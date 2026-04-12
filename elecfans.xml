@@ -1,4 +1,277 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[研华科技携全梯度边缘算力产品矩阵重磅亮相CMEF 2026]]></title>    <link>https://www.elecfans.com/d/7799251.html</link>    <guid>https://www.elecfans.com/d/7799251.html</guid>    <pubDate>2026-04-11 17:25:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[如何理解Linux内核中的PCIe驱动]]></title>    <link>https://www.elecfans.com/d/7799248.html</link>    <guid>https://www.elecfans.com/d/7799248.html</guid>    <pubDate>2026-04-11 17:22:00</pubDate>    <description><![CDATA[<p>
+	以下文章来源于<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>Ad</u></a>riftCore<a href="https://bbs.elecfans.com/zhuti_fpga_1.html" target="_blank"><u>FPGA</u></a>芯研社，作者CNL中子</p>
+<p>
+	前言</p>
+<p>
+	我们习惯了用 <a href="https://bbs.elecfans.com/group_378" target="_blank"><u>Verilog</u></a> 去死磕 PCIe 的底层协议状态机。但一旦越过硬件边界来到<a href="https://m.elecfans.com/v/tag/527/" target="_blank"><u>操作系统</u></a>层面，<a href="https://www.elecfans.com/v/tag/538/" target="_blank"><u>Linux</u></a> 内核是如何接管并驱动这些 PCI/PCIe 设备的呢？由于不同的 <a href="https://m.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a> 架构实现了各异的芯片组，加上各种 PCI 设备自身独特的功能需求，Linux 内核中的 PCI 支持远比我们希望的要复杂得多。今天这篇文章，我们将从驱动开发的视角，梳理 Linux PCI 设备驱动的核心生命周期与关键 A<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>。</p>
+<p>
+	驱动注册和发现</p>
+<p>
+	在 Linux 中，PCI 驱动程序通过pci_register_driver()在系统中发现设备。但实际上，这个过程是反向的：当 PCI 通用代码发现了一个新设备时，具有匹配描述的驱动程序才会被内核通知 。</p>
+<p>
+	系统上电或有 PCIe 设备热插拔时，底层的总线枚举其实已经完成了。Linux 的 PCI 通用代码会去扫描物理总线，读取每个设备的配置空间（拿到 Vendor ID, Device ID 等），把系统里所有的硬件设备都登记在自己的花名册上。这时候，你的驱动程序可能还没加载进系统。</p>
+<p>
+	当你的驱动程序跑起来，调用pci_register_driver()进行注册时，它并不是去物理总线上找设备。相反，它只是向内核提交了一份匹配描述（也就是包含它能支持的 Vendor ID 和 Device ID 的id_table）。</p>
+<p>
+	内核会拿着你提交的匹配描述，去自己早就登记好的设备花名册里比对。一旦内核发现：总线上有个硬件设备的 ID，刚好和这个驱动要求的 ID 对上了；内核就会主动触发（通知）驱动程序里写好的probe探测函数，并把指向该硬件设备的指针（struct pci_dev *）塞给驱动 。</p>
+<p>
+	</p>
+<pre>
+sta<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>ti</u></a>cstructpci_drivermy_pci_driver={
+  .name ="my_pci_driver",
+  .id_table = my_driver_id_table,
+  .probe = my_probe_function,
+  .remove = my_remove_function,
+};</pre>
+<p>
+	</p>
+<p>
+	匹配描述</p>
+<p>
+	在传给注册函数pci_register_driver()的struct pci_driver结构体中，有一个名为id_table的字段，它就是一个指向驱动程序感兴趣的设备 ID 表的指针。</p>
+<p>
+	这个 ID 表是一个struct pci_device_id类型的数组，并且必须以一个全零的条目作为结束标志。通常建议将其定义为static const。</p>
+<p>
+	在实际写代码时，你不需要手动去填充上面所有的字段。大多数驱动程序只需要使用宏PCI_DEVICE()或PCI_DEVICE_CLASS()就可以非常方便地设置pci_device_id表了 。</p>
+<p>
+	</p>
+<pre>
+staticconststructpci_device_idmy_driver_id_table[] ={
+  { PCI_DEVICE(0x10EC,0x8168) },/* 使用宏，只匹配具体的 Vendor ID 和 Device ID */
+  {0, }/* 必须以全 0 结尾，告诉内核数组到此为止 */
+};
+MODULE_DEVICE_TABLE(pci, my_driver_id_table);/* 导出表 */
+
+staticstructpci_drivermy_pci_driver={
+  ...
+  .id_table = my_driver_id_table,
+  ...
+};</pre>
+<p>
+	</p>
+<p>
+	驱动名称（name）</p>
+<p>
+	这是驱动程序必不可少的身份标识。当你注册驱动后，内核会使用这个名字在 sysfs 文件系统中创建对应的目录（例如/sys/bus/pci/drivers/AdriftCorePCIe/）。后续如果在运行时动态添加新的设备 ID 到驱动中，也会用到这个名字对应的路径。</p>
+<p>
+	</p>
+<pre>
+#defineDEVICE_NAME"AdriftCorePCIe"
+
+staticstructpci_drivermy_pci_driver={
+  .name = DEVICE_NAME
+  ...
+  ...
+};</pre>
+<p>
+	</p>
+<p>
+	探测与初始化（probe）</p>
+<p>
+	这是驱动认领设备的入口。</p>
+<p>
+	当内核发现了一个与你的驱动程序id_table匹配的、且尚未被其他驱动占有的 PCI 设备时，就会调用这个探测函数。这可能发生在执行pci_register_driver()的过程中（如果设备已经存在），或者在稍后插入新设备时触发。</p>
+<p>
+	在这个阶段，probe的核心动作包括：</p>
+<p>
+	接收设备指针：内核会为每一个 ID 表匹配的设备，将一个struct pci_dev *指针传递给该函数。</p>
+<p>
+	决定是否接管：如果驱动程序决定接受并获取该设备的所有权，probe必须返回零；如果无法接管，则返回一个负数的错误码。</p>
+<p>
+	允许睡眠上下文：probe函数始终在进程上下文 (process con<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>xt) 中被调用，因此它是允许睡眠的。这对于后续申请内存或长时间等待硬件就绪非常关键。</p>
+<p>
+	一旦probe决定接管设备并获得了所有权，驱动程序通常需要在这个函数内部执行以下标准的初始化步骤：</p>
+<p>
+	启用设备 (Enable the device)</p>
+<p>
+	请求 MMIO/IOP 资源 (Request MMIO/IOP resources)</p>
+<p>
+	设置 <a href="https://www.elecfans.com/tags/dma/" target="_blank"><u>DMA</u></a> 掩码大小 (Set the DMA mask size)：包含一致性 (coherent) 和流式 (streaming) DMA</p>
+<p>
+	分配并初始化共享控制数据 (Allocate and initialize shared control data)：通常使用pci_allocate_coherent()</p>
+<p>
+	访问设备配置空间 (<a href="https://www.hqchip.com/app/1703" target="_blank"><u>Ac</u></a>cess device configuration space)：在需要的情况下执行</p>
+<p>
+	注册 IRQ 处理程序 (Register IRQ handler)：通过request_irq()完成</p>
+<p>
+	初始化非 PCI 部分 (Initialize non-PCI)：例如初始化芯片中的 LAN、S<a href="https://www.elecfans.com/tags/csi/" target="_blank"><u>CSI</u></a> 等特定功能模块</p>
+<p>
+	启用 DMA/处理引擎 (Enable DMA/processing engines)</p>
+<p>
+	probe就是你的驱动程序正式登台亮相的地方。内核把匹配的硬件交到它手上，它负责把这块硬件通电、申请资源、配中断、设 DMA，最终完成点亮，让系统能够真正使用这块硬件。</p>
+<p>
+	</p>
+<pre>
+/* * 2. Probe 函数：设备的接管与点亮
+* 该函数在进程上下文中调用，允许睡眠。
+*/
+staticintmy_pci_probe(structpci_dev *pdev,conststructpci_device_id *id)
+{
+  interr;
+
+  /* 2.1 启用 PCI 设备 (唤醒设备、分配资源、分配 IRQ 等) */
+  err = pci_enable_device(pdev);
+  if(err) {
+    dev_err(&amp;pdev-&gt;dev,"F<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>ai</u></a><a href="https://www.hqchip.com/app/1721" target="_blank"><u>led</u></a> to enable PCI device
+");
+    returnerr;/* 接管失败，返回负数错误码 */
+  }
+
+  /* 2.2 请求 MMIO/IOP 资源，防止与其他设备发生地址冲突 */
+  /* 注意：现代内核通常使用 pci_request_regions 包装函数 */
+  err = pci_request_regions(pdev,"my_pci_driver");
+  if(err) {
+    dev_err(&amp;pdev-&gt;dev,"Failed to request PCI regions
+");
+    gotoerr_disable_device;
+  }
+
+  /* 2.3 设置 DMA 掩码：声明设备的 DMA 寻址能力 (例如支持 64 位 DMA) */
+  err = pci_set_dma_mask(pdev, DMA_BIT_MASK(64));
+  if(err) {
+    dev_err(&amp;pdev-&gt;dev,"No suitable DMA available
+");
+    gotoerr_release_regions;
+  }
+  pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(64));
+
+  /* 2.4 启用 DMA 总线主控模式 (设置 PCI_COMMAND <a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>中的 Bus Master 位) */
+  pci_set_master(pdev);
+
+  /* * 后续初始化步骤（伪代码）：
+  * - 映射 MMIO 寄存器空间 (pci_iomap)
+  * - 配置 MSI/MSI-X 中断 (pci_alloc_irq_vectors)
+  * - 注册中断处理程序 (request_irq)
+  * - 初始化你的 DPU/硬件引擎状态机
+  */
+
+  dev_info(&amp;pdev-&gt;dev,"PCI device probed successfully!
+");
+  return0;/* 成功接管设备，返回 0 */
+
+err_release_regions:
+  pci_release_regions(pdev);
+err_disable_device:
+  pci_disable_device(pdev);
+  returnerr;
+}</pre>
+<p>
+	</p>
+<p>
+	设备的正确关闭与清理</p>
+<p>
+	如果说probe是驱动接管设备的入场仪式，那么remove就是它的优雅退场与资源回收大管家。</p>
+<p>
+	在内核的生命周期中，remove的主要职责就是完全反向执行probe中所做的一切，确保设备被安全关闭，并且所有占用的系统资源都被彻底释放，不留任何内存泄漏或导致系统崩溃的隐患。</p>
+<p>
+	remove()函数会在由该驱动程序处理的设备被移除时调用。这通常发生在两种场景：</p>
+<p>
+	驱动被注销时：比如当驱动程序退出（执行pci_unregister_driver()），或者你通过命令行（如rmmod）卸载驱动模块时，PCI 层会自动为该驱动处理的所有设备调用remove钩子。</p>
+<p>
+	设备被物理拔出时：当设备从支持热插拔 (hot-pluggable) 的插槽中被手动拔出时。</p>
+<p>
+	和probe一样，remove函数始终在进程上下文 (process context)中被调用，因此它是允许睡眠 (sleep) 的。</p>
+<p>
+	当模块需要被卸载或者设备不再使用时，remove函数通常需要严格按照以下步骤进行清理：</p>
+<p>
+	禁用设备生成中断 (Disable the device from generating IRQs)：这是第一步，必须阻止芯片产生新的中断。如果不做这一步，且中断号是与其他设备共享的，可能会引发致命的尖叫中断 (screaming interrupt)问题 。</p>
+<p>
+	释放 IRQ (Release the IRQ)：调用free_irq()来注销中断处理程序。</p>
+<p>
+	停止所有 DMA 活动 (Stop all DMA activity)：在尝试释放 DMA 控制数据之前，停止所有 DMA 操作极其重要。如果未能停止 DMA 就直接释放内存，可能会导致内存损坏、系统挂起，甚至在某些芯片组上发生硬崩溃 ^^。</p>
+<p>
+	释放 DMA 缓冲区 (Release DMA buffe<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>rs</u></a>)：包括流式 (streaming) 和一致性 (coherent) DMA 缓冲区的清理与解除映射。</p>
+<p>
+	从其他子系统注销 (Unregister from other <a href="https://m.hqchip.com/app/1525" target="_blank"><u>sub</u></a>systems)：比如解绑相关的 SCSI 或网络设备 (netdev)。</p>
+<p>
+	禁用设备及释放区域：</p>
+<p>
+	• 禁用设备对 MMIO/IO <a href="https://m.hqchip.com/app/1808" target="_blank"><u>端口</u></a>地址的响应。</p>
+<p>
+	• 释放 MMIO/IOP 资源。</p>
+<p>
+	</p>
+<pre>
+/* * 3. Remove 函数：设备的优雅退场与资源回收
+* 必须严格反向执行 probe 中的分配步骤。
+*/
+staticvoidmy_pci_remove(structpci_dev *pdev)
+{
+  /* * 卸载前期的关键清理（伪代码）：
+  * - 停止设备侧的数据收发与引擎运转
+  * - 停止设备产生中断，并释放 IRQ (free_irq)
+  * - 停止所有 DMA 活动，释放 DMA 缓冲区
+  * - 解除 MMIO 空间映射 (pci_iounmap)
+  */
+
+  /* 3.1 释放 MMIO/IOP 资源区域 */
+  pci_release_regions(pdev);
+
+  /* 3.2 禁用 PCI 设备响应，与 pci_enable_device 对称相反 */
+  pci_disable_device(pdev);
+
+  dev_info(&amp;pdev-&gt;dev,"PCI device removed successfully.
+");
+}</pre>
+<p>
+	</p>
+<p>
+	remove就是负责擦屁股的。它必须严丝合缝地把probe里申请的内存还给系统，把注册的中断注销掉，把开启的 DMA 停下来，最后让硬件安安静静地进入关闭状态。</p>
+<p>
+	整个驱动模块的执行</p>
+<p>
+	在 Linux 内核驱动的架构中，如果把 probe 和 remove 比作针对单个具体 PCIe 硬件的上岗和下岗，那么module_init和module_exit就是整个驱动程序模块本身的出生和消亡。</p>
+<p>
+	在早期的内核代码中，你通常需要手动编写这两个函数，看起来像这样：</p>
+<p>
+	</p>
+<pre>
+staticint__initmy_pci_init(void)
+{
+  /* 向内核的 PCI 核心注册你的驱动结构体 */
+  returnpci_register_driver(&amp;my_pci_driver);
+}
+
+staticvoid__exitmy_pci_exit(void)
+{
+  /* 注销驱动，这会自动触发所有已接管设备的 remove 函数 */
+  pci_unregister_driver(&amp;my_pci_driver);
+}
+
+module_init(my_pci_init);
+module_exit(my_pci_exit);</pre>
+<p>
+	</p>
+<p>
+	驱动的出生与注册</p>
+<p>
+	当你通过 insmod 或 modprobe 命令将编译好的 .ko 驱动模块加载到内核时，系统第一个调用的就是 module_init 宏指定的初始化函数。</p>
+<p>
+	在 PCIe 驱动中，它主要干一件事：向内核注册自己。</p>
+<p>
+	PCI 设备驱动程序会在其初始化期间调用 pci_register_driver()，并传入指向描述该驱动程序的结构体（struct pci_driver）的指针 。这就好比去内核那里挂号，把自己的 id_table、probe 和 remove 提交给内核。</p>
+<p>
+	注：module_init() 函数（以及仅由它调用的所有初始化函数）应该被标记为 __init 属性 。这个属性非常巧妙，它告诉内核：这段初始化代码在驱动完成初始化后就可以被直接丢弃，从而节省宝贵的内核内存空间 。</p>
+<p>
+	驱动的消亡与注销</p>
+<p>
+	当你通过rmmod命令卸载驱动模块时，内核会调用module_exit宏指定的退出函数。</p>
+<p>
+	在 PCIe 驱动中，它的核心任务是：向内核注销自己，并引发连锁清理。</p>
+<p>
+	调用核心 API：当驱动程序退出时，它只需调用pci_unregister_driver()。</p>
+<p>
+	连锁触发remove：这是非常省心的一点。当你调用注销函数后，PCI 层会自动去寻找所有目前正由该驱动程序处理的设备，并自动为它们逐一调用remove钩子函数。这意味着你不需要在module_exit里手动写循环去清理设备，内核全帮你包办了。</p>
+<p>
+	属性标记：与初始化对应，退出函数应该被标记为__exit属性。对于那些并非以模块形式动态加载，而是直接编译进内核镜像（非模块化）的驱动来说，带有__exit标记的代码会被直接忽略，因为它永远不会被卸载。</p>
+<p>
+	写在最后</p>
+<p>
+	习惯了使用 Verilog 雕琢 PCIe 的底层状态机，再回过头来看看 Linux 内核是如何以软件的视角接管这些硬件的，是一件非常有趣的事情。</p>
+<p>
+	正如我们在文中所看到的，Linux 并没有让驱动程序去干满大街找设备的脏活累活。相反，它构建了一个极其优雅的总线-设备-驱动模型：底层总线负责枚举和登记（发现硬件），驱动模块负责提交自己的匹配描述并注册（module_init与id_table），而内核的 PCI Core 则扮演了红娘的角色，精准地将匹配的设备交到驱动的probe函数手中进行点亮，最后在卸载时通过remove和module_exit实现系统资源的完美回收。</p>
+<p>
+	从 RTL 侧的代码逻辑，跨越物理层与链路层，最终到达操作系统的驱动框架，这种从底至顶的完整视角，能让我们在遇到复杂的系统级 Bug 时拥有更清晰的排查思路。硬件不只是冷冰冰的寄存器，软件也不只是虚无缥缈的指针，它们的完美交汇，才是系统稳定运行的基石。</p>]]></description></item><item>    <title><![CDATA[研华科技携全梯度边缘算力产品矩阵重磅亮相CMEF 2026]]></title>    <link>https://www.elecfans.com/d/7799251.html</link>    <guid>https://www.elecfans.com/d/7799251.html</guid>    <pubDate>2026-04-11 17:25:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
 	本期导读</p>
 <p style="text-indent:2em;">
 	CMEF医疗展期间，研华重磅展出 x86 与 <a href="https://m.hqchip.com/app/1378" target="_blank"><u>Arm</u></a> 双架构并行的全梯度边缘算力产品矩阵，覆盖内窥镜、手术<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>、超声 / CT、体外诊断等医疗核心场景，直击行业 “算力不匹配、架构不兼容、<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a> 部署难” 三大共性挑战。</p>
@@ -2824,11 +3097,4 @@ R1提供25kΩ的输入阻抗，符合PoE Class 0要求。当输入电压高于30
 <p style="text-indent:2em;">
 	U25 5G Re<a href="https://www.hqchip.com/app/1703" target="_blank"><u>dC</u></a>ap随身WiFi，搭载5G RedCap技术，以更低功耗实现高速率连接。疾速WiFi 6，低延时，高吞吐，2.<a href="https://m.elecfans.com/v/tag/9979/" target="_blank"><u>4G</u></a>Hz广覆盖，稳连接，最多支持32台设备同时接入，网络随心分享。配备3050mAh可拆卸电池，8小时无忧续航，精致小巧，随身携带，是多人聚会、宿舍娱乐、出差旅行、大型展会的网络好伴侣。</p>
 <p style="text-indent:2em;">
-	从<a href="https://www.elecfans.com/soft/data/42-102/" target="_blank"><u>AI技术</u></a>创新到跨设备、跨场景的无缝体验，中兴通讯终端业务正加速构建以AI为核心驱动力的全场景智慧生态，此次发布的系列新品正是其“AI for All”战略的有力践行。未来，中兴通讯将持续完善智能终端生态布局，深化端云协同的AI创新，精准洞察用户需求，为消费者打造更智能、更便捷的数字生活新范式。</p>]]></description></item><item>    <title><![CDATA[中兴通讯携手全球伙伴共建开放繁荣AI生态]]></title>    <link>https://www.elecfans.com/d/7799163.html</link>    <guid>https://www.elecfans.com/d/7799163.html</guid>    <pubDate>2026-04-11 15:54:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	4月9日，在“和合兴业，智启未来”为主题的2026中兴通讯中国生态合作伙伴大会现场，中兴通讯正式提出“和合生态”发展理念，同步发起“和合生态行动倡议”，中兴通讯高级副总裁、首席战略官王翔发表《和合共生，智启新程，共建开放繁荣<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>生态》主题发言，系统阐述生态发展思路与核心举措，凝聚全球伙伴力量，共筑AI时代价值共同体。</p>
-<p style="text-indent:2em;">
-	王翔立足AI产业发展大势，全面总结2025年生态合作成果。他表示，在“伙伴+中兴”协同机制引领下，中兴通讯已与全体生态伙伴实现从单点合作向产供销创服投全维度深度协同的跨越，携手打造了端到端全产业链生态合作新范式，为后续生态深化发展奠定坚实基础。</p>
-<p style="text-indent:2em;">
-	针对2026年生态发展重点，王翔向合作伙伴明确了核心方向：围绕 “开能力、强合作、共利益、优赋能” 四大核心举措，持续深化与生态伙伴的全方位合作。其中，“开能力” 聚焦核心能力层、基础设施层、能力平台层、应用层、终端层，全面开源开放核心能力，依托架构级协同优化优势，提升系统兼容性与性能，与伙伴共建开放、高效的AI算力底座；“强合作” 注重以客户为<a href="https://m.hqchip.com/tags" target="_blank"><u>中心</u></a>，整合产业链的优质生态资源，与伙伴能力互补，加强与伙伴在“技术-市场”的双向联动，做强AI全栈全场景能力，深耕“6大重点行业+30个垂直子行业+240个细分场景”市场；“共利益” 即深化双向投入，健全利益保障机制，打造更多元的合作模式，共享更大的商机资源池，提供更多的利益空间，优化更好的合作机制；“优赋能” 则围绕技术、营销、培训、数字化服务四大维度，为伙伴提供系统性的全域赋能，助力伙伴提升核心能力与市场竞争力，同时全面升级一站式数字化服务体系，基于Co-Claw，为伙伴提供更 “智”“惠” 的智能助手，全面向市场释放 “中兴+伙伴” 的协同合力。</p>
-<p style="text-indent:2em;">
-	最后，王翔再次强调，中兴通讯将始终坚守“和合生态”理念，以生态为纽带促进价值有序流动，携手全球伙伴共拓价值市场，践行AI普惠、互利共赢的产业愿景，以数智动能赋能产业创新升级，共同构建开放繁荣的AI产业新生态。</p>]]></description></item>  </channel></rss>
+	从<a href="https://www.elecfans.com/soft/data/42-102/" target="_blank"><u>AI技术</u></a>创新到跨设备、跨场景的无缝体验，中兴通讯终端业务正加速构建以AI为核心驱动力的全场景智慧生态，此次发布的系列新品正是其“AI for All”战略的有力践行。未来，中兴通讯将持续完善智能终端生态布局，深化端云协同的AI创新，精准洞察用户需求，为消费者打造更智能、更便捷的数字生活新范式。</p>]]></description></item>  </channel></rss>
