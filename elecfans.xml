@@ -1,4 +1,1618 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[基于ASC0101S的多电压域I2C总线电平转换完整方案：从单传感器到星型网络的系统级设计]]></title>    <link>https://www.elecfans.com/d/8040942.html</link>    <guid>https://www.elecfans.com/d/8040942.html</guid>    <pubDate>2026-07-02 15:11:00</pubDate>    <description><![CDATA[<div class="vditor-preview__action"/><div class="vditor-reset"><p><em>&gt; 以厦门国科安芯（ANSILIC）推出的工业航天级自动双向电平<a href="https://www.hqchip.com/app/1718" target="_blank"><u>转换器</u></a>ASC0101S为核心，系统性设计覆盖1.8V/2.5V/3.3V/5V多电压域<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>总线的完整方案。ASC0101S在SC70-6封装中集成了NMOS传输门、单稳态加速器（One-Shot）和双10kΩ上拉<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>，无需任何方向控制引脚即可实现自动双向数据传输，将I2C电平转换的BOM复杂度降至最低。</em></p><p><strong>1 引言：I2C总线面临的现实多电压困境</strong></p><p>I2C（In<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>r-Integrated Circuit）总线是<a href="https://m.elecfans.com/v/tag/2447/" target="_blank"><u>嵌入式系统</u></a>中最广泛使用的板级<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>协议之一。其两线制（SCL+SCK）、多主多从架构和内置仲裁机制使其天然适合连接多个不同功能的外围芯片。然而，当一台设备上的I2C总线上同时挂载1.8V的<a href="https://www.elecfans.com/tags/温度传感器/" target="_blank"><u>温度传感器</u></a>、2.5V的EEP<a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a>、3.3V的<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>和5V的<a href="https://m.hqchip.com/app/1731" target="_blank"><u>电源管理</u></a>芯片时，一个看似简单的问题浮现出来：不同电压域的芯片如何在同一根I2C总线上通信？</p><p>传统的解决方案存在明显的工程缺陷。最著名的是<a href="https://bbs.elecfans.com/group_729" target="_blank"><u>NXP</u></a> AN10441推荐的双N沟道<a href="https://www.elecfans.com/tags/mosfet/" target="_blank"><u>MOSFET</u></a>+4个上拉电阻电路——这种方案价格低廉（两颗BSS138约0.02美元+4颗电阻），但存在传导速度慢（受限于MOSFET的Cgd和上拉电阻值）、下冲振荡（寄生电感导致的振铃）、以及不同电压域间上拉电阻值矛盾（低速侧需要更强的上拉，高速侧需要更轻的上拉以减少功耗）等问题。而使用专用电平转换器芯片则能从根本上解决这些问题。</p><p>ASC0101S是ANSILIC专为自动双向总线协议设计的1位电平转换器。与需要DIR引脚控制方向的ASC1T45S不同，ASC0101S通过内部NMOS传输门+单稳态加速器（One-Shot）的组合架构，自动检测<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>边沿并确定传输方向——<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>不再需要关心信号是从A到B还是从B到A，芯片自己搞定。这种“零配置”的特性使ASC0101S成为I2C、SMBus、1-Wire、MDIO等协议的理想桥梁。</p><p><strong>2 方案设计：I2C多电压域<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>网络</strong></p><p>以一个典型的工业传感器采集系统为例：一颗3.3V供电的MCU（如<a href="https://bbs.elecfans.com/zhuti_stm32_1.html" target="_blank"><u>STM32</u></a>系列）作为I2C主机，总线上挂载一个1.8V的温度传感器（如TMP117，最高支持1.8V逻辑）、一个3.3V的<a href="https://www.elecfans.com/tags/湿度传感器/" target="_blank"><u>湿度传感器</u></a>（如SHT4x）和一个5V供电的EEPROM（如AT24C512，需5V逻辑电平）。三个外设分别工作在三个不同的电压域，直接并联到同一I2C总线上将导致<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>冲突甚至永久性损坏。</p><p>使用ASC0101S的解决方案极为简洁。在MCU的I2C总线（3.3V）与每个外设之间，各插入一片ASC0101S。MCU侧统一连接A<a href="https://www.hqchip.com/app/1808" target="_blank"><u>端口</u></a>（VCCA=3.3V），三个外设的B端口分别接入各自电压域（VCCB=1.8V/3.3V/5V）。每片ASC0101S完成对应电压域的电平转换。由于ASC0101S内置了10kΩ上拉电阻（A端和B端各一个），在短距离板级应用中通常无需外部上拉电阻——I2C总线仅需MCU端配置一对4.7kΩ上拉电阻（SCL和<a href="https://m.hqchip.com/app/1522" target="_blank"><u>SD</u></a>A各一个）。</p><p>这里有一个关键的工程约束需要特别注意：ASC0101S的数据手册明确标注了VCCA≥VCCB的电压约束——即A端口的供电电压必须不低于B端口。这个约束来源于内部NMOS传输门的结构：传输门的衬底连接需要确保在任何工作条件下PN结不正向偏置。在VCCA&gt;VCCB时，B端口的逻辑高电平（VCCB）总是低于A端口的逻辑高电平（VCCA），传输门在任意方向都能正确传输信号。如果反向使用（VCCA</p><p>在信号完整性方面，ASC0101S独有的One-Shot加速器是保证I2C快速模式（400kHz）下信号质量的关键。I2C的上升沿完全由上拉电阻对总线<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>充电来实现。假设总线总电容为30pF（包括芯片引脚电容约5pF+<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>走线电容约10pF+其他挂载设备约15pF），仅靠10kΩ上拉电阻充电，RC时间常数≈300ns——仅上升时间就需要约700ns（2.2×RC），已超过400kHz I2C的半个周期（1250ns）的一半。ASC0101S的One-Shot检测到上升沿后，在约30ns的持续时间内以极低阻抗（等效数十Ω）向总线注入<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>，使上升沿在几十纳秒内完成，保证信号满足I2C时序要求。30ns脉冲结束后，由上拉电阻维持高电平——既满足了速度要求，又保证了低功耗特性。</p><p><strong>3 星型拓扑与热插拔保护</strong></p><p>当I2C总线上挂载的设备数量较多时（如超过5个），总线的电容负载会增加到一个影响信号质量的水平。此时可以采用星型拓扑：MCU作为<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>节点，使用一片<a href="https://www.elecfans.com/tags/多路复用器/" target="_blank"><u>多路复用器</u></a>（如I2C Switch/Mux）将总线分为多个分支，每个分支挂载1-3个设备。ASC0101S可以同时完成每个分支的电平转换功能——在Switch的每条下游通道和对应设备之间插入ASC0101S。</p><p>ASC0101S的OE引脚（<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>N5，参考VCCA）提供了硬件级的通道使能/禁用功能。在星型拓扑中，如果某个分支不需要通信（例如对应的传感器进入深度睡眠），MCU可以通过GPIO拉低该分支ASC0101S的OE引脚，将ASC0101S的A和B端口同时置于高阻态。这不仅省电，还能将未使用分支的总线电容从总线上隔离出去——这是AN10441 MOSFET方案无法做到的，因为MOSFET方案始终通过上拉电阻连接到总线。</p><p>值得注意的是ASC0101S支持VCCA和VCCB任意顺序上电（无<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>排序要求），且单侧断电时对应端口呈现高阻态（IOFF特性）。这意味着在进行热插拔操作时，即使一个外设的电源先断开，ASC0101S也不会通过信号线向断电器件注入电流——这对于支持热插拔的模块化系统设计至关重要。</p><p><strong>4 BOM优化与成本分析</strong></p><p>以一个三电压域传感器网络为例（MCU@3.3V+3个外设@1.8V/3.3V/5V），对比三种方案：方案A为分立MOSFET（双BSS138+4×1kΩ电阻/ch×2通道=2颗MOSFET+8颗电阻），方案B为两片ASC0101S（SCL和SDA各一片），方案C为一片2通道的自动双向转换器。方案A的BOM成本最低（约0.05美元），但PCB占用面积大、易受布局影响、不支持400kHz以上速率、缺乏<a href="https://m.hqchip.com/app/1587" target="_blank"><u>ESD</u></a>保护和闩锁防护。方案B的BOM成本约0.15-0.30美元，PCB占用面积仅约20mm²（含两个0402去耦电容），支持24Mbps高速模式，具备HBM±2000V ESD保护和≥100mA闩锁电流额定值。对于工业级、汽车级和航天级产品，方案B的综合性价比远超方案A。</p><p><strong>5 总结</strong></p><p>ASC0101S为多电压域I2C总线提供了一个“零配置、高性能、极紧凑”的电平转换方案。自动方向感应的设计哲学使得工程师无需考虑数据传输方向——芯片自己完成边沿检测和方向判断，将I2C电平转换的工作量降到比单纯画两根走线多不了多少的程度。在方案实施过程中，记住三个关键约束：确保VCCA≥VCCB、核验总线上拉值与总线电容的RC匹配、在长走线应用中评估One-Shot回波风险。遵守这些规则，ASC0101S可以在I2C标准模式（100kHz）到快速模式（400kHz）的全速率范围内提供透明、可靠的自动双向电平转换。</p><p>审核编辑 黄宇</p></div>]]></description></item><item>    <title><![CDATA[ASC0101S SC70-6封装PCB布局与Layout实战指南：自动方向感应电路的特殊考量]]></title>    <link>https://www.elecfans.com/d/8040945.html</link>    <guid>https://www.elecfans.com/d/8040945.html</guid>    <pubDate>2026-07-02 15:12:00</pubDate>    <description><![CDATA[<div class="vditor-preview__action"/><div class="vditor-reset"><p><em>&gt; ASC0101S采用SC70-6微型封装，内置NMOS传输门和One-Shot边沿加速器。其自动方向感应的架构特点对<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>布局提出了独特的要求——特别是One-Shot回波抑制和长线传输的阻抗匹配。本文提供从去耦电容布局到SMT工艺全流程的Layout指导。</em></p><p><strong>1 SC70-6封装物理特性与引脚功能</strong></p><p>ASC0101S采用SC70-6封装（SOT-363变体），外形尺寸2.0×1.25×0.9mm，引脚间距0.65mm。6个引脚的分配为：<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>N1=VCCA（A<a href="https://www.hqchip.com/app/1808" target="_blank"><u>端口</u></a><a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>）、PIN2=GND（地）、PIN3=A（A端口数据，含10kΩ上拉<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>到VCCA）、PIN4=B（B端口数据，含10kΩ上拉电阻到VCCB）、PIN5=OE（输出使能，参考VCCA，内部上拉）、PIN6=VCCB（B端口电源）。封装热阻θJA≈265°C/W（J<a href="https://m.hqchip.com/app/1587" target="_blank"><u>ESD</u></a>-51标准）。由于ASC0101S的静态功耗仅约36μW（3.3V×11μA），即使在最坏工况（推挽模式、24Mbps、5V、30pF负载）下动态功耗也不超过10mW，热问题可以完全忽略。</p><p>引脚排列的一个巧妙之处在于GND（PIN2）位于VCCA（PIN1）和A（PIN3）之间，在物理上起到了电源引脚和数据引脚之间的隔离作用。A和B（PIN3和PIN4）相邻且均位于封装的同一侧，这有利于将两个数据<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>一起走线到总线——但同时也带来了串扰的风险，需要在Layout中采取措施（见下文）。</p><p><strong>2 去耦电容布局：永远不变的基础</strong></p><p>ASC0101S需要两组去耦<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>：VCCA和VCCB各一个0.1μF的<a href="https://www.hqchip.com/app/398" target="_blank"><u>MLCC</u></a>电容。推荐0402封装（1.0×0.5mm）X7R材质。每个电容应紧靠对应电源引脚（距离≤2mm），电容的GND焊盘通过过孔（孔径0.3mm）直接连接到内层GND平面。VCCA和VCCB的去耦电容可以分别放置在芯片的两侧。对于航天级应用，建议在每个电容旁预留第二个并联焊盘，以适应后续增加1μF或10μF大电容的需求。</p><p>特别提醒：ASC0101S的GND引脚（PIN2）承载所有返回<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>。VCCA和VCCB的返回电流也都经过PIN2回流。PIN2焊盘应在PCB上连接到大面积的GND铜皮，并通过至少两个过孔连接到内层GND平面。在四层板设计中，PIN2应通过走线或直接焊盘形状延伸连接到附近的GND过孔。</p><p><strong>3 A和B信号线的特殊Layout规则</strong></p><p>ASC0101S的A和B信号线Layout与普通<a href="https://www.hqchip.com/app/1381" target="_blank"><u>数字信号</u></a>有本质区别——因为ASC0101S的NMOS传输门+One-Shot架构对信号反射非常敏感。ASC0101S的数据手册明确建议：PCB信号走线长度应足够短，以使任何反射的往返延迟小于One-Shot脉冲宽度（30ns）。FR4的信号传播速度约150mm/ns（6ps/mm），30ns对应的往返距离为30×150÷2=2250mm——这说明板级走线的长度通常不会触发这个限制（大多数PCB上<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>走线长度不超过200mm）。然而，如果使用<a href="https://m.hqchip.com/app/1518" target="_blank"><u>FPC</u></a>柔性排线（传播速度较慢，约100mm/ns），30ns对应的单程距离为1.5m，往返750mm——在紧凑型可穿戴设备中使用短FPC（&lt;150mm）是安全的，但长FPC（&gt;500mm）则可能产生One-Shot回波。</p><p>当走线长度不可避免超过建议值时（如大型工业设备中的跨板I2C），建议在ASC0101S的A/B端口附近串联22-50Ω的阻尼电阻。这个电阻的目的不是端接（走线太短无法形成传输线效应），而是增加源端阻抗以衰减One-Shot关闭后可能产生的反射振铃。电阻值选择的原则：足够大以有效衰减振铃，但也足够小以避免显著增加传播延迟。对于3.3V I2C系统，22Ω可衰减约30%的反射能量，增加的RC延迟约22Ω×15pF=330ps——远小于I2C 400kHz的半个周期（1250ns），安全可行。</p><p><strong>4 OE引脚的处理</strong></p><p>OE引脚（PIN5）参考VCCA的电压。如果不使用OE功能（让芯片始终使能），应将OE通过10kΩ电阻连接到VCCA（不能直接接VCCA，内部已有上拉，直接接没问题，但建议串电阻以防ESD事件）。如果要由<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>的GPIO控制OE，注意GPIO的电压必须与VCCA匹配——如果MCU运行在1.8V而VCCA=3.3V，GPIO的高电平1.8V可能低于ASC0101S的VIH阈值（约VCCA×0.7=2.31V），导致OE无法被可靠拉高。在这种情况下，需要在MCU GPIO与ASC0101S OE之间添加一个电平<a href="https://www.hqchip.com/app/1718" target="_blank"><u>转换器</u></a>，或直接使用OE内部上拉+MCU开漏输出的方式驱动。OE走线没有高速要求，一般Layout规则即可。</p><p><strong>5 SMT组装工艺与注意事项</strong></p><p>SC70-6封装的回流焊工艺要求与同系列芯片（ASC1T34S、ASC1T45S）完全一致。钢网厚度推荐0.1mm（4mil），开孔比例1:1。回流温度曲线建议<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>S曲线：浸润区150-180°C持续60-90秒，峰值温度235-245°C，TAL（液相线以上时间）60-90秒。焊后AOI自动光学检测可100%覆盖0.65mm引脚间距的焊点质量检查。</p><p>一个常被忽视的细节是：ASC0101S内部10kΩ上拉电阻的存在意味着在未上电时A和B引脚可能通过上拉电阻与VCC轨道有直流通路。在ICT（在线测试）或边界扫描测试中，测试设备施加的电压可能通过这些上拉电阻向ASC0101S供电，导致异常的电流消耗或假性故障检测。测试<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>应了解这个特性，在测试程序中正确配置电源序列。</p><p><strong>6 Layout检查清单</strong></p><p>以下是一份供<a href="https://bbs.elecfans.com/group_1221" target="_blank"><u>PCB设计</u></a>审查使用的简明检查清单。□ VCCA和VCCB各一个0.1μF 0402 X7R电容，距引脚≤2mm；□ PIN2（GND）连接大面积铜皮，至少两个GND过孔；□ A/B走线长度≤200mm（FR4），或评估FPC走线的One-Shot回波风险；□ 长走线（&gt;200mm FR4或&gt;150mm FPC）配置22-50Ω串联阻尼电阻；□ OE走线无高速要求，注意MCU GPIO电压域匹配；□ A/B走线间距≥2W，可铺设GND屏蔽铜皮以降低串扰；□ 钢网0.1mm厚，1:1开孔，RSS回流曲线。遵循以上清单，ASC0101S的SC70-6封装可以在最小的PCB面积内提供稳定、可靠的自动双向电平转换功能。</p><p>审核编辑 黄宇</p></div>]]></description></item><item>    <title><![CDATA[科技云报到：Token经济席卷而来，云的新秩序正在重建]]></title>    <link>https://www.elecfans.com/d/8040947.html</link>    <guid>https://www.elecfans.com/d/8040947.html</guid>    <pubDate>2026-07-02 15:13:00</pubDate>    <description><![CDATA[<p>
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[bq27410EVM：单节阻抗跟踪技术评估模块详解]]></title>    <link>https://www.elecfans.com/d/8040938.html</link>    <guid>https://www.elecfans.com/d/8040938.html</guid>    <pubDate>2026-07-02 15:10:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8040938" value="https://file.elecfans.com/web2/M00/76/A9/poYBAGNhNSWANjxJAS7E3-V4pU8530.pdf"/><h1>bq27410EVM：单节阻抗跟踪技术评估模块详解</h1>
+<h2>引言</h2>
+<p>在<a href="https://m.hqchip.com/app/1712" target="_blank"><u>电池管理</u></a>系统的设计与开发中，精确的电池电量监测至关重要。<a href="https://www.elecfans.com/tags/德州仪器/" target="_blank"><u>德州仪器</u></a>（<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>Te</u></a>xas Instruments）的bq27410EVM评估模块为<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>们提供了一个全面且便捷的工具，用于评估bq27410单节阻抗跟踪技术的燃油表解决方案。本文将深入探讨该评估模块的特性、硬件组成、软件设置以及操作方法，帮助<a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>们更好地理解和应用这一技术。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8040938" target="_blank">BQ27410EVM.pdf</a></p>
+<h2>一、bq27410EVM特性</h2>
+<h3>1.1 完整评估系统</h3>
+<p>bq27410EVM是一个完整的评估系统，采用了先进的阻抗跟踪（Imp<a href="https://www.elecfans.com/v/tag/1053/" target="_blank"><u>eda</u></a>nce Tr<a href="https://www.hqchip.com/app/1703" target="_blank"><u>ac</u></a>k™）技术，可精确监测和预测单节<a href="https://m.elecfans.com/v/tag/6503/" target="_blank"><u>锂离子电池</u></a>的容量，为电池管理提供可靠的数据支持。</p>
+<h3>1.2 快速搭建</h3>
+<p>模块配备了已组装好的电路模块，即插即用，大大缩短了工程师的开发时间，能够快速开始评估工作。</p>
+<h3>1.3 易于评估</h3>
+<p>搭配个人计算机（PC）软件和<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>板，方便用户进行各种操作。用户可以通过软件轻松读取bq27410的数据<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>，对芯片组进行<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a>以适应不同的电池组配置，记录电池循环数据以便进一步分析，并在不同的充放电条件下评估bq27410解决方案的整体功能。</p>
+<h3>1.4 数据记录</h3>
+<p>软件具备数据记录功能，可对系统分析所需的数据进行记录，为后续的电池性能评估和优化提供有力依据。</p>
+<h3>1.5 固件升级</h3>
+<p>支持通过闪存重新编程的方式将固件升级到最新版本，确保评估模块始终具备最新的功能和性能。</p>
+<h2>二、bq27410EVM硬件组成</h2>
+<h3>2.1 基于bq27410的电路模块</h3>
+<p>该电路模块是一个完整且紧凑的电池管理解决方案，集成了bq27410电池电量计<a href="https://m.elecfans.com/v/tag/123/" target="_blank"><u>集成电路</u></a>（IC）以及所有必要的组件，能够准确预测单节锂离子电池的容量。</p>
+<ul>
+<li><strong>电路模块连接</strong>
+<ul>
+<li>直接连接到电池组（J1或J6）：提供PACK +和PACK - 连接。</li>
+<li>连接到串行<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a><a href="https://www.hqchip.com/app/1808" target="_blank"><u>端口</u></a>（J3）：包括<a href="https://www.hqchip.com/app/1522" target="_blank"><u>SD</u></a>A、SCL和VSS。</li>
+<li>系统负载和充电器连接（J5和J4）：提供CHARGER - /LO<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a> - 和CHARGER + /LOAD +连接。</li>
+<li><a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>输出访问（J2）：包括BIN和GPOUT。</li>
+</ul></li>
+<li>
+<table>
+<thead>
+<tr>
+<th><strong>引脚描述</strong></th>
+<th>引脚名称</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PACK +</td>
+<td>电池组正极<a href="https://m.hqchip.com/app/1529" target="_blank"><u>端子</u></a></td>
+</tr>
+<tr>
+<td>PACK -</td>
+<td>电池组负极端子</td>
+</tr>
+<tr>
+<td>SDA</td>
+<td><a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>™通信数据线</td>
+</tr>
+<tr>
+<td>SCL</td>
+<td>I2C通信时钟线</td>
+</tr>
+<tr>
+<td>VSS</td>
+<td>通信线的信号返回，与充电器和地共享</td>
+</tr>
+<tr>
+<td>CHG + /LOAD +</td>
+<td>负载或充电器连接的高电位</td>
+</tr>
+<tr>
+<td>CHG - /LOAD -</td>
+<td>负载或充电器连接的低电位（系统VSS）</td>
+</tr>
+<tr>
+<td>BIN</td>
+<td>电池插入检测输入</td>
+</tr>
+<tr>
+<td>GPOUT</td>
+<td>通用输出</td>
+</tr>
+</tbody>
+</table>
+</li>
+</ul>
+<h3>2.2 电路模块原理图</h3>
+<p>原理图与用户指南中的物料清单相匹配，为工程师提供了清晰的<a href="https://www.elecfans.com/v/tag/167/" target="_blank"><u>电路设计</u></a>参考。</p>
+<h3>2.3 物理布局和物料清单</h3>
+<ul>
+<li><strong>板布局</strong>：详细展示了印刷电路板（<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>）的各层布局以及组装图，帮助工程师了解模块的物理结构。</li>
+<li>
+<table>
+<thead>
+<tr>
+<th><strong>物料清单</strong>：列出了模块中使用的所有组件，包括<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>、<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>、<a href="https://m.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>、<a href="https://m.hqchip.com/app/1515" target="_blank"><u>连接器</u></a>等，方便工程师进行采购和替换。</th>
+<th>数量</th>
+<th>参考编号</th>
+<th>值</th>
+<th>描述</th>
+<th>尺寸</th>
+<th>零件编号</th>
+<th>制造商</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>3</td>
+<td>C1, C2, C4</td>
+<td>0.1 µF</td>
+<td>陶瓷电容，0.1 µF，10V，X5R</td>
+<td>0402</td>
+<td>GRM155R61A104KA01D</td>
+<td>Murata</td>
+</tr>
+<tr>
+<td>1</td>
+<td>C3</td>
+<td>0.47 µF</td>
+<td>陶瓷电容，0.47 µF，6.3V，X5R</td>
+<td>0402</td>
+<td>GRM155R60J474KE19D</td>
+<td>Murata</td>
+</tr>
+<tr>
+<td>1</td>
+<td>D1</td>
+<td>AZ23C5V6 - 7</td>
+<td>双<a href="https://www.hqchip.com/app/1560" target="_blank"><u>齐纳</u></a>二极管，5.6 V，300mW</td>
+<td>SOT23</td>
+<td>AZ23C5V6 - 7</td>
+<td><a href="https://www.elecfans.com/tags/diode/" target="_blank"><u>Diode</u></a>s</td>
+</tr>
+<tr>
+<td>2</td>
+<td>J1, J3</td>
+<td>22 - 05 - 3041</td>
+<td>摩擦锁头组件，4引脚直角</td>
+<td>0.400 x 0.500</td>
+<td>22 - 05 - 3041</td>
+<td><a href="https://www.elecfans.com/tags/molex/" target="_blank"><u>Molex</u></a></td>
+</tr>
+<tr>
+<td>4</td>
+<td>J2, J4, J5, J6</td>
+<td>ED555/2DS</td>
+<td>2引脚端子块，6 - A，3.5mm</td>
+<td>0.27 x 0.25 inch</td>
+<td>ED555/2DS</td>
+<td>OST</td>
+</tr>
+<tr>
+<td>1</td>
+<td>R2</td>
+<td>0.01</td>
+<td>芯片电阻，1/10W，1%，&lt;75ppm/C</td>
+<td>0805</td>
+<td>CRCW0805 - xxxx - F</td>
+<td><a href="https://www.elecfans.com/tags/vishay/" target="_blank"><u>Vishay</u></a></td>
+</tr>
+<tr>
+<td>4</td>
+<td>R4, R5, R6, R7</td>
+<td>100</td>
+<td>芯片电阻，1/16 - W，5%</td>
+<td>0402</td>
+<td>Std</td>
+<td>Std</td>
+</tr>
+<tr>
+<td>3</td>
+<td>R8, R9, R10</td>
+<td>10k</td>
+<td>芯片电阻，1 - kΩ，1/16 - W，5%</td>
+<td>0402</td>
+<td>Std</td>
+<td>Std</td>
+</tr>
+<tr>
+<td>2</td>
+<td>TP1, TP5</td>
+<td>5000</td>
+<td>红色<a href="https://m.hqchip.com/app/1535" target="_blank"><u>测试点</u></a>，通孔颜色编码</td>
+<td>0.100 x 0.100 inch</td>
+<td>5000</td>
+<td>Keystone</td>
+</tr>
+<tr>
+<td>4</td>
+<td>TP2, TP3, TP4, TP6</td>
+<td>5001</td>
+<td>黑色测试点，通孔颜色编码</td>
+<td>0.100 x 0.100 inch</td>
+<td>5001</td>
+<td>Keystone</td>
+</tr>
+<tr>
+<td>1</td>
+<td>U1</td>
+<td>BQ27410DRZ</td>
+<td>单节阻抗跟踪™电量计IC</td>
+<td>QFN12</td>
+<td>BQ27410DRZ</td>
+<td><a href="https://bbs.elecfans.com/group_715" target="_blank"><u>TI</u></a></td>
+</tr>
+</tbody>
+</table>
+</li>
+</ul>
+<h3>2.4 性能规格总结</h3>
+<table>
+<thead>
+<tr>
+<th>规格</th>
+<th>最小值</th>
+<th>典型值</th>
+<th>最大值</th>
+<th>单位</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>输入电压（PACK +到PACK -）</td>
+<td>2.7</td>
+<td>3.6</td>
+<td>4.3</td>
+<td>V</td>
+</tr>
+<tr>
+<td>充放电电流</td>
+<td>0</td>
+<td>1</td>
+<td>2</td>
+<td>A</td>
+</tr>
+</tbody>
+</table>
+<h2>三、EVM硬件和软件设置</h2>
+<h3>3.1 系统要求</h3>
+<p>bq27410EVSW软件要求运行在Windows 2000或Windows XP<a href="https://m.elecfans.com/v/tag/527/" target="_blank"><u>操作系统</u></a>上。虽然提供了Windows 98SE的驱动程序，但由于微软不再支持Windows 98，可能会出现<a href="https://m.hqchip.com/app/1515" target="_blank"><u>USB</u></a>驱动支持问题。EV2300或EV2400 USB驱动程序已在Windows 98SE上进行了测试，但不能保证在特定系统配置下无问题运行。</p>
+<h3>3.2 软件安装</h3>
+<ol>
+<li>在power.ti.com的bq27410工具文件夹中找到最新版本的软件。通过零件编号搜索bq27410以访问工具文件夹。</li>
+<li>在开始安装之前，确保EV2300或EV2400未通过USB电缆连接到个人计算机（PC）。</li>
+<li>打开包含安装包的存档文件，并将其内容复制到临时目录。</li>
+<li>打开从TI网站下载的软件文件。</li>
+<li>按照屏幕上的指示完成软件安装。</li>
+<li>在启动评估软件之前，使用USB电缆将EV2300或EV2400连接到计算机。</li>
+<li>等待系统提示“新硬件找到”，选择“手动选择位置”，并使用“浏览”按钮指向子目录TIUSBWin2K - XP - 1。</li>
+<li>对于驱动程序未通过微软<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>的警告，选择“继续”。</li>
+<li>安装完成后，系统会再次提示“新硬件找到”。重复步骤1 - 5，但指定目录为TIUSBWin2K - XP - 2。</li>
+<li>再次选择“继续”以完成驱动程序安装。</li>
+</ol>
+<h3>3.3 硬件连接</h3>
+<ul>
+<li><strong>连接bq27410电路模块到电池组</strong>：按照原理图和连接图将bq27410电路模块连接到电池组和系统负载/充电器。</li>
+<li>
+<table>
+<thead>
+<tr>
+<th><strong>PC接口连接</strong>：使用导线将基于bq27410的EVM连接到EV2300，连接关系如下：</th>
+<th>bq27410EVM</th>
+<th>EV2300</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SDA</td>
+<td>SDA</td>
+</tr>
+<tr>
+<td>SCL</td>
+<td>SCL</td>
+</tr>
+<tr>
+<td>VSS</td>
+<td>GND</td>
+</tr>
+</tbody>
+</table>
+<p>同时，将PC USB电缆连接到EV2300和PC的USB端口。对于电池插入检测配置，请参考数据手册获取详细信息。</p>
+</li>
+</ul>
+<h2>四、操作方法</h2>
+<h3>4.1 启动程序</h3>
+<p>从“开始 | 程序 | 德州仪器 | bq评估软件”菜单序列中运行bq27410 EVSW。点击<refresh>（单次扫描）按钮或勾选<keep scanning="">复选框后，数据开始显示。若要禁用扫描功能，取消勾选<keep scanning="">。可以通过| Options |和| Set S<a href="https://www.hqchip.com/app/2004" target="_blank"><u>can</u></a> Interval |菜单选项设置连续扫描周期，范围为0 ms到65,535 ms。只有选择扫描的项目才会在该周期内进行扫描。</keep></keep></refresh></p>
+<h3>4.2 设置可编程bq27410选项</h3>
+<p>bq27410的数据闪存默认配置在数据手册中有详细说明。为了获得最佳性能，需要确保根据所评估的电池组和应用正确更改设置。可以使用数据闪存屏幕进行配置：</p>
+<ul>
+<li>读取所有数据：点击菜单选项| Data Flash | Read All |。</li>
+<li>写入数据：点击所需位置，输入数据并按<enter>键，将写入整个闪存数据<a href="https://www.hqchip.com/tags" target="_blank"><u>标签</u></a>；或选择菜单选项| Data Flash | Write All |。在写入之前，必须先读取数据闪存，以避免写入错误数据。</enter></li>
+<li>导出数据：使用| File | Special Export |菜单选项可将数据闪存导出，并将导出的数据闪存配置为适合批量生产的学习状态。</li>
+<li>保存和恢复配置：选择| File | Export |并输入文件名可将数据闪存配置保存到文件中；也可以通过这种方式检索、导入数据闪存文件，并使用| Write All |按钮将其写入bq27410。</li>
+</ul>
+<h3>4.3 校准屏幕</h3>
+<p>为确保正确校准，可根据需要执行以下步骤，一次只能选择并校准一个校准项目：</p>
+<ul>
+<li><strong>校准bq27410</strong>：选择要执行的校准类型，输入测量值，然后按“Calibrate Part as indicated below”按钮。</li>
+<li><strong>CC偏移校准</strong>：执行库仑计数器输入偏移的内部校准。</li>
+<li><strong>电压校准</strong>：测量PACK +和PACK - 之间的电压，将电压值以mV为单位输入“Enter Actual Voltage”，然后按“Calibrate Voltage and Temperature as indicated below”按钮。</li>
+<li><strong>温度校准</strong>：测量PACK的温度，将温度值输入“Enter Actual Temperature”，选择要校准的<a href="https://www.elecfans.com/tags/温度传感器/" target="_blank"><u>温度传感器</u></a>是内部还是外部，然后按“Calibrate Voltage and Temperature as indicated below”按钮。</li>
+<li><strong>板偏移校准</strong>：在执行此校准步骤时，应确保没有<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>流过检测电阻。移除负载并将PACK - 短路到LOAD - ，然后按“Calibrate Board Offset”按钮。</li>
+<li><strong>电池组电流校准</strong>：连接一个约1 A的负载到LOAD - 和LOAD + ，或连接一个<a href="https://m.hqchip.com/app/1725" target="_blank"><u>电流源</u></a>到LOAD - 和Pack - 。测量电流并将值输入“Enter Actual Current”，使用（ - ）表示放电方向的电流，然后按“Calibrate Pack Current”按钮。</li>
+</ul>
+<h3>4.4 I2C Pro屏幕</h3>
+<p>I2C Pro功能的读写操作是通用的通信工具，不特定于任何电量计。使用时需注意，该屏幕适用于高级用户，某些命令可能会对硬件造成永久性损坏。</p>
+<h3>4.5 bqEASY™软件</h3>
+<ul>
+<li><strong>简介</strong>：德州仪器的燃油表采用了阻抗跟踪™<a href="https://m.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>，具有丰富的功能和优势。但由于配置设置范围广泛，评估过程可能具有挑战性。bqEASY™程序旨在通过逐步使用向导程序，大大简化配置、校准、选择化学模型和执行学习周期的过程。</li>
+<li><strong>程序导航和流程图</strong>：通过查看基本流程图可以了解bqEASY™程序的操作顺序。使用该程序很简单，只需启动新项目并按顺序从1A到5C执行步骤。可以使用“Next”按钮或点击顶部标签和左侧子部分标签移动到任何所需页面。由于数据依赖或实现正确流程，某些操作必须按顺序完成，因此建议至少在开始时遵循规定的顺序。</li>
+<li><strong>简化配置程序</strong>：可以使用以下简化配置程序快速设置参数，而无需浏览整个用户界面：
+<ol>
+<li>打开当前的EV软件，点击EV软件中Calibrate按钮下方左侧列中的bqEASY按钮。</li>
+<li>点击bqEASY™标签顶部行的“2. Configure”标签（可以跳过第一个标签）。</li>
+<li>回答所有问题，或保留所有“2”标签的默认设置，但务必点击每个“2”标签页面底部的OK按钮，以确保每个页面都出现完成复选标记。</li>
+<li>在页面2H上，点击OK按钮时，软件会提示写入数据闪存。点击“Yes”以写入数据闪存。</li>
+</ol></li>
+<li><strong>文件类型</strong>：bqEASY™软件使用四种类型的文件来配置燃油表：
+<ul>
+<li>ENCR：默认的数据闪存定义文件，位于bq_Evaluation_Software文件夹中。对于bqEASY™程序，.ENCR文件主要用作查找给定数据闪存位置地址的字典；对于bqEVSW，它们定义屏幕参数，包括地址、显示公式和数据类型。</li>
+<li>DFI（数据闪存图像文件）：燃油表数据闪存的二进制图像，根据应用修改了值。每个燃油表模型和固件版本都有一个唯一的只读.DFI文件，位于..bq_Evaluation_SoftwarePluginsDevice_Defaults文件夹中。bqEASY™过程中的中间版本.DFI文件会记录当前更新的数据，以防止损坏。最终输出的.DFI文件是“黄金图像”，将被编程到每个生产单元中，该文件位于..bq_Evaluation _SoftwarePluginsProjects文件夹中。</li>
+<li>EZY（bqEASY™项目文件）：读写文本文件，记录项目的标题信息、向导问题的答案以及完成阶段的状态（红色复选标记），保存在..bq_Evaluation _SoftwarePluginsProjects文件夹中。</li>
+</ul></li>
+<li><strong>完成复选标记</strong>：随着向导问题和任务的完成，完成复选标记会出现在两个位置：左侧的任务列表和顶部的类别标签上。只有在类别中的所有任务都完成后，顶部标签上才会出现复选标记。完成标记保存在.EZY项目文本文件中。当打开已完成或部分完成的项目文件时，用户可以选择擦除复选标记。</li>
+<li><strong>设备检测</strong>：bqEASY™程序设计为与已通过EV2300或EV2400 USB接口与bqEVSW评估软件通信的燃油表一起使用。启动评估软件时，它会读取设备类型并显示在标题栏上。bqEASY™程序使用此信息为特定设备选择正确的默认数据闪存图像（.DFI）和数据闪存配置文件（.ENCR）。按下bqEASY按钮时，软件还会检查设备类型。如果未找到正确的文件，首先检查TI网站上用于该部件的EVM工具文件夹，并下载支持bqEASY™的最新版本EV软件；如果仍然无法解决问题，请联系TI。</li>
+</ul>
+<h2>五、注意事项</h2>
+<h3>5.1 评估板使用限制</h3>
+<p>该评估板/套件仅用于工程开发、演示或评估目的，不被视为适合一般消费者使用的成品。处理产品的人员必须具备电子培训，并遵守良好的工程实践标准。评估板/套件可能不满足欧盟关于<a href="https://bbs.elecfans.com/group_40" target="_blank"><u>电磁兼容</u></a>性、限制物质（RoHS）、回收（WEEE）、FCC、CE或UL等指令的技术要求。</p>
+<h3>5.2 输入输出范围</h3>
+<p>重要的是在0 V到5 V的输入电压范围和0 V到5 V的输出电压范围内操作此EVM。超过指定的输入范围可能会导致意外操作和/或对EVM造成不可逆损坏。如果对输入范围有疑问，请在连接输入<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>之前联系TI现场代表。</p>
+<h3>5.3 负载限制</h3>
+<p>应用超出指定输出范围的负载可能会导致意外操作和/或对EVM造成永久性损坏。在连接任何负载到EVM输出之前，请参考EVM用户指南。如果对负载规格不确定，请联系TI现场代表。</p>
+<h3>5.4 温度注意事项</h3>
+<p>在正常操作期间，某些电路组件的外壳温度可能会超过60°C。只要保持输入和输出范围，EVM设计为在某些组件高于60°C的情况下正常运行。这些组件包括但不限于<a href="https://www.hqchip.com/app/1700" target="_blank"><u>线性稳压器</u></a>、开关晶体管、功率晶体管和<a href="https://www.hqchip.com/app/1782" target="_blank"><u>电流检测</u></a>电阻。可以使用EVM用户指南中的原理图识别这些设备。在操作过程中，将测量探头靠近这些设备时，请注意这些设备可能会很烫。</p>
+<h2>六、总结</h2>
+<p>bq27410EVM评估模块为电子工程师提供了一个强大而便捷的工具，用于评估bq27410单节阻抗跟踪技术的燃油表解决方案。通过本文的介绍，我们详细了解了该评估模块的特性、硬件组成、软件设置以及操作方法。在使用过程中，工程师们需要注意评估板的使用限制、输入输出范围、负载限制和温度注意事项，</p>]]></description></item><item>    <title><![CDATA[bq34z110EVM：铅酸电池宽量程燃油表解决方案评测]]></title>    <link>https://www.elecfans.com/d/8040939.html</link>    <guid>https://www.elecfans.com/d/8040939.html</guid>    <pubDate>2026-07-02 15:10:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8040939" value="https://file.elecfans.com/web2/M00/76/B2/poYBAGNhZrqAHt2KAA9rpgsY8Q4758.pdf"/><h1>bq34z110EVM：铅酸电池宽量程燃油表解决方案评测</h1>
+<p>在电子工程领域，<a href="https://m.hqchip.com/app/1712" target="_blank"><u>电池管理</u></a>系统的精确性和可靠性至关重要。今天，我们将深入探讨<a href="https://www.elecfans.com/tags/德州仪器/" target="_blank"><u>德州仪器</u></a>（<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>Te</u></a>xas Instruments）的 bq34z110EVM 评估模块，它为铅酸电池提供了一种基于 Imp<a href="https://www.elecfans.com/v/tag/1053/" target="_blank"><u>eda</u></a>nce Tr<a href="https://www.hqchip.com/app/1703" target="_blank"><u>ac</u></a>k™ 技术的宽量程燃油表解决方案。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8040939" target="_blank">BQ34Z110EVM.pdf</a></p>
+<h2>1. 功能与套件内容</h2>
+<h3>1.1 主要功能</h3>
+<ul>
+<li><strong>完整评估系统</strong>：bq34z110EVM 是一个完整的评估系统，结合 EV2300 <a href="https://m.hqchip.com/app/1515" target="_blank"><u>USB</u></a> 适配器和基于 Windows 的 PC 软件（可从 <a href="https://bbs.elecfans.com/group_715" target="_blank"><u>TI</u></a> 官网下载），可对 bq34z110 宽量程铅酸电池燃油表进行全面评估。</li>
+<li><strong>快速设置</strong>：电路模块已预先组装好，包含一个 bq34z110 <a href="https://m.elecfans.com/v/tag/123/" target="_blank"><u>集成电路</u></a>（IC）以及监测和预测 2 个或更多串联铅酸电池组容量所需的所有其他组件，可直接连接到电池两端，实现快速设置。</li>
+<li><strong>数据记录</strong>：通过软件可以读取 bq34z110 数据<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>，对芯片进行不同电池组配置的<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a>，记录循环数据以进行进一步评估，并评估 bq34z110 解决方案在不同充电和放电条件下的整体功能。</li>
+</ul>
+<h3>1.2 套件内容</h3>
+<ul>
+<li><strong>bq34z110 电路模块</strong>：是整个评估系统的核心，集成了燃油表 IC 和各种可选组件及跳线，可适应不同的电池电压、<a href="https://m.hqchip.com/app/1721" target="_blank"><u>LED</u></a> 和 ALERT <a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>配置。</li>
+<li><strong>支持文档</strong>：为用户提供了详细的使用说明和技术参考。</li>
+</ul>
+<h3>1.3 订购信息</h3>
+<table>
+<thead>
+<tr>
+<th>EVM 部件编号</th>
+<th>化学类型</th>
+<th>配置</th>
+<th>容量</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>bq34z110EVM</td>
+<td>铅酸</td>
+<td>3 V–65 V</td>
+<td>任意</td>
+</tr>
+</tbody>
+</table>
+<h2>2. bq34z110 设备电路模块</h2>
+<h3>2.1 电路模块连接</h3>
+<p>电路模块上的触点提供了以下连接方式：</p>
+<ul>
+<li><strong>电池连接</strong>：直接连接到电池的正负极（BAT+ 和 BAT–）。</li>
+<li><strong>系统负载和充电器连接</strong>：系统负载和充电器跨接在 BAT+ 和 PACK– 之间。</li>
+<li><strong><a href="https://www.elecfans.com/v/tag/13179/" target="_blank"><u>通信接口</u></a>连接</strong>：连接到 <a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a> 和 HDQ 串行<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a><a href="https://www.hqchip.com/app/1808" target="_blank"><u>端口</u></a>，用于与外部设备进行数据传输。</li>
+<li><strong>ALERT 输出连接</strong>：提供 ALERT 输出信号，用于指示电池状态。</li>
+</ul>
+<h3>2.2 引脚描述</h3>
+<table>
+<thead>
+<tr>
+<th><a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>N 名称</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>BAT +</td>
+<td>电池组正极连接</td>
+</tr>
+<tr>
+<td>BAT –</td>
+<td>电池组负极连接</td>
+</tr>
+<tr>
+<td>PACK –</td>
+<td>电池组负极<a href="https://m.hqchip.com/app/1529" target="_blank"><u>端子</u></a></td>
+</tr>
+<tr>
+<td><a href="https://www.hqchip.com/app/1522" target="_blank"><u>SD</u></a>A</td>
+<td>I2C 数据信号</td>
+</tr>
+<tr>
+<td>SCL</td>
+<td>I2C <a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>信号</td>
+</tr>
+<tr>
+<td>GND</td>
+<td>通信和 ALERT 接地</td>
+</tr>
+<tr>
+<td>HDQ</td>
+<td>HDQ 串行通信信号</td>
+</tr>
+<tr>
+<td>ALERT</td>
+<td>ALERT 输出信号</td>
+</tr>
+</tbody>
+</table>
+<h2>3. bq34z110 电路模块配置</h2>
+<h3>3.1 单电池（1S）或多电池操作选择</h3>
+<p>bq34z110 可在两种模式下测量电池电压，通过在 EVM 上的 J5 头放置两个跳线来选择操作模式。需要注意的是，当跳线配置为 ≤5-V 操作时，施加高于 5 V 的电压很可能会损坏 IC。≤5-V 模式可简化电路，bq34z110 左侧的大部分组件不再需要。</p>
+<h3>3.2 最大多电池电压选择</h3>
+<p>在多电池（MultiCell &gt; 5-V）设置中，可在 J2 头选择三种最大电池电压级别：16 V、32 V 和 48 V。理想情况下，包括 16.5-kΩ <a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a> R28 在内的总分压比应将电池上的最大预期电压转换为燃油表 BAT 引脚处的 0.8 V 至 1.0 V 之间的电压。为了定制分压比，提供了<a href="https://m.hqchip.com/app/1535" target="_blank"><u>测试点</u></a> TP1 和 TP2。虽然 bq34z110 固件能够处理高达 65 V 的电池电压，但不应将高于 50 V 的电压施加到 EVM 上。</p>
+<h3>3.3 LED 配置选择</h3>
+<p>在配置数据闪存寄存器时，可从五种 LED/通信配置代码中选择一种（参考 bq34z110 数据手册中的表 12）。根据选择，在 EVM 的 J6 头设置相应的跳线模式。例如，单 LED 模式下，在标记为 A 的一对引脚上放置跳线；四直接 LED 模式下，在 A、B、C 和 D 引脚上放置跳线；使用移位寄存器选项的外部 LED 时，在 EXT 引脚上放置单个跳线。无论使用一个或多个 LED，都需要在 J1 头跨接一个跳线为 LED 供电。</p>
+<h3>3.4 ALERT 配置选择</h3>
+<p>ALERT 输出引脚取决于在 LED/通信数据闪存寄存器中选择的 LED 模式。参考 bq34z110 数据手册中的表 13 来确定正确的 ALERT 引脚，并在 J3 头相应地放置一个且仅一个跳线。</p>
+<h2>4. 电路模块物理布局、原理图和物料清单</h2>
+<h3>4.1 电路板布局</h3>
+<p>文档中提供了 bq34z110 模块的 <a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a> 各层和装配图，包括丝印布局、顶层组件、顶层、内层 1、内层 2 和底层等，为<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>提供了清晰的物理结构参考。</p>
+<h3>4.2 原理图</h3>
+<p>给出了 bq34z110EVM 的原理图，展示了电路的详细连接和设计，有助于工程师理解电路工作原理和进行故障排查。</p>
+<h3>4.3 物料清单（BOM）</h3>
+<p>详细列出了 bq34z110EVM 的物料清单，包括<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>、<a href="https://m.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>、电阻、<a href="https://m.hqchip.com/app/1555" target="_blank"><u>晶体管</u></a>、集成电路、<a href="https://m.hqchip.com/app/1515" target="_blank"><u>连接器</u></a>等各种组件的数量、参考编号、值、描述、尺寸、部件编号和制造商等信息，为采购和组装提供了准确的依据。</p>
+<h3>4.4 性能规格总结</h3>
+<table>
+<thead>
+<tr>
+<th>规格</th>
+<th>最小值</th>
+<th>典型值</th>
+<th>最大值</th>
+<th>单位</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>≤5-V 模式下 BAT+ 到 BAT– 的输入电压</td>
+<td>2.7</td>
+<td>4</td>
+<td>5</td>
+<td>V</td>
+</tr>
+<tr>
+<td>多电池 &gt; 5-V 模式下 BAT+ 到 BAT– 的输入电压</td>
+<td>5</td>
+<td>28</td>
+<td>50</td>
+<td>V</td>
+</tr>
+<tr>
+<td>充电和放电电流</td>
+<td>0</td>
+<td>2</td>
+<td>7</td>
+<td>A</td>
+</tr>
+</tbody>
+</table>
+<h2>5. EVM 硬件和软件设置</h2>
+<h3>5.1 系统要求</h3>
+<p>bq34z110EVSW 软件需要 Windows 2000、Windows XP、Windows Vista 或 Windows 7 <a href="https://m.elecfans.com/v/tag/527/" target="_blank"><u>操作系统</u></a>。</p>
+<h3>5.2 软件安装</h3>
+<ul>
+<li>保存软件存档到临时目录。</li>
+<li>双击可执行文件名，按照安装程序的指示完成 bq34z110 EVSW 软件的安装。</li>
+<li>如果之前未安装 EV2300 或 EV2400，安装 bq34z110 EVSW 后会弹出 TI USB 驱动程序安装程序，点击同意消息并按照指示操作。</li>
+<li>将 EV2300 或 EV2400 插入 USB 端口。</li>
+</ul>
+<h3>5.3 意外对话框故障排除</h3>
+<p>下载文件的用户必须以管理员身份登录或具有安装新程序的权限。由于驱动程序未签名，管理员必须允许安装未签名的驱动程序。</p>
+<h3>5.4 硬件连接</h3>
+<h4>5.4.1 连接 bq34z110 电路模块到电池组</h4>
+<p>参考文档中的图 8，将 bq34z110 电路模块正确连接到电池组和系统负载及充电器。</p>
+<h4>5.4.2 PC <a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>连接</h4>
+<ul>
+<li>
+<table>
+<thead>
+<tr>
+<th>使用提供的电缆或参考表 4 中的连接方式，将基于 bq34z110 设备的智能电池连接到 EV2300 或 EV2400。</th>
+<th>bq34z110 设备电池</th>
+<th>EV2300</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SDA</td>
+<td>I2C SDA</td>
+</tr>
+<tr>
+<td>SCL</td>
+<td>I2C SCL</td>
+</tr>
+<tr>
+<td>GND</td>
+<td>GND</td>
+</tr>
+</tbody>
+</table>
+</li>
+<li>将 PC USB 电缆连接到 EV2300 或 EV2400 和 PC 的 USB 端口，完成硬件设置。</li>
+</ul>
+<h3>5.5 操作</h3>
+<h4>5.5.1 启动程序</h4>
+<p>将 EV2300 或 EV2400 以及 bq34z110EVM 连接到计算机后，通过桌面图标或开始菜单中的“All Prog<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>ram</u></a>s | Texas Instruments | bq Evaluation Software”启动 bq34z110 EVSW 程序。点击“Refresh”（单次扫描）按钮或勾选“Keep S<a href="https://www.hqchip.com/app/2004" target="_blank"><u>can</u></a>ning”复选框后，数据开始显示。可通过“Options”和“Set Scan Interval”菜单设置连续扫描周期，范围为 0 ms 到 65535 ms。软件还提供日志记录功能，点击“Start Logging”按钮可启用，日志记录间隔可在“Options”菜单中设置，且不能小于扫描间隔。</p>
+<h4>5.5.2 设置可编程 bq34z110 选项</h4>
+<p>bq34z110 数据闪存根据默认设置进行配置，需根据实际电池组和应用情况进行正确更改。可通过数据闪存屏幕（图 10）进行设置，点击“Data Flash | Re<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>ad</u></a> All”读取所有数据，点击所需位置并输入数据后按“Enter”写入数据，也可选择“Data Flash | Write All”写入全部数据。还可通过“File | Special Export”导出数据闪存，通过“File | Export”保存配置到文件，或导入文件并使用“Write All”按钮写入 bq34z110。此外，软件提供自动数据闪存导出功能，可通过“Options | Auto Export”启用，设置导出间隔和文件名。</p>
+<h3>5.6 校准屏幕</h3>
+<h4>5.6.1 校准方法</h4>
+<p>在连接电池之前，使用适当的浮动<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>对 bq34z110 进行校准。校准前需完成以下操作：</p>
+<ul>
+<li>从 BAT(–) 到 PACK(–) 连接并测量一个 1 - 2 A 的稳定<a href="https://m.hqchip.com/app/1725" target="_blank"><u>电流源</u></a>，<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>源正极连接到 PACK(-) <a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>放电电流。</li>
+<li>从 BAT(+) 到 BAT(–) 连接并测量一个稳定电压源。</li>
+<li>测量热敏电阻附近的温度。</li>
+</ul>
+<h4>5.6.2 校准步骤</h4>
+<ul>
+<li>选择要执行的校准类型。</li>
+<li>输入所选校准类型的测量值（偏移校准除外）。</li>
+<li>如果选择温度校准，选择要校准的<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>。</li>
+<li>点击相应按钮启动校准。</li>
+</ul>
+<h3>5.7 I2C Pro（高级）屏幕</h3>
+<h4>5.7.1 I2C 通信</h4>
+<p>I2C 总线上的读写操作是通用的通信工具，不特定于任何燃油表。</p>
+<h4>5.7.2 重新编程</h4>
+<p>确保燃油表处于完全访问模式，控制状态寄存器中的 SS 和 FAS 标志必须都未置位（绿色）。若未满足条件，使用适当的数据块代码命令（0x00）清除标志，可在“Write I2C Data Block”功能中输入默认代码 0414,3672 进行解封，输入 ffff, ffff 进行完全访问，或在数据 RAM 屏幕的控制寄存器值字段中输入后按“Enter”。在操作过程中停止扫描以确保连续接收数据。启用扫描后，使用“Write I2C Data Block”功能命令燃油表停止执行并进入 <a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a> 模式，发送数据块代码 0x000f 到命令 0x00。若成功，屏幕底部的状态将从“Communication OK”变为“Communication Error”。使用文件浏览器按钮找到所需的 .senc 文件，按下“Program”按钮进行编程。编程完成后，按下“Execute”按钮启动程序执行，几秒后状态区域将显示“Communication OK”。关闭并重新打开评估软件以确保数据文件同步。</p>
+<h3>5.8 Send HDQ 屏幕</h3>
+<p>使用 HDQ 单 wire 串行通信功能时，需使用特殊命令更改燃油表的模式。该屏幕提供了相应按钮，操作不可逆。进入 HDQ 模式后，HDQ pro 屏幕可用于测试命令和重新编程设备，对于寄存器扫描和数据闪存访问，需使用 HDQ 配套评估程序。</p>
+<h3>5.9 bqChem</h3>
+<p>bqChem 提供对先前表征的<a href="https://m.elecfans.com/v/tag/6503/" target="_blank"><u>锂离子电池</u></a>化学库的访问，还可将化学数据库编程到燃油表中。用户可按化学 ID 或电池制造商进行排序，如需帮助识别电池化学类型，可联系德州仪器的现场代表。</p>
+<h3>5.10 相关文档</h3>
+<p>如需相关文档，可联系 TI 现场代表，涉及的文档包括 bq34z110/bq30z55-R1 SBS 1.1 兼容燃油表带 Impedance Track™ 数据手册（文献编号 SLUSB55）、EV2300 EVM 接口板用户指南（SLUU159）和 EV2400 EVM 接口板用户指南（SLUU446）等。</p>
+<h2>6. 注意事项</h2>
+<h3>6.1 评估板使用条件</h3>
+<p>该 EVM 仅用于实验室/开发环境的初步可行性评估，除非另有说明，它不是成品<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>设备，不适合消费者使用。用户需对其使用承担全部责任和风险，确保产品安全和符合所有相关法律法规及监管要求，合理处理和回收电子组件及包装材料。</p>
+<h3>6.2 操作规范</h3>
+<p>需在 TI 推荐的规格和环境条件下操作 EVM，超过指定的 EVM 额定值（如输入和输出电压、电流、功率和环境范围）可能导致财产损失、人身伤害或死亡。连接负载时需参考 EVM 用户指南，不确定负载规格时应联系 TI 现场代表。正常操作时，部分电路组件的外壳温度可能高于 60°C，操作时需注意避免烫伤。只有熟悉电子测量和诊断的合格人员才能使用这些 EVM。</p>
+<h3>6.3 安全关键应用</h3>
+<p>如果打算评估组件用于安全关键应用（如生命支持），TI 产品的故障可能导致严重人身伤害或死亡，必须向 TI 明确说明此意图并签订单独的保证和赔偿协议。</p>
+<h3>6.4 法规合规</h3>
+<p>不同地区的 EVM 可能需要遵守不同的法规要求，如 FCC、Industry Canada 等。在日本使用该开发套件需遵守日本电波法的相关规定，否则可能会受到处罚。</p>
+<p>总的来说，bq34z110EVM 为铅酸电池的燃油表评估提供了一个全面且灵活的解决方案，但在使用过程中需要严格遵守相关的操作规范和注意事项，以确保评估的准确性和安全性。你在使用类似的评估模块时遇到过哪些问题呢？欢迎在评论区分享你的经验。 </p>]]></description></item><item>    <title><![CDATA[BUF08832EVM评估板：硬件与软件的全面解析]]></title>    <link>https://www.elecfans.com/d/8040940.html</link>    <guid>https://www.elecfans.com/d/8040940.html</guid>    <pubDate>2026-07-02 15:10:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8040940" value="https://file.elecfans.com/web2/M00/76/A9/poYBAGNhN9WAe38yAC71t9V-M_Q517.pdf"/><h1>BUF08832EVM评估板：硬件与软件的全面解析</h1>
+<p>在<a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>的日常工作中，一款优秀的评估板能够极大地帮助我们对新器件进行性能评估和开发。今天就来深入探讨一下<a href="https://www.elecfans.com/tags/德州仪器/" target="_blank"><u>德州仪器</u></a>（<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>Te</u></a>xas Instruments）的BUF08832EVM评估板，详细了解它的硬件和软件方面的设置与使用。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8040940" target="_blank">BUF08832EVM.pdf</a></p>
+<h2>一、BUF08832EVM概述</h2>
+<p>BUF08832是一款可<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a>的伽马电压发生器和(V<em>{COM})校准器，它拥有八个可编程伽马通道和一个可编程(V</em>{COM})通道，非常适合用于10位源<a href="https://www.hqchip.com/app/1522" target="_blank"><u>TF</u></a>T - LCD参考<a href="https://m.hqchip.com/app/1847" target="_blank"><u>驱动器</u></a>。而BUF08832EVM则是一个用于评估BUF08832在各种<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>、参考和<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>条件下性能的平台。</p>
+<h3>1.1 套件内容</h3>
+<p>完整的BUF08832EVM套件包含以下物品：</p>
+<ul>
+<li>BUF08832_Test_Board <a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a></li>
+<li><a href="https://m.hqchip.com/app/1515" target="_blank"><u>USB</u></a> DIG Platform PCB</li>
+<li>USB 电缆</li>
+<li>用于外部电源的桶形插头电缆组件（部件编号 10 - 01935 - Tensility Interna<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>ti</u></a>onal Corporation）</li>
+<li>包含用户指南、产品软件和相关文档的CD - <a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a></li>
+</ul>
+<h3>1.2 相关文档</h3>
+<p>德州仪器提供了与BUF08832EVM组装中使用的<a href="https://m.elecfans.com/v/tag/123/" target="_blank"><u>集成电路</u></a>相关的文档，如BUF08832产品数据表（文献编号SBOS476）、USB DIG Platform用户指南（文献编号SBOU058）以及BUF08832EVM用户指南和软件教程（文献编号SBOU081）。</p>
+<p>虽然在搜索BUF08832EVM评估板相关文档的重要性时遇到了网络连接问题，但我们很清楚这些文档对于<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>们来说具有不可忽视的意义。它们为我们详细介绍了评估板的各项特性、操作方法以及使用注意事项，是我们正确使用和开发评估板的重要参考依据。</p>
+<h2>二、硬件设置</h2>
+<h3>2.1 操作原理</h3>
+<ul>
+<li><strong>BUF08832_Test_Board</strong>：它的功能相对简单，主要提供了与USB DIG Platform板上<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a><a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>和通用输入/输出（GPIO）的连接，同时也为外部连接分流电压、总线电压和GND提供了连接点。</li>
+<li><strong>USB_DIG_Platform</strong>：这是一个通用的数据采集系统，在多个德州仪器的评估模块中都有应用。其主要控制设备是TUSB3210，详细的操作细节可在文献编号为SBOU058的文档中查看。</li>
+</ul>
+<h3>2.2 信号定义</h3>
+<p>BUF08832_Test_Board上的J1（25针公DSUB）有不同的信号连接，部分引脚未使用，如1 - 8、11、14 - 20、22 - 25引脚为无连接（NC），而12、13引脚分别为I2C<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>信号（SCL）通道1和I2C数据信号（<a href="https://www.hqchip.com/app/1522" target="_blank"><u>SD</u></a>A）通道1，可通过开关断开。</p>
+<h3>2.3 硬件连接步骤</h3>
+<ul>
+<li><strong>连接PCBs</strong>：将BUF08832EVM的两个PCB通过DSUB<a href="https://m.hqchip.com/app/1515" target="_blank"><u>连接器</u></a>连接在一起，要确保连接紧密，否则可能会导致间歇性操作。</li>
+<li><strong>连接电源</strong>：在连接好两个部分后，先连接电源，再连接USB电缆。如果先连接USB电缆，计算机可能会尝试与未供电的设备<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>，导致设备无法响应。</li>
+<li><strong>连接USB电缆</strong>：将USB DIG Platform板连接到PC的USB<a href="https://www.hqchip.com/app/1808" target="_blank"><u>端口</u></a>时，通常计算机会弹出“找到新硬件，USB设备”的对话框，随后变为“找到新硬件，USB人机接口设备”，这表明设备可以使用了。在某些情况下，Windows添加硬件向导会弹出，此时需要点击“是”来安装人机接口驱动程序。</li>
+</ul>
+<h3>2.4 跳线设置</h3>
+<ul>
+<li><strong>BUF08832_Test_Board跳线</strong>：跳线JMP1用于设置BUF08832的I2C地址引脚A0，可设置为逻辑‘1’或逻辑‘0’。JMP2 - JMP5通常设置为INT或EXT位置，INT位置表示信号由USB_DIG_Platform或板载<a href="https://www.hqchip.com/app/1730" target="_blank"><u>开关控制</u></a>，EXT位置表示信号连接到终端条。</li>
+<li><strong>USB DIG Platform跳线</strong>：对于大多数应用，建议使用默认跳线位置。例如，JUMP1和JUMP2选择外部电源（EXT），因为USB总线电源可能有噪声；JUMP9通常设置为5V，以选择被测设备电源（VDUT）的电压。</li>
+</ul>
+<h3>2.5 测试板特性</h3>
+<ul>
+<li><strong>JMP1</strong>：用于设置I2C地址的硬件设置，可实现两个唯一的I2C地址。</li>
+<li><strong>BKSEL</strong>：用于选择OTP内存银行，Bank 0选择存储在BUF08832 Bank_0中的伽马曲线，Bank 1选择存储在Bank_1中的伽马曲线。</li>
+<li><strong>JMP2</strong>：决定OTP内存银行选择的控制方式，INT位置由BUF08832EVM上的开关控制，EXT位置由连接到终端T3的外部控制信号决定。</li>
+<li><strong>JMP3</strong>：选择BUF08832<a href="https://www.elecfans.com/tags/数字电源/" target="_blank"><u>数字电源</u></a>引脚的连接位置，INT位置连接到USB_DIG<em>Platform生成的可切换(V</em>{OUT})信号，EXT位置可使用连接到终端T1的外部电源。</li>
+<li><strong>JMP4和JMP5</strong>：分别选择BUF08832 I2C SCL和SDA引脚的连接位置，INT位置信号由USB_DIG_Platform生成，EXT位置可使用连接到终端T2的外部源。</li>
+<li><strong>设备放置</strong>：BUF08832_Test_Board有两个位置可安装测试设备，U1位置是ZIF插座，可快速评估和编程多个设备，但由于没有连接到PowerPAD™散热垫，设备无法发挥全部输出能力；U2位置可安装焊接在DIP适配器板上的BUF08832，能充分评估其输出能力。需要注意的是，一次只能使用一个位置。</li>
+<li><strong>终端条T5</strong>：提供单个<a href="https://m.hqchip.com/app/1513" target="_blank"><u>排针</u></a>和过孔的各个通道输出信号，为用户提供了多种方式将BUF08832的输出信号与适当的显示面板或评估系统接口。</li>
+</ul>
+<h2>三、软件设置</h2>
+<h3>3.1 <a href="https://m.elecfans.com/v/tag/527/" target="_blank"><u>操作系统</u></a></h3>
+<p>BUF08832EVM软件已在Microsoft Windows XP操作系统（具有美国和欧洲区域设置）上进行了测试，理论上也可在其他Windows操作系统上运行。</p>
+<h3>3.2 软件安装</h3>
+<p>软件包含在随EVM套件提供的CD中，也可从TI网站的BUF08832EVM产品文件夹下载。安装步骤如下：</p>
+<ol>
+<li>将光盘插入可用的CD - ROM驱动器，导航到驱动器内容并打开BUF08832EVM软件文件夹。</li>
+<li>找到压缩文件（BUF08832EVM.zip）并使用WinZIP或类似的文件压缩程序将其解压到硬盘上的特定BUF08832文件夹（例如，C:BUF08832）。</li>
+<li>导航到创建的BUF08832文件夹，找到setup.exe文件并点击开始安装过程。</li>
+<li>安装过程中，用户需要选择安装位置，并接受德州仪器和国家仪器的许可协议。安装完成后，会打开一个Re<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>ad</u></a> Me文件，显示BUF08832EVM套件提供的硬件信息，点击“完成”按钮完成安装。</li>
+</ol>
+<h3>3.3 软件功能</h3>
+<ul>
+<li><strong>I2C地址选择</strong>：跳线JMP1用于设置BUF08832的I2C地址引脚，软件中的地址按钮也需要与JMP1的设置相匹配，否则软件无法与BUF08832设备通信。</li>
+<li><strong>测量电源</strong>：需要测量BUF08832_Test<em>Board上相对于GND的电源（(V</em>{s})），并将其输入到软件界面顶部的(V<em>{SUP})字段中。每个<a href="https://www.elecfans.com/tags/dac/" target="_blank"><u>DAC</u></a>的输出电压根据输入的(V</em>{s})值计算得出，公式为(V_{DAC<em>CHANNEL }=fr<a href="https://www.hqchip.com/app/1703" target="_blank"><u>ac</u></a>{V</em>{S} × Code_in_Decimal }{1024})。</li>
+<li><strong>读取DAC按钮</strong>：按下该按钮可读取BUF08832 (DAC / V_{COM})<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>的当前内容，并更新相应的文本框。</li>
+<li><strong>写入DAC按钮</strong>：写入(DAC / V_{COM})寄存器的方法取决于Auto Write功能是否启用。启用Auto Write功能后，写入单个通道时，输出电压会立即改变；禁用该功能后，用户可以输入所有通道的值，然后按下写入DAC按钮同时改变所有通道的输出电压。</li>
+<li><strong>复位按钮</strong>：按下该按钮会对BUF08832进行通用调用复位，通道寄存器的状态取决于OTP是否已编程。复位后需要按下读取DAC按钮才能更新文本框的内容。</li>
+<li><strong>保存到文件按钮</strong>：可将BUF08832 DAC的寄存器配置以<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>电压和十六进制的形式保存到文本文件中。</li>
+<li><strong>从文件加载按钮</strong>：可加载之前评估保存的数据，将保存的寄存器配置加载到BUF08832中。</li>
+<li><strong>更改(DAC / V_{COM})模拟电压</strong>：有三种方法可以调整DAC或(V_{COM})通道的电压，分别是直接在电压文本框中输入所需电压、使用主软件窗口上的滑块以及使用±1 Code和±5 Code按钮。</li>
+<li><strong>运行批处理按钮</strong>：可使BUF08832循环通过不同的寄存器配置，用于确定给定应用的最佳伽马设置。</li>
+<li><strong>控制面板按钮</strong>：按下该按钮会弹出一个显示面板，可使用一组图形滑块调整每个通道的输出。</li>
+<li><strong>编程OTP所有通道按钮</strong>：可将伽马曲线编程到BUF08832的非易失性存储器中，所有八个通道（包括(V_{COM})通道）将同时编程。</li>
+<li><strong>最大银行字段</strong>：显示所选内存银行中编程次数最多的通道的内存写入次数。</li>
+</ul>
+<h2>四、文档信息</h2>
+<p>该部分包含了BUF08832_Test_Board的完整材料清单和原理图，USB_DIG_Platform的文档信息可在TI网站上的USB_DIG_Platform用户指南（文献编号SBOU058）中找到。</p>
+<p>BUF08832EVM评估板为我们提供了一个全面的平台来评估BUF08832的性能。通过正确的硬件设置和软件操作，我们可以充分发挥其功能，为相关产品的开发和测试提供有力支持。大家在使用过程中遇到问题时，一定要仔细参考相关文档，确保操作的正确性。你在使用类似评估板时有没有遇到过什么特别的问题呢？欢迎在评论区分享。 </p>]]></description></item><item>    <title><![CDATA[探索BUF12800EVM评估板：硬件、软件与应用全解析]]></title>    <link>https://www.elecfans.com/d/8040941.html</link>    <guid>https://www.elecfans.com/d/8040941.html</guid>    <pubDate>2026-07-02 15:10:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8040941" value="https://file.elecfans.com/web2/M00/77/3B/pYYBAGNhNsuAXbTpADqbk8c1d0U855.pdf"/><h1>探索BUF12800EVM评估板：硬件、软件与应用全解析</h1>
+<p>在电子设计领域，评估板是验证和开发新设备性能的重要工具。今天，我们来深入探讨<a href="https://www.elecfans.com/tags/德州仪器/" target="_blank"><u>德州仪器</u></a>（<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>Te</u></a>xas Instruments）的BUF12800EVM评估板，它为BUF12800可<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a>伽马电压发生器的性能评估提供了一个全面的平台。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8040941" target="_blank">BUF12800EVM.pdf</a></p>
+<h2>1. 评估板概述</h2>
+<h3>1.1 BUF12800简介</h3>
+<p>BUF12800是一款可编程伽马电压发生器，拥有12个可编程伽马通道，非常适合用于10位源<a href="https://www.hqchip.com/app/1522" target="_blank"><u>TF</u></a>T - LCD参考<a href="https://m.hqchip.com/app/1847" target="_blank"><u>驱动器</u></a>。</p>
+<h3>1.2 评估板套件内容</h3>
+<p>BUF12800EVM套件包含了评估板<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>、<a href="https://m.hqchip.com/app/1515" target="_blank"><u>USB</u></a>_DIG_Platform PCB、USB电缆、用于外部<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>的桶形插头电缆组件以及用户指南CD - <a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a>等。如果套件中有组件缺失，可联系德州仪器最近的产品信息<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>。同时，建议在<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>TI</u></a>网站上查看BUF12800产品文件夹，确保使用的是相关软件的最新版本。</p>
+<h3>1.3 相关文档</h3>
+<p>TI提供了与BUF12800EVM相关的重要文档，如BUF12800产品数据手册（文献编号SBOS315）和USB_DIG_Platform用户指南（文献编号SBOU058）。这些文档可从TI网站获取，更新的版本也可通过联系TI的文献响应中心或产品信息中心获得。</p>
+<h2>2. 硬件设置</h2>
+<h3>2.1 操作原理</h3>
+<p>PC运行的软件与USB_DIG_Platform<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>，USB_DIG_Platform生成<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>和<a href="https://m.hqchip.com/app/1381" target="_blank"><u>数字信号</u></a>，与BUF12800测试板进行通信。BUF12800测试板上的<a href="https://m.hqchip.com/app/1515" target="_blank"><u>连接器</u></a>允许用户在不同测试条件下连接到系统，并监测电源、<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>和电压。</p>
+<h3>2.2 <a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>定义</h3>
+<p>J1（25针公DSUB）上的信号定义明确，例如<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>_SCK_ISO和I2C_<a href="https://www.hqchip.com/app/1522" target="_blank"><u>SD</u></a>A_ISO分别为I2C<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>信号和数据信号通道1，可通过开关断开；VDUT为开关式3V/5V电源等。当电源关闭时，数字I/O也会关闭。</p>
+<h3>2.3 典型硬件连接</h3>
+<p>将BUF12800测试板和USB_DIG_Platform通过25针DSUB连接器连接，然后施加电源。外部连接可连接到BUF12800要集成的实际系统。连接时要注意将DSUB连接器完全推合，松动的连接可能导致间歇性操作。</p>
+<h3>2.4 电源连接</h3>
+<p>在连接好两块板后，将+6V壁式电源连接到USB_DIG_Platform板。务必先连接电源，再连接USB电缆，否则计算机可能尝试与未供电的设备通信。此外，BUF12800测试板需要外部直流电源，其电压可根据测试需求而定。</p>
+<h3>2.5 USB电缆连接</h3>
+<p>电源连接好后，将USB电缆连接到USB_DIG_Platform。连接前，测试板和USB_DIG_Platform必须通电。通常，计算机会弹出“找到新硬件，USB设备”对话框，随后变为“找到新硬件，USB人机接口设备”，这表示设备准备就绪。在某些情况下，可能会出现Windows添加硬件向导，此时需允许系统设备管理器安装人机接口驱动。</p>
+<h3>2.6 跳线设置</h3>
+<p>BUF12800测试板和USB_DIG_Platform都有跳线设置。对于BUF12800测试板，大多数应用中跳线2至5通常设置为默认位置。例如，JMP1用于选择BUF12800<a href="https://www.elecfans.com/tags/数字电源/" target="_blank"><u>数字电源</u></a>引脚的连接；JMP6用于设置I2C A0地址选择等。USB_DIG_Platform的跳线设置在大多数应用中也使用默认位置，如JUMP1和JUMP2选择外部电源或总线电源等。</p>
+<h2>3. 硬件特性</h2>
+<h3>3.1 跳线功能</h3>
+<p>BUF12800测试板上的多个跳线可实现不同的控制功能，如JMP1控制(V_{SD})、JMP2控制I2C SCL、JMP3控制I2C SDA等。通过设置这些跳线，可灵活选择内部或外部信号源，以满足不同的测试需求。</p>
+<h3>3.2 设备放置</h3>
+<p>BUF12800EVM板上有两个可安装BUF12800测试设备的位置。U1位置可安装焊接在DIP转接板上的BUF12800设备，能全面评估其输出能力；U2位置是一个24针QFN<a href="https://bbs.elecfans.com/group_53" target="_blank"><u>封装测试</u></a>插座，可快速评估和编程多个设备，但由于没有连接到PowerPAD，设备的输出能力会受到热耗散限制。需要注意的是，同一时间只能使用一个位置。</p>
+<h3>3.3 <a href="https://m.hqchip.com/app/1529" target="_blank"><u>端子</u></a>排TP1</h3>
+<p>端子排TP1在单排插针和一排过孔上提供了各个输出信号，为用户提供了多种选择，可将BUF12800的输出信号与可用的显示面板（用户提供）进行<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>，也可开发自定义电缆连接插针到面板，或直接将插针焊接到各个过孔。</p>
+<h2>4. 软件设置</h2>
+<h3>4.1 <a href="https://m.elecfans.com/v/tag/527/" target="_blank"><u>操作系统</u></a>支持</h3>
+<p>BUF12800EVM软件已在Microsoft Windows XP、Vista和Windows 7操作系统（美国和欧洲区域设置）上进行了测试，理论上也可在其他Windows操作系统平台上运行。</p>
+<h3>4.2 软件安装</h3>
+<p>软件包含在EVM套件附带的CD中，也可从TI网站的BUF12800EVM产品文件夹下载。安装时，将光盘插入CD - ROM驱动器，解压压缩文件（BUF12800EVM.zip）到硬盘上的特定文件夹，然后运行setup.exe文件开始安装。安装过程中需接受德州仪器和国家仪器的许可协议。</p>
+<h3>4.3 软件功能</h3>
+<p>该软件允许用户读写BUF12800伽马校正缓冲器中的所有<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>，还能对OTP寄存器进行编程，并且可以选择I2C地址。通过“About”按钮可验证软件是否为最新版本。</p>
+<h2>5. 软件使用</h2>
+<h3>5.1 启动软件</h3>
+<p>可通过Windows的开始菜单启动BUF12800EVM软件。若软件正常运行，将显示相应的界面。如果计算机无法与EVM通信，可能是USB电缆连接问题、USB DIG Platform电源连接顺序问题或USB人机接口设备驱动问题。</p>
+<h3>5.2 I2C地址选择</h3>
+<p>跳线JMP6用于设置BUF12800的I2C地址引脚，硬件和软件的设置必须匹配，否则软件无法与BUF12800设备通信。</p>
+<h3>5.3 电源测量</h3>
+<p>需要测量BUF12800测试板上相对于GND的电源（(V<em>{s})），并将其输入到软件界面顶部的Vsup字段中。每个<a href="https://www.elecfans.com/tags/dac/" target="_blank"><u>DAC</u></a>的输出电压根据输入的(V</em>{s})值进行计算。</p>
+<h3>5.4 按钮功能</h3>
+<ul>
+<li><strong>Re<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>ad</u></a> DAC按钮</strong>：读取所有BUF12800 DAC寄存器的当前内容，并更新相应的文本框。</li>
+<li><strong>Write DAC按钮</strong>：写入DAC寄存器的值取决于“Auto Write”功能是否启用。启用该功能时，单个通道写入后输出电压立即改变；禁用该功能时，可输入所有通道的值，然后点击该按钮同时改变所有通道的输出电压。</li>
+<li><strong>Reset按钮</strong>：执行通用调用复位，将DAC寄存器状态恢复为默认值（1000000000，即中电源），并调用Read DAC更新通道文本框。</li>
+<li><strong>Save to File按钮</strong>：将BUF12800 DAC的寄存器配置以模拟电压和十六进制形式保存到文本文件（.txt）中。</li>
+<li><strong>Load From File按钮</strong>：加载之前评估保存的数据。</li>
+<li><strong>Run Batch按钮</strong>：配置BUF12800在连续循环中遍历不同的寄存器配置，可用于确定给定应用的最佳伽马设置。</li>
+<li><strong>Control Panel按钮</strong>：打开显示面板，通过一组图形滑块调整每个通道的输出，DAC代码和相应的输出值会自动更改。</li>
+</ul>
+<h2>6. 文档资料</h2>
+<p>文档部分包含了BUF12800EVM的完整材料清单和PCB布局图。需要注意的是，这些布局图并非按比例绘制，主要用于展示电路板的布局，不能用于制造BUF12800EVM PCB。同时，还列有详细的材料清单，包括<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>、<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>、连接器等各个组件的参数、供应商和零件编号。</p>
+<p>BUF12800EVM评估板为BUF12800的性能评估提供了全面的解决方案，通过合理设置硬件和熟练使用软件，<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>可以深入了解和验证该设备在不同条件下的性能，为实际应用中的设计和开发提供有力支持。你在使用类似评估板的过程中遇到过哪些有趣的问题或挑战呢？欢迎在评论区分享。 </p>]]></description></item><item>    <title><![CDATA[深入解析 BUF12840：可编程伽马电压发生器的优势与应用]]></title>    <link>https://www.elecfans.com/d/8040961.html</link>    <guid>https://www.elecfans.com/d/8040961.html</guid>    <pubDate>2026-07-02 15:15:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8040961" value="https://file.elecfans.com/web2/M00/77/3B/pYYBAGNhN9GAUMGeACV59MZVLQ0579.pdf"/><h1>深入解析 BUF12840：可<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a>伽马电压发生器的优势与应用</h1>
+<p>在电子设备的设计中，显示屏的显示效果至关重要，而伽马校正则是提升显示质量的关键环节。<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>TI</u></a> 推出的 BUF12840 可编程伽马电压发生器，凭借其出色的性能和丰富的功能，在 <a href="https://www.hqchip.com/app/1522" target="_blank"><u>TF</u></a>T - LCD 参考驱动等领域展现出强大的优势。下面，我们就来深入了解一下这款产品。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8040961" target="_blank">BUF12840EVM.pdf</a></p>
+<h2>一、BUF12840 的核心特性</h2>
+<h3>1. <a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>与多通道设计</h3>
+<p>BUF12840 具备 10 位分辨率和 12 个可编程伽马通道，能够为显示屏提供精准的电压输出，满足不同的显示需求。这种高精度和多通道的设计，使得它在处理复杂的图像数据时表现出色，能够有效提升画面的层次感和色彩还原度。</p>
+<h3>2. 灵活的内存管理</h3>
+<p>它拥有两个独立的、可通过引脚选择的内存库，这意味着可以同时存储两条不同的伽马曲线。在实际应用中，我们可以根据不同的显示场景快速切换伽马曲线，例如在白天和夜晚模式之间进行切换，以达到最佳的显示效果。</p>
+<h3>3. 宽电压范围与低功耗</h3>
+<p>其<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a><a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>电压范围为 9V 至 20V，<a href="https://www.elecfans.com/tags/数字电源/" target="_blank"><u>数字电源</u></a>为 2V 至 5.5V，这种宽电压范围使得它能够适应不同的电源环境。同时，它还具有低电源电流的特点，有助于降低设备的功耗，延长电池续航时间。</p>
+<h3>4. 高速<a href="https://www.elecfans.com/v/tag/13179/" target="_blank"><u>通信接口</u></a></h3>
+<p>支持 400kHz 和 3.4MHz 操作的两线接口，能够实现高速的数据传输。这使得我们可以快速地对 BUF12840 进行编程和配置，提高系统的响应速度。</p>
+<h2>二、<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>特性与性能参数</h2>
+<h3>1. 输出电压与<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a></h3>
+<p>BUF12840 的输出能够实现轨到轨输出，在不同的负载电流下，输出摆幅表现稳定。例如，在 10mA 负载下，输出高摆幅最小为 17.7V；在 5mA 负载下，输出高摆幅最小为 17.8V。这种稳定的输出性能能够确保显示屏的稳定显示。</p>
+<h3>2. 温度特性</h3>
+<p>在温度范围为 - 40°C 至 +95°C 的环境下，它依然能够保持良好的性能。其输出精度和线性度受温度的影响较小，这使得它在不同的环境条件下都能可靠工作。</p>
+<h3>3. <a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>频率与<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>速度</h3>
+<p>两线接口支持标准模式（最高 400kHz）和高速模式（最高 3.4MHz），能够满足不同的通信需求。在高速模式下，我们可以更快地更新伽马曲线，实现动态伽马控制。</p>
+<h2>三、引脚配置与功能</h2>
+<h3>1. 引脚定义</h3>
+<p>BUF12840 采用 VQFN - 24 封装，其引脚包括多个 <a href="https://www.elecfans.com/tags/dac/" target="_blank"><u>DAC</u></a> 输出引脚、电源引脚、控制引脚等。每个引脚都有其特定的功能，例如 OUT0 - OUT12 为 DAC 输出引脚，用于输出伽马电压；SCL 和 <a href="https://www.hqchip.com/app/1522" target="_blank"><u>SD</u></a>A 为两线接口的时钟和数据引脚，用于与外部设备进行通信。</p>
+<h3>2. 控制引脚的作用</h3>
+<p>EA0 和 EA1 用于选择 EEP<a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a> 的大小；EN 为 EEPROM 使能引脚，控制是否从 EEPROM 自动读取数据；LD 为锁存引脚，用于控制 DAC 输出电压的更新；BKSEL 为银行选择引脚，用于选择使用哪个内存库的伽马曲线。</p>
+<h2>四、应用场景与使用方法</h2>
+<h3>1. 动态伽马控制</h3>
+<p>在 LCD TV 应用中，动态伽马控制可以根据画面的亮度实时调整伽马曲线，从而提高画面的对比度和清晰度。BUF12840 凭借其双<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>输入结构、快速串行<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>和软件同步更新所有 DAC 的能力，非常适合用于动态伽马控制。</p>
+<h3>2. 最终用户选择伽马控制</h3>
+<p>其双寄存器输入结构允许我们在显示画面的同时，将更新后的 DAC 值预先存储到第一个寄存器库中。在垂直同步期间，我们可以通过控制 LD 引脚或软件方式快速更新 DAC 输出，从而实现伽马电压的快速调整。</p>
+<h3>3. 读写操作</h3>
+<p>BUF12840 支持对单个或多个 DAC 寄存器进行读写操作。在写入操作时，我们需要按照特定的步骤发送设备地址、DAC 地址和数据；在读取操作时，也需要遵循相应的流程。了解这些读写操作的步骤，能够帮助我们正确地对 BUF12840 进行编程和配置。</p>
+<h2>五、注意事项与保护措施</h2>
+<h3>1. 电源顺序</h3>
+<p>在使用 BUF12840 时，需要先施加数字电源，再施加模拟电源，以避免过大的电流和功耗，甚至损坏设备。</p>
+<h3>2. 输出保护</h3>
+<p>由于其输出引脚包含 <a href="https://www.elecfans.com/tags/esd保护/" target="_blank"><u>ESD 保护</u></a><a href="https://m.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>，在一些特殊情况下，如输出引脚连接大<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>且电源突然移除时，可能会导致二极管承受过高的电流。为了避免这种情况，我们可以在输出引脚处放置一个<a href="https://www.hqchip.com/app/1558" target="_blank"><u>肖特基</u></a>二极管进行保护。</p>
+<p>BUF12840 作为一款高性能的可编程伽马电压发生器，为<a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>在显示屏设计中提供了强大的工具。通过深入了解其特性、性能参数、引脚配置和应用方法，我们能够更好地发挥它的优势，设计出高质量的显示系统。你在使用类似产品时遇到过哪些问题呢？欢迎在评论区分享你的经验和见解。 </p>]]></description></item><item>    <title><![CDATA[BUF16821EVM评估板及软件使用指南]]></title>    <link>https://www.elecfans.com/d/8040962.html</link>    <guid>https://www.elecfans.com/d/8040962.html</guid>    <pubDate>2026-07-02 15:15:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8040962" value="https://file.elecfans.com/web2/M00/76/B0/poYBAGNhXH2ACj6nABGzTw4ry3s982.pdf"/><h1>BUF16821EVM评估板及软件使用指南</h1>
+<p>在电子工程领域，对于可<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a>器件的性能评估至关重要。BUF16821EVM评估板为我们提供了一个理想的平台，用于评估BUF16821这款可编程伽马电压发生器和(V_{COM})校准器的性能。接下来，我将详细介绍该评估板及其配套软件的相关内容。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8040962" target="_blank">BUF16821EVM.pdf</a></p>
+<h2>一、评估板概述</h2>
+<p>BUF16821是一款集成双存储体存储器的可编程伽马电压发生器和(V<em>{COM})校准器，具备16个可编程伽马通道和2个可编程(V</em>{COM})通道。而BUF16821EVM则是用于在各种<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>、参考和<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>条件下评估BUF16821性能的平台。</p>
+<h2>二、开箱检查</h2>
+<p>打开BUF16821EVM套件后，需要检查以下物品是否齐全：</p>
+<ol>
+<li>一块BUF16821EVM印刷电路板（<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>）。</li>
+<li>一根带有<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a> - 232/RJ - 45插头<a href="https://m.hqchip.com/app/1515" target="_blank"><u>连接器</u></a>的串行连接电缆。</li>
+<li>一张包含BUF16821EVM软件、BUF16821产品数据表电子版和本用户指南的CD。
+若有物品缺失，需联系最近的<a href="https://www.elecfans.com/tags/德州仪器/" target="_blank"><u>德州仪器</u></a>产品信息<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>咨询更换事宜。</li>
+</ol>
+<h2>三、软件部分</h2>
+<h3>3.1 硬件要求</h3>
+<p>运行BUF16821EVM软件的最低硬件要求如下：</p>
+<ul>
+<li>运行Microsoft Windows® 98/ME/NT/2000/XP<a href="https://m.elecfans.com/v/tag/527/" target="_blank"><u>操作系统</u></a>的IBM PC兼容计算机。</li>
+<li>Pen<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>ti</u></a>um®或等效<a href="https://www.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>。</li>
+<li>64MB的<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>。</li>
+<li>至少有100MB可用空间的硬盘<a href="https://m.hqchip.com/app/1847" target="_blank"><u>驱动器</u></a>。</li>
+<li>可用的COM<a href="https://www.hqchip.com/app/1808" target="_blank"><u>端口</u></a>。</li>
+<li>鼠标。</li>
+<li>VGA适配卡和显示器。</li>
+</ul>
+<h3>3.2 安装步骤</h3>
+<p>软件可从随评估板发货的CD中获取，也可通过TI网站上的BUF16821EVM产品文件夹下载。安装时，将光盘插入可用的CD - <a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a>驱动器，导航到驱动器内容并打开BUF16821EVM软件文件夹，找到压缩文件（BUF16821EVM.zip）并使用WinZIP®解压到硬盘上的特定BUF16821文件夹。解压后，找到setup.exe文件并点击开始安装，按照屏幕上的命令完成安装。</p>
+<h3>3.3 软件描述与设置</h3>
+<p>该软件通过图形用户界面（GUI）进行控制，通过PC上的可用COM或其他串行端口与评估板<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>。按下COM设置按钮可打开一个面板，用于更改PC与BUF16821EVM通信的串行端口号，大多数PC选择COM1即可，同时也可在同一对话框中设置合适的波特率。此外，软件允许用户对BUF16821伽马校正缓冲器中的所有<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>进行读写操作，还能对OTP寄存器进行编程，并且用户可以选择(I^{2}C^{TM})地址。按下About按钮可验证是否为软件的最新版本。</p>
+<h2>四、评估板操作</h2>
+<h3>4.1 BKSEL开关</h3>
+<p>BKSEL开关用于选择评估板操作时使用的存储体。Bank 1选择存储在BUF16821的Bank_0中的伽马曲线，Bank 2选择存储在Bank_1中的伽马曲线。同时，为了使评估板与BUF16821之间能够通信，需要在评估板上安装SCL和<a href="https://www.hqchip.com/app/1522" target="_blank"><u>SD</u></a>A跳线，并且通信电缆要连接到PC的COM1或其他COM端口。</p>
+<h3>4.2 JP1跳线</h3>
+<p>JP1跳线用于将BUF16821的<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>地址引脚设置为逻辑高或逻辑低。当J1处于特定位置时，BUF16821上的A0连接到(DV DD)（逻辑'1'）；当处于另一个位置时，A0连接到GND（逻辑'0'）。同时，软件中的更改地址按钮要与跳线设置相匹配。</p>
+<h3>4.3 JP2跳线</h3>
+<p>JP2跳线用于选择是使用评估板上的BKSEL开关还是外部信号来切换BUF16821的两个非易失性存储体。当处于不同位置时，分别对应使用BKSEL开关或根据通过连接器施加的外部信号来切换存储体。</p>
+<h2>五、软件使用</h2>
+<h3>5.1 更改地址按钮</h3>
+<p>按下界面顶部附近的更改地址按钮可更改软件写入的(I^{2}C)地址，按钮有颜色编码，红色表示地址为(A 0=' 0 ')。地址更改时，会自动执行读取<a href="https://www.elecfans.com/tags/dac/" target="_blank"><u>DAC</u></a>命令以更新所有DAC输出显示。</p>
+<h3>5.2 测量电源</h3>
+<p>需要测量电源（(V<em>{S})）相对于GND的值，并将其输入到软件界面的Vsup字段中。每个DAC的输出电压根据输入的(V</em>{S})值进行计算，计算公式为(V_{DAC<em>ONANEL }=V</em>{S} × Code_in_decimal)。</p>
+<h3>5.3 复位和读取DAC按钮</h3>
+<p>按下Re<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>ad</u></a>DAC按钮可读取BUF16821的DAC输出寄存器中的二进制值，按下Reset按钮会强制进行(I^{2}C)通用调用复位，使BUF16821中的所有寄存器复位到各自的默认值（中码或(V_{S} / 2)）。</p>
+<h3>5.4 保存到文件</h3>
+<p>BUF16821 DAC的寄存器配置以<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>电压和十六进制形式显示，可使用保存到文件按钮将DAC代码（即伽马电压）保存到文本文件中。按下该按钮会打开一个文件保存对话框，可创建新文件夹并输入唯一的文件名来保存BUF16821寄存器信息。</p>
+<h3>5.5 加载保存的数据文件</h3>
+<p>软件能够加载之前评估保存的数据，使用加载文件按钮可将保存的寄存器配置加载到BUF16821中，程序会记住上次保存寄存器配置的位置，只需选择所需配置并按下打开即可。</p>
+<h3>5.6 更改DAC模拟电压</h3>
+<p>任何DAC的模拟电压都可以直接编辑，但与之关联的十六进制值会根据模拟电压的变化进行更新，不能直接编辑。选择DAC并点击向上箭头控制，DAC寄存器增加一个计数；点击向下箭头控制，DAC寄存器减少一个计数。</p>
+<h3>5.7 运行批处理按钮</h3>
+<p>按下运行批处理按钮可使BUF16821在连续循环中遍历不同的寄存器配置。连接到最终应用时，可用于遍历不同的伽马设置，以确定给定应用的最佳设置。按下该按钮会显示一个新的对话框，可设置加载新配置到BUF16821之间的延迟时间，还可使用单步向上和单步向下按钮手动遍历所选文件。</p>
+<h3>5.8 控制面板</h3>
+<p>按下控制面板按钮会弹出一个显示面板，可使用一组图形滑块调整每个通道的输出，DAC输出值会自动更改。</p>
+<h3>5.9 对所有通道编程OTP按钮</h3>
+<p>按下该按钮可将伽马曲线编程到BUF16821的非易失性存储器中，所有16个通道（包括(V_{COM})通道）会同时编程，值存储在通过BKSEL开关选择的存储体中。</p>
+<h3>5.10 对输出通道编程OTP按钮</h3>
+<p>按下该按钮可将特定通道的值存储到BUF16821的非易失性存储器中，当(V_{COM})通道需要在不同时间编程时很有用，值同样存储在通过BKSEL开关选择的存储体中，会弹出写入OTP寄存器对话框。</p>
+<h3>5.11 最大存储体字段</h3>
+<p>软件界面顶部的最大存储体字段显示所选存储体中编程次数最多的通道的存储器之前被写入的次数。</p>
+<h2>六、硬件和原理图</h2>
+<h3>6.1 原理图</h3>
+<p>文档中给出了BUF16821EVM的原理图，它展示了评估板的电路连接和信号流向，对于理解评估板的<a href="https://www.elecfans.com/v/tag/773/" target="_blank"><u>工作原理</u></a>至关重要。</p>
+<h3>6.2 PCB布局</h3>
+<p>提供了BUF16821EVM的PCB顶层（元件面）和底层（焊接面）的布局图，但需注意这些布局图不按比例绘制，主要用于展示电路板的布局，不能用于制造BUF16821EVM PCBs。</p>
+<h3>6.3 物料清单</h3>
+<p>详细列出了评估板的物料清单，包括<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>、<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>、电感、<a href="https://m.elecfans.com/v/tag/123/" target="_blank"><u>集成电路</u></a>、开关、连接器等元件的数量、值、参考编号、描述、零件编号和制造商等信息。</p>
+<h2>七、重要注意事项</h2>
+<h3>7.1 评估板使用范围</h3>
+<p>该评估板仅用于工程开发、演示或评估目的，不是适合一般消费者使用的成品。处理产品的人员必须具备电子培训并遵守良好的工程实践标准。</p>
+<h3>7.2 不符合相关指令</h3>
+<p>评估板不属于欧盟关于<a href="https://bbs.elecfans.com/group_40" target="_blank"><u>电磁兼容</u></a>性、限制物质（RoHS）、回收（WEEE）、FCC、CE或UL的指令范围，可能不满足这些指令或其他相关指令的技术要求。</p>
+<h3>7.3 保修政策</h3>
+<p>若评估板不符合用户指南中规定的规格，可在交付日期起30天内退货并获得全额退款。</p>
+<h3>7.4 用户责任</h3>
+<p>用户需对产品的正确和安全处理承担全部责任和义务，并对TI因产品处理或使用而产生的所有索赔进行赔偿。由于产品结构开放，用户有责任采取适当的静电放电预防措施。</p>
+<h3>7.5 操作范围</h3>
+<p>评估板的输入电压范围为9V（最小值）至20V（最大值），输出电压范围也为9V（最小值）至20V（最大值）。超出指定输入范围可能导致意外操作和/或对评估板造成不可逆转的损坏；施加超出指定输出范围的负载可能导致意外操作和/或对评估板造成永久性损坏。</p>
+<p>BUF16821EVM评估板及其软件为<a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>提供了一个全面的平台，用于评估BUF16821的性能。在使用过程中，我们需要严格按照操作指南进行操作，注意各项注意事项，以确保评估结果的准确性和评估板的安全使用。大家在使用过程中遇到过哪些问题呢？欢迎在评论区分享交流。 </p>]]></description></item><item>    <title><![CDATA[BUF16821EVM - USB评估板及软件使用指南]]></title>    <link>https://www.elecfans.com/d/8040963.html</link>    <guid>https://www.elecfans.com/d/8040963.html</guid>    <pubDate>2026-07-02 15:15:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8040963" value="https://file.elecfans.com/web2/M00/76/9E/poYBAGNhD4SAL7zaAEANxxmGJbs493.pdf"/><h1>BUF16821EVM - <a href="https://m.hqchip.com/app/1515" target="_blank"><u>USB</u></a>评估板及软件使用指南</h1>
+<h2>一、引言</h2>
+<p>在电子设计领域，评估板的使用对于验证芯片性能和功能至关重要。BUF16821EVM - USB评估板是德州仪器（<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>Te</u></a>xas Instruments）推出的一款用于评估BUF16821性能的平台。本文将详细介绍该评估板的硬件设置、软件安装及使用方法，希望能为<a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>们在使用该评估板时提供帮助。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8040963" target="_blank">BUF16821EVM-USB.pdf</a></p>
+<h2>二、BUF16821EVM - USB概述</h2>
+<h3>2.1 BUF16821芯片特性</h3>
+<p>BUF16821是一款可<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a>伽马电压发生器和 (V<em>{COM}) 校准器，集成了双存储体存储器。它拥有16个可编程伽马通道和2个可编程 (V</em>{COM}) 通道，非常适合用于10位源<a href="https://www.hqchip.com/app/1522" target="_blank"><u>TF</u></a>T - LCD参考<a href="https://m.hqchip.com/app/1847" target="_blank"><u>驱动器</u></a>。</p>
+<h3>2.2 评估板套件内容</h3>
+<table>
+<thead>
+<tr>
+<th>评估板套件包含以下物品：</th>
+<th>物品</th>
+<th>数量</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>BUF16821EVM - USB <a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>测试板</td>
+<td>1</td>
+</tr>
+<tr>
+<td>USB_DIG_Platform PCB</td>
+<td>1</td>
+</tr>
+<tr>
+<td>USB电缆</td>
+<td>1</td>
+</tr>
+<tr>
+<td>桶形插头电缆组件</td>
+<td>1</td>
+</tr>
+<tr>
+<td>用户指南CD - <a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a></td>
+<td>1</td>
+</tr>
+</tbody>
+</table>
+<h3>2.3 相关文档</h3>
+<table>
+<thead>
+<tr>
+<th><a href="https://www.elecfans.com/tags/德州仪器/" target="_blank"><u>德州仪器</u></a>提供了以下相关文档：</th>
+<th>文档</th>
+<th>文献编号</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>BUF16821产品数据表</td>
+<td>SBOS428B</td>
+</tr>
+<tr>
+<td>USB_DIG_Platform用户指南</td>
+<td>SBOU058</td>
+</tr>
+</tbody>
+</table>
+<h2>三、硬件设置</h2>
+<h3>3.1 硬件<a href="https://www.elecfans.com/v/tag/773/" target="_blank"><u>工作原理</u></a></h3>
+<p>BUF16821测试板硬件通过与USB_DIG_Platform板上的 (I^{2}C) <a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>和通用输入/输出（GPIOs）连接，为外部连接提供了分流电压、总线电压和接地的连接点。</p>
+<h3>3.2 J1（25针公DSUB）<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>定义</h3>
+<table>
+<thead>
+<tr>
+<th>J1上的各引脚信号定义如下：</th>
+<th>J1引脚</th>
+<th>信号</th>
+<th>BUF16821引脚</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1 - 8</td>
+<td>N/C</td>
+<td>无连接</td>
+</tr>
+<tr>
+<td>9</td>
+<td><a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>_SCK</td>
+<td>无连接</td>
+</tr>
+<tr>
+<td>10</td>
+<td>I2C_<a href="https://www.hqchip.com/app/1522" target="_blank"><u>SD</u></a>A2</td>
+<td>无连接</td>
+</tr>
+<tr>
+<td>11</td>
+<td>N/C</td>
+<td>无连接</td>
+</tr>
+<tr>
+<td>12</td>
+<td>I2C_SCK_ISO</td>
+<td>I2C<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>信号（SCL）通道1，可通过开关断开</td>
+</tr>
+<tr>
+<td>13</td>
+<td>I2C_SDA_ISO</td>
+<td>I2C数据信号（SDA）通道1，可通过开关断开</td>
+</tr>
+<tr>
+<td>14 - 16</td>
+<td>N/C</td>
+<td>无连接</td>
+</tr>
+<tr>
+<td>17</td>
+<td>VDUT</td>
+<td>开关3V/5V<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>，电源关闭时数字I/O也关闭</td>
+</tr>
+<tr>
+<td>18</td>
+<td>VCC</td>
+<td>无连接</td>
+</tr>
+<tr>
+<td>19 - 20</td>
+<td>N/C</td>
+<td>无连接</td>
+</tr>
+<tr>
+<td>21</td>
+<td>GND</td>
+<td>公共接地连接</td>
+</tr>
+<tr>
+<td>22 - 25</td>
+<td>N/C</td>
+<td>无连接</td>
+</tr>
+</tbody>
+</table>
+<h3>3.3 USB_DIG_Platform工作原理</h3>
+<p>USB_DIG_Platform是一个通用数据采集系统，主要控制设备是TUSB3210。通过EVM套件中的桶形<a href="https://m.hqchip.com/app/1515" target="_blank"><u>连接器</u></a>电缆组件，可通过J5连接外部电源。</p>
+<h2>四、硬件连接步骤</h2>
+<h3>4.1 静电放电警告</h3>
+<p>BUF16821EVM - USB上的许多组件容易受到静电放电（<a href="https://www.hqchip.com/app/1587" target="_blank"><u>ESD</u></a>）的损坏，因此在拆包和处理评估板时，应使用接地腕带，并在经认可的ESD工作站操作。</p>
+<h3>4.2 典型硬件连接</h3>
+<p>将BUF16821测试板和USB_DIG_Platform板通过25针DSUB连接器连接在一起，并提供电源。外部连接可以是BUF16821将要集成的实际系统。</p>
+<h3>4.3 连接硬件</h3>
+<p>轻轻推动DSUB连接器的两侧，确保两个连接器完全连接，松动的连接可能会导致间歇性操作。</p>
+<h3>4.4 连接电源</h3>
+<p>先连接USB_DIG_Platform板的电源，再连接USB电缆。因为如果先连接USB电缆，计算机将尝试与未通电的设备<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>，设备将无法响应。此外，BUF16821EVM - USB还需要一个外部电源，该电源的电压可能因具体测试需求而异。</p>
+<h3>4.5 连接USB电缆</h3>
+<p>电源连接后，将USB电缆连接到USB_DIG_Platform。通常，计算机将弹出“找到新硬件，USB设备”的对话框，随后变为“找到新硬件，USB人机接口设备”，这表示设备可以使用。</p>
+<h3>4.6 跳线设置</h3>
+<h4>4.6.1 BUF16821EVM - USB跳线</h4>
+<table>
+<thead>
+<tr>
+<th>跳线</th>
+<th>默认设置</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>JMP1</td>
+<td>INT</td>
+<td>选择BUF16821的VSD引脚连接到USB_DIG_Platform生成的VDUT信号，还是连接到终端T2以使用外部电源为<a href="https://www.elecfans.com/v/tag/8791/" target="_blank"><u>数字电路</u></a>供电</td>
+</tr>
+<tr>
+<td>JMP2</td>
+<td>INT</td>
+<td>选择BUF16821的SDA引脚连接到USB_DIG_Platform生成的I2C_SDA_ISO信号，还是连接到终端T4以使用外部源控制I2C数据线</td>
+</tr>
+<tr>
+<td>JMP3</td>
+<td>INT</td>
+<td>选择BUF16821的SCL引脚连接到USB_DIG_Platform生成的I2C_SCK_ISO信号，还是连接到终端T4以使用外部源控制I2C时钟线</td>
+</tr>
+<tr>
+<td>JMP4</td>
+<td>INT</td>
+<td>选择BUF16821的BKSEL引脚由BUF16821EVM - USB上的手动<a href="https://www.hqchip.com/app/1730" target="_blank"><u>开关控制</u></a>，还是由连接到终端T3的外部源控制</td>
+</tr>
+<tr>
+<td>JMP5</td>
+<td/>
+<td>设置I2C A0地址，可设置为高或低</td>
+</tr>
+</tbody>
+</table>
+<h4>4.6.2 USB_DIG_Platform跳线</h4>
+<table>
+<thead>
+<tr>
+<th>跳线</th>
+<th>默认设置</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>JUMP1</td>
+<td>EXT</td>
+<td>选择外部电源或总线电源，通常使用外部电源，因为USB总线电源有噪声</td>
+</tr>
+<tr>
+<td>JUMP2</td>
+<td>EXT</td>
+<td>同JUMP1</td>
+</tr>
+<tr>
+<td>JUMP3</td>
+<td>EE ON</td>
+<td>确定TUSB3210在加电或复位时从何处加载USB_DIG_Platform固件</td>
+</tr>
+<tr>
+<td>JUMP4, JUMP5</td>
+<td>L, L</td>
+<td>设置USB板的地址，通常只有在使用多个板时才更改</td>
+</tr>
+<tr>
+<td>JUMP9</td>
+<td>5V</td>
+<td>选择被测设备电源（VDUT）的电压</td>
+</tr>
+<tr>
+<td>JUMP10</td>
+<td>WP ON</td>
+<td>写保护固件EEPROM</td>
+</tr>
+<tr>
+<td>JUMP11</td>
+<td>WP ON</td>
+<td>写保护校准EEPROM</td>
+</tr>
+<tr>
+<td>JUMP13</td>
+<td>REG</td>
+<td>使用稳压器输出生成VDUT电源</td>
+</tr>
+<tr>
+<td>JUMP14</td>
+<td>9V</td>
+<td>使用外部9V电源</td>
+</tr>
+<tr>
+<td>JUMP17</td>
+<td>BUS</td>
+<td>正常VDUT操作</td>
+</tr>
+<tr>
+<td>JUMP18</td>
+<td>VDUT</td>
+<td>将GPIO上拉连接到VDUT电源或VCC电源</td>
+</tr>
+</tbody>
+</table>
+<h3>4.7 硬件特性</h3>
+<h4>4.7.1 BKSEL：OTP存储体选择开关</h4>
+<p>该开关位于BUF16821EVM - USB测试板上，用于选择操作EVM时使用的存储体。Bank 0选择存储在BUF16821 Bank_0中的伽马曲线，Bank 1选择存储在Bank_1中的伽马曲线。如果JMP4设置为EXT，该开关无效。</p>
+<h4>4.7.2 JMP1：I2C SCK控制设置</h4>
+<p>JMP1设置为INT时，VSD引脚连接到USB_DIG_Platform生成的可切换VDUT信号，该电压可根据USB_DIG_Platform上的JUMP9设置为3.3V或5V。设置为EXT时，可使用连接到终端T2的外部电源为BUF16821提供<a href="https://www.elecfans.com/tags/数字电源/" target="_blank"><u>数字电源</u></a>电压。</p>
+<h4>4.7.3 JMP2： (V_{SD}) 控制设置</h4>
+<p>JMP2设置为INT时，I2C数据信号由USB_DIG_Platform的I2C_SDA_ISO信号生成；设置为EXT时，可使用连接到终端T4的SDA引脚的外部源为BUF16821提供I2C SDA信号。</p>
+<h4>4.7.4 JMP3：BKSEL控制设置</h4>
+<p>JMP3设置为INT时，I2C时钟信号由USB_DIG_Platform的I2C_SCK_ISO信号生成；设置为EXT时，可使用连接到终端T4的SCL引脚的外部源为BUF16821提供I2C SCK信号。</p>
+<h4>4.7.5 JMP4：I2C SDA控制设置</h4>
+<p>JMP4设置为INT时，OTP存储体选择由BUF16821测试板上的BKSEL开关控制；设置为EXT时，可由连接到终端T3的外部控制信号确定使用哪个OTP存储体。</p>
+<h4>4.7.6 JMP5：I2C地址硬件设置</h4>
+<p>JMP5用于设置BUF16821上A0 I2C地址引脚的硬件设置，可将A0地址设置为逻辑“1”或逻辑“0”，以允许两个唯一的I2C地址。</p>
+<h4>4.7.7 BUF16821设备放置</h4>
+<p>BUF16821EVM - USB板上有两个位置可安装BUF16821测试设备：</p>
+<ul>
+<li>U2位置：可安装焊接在DIP转接板上的BUF16821设备，能全面评估其输出能力，且功率焊盘连接正确，可在评估时有效散热。</li>
+<li>U1位置：是一个28针<a href="https://m.hqchip.com/app/1535" target="_blank"><u>测试插座</u></a>，可快速评估和编程多个设备，但该插座没有连接到BUF16821的PowerPAD™，由于散热限制，安装在此处的BUF16821无法发挥其全部输出能力。</li>
+</ul>
+<h4>4.7.8 <a href="https://m.hqchip.com/app/1529" target="_blank"><u>端子</u></a>排TPG1</h4>
+<p>端子排TPG1在一排引脚和一排过孔上提供单个输出信号，为用户提供了多种将BUF16821输出信号与可用显示面板接口的选项。用户可以开发自定义电缆将引脚直接连接到各自的面板，或直接焊接到单个过孔。</p>
+<h2>五、软件安装与使用</h2>
+<h3>5.1 硬件要求</h3>
+<p>BUF16821EVM - USB软件已在Microsoft® Windows® XP、Vista和Windows 7<a href="https://m.elecfans.com/v/tag/527/" target="_blank"><u>操作系统</u></a>（OS）上进行了测试，支持美国和欧洲地区设置。</p>
+<h3>5.2 软件安装</h3>
+<p>软件包含在随EVM套件发货的CD中，也可通过<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>TI</u></a>网站上的BUF16821EVM - USB产品文件夹获取。安装步骤如下：</p>
+<ol>
+<li>将光盘插入可用的CD - ROM驱动器。</li>
+<li>导航到驱动器内容并打开BUF16821EVM - USB软件文件夹。</li>
+<li>使用WinZIP®或类似的文件压缩程序打开压缩文件（BUF16821EVM - USB.zip），将文件提取到硬盘上的特定BUF16821EVM - USB文件夹（例如，C:BUF16821EVM - USB）。</li>
+<li>导航到创建的BUF16821EVM - USB文件夹，找到setup.exe文件并执行以开始安装。</li>
+<li>安装过程中，用户可选择安装目录，默认位置为C:Prog<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>ram</u></a> FilesBUF16821和C:Program FilesNational Instruments。</li>
+<li>接受德州仪器和国家仪器的许可协议。</li>
+<li>安装完成后，点击“完成”。</li>
+</ol>
+<h3>5.3 软件功能与设置</h3>
+<h4>5.3.1 启动软件</h4>
+<p>通过Windows开始菜单，选择“所有程序”，然后选择BUF16821EVM - USB程序。如果计算机无法与EVM通信，会弹出错误提示。此时，应检查USB电缆两端是否正确连接，确保在连接USB电缆之前已连接USB_DIG_Platform电源，还需检查PC USB人机接口设备驱动是否正常。</p>
+<h4>5.3.2 I2C地址选择</h4>
+<p>JMP5用于设置BUF16821的I2C地址引脚，硬件和软件必须正确设置才能实现BUF16821EVM - USB与软件之间的通信。</p>
+<h4>5.3.3 测量电源</h4>
+<p>需要测量BUF16821EVM - USB测试板上相对于GND的电源（ (V<em>{s}) ），并将其输入到软件界面顶部的 (V</em>{SUP}) 字段中。各通道的电压根据输入的 (V<em>{SUP}) 值计算得出：
+[V</em>{CHANAL }=fr<a href="https://www.hqchip.com/app/1703" target="_blank"><u>ac</u></a>{V_{SUP } × Code }{1024}]
+其中，Code是通道<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>中转换为十进制格式的值。</p>
+<h4>5.3.4 读取<a href="https://www.elecfans.com/tags/dac/" target="_blank"><u>DAC</u></a>按钮</h4>
+<p>按下“读取DAC”按钮，可读取BUF16821 (DAC / V_{COM}) 寄存器的当前内容，并更新相应的文本框。</p>
+<h4>5.3.5 写入DAC按钮</h4>
+<p>写入 (DAC / V_{COM}) 寄存器的方法取决于“自动写入”功能是否启用：</p>
+<ul>
+<li>启用“自动写入”功能时，写入单个通道后，用户切换到软件中的其他文本框，输出电压会立即改变。此时按下“写入DAC”按钮，输出电压不会改变。</li>
+<li>禁用“自动写入”功能时，用户可输入所有通道的所需值，然后按下“写入DAC”按钮，所有通道的输出电压将同时改变。</li>
+</ul>
+<h4>5.3.6 复位按钮</h4>
+<p>按下“复位”按钮，会对BUF16821进行通用调用复位。复位后， (DAC / V_{COM}) 寄存器的状态取决于OTP是否已编程。如果OTP已编程，通道寄存器将加载OTP存储器中最近编程的值；如果OTP存储器未编程，通道寄存器将默认为1000000000，即中电源。同时，会调用“读取DAC”以更新相应的通道文本框。</p>
+<h4>5.3.7 保存到文件按钮</h4>
+<p>可使用“保存到文件”按钮将BUF16821 DAC的寄存器配置以<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>电压和十六进制格式保存到文本文件中。</p>
+<h4>5.3.8 从文件加载按钮</h4>
+<p>通过“从文件加载”按钮，可将先前评估保存的数据加载到BUF16821中。</p>
+<h4>5.3.9 更改 (DAC / V_{COM}) 模拟电压</h4>
+<p>可通过以下几种方式调整任何DAC或 (V_{COM}) 通道的电压：</p>
+<ul>
+<li>直接在电压文本框中输入所需电压。</li>
+<li>使用软件主窗口上的滑块，先选择要调整的通道，然后调整滑块以更新该通道的电压。</li>
+<li>使用主软件窗口上的±1 Code和±5 Code按钮，分别进行精细和粗略调整。</li>
+</ul>
+<h4>5.3.10 运行批处理按钮</h4>
+<p>按下“运行批处理”按钮，可配置BUF16821在连续循环中循环通过不同的寄存器配置。连接到最终应用程序时，此功能可用于循环通过不同的伽马设置，以确定给定应用的最佳设置。</p>
+<h4>5.3.11 控制面板按钮</h4>
+<p>按下“控制面板”按钮，会弹出一个显示面板，可使用一组图形滑块调整每个通道的输出。DAC代码和相应的输出值会自动更改。</p>
+<h4>5.3.12 编程OTP所有通道按钮</h4>
+<p>按下“编程OTP所有通道”按钮，可将当前伽马曲线编程到BUF16821的非易失性存储器中，所有通道（包括 (V_{COM}) ）将同时编程，存储在通过BKSEL开关选择的存储体中。</p>
+<h2>六、硬件原理图与布局</h2>
+<h3>6.1 原理图</h3>
+<p>BUF16821EVM - USB的原理图展示了其电路连接和信号传输路径，有助于<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>理解其工作原理。</p>
+<h3>6.2 PCB布局</h3>
+<p>PCB布局图显示了BUF16821EVM - USB各组件的位置和布线情况，但需注意这些布局图并非按比例绘制，主要用于展示电路板的布局，不能用于制造PCB。</p>
+<h3>6.3 物料清单</h3>
+<table>
+<thead>
+<tr>
+<th>物品编号</th>
+<th>数量</th>
+<th>值</th>
+<th>参考编号</th>
+<th>描述</th>
+<th>供应商/制造商</th>
+<th>零件编号</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>1</td>
+<td>249 kΩ</td>
+<td>R1</td>
+<td><a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>，249 kΩ 1/16W .5% 0603 SMD</td>
+<td>Susumu Co Ltd</td>
+<td>RR0816P - 2493 - D - 39D</td>
+</tr>
+<tr>
+<td>2</td>
+<td>2</td>
+<td>4.7 μF</td>
+<td>C1, C2</td>
+<td><a href="https://www.hqchip.com/app/855" target="_blank"><u>电容器</u></a>，<a href="https://m.hqchip.com/app/395" target="_blank"><u>钽电容</u></a>，4.7 μF 35V 10% SMD</td>
+<td><a href="https://www.elecfans.com/tags/vishay/" target="_blank"><u>Vishay</u></a>/Sprague</td>
+<td>293D475X9035C2TE3</td>
+</tr>
+<tr>
+<td>3</td>
+<td>2</td>
+<td>1 μF</td>
+<td>C3, C4</td>
+<td><a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>器，陶瓷电容，1 μF 25V Y5V 0603</td>
+<td>Murata Electronics North America</td>
+<td>GRM188F51E105ZA12D</td>
+</tr>
+<tr>
+<td>4</td>
+<td>8</td>
+<td>0.1 μF</td>
+<td>C5 - C12</td>
+<td>电容器，0.10 - μF 25 - V陶瓷Y5V 0603</td>
+<td>Kemet</td>
+<td>C0603C104Z3VACTU</td>
+</tr>
+<tr>
+<td>5</td>
+<td>1</td>
+<td/>
+<td>U1</td>
+<td>插座，<a href="https://www.hqchip.com/app/1593" target="_blank"><u>TSS</u></a>OP 28 - 针ZIF</td>
+<td>ENPLAS</td>
+<td>OTS - 28(28) - 0.65 - 01</td>
+</tr>
+<tr>
+<td>6</td>
+<td>2</td>
+<td/>
+<td>U2</td>
+<td>连接器，RCPT .100"</td>
+</tr>
+</tbody>
+</table>]]></description></item><item>    <title><![CDATA[赋能新型电力系统！岷山储能项目智能化运维方案落地应用]]></title>    <link>https://www.elecfans.com/d/8040967.html</link>    <guid>https://www.elecfans.com/d/8040967.html</guid>    <pubDate>2026-07-02 15:19:00</pubDate>    <description><![CDATA[<p>
+	随着我国<a href="https://m.elecfans.com/v/tag/293/" target="_blank"><u>新能源</u></a>市场规模的扩大，光伏发电、风电等可再生能源的大规模并网推动了源网侧储能配置需求的增长，系统对储能资源的配置与利用要求也进一步提高。本文介绍的能量管理系统、<a href="https://www.elecfans.com/v/tag/9240/" target="_blank"><u>继电保护</u></a>、电能质量在线监测装置等硬件配套设备，可实现岷山环能高科储能项目中储能电站数据的采集、处理及上传调度，并保障<a href="https://m.elecfans.com/v/tag/4675/" target="_blank"><u>电力系统</u></a>的安全稳定运行。</p>
+<p>
+	关键词：并网；储能；能量管理系统；继电保护；电能质量在线监测装置</p>
+<p>
+	<strong>概述</strong></p>
+<p>
+	岷山环能高科储能电站为浙江申<a href="https://www.elecfans.com/v/tag/2800/" target="_blank"><u>光电</u></a>气有限公司的储能项目，该公司聚焦电力行业高效节能技术研发，涵盖储能、光伏、风电场相关装备销售等新能源领域，同时从事<a href="https://m.elecfans.com/v/tag/873/" target="_blank"><u>高压</u></a>电器<a href="https://www.hqchip.com/ic/0" target="_blank"><u>元器件</u></a>、成套高低压开关设备及户外真空断路器的研发、设计、生产及销售。</p>
+<p>
+	本电站位于河南省安阳市龙安区岷山环能高科股份公司北侧空地，占地面积约2116平方米，规划设计最大功率17.25MW，总装机容量33.5MWh，采用磷酸铁<a href="https://www.elecfans.com/v/tag/2692/" target="_blank"><u>锂电池</u></a>，储能单元由储能电池-储能变流器-变压器构成，预计年放电量1386万度。项目共配置10座储能电池舱、5座升压一体舱、1座储能预制舱以及1座10kV电站。根据项目技术协议要求、系统拓扑图结构并借鉴当地类似项目调度经验的基础上，对本项目进行评估，制定经济有效的系统解决方案，确保储能电站的安全可靠运行。</p>
+<p>
+	<strong>项目情况</strong></p>
+<p>
+	该储能项目采用3.45MW/6.7MWh-1500V液冷系统标准储能单元5套，每个储能子系统通过一台箱逆变一体机升压至10kV后汇流，经由10kV电缆集电线路接入升压站10kV配电装置。项目共有2个并网柜，2套储能单元经升压变汇集到10kV预制舱的I段母线上，经并网出线柜接入到原有配电室的接入柜；3套储能单元经升压变汇集到10kV预制舱的II段母线上，经并网出线柜接入到原有配电室的接入柜。需配置硬件及计算机监控系统软件实现全站数据的安全监护及实时监测。储能电站场区布置1套环境辅控系统，通过球机摄像头、水浸烟感等<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>，实现全站安全、防盗功能配置，监测、调节并管理现场环境参数，保障设备安全运行。</p>
+<p>
+	图1储能站<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>主接线图编辑</p>
+<p>
+	图2储能站总平面布置图</p>
+<p>
+	<strong>技术方案</strong></p>
+<p>
+	本储能项目的发电上网模式要求“自发自用，余电不上网，因此需配置防逆流保护装置。原有配电室为10kV的两进线一母联的供电系统，要求逆流不允许返送到10kV进线处，故需要监测10kV进线处是否有逆流产生。由于并网点与10kV公共连接点距离较远，需配置主从机方案的防逆流保护装置。并在原有10kV配电室到储能一次仓之间配置光纤差动保护装置；储能一次仓并网柜配置安全自动装置屏（防止于二次舱室），含防孤岛保护、电能质量监测装置、故障解列装置、公共测控装置。储能一次仓其他回路配置线路保护、站用变保护和光纤差动保护。</p>
+<p>
+	储能监控系统整体架构为站控层、通讯层及设备层，通过通讯管理机、<a href="https://m.elecfans.com/v/tag/1392/" target="_blank"><u>交换机</u></a>、光纤<a href="https://www.hqchip.com/app/1809" target="_blank"><u>收发器</u></a>等设备将设备层的信息进行采集和处理，处理好的数据上传至本地的监控系统和远动装置，远动数据经纵向加密通过无线路由的方式上传至河南安阳调度部门。</p>
+<p>
+	<strong>3.1继电保护及安全自动装置</strong></p>
+<p>
+	本储能电站内主要电气设备采用<a href="https://www.elecfans.com/v/tag/10980/" target="_blank"><u>微机</u></a>保护，以满足信息上送。元件保护按照《继电保护和安全自动装置技术规程》（GB/T14285-2023）配置。</p>
+<p>
+	1）线路保护装置</p>
+<p>
+	在储能进线处配置线路保护装置，保护功能包括三段可经复压和方向闭锁的过流保护，两段零序过流保护、过负荷、低周减载等功能，以便线路发生故障时快速切除，避免事故范围扩大。</p>
+<p>
+	2）光纤差动保护装置</p>
+<p>
+	针对并网出线柜和储能接入柜距离较远的情况，在并网出线柜和储能接入柜配置光纤差动保护装置，实现纵联<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>差动保护、复压闭锁过流保护、零序过流等保护功能，对此处线路进行保护。</p>
+<p>
+	3）变压器保护装置</p>
+<p>
+	在储能预制舱内站用变处配置变压器保护装置，实现过流保护、零流保护、超高温等非电量保护功能。</p>
+<p>
+	4）故障解列装置</p>
+<p>
+	标准中明确要求分布式可再生能源发电系统并网时，应配置故障解列装置，包含过电压、低电压、高频、低频等保护功能，确保电网故障时及时隔离<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>，保障电网安全。</p>
+<p>
+	5）公用测控装置</p>
+<p>
+	根据各地调度上传要求，公共测控装置主要实现储能站内保护装置的事故总<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>、装置异常信号；电能质量监测装置的异常信号；交直流屏电压采集、故障信号、异常信号；储能预制舱内站用变及母线电压等数据采集。</p>
+<p>
+	6）防孤岛保护装置</p>
+<p>
+	分布式电源应具备快速监测孤岛且立即断开与电网连接的能力，防孤岛保护动作时间不大于2s，其防孤岛保护应与配电网侧线路重合闸和安全自动装置动作时间相配合。在本储能电站并网点装设防孤岛保护装置，防止产生非计划性孤岛。</p>
+<p>
+	7）电能质量在线监测装置</p>
+<p>
+	根据GB/T19964的相关要求，并网点应装设满足《电能质量检测设备通用要求》GB/T19862标准要求的A类电能质量在线监测装置，且监测点应放置在并网点。对储能电站可能引起的谐波、直流分量、电压波动和闪变、三相不平衡度、注入电网直流分量进行在线监测，装置具有通讯<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>，具备远传电能质量数据功能，电能质量数据通过综合业务数据网上传至电能质量检测主站，以确保储能发电系统与电网的稳定运行和电能质量的可靠性。</p>
+<p>
+	<strong>3.2防逆流保护装置</strong></p>
+<p>
+	由于公共连接点和储能并网点的距离有800米，故需要配置光纤通讯的主从机防逆流保护装置保护电网的安全。在总配电房2个10kV总进线配置防逆流保护主机装置，在并网柜放置防逆流保护从机装置，当市电出现逆功率时可以通过主机采集逆功率值，并经过逻辑运算后将逆功率跳闸命令通过光纤传输到从机，用从机跳开储能并网柜开关。</p>
+<p>
+	<strong>3.3系统调度自动化</strong></p>
+<p>
+	1）Ⅱ型网络安全监测装置</p>
+<p>
+	Ⅱ型网络安全监测装置搭配探针软件能够实时监测系统中的网络流量和数据包，通过探针软件的深度分析，识别和记录潜在的网络安全威胁和异常行为，及时发出警报并采取相应措施，从而有效防止网络攻击、数据泄露和系统故障，为系统的可靠运行提供坚强的网络安全支撑。</p>
+<p>
+	2）AGC/AVC设备</p>
+<p>
+	本储能电站具备完整的AGC/AVC控制功能，能够与调度系统协同实现发电和电压的综合控制。有功功率<a href="https://m.elecfans.com/v/tag/8966/" target="_blank"><u>控制系统</u></a>具备快速调节能力，可精准响应调度指令，参与电力系统的调频、调峰及备用服务。无功电压控制系统接受调度电压控制指令，通过PCS实现动态无功功率调节，有效支撑电网电压稳定。系统采用分层控制架构，既可接受上级调度远程控制，也可根据本地策略自主调节，确保电网安全稳定运行的同时提升新能源消纳能力。</p>
+<p>
+	<strong>系统结构</strong></p>
+<p>
+	为实时监视本地储能电站的运行以及数据采集，该项目配置一套<a href="https://www.hqchip.com/app/1703" target="_blank"><u>Ac</u></a>rel-2000MG监控系统，采用了分层式架构确保了系统的有效和稳定运行，主要由三个核心部分组成：站控层、<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>层和设备层。</p>
+<p>
+	站控层作为系统的管理和控制<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>，负责集中监控和管理整个系统。操作员可以通过这一层实时监测系统状态，并进行数据分析与处理。</p>
+<p>
+	通信层则专注于信息的传递和数据的交互，确保了不同设备和系统组件之间的无缝连接和协同工作。该层支持多种网络拓扑结构，并能根据不同的应用场景规模和需求灵活调整，从而提升了系统的灵活性和可扩展性。</p>
+<p>
+	设备层由各种硬件设备构成，是系统的基础执行单元。这些设备不仅实时采集现场数据，还能根据上级指令执行控制操作，是实现自动化操作的关键部分。</p>
+<p>
+	该储能电站为全部自用10kV电压等级接入，根据相关规定要求，应建立调度关系。将并网点设备状态、并网点电压和电流、系统有功功率和无功功率等数据上传至配网调度部门。储能电站远动装置与站内计算机监控系统统一考虑，远动装置按1套配置，并优先选用装置型，具有与调度自动化系统交换信息的能力，远动信息满足“直采直送”。信息传送方式按需求设置，满足电网调度自动化系统的有关要求。储能电站接入系统后，接入安阳调度，采用IEC60870-5-104远动规约。</p>
+<p>
+	图3监控系统网络拓扑</p>
+<p>
+	项目配置设备主要清单如下表所示：</p>
+<p>
+	系统可实现的功能如下：</p>
+<p>
+	1）实时监测：以配电一次图的形式直观显示配电线路的运行状态，可以实时监测各回路电压、电流、功率、<a href="https://www.hqchip.com/app/1717" target="_blank"><u>功率因数</u></a>等电参数信息，动态监视各配电回路断路器、隔离开关、地刀等合、分闸状态。</p>
+<p>
+	2）电参量查询：在配电一次图中，可以直接查看该回路详细电参量，包括三相电流、三相电压、总有功功率、总无功功率、总功率因数、正向有功电能等。</p>
+<p>
+	3）电能质量监视：在电能质量监控图中，可以直接查看电流电压总有效值、电压波动、电压总畸变、正反向有功电能、有功、无功功率等电能质量信息。可以根据这些信息监测现场电能的质量，及时的做出应对方案。</p>
+<p>
+	图9电能质量监视界面编辑</p>
+<p>
+	4）运行报表：查询各回路或设备指定时间的运行参数，报表中显示电参量信息应包括：各相电流、三相电压、总功率因数、总有功功率、总无功功率、正向有功电能等，报表格式有日报表、月报表、年报表等。</p>
+<p>
+	5）实时告警：能够对配电回路断路器、隔离开关、接地刀分、合动作等遥信变位，保护动作、事故跳闸等事件发出告警。</p>
+<p>
+	6）历史事件查询：能够对遥信变位，保护动作、事故跳闸，以及电压、电流、功率、功率因数越限等事件记录进行存储和管理，方便用户对系统事件和报警信息进行历史追溯，查询统计、事故分析。</p>
+<p>
+	7）故障录波：能够在系统发生故障时，自动准确地记录故障前、后过程的各种电气量的变化情况，通过对这些电气量的分析、比较，对分析处理事故、判断保护是否正确动作、提高电力系统安全运行水平有着重要作用。</p>
+<p>
+	8）事故追忆：能够自动记录事故时刻前后一段时间的所有实时稳态信息，包括开关位置、保护动作状态、遥测量等，形成事故分析的数据基础。</p>
+<p>
+	9）曲线查询：能够查询实时曲线和历史曲线，包括三相电流、三相电压、有功功率、无功功率、功率因数等所有遥测量。</p>
+<p>
+	10）用户权限管理：设置了用户权限管理功能，通过用户权限管理能够防止未经授权的操作（如遥控的操作，数据库修改等）。系统可以定义不同操作权限的权限组（如管理员组、<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>组、操作员组等），在每个权限组里分配不同用户，为系统运行、维护、管理提供可靠的安全保障。</p>
+<p>
+	11）网络拓扑图：支持实时监视接入系统的各设备的通讯状态，能够完整的显示整个系统网络结构；可在线诊断设备通讯状态，发生网络异常时能自动在界面上显示故障设备或元件及其故障部位。</p>
+<p>
+	12）通信管理：可以对整个配电系统范围内的设备通信情况进行管理、控制、数据的实时监测。</p>
+<p>
+	<strong>现场安装图片</strong></p>
+<p>
+	本项目微机保护就地分散安装在各个高压开关柜上，Acrel-2000MG监控系统主机及显示器布置于操作台上，如下图所示，该项目已送电使用，运行正常。</p>
+<p>
+	现场图片编辑</p>
+<p>
+	<strong>结语</strong></p>
+<p>
+	本文介绍的系统在分布式储能发电项目中起着核心作用，通过实时监测、数据采集与分析，实现对分散的储能资源的动态整合与管理。该系统与继电保护装置、安全自动装置及远动终端等硬件配合，构建多层次的安全防护体系，有效保障电网运行的稳定性与可靠性。作为新型电力系统的关键技术支撑，该系统不仅显著提升了能源利用效率，更为电网的安全经济运行提供了智能化保障，是推动能源数字化转型的重要基础设施。<br/><br/>
+	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[深入解析 onsemi 的 BCW65ALT1G 和 BCW65CLT1G 通用晶体管]]></title>    <link>https://www.elecfans.com/d/8040979.html</link>    <guid>https://www.elecfans.com/d/8040979.html</guid>    <pubDate>2026-07-02 15:20:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8040979" value="https://file1.elecfans.com/web3/M00/68/A5/wKgZO2pGC-iAVukUAAMYQsvptKs641.pdf"/><h1>深入解析 onsemi 的 BCW65ALT1G 和 BCW65CLT1G 通用晶体管</h1>
+<p>在电子设计领域，通用晶体管是不可或缺的基础元件。今天，我们就来详细了解一下 onsemi 公司的 BCW65ALT1G 和 BCW65CLT1G 这两款 NPN 硅通用晶体管。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8040979" target="_blank">BCW65ALT1-D.PDF</a></p>
+<h2>产品特性</h2>
+<p>这两款<a href="https://m.hqchip.com/app/1555" target="_blank"><u>晶体管</u></a>具有显著的环保特性，它们是无铅（Pb - Free）、无卤（Halogen Free）/无溴化阻燃剂（BFR Free）的，并且符合 RoHS 标准。对于注重环保和合规性的设计项目来说，这是非常重要的特性。</p>
+<h2>关键参数</h2>
+<h3>最大额定值</h3>
+<table>
+<thead>
+<tr>
+<th>在使用晶体管时，了解其最大额定值至关重要，因为超过这些值可能会损坏器件，影响其功能和可靠性。</th>
+<th>符号</th>
+<th>额定参数</th>
+<th>值</th>
+<th>单位</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>VCEO</td>
+<td>集电极 - 发射极电压</td>
+<td>32</td>
+<td>V<a href="https://m.hqchip.com/app/1703" target="_blank"><u>dc</u></a></td>
+</tr>
+<tr>
+<td>VCBO</td>
+<td>集电极 - 基极电压</td>
+<td>60</td>
+<td>Vdc</td>
+</tr>
+<tr>
+<td>VEBO</td>
+<td>发射极 - 基极电压</td>
+<td>5.0</td>
+<td>Vdc</td>
+</tr>
+<tr>
+<td>IC</td>
+<td>集电极连续<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a></td>
+<td>800</td>
+<td>mAdc</td>
+</tr>
+</tbody>
+</table>
+<h3>热特性</h3>
+<p>热特性也是晶体管设计中需要考虑的重要因素。文档中给出了不同基板在环境温度 (T_{A}=25^{circ} C) 时的热阻相关信息，同时还列出了不同材质基板的尺寸，如 FR - 5（(1.0 × 0.75 × 0.062 in)）和氧化铝（(0.4 × 0.3 × 0.024 in)）。在实际设计中，<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>需要根据具体的散热需求来选择合适的基板。</p>
+<h3><a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>特性</h3>
+<ul>
+<li><strong>击穿电压</strong>：集电极 - 发射极击穿电压 (V(BR)CEO) 相关参数表明了晶体管在承受电压方面的能力。</li>
+<li><strong>截止电流</strong>：集电极截止电流 (I_{CBO}) 在 (VCE = 32Vdc)，(IE = 0) 时的最大值为 20 nAdc。这一参数对于低功耗设计非常关键，较小的截止电流可以减少静态功耗。</li>
+<li><strong>直流电流增益 (h_{FE})</strong>：不同型号的晶体管在不同的集电极电流和集电极 - 发射极电压条件下，(h<em>{FE}) 有不同的值。例如，BCW65CLT1 在 (I</em>{C}=100 mAdc)，(V<em>{CE}=1.0 Vdc) 时，(h</em>{FE}) 的范围是 80 - 180 - 250。这一参数影响着晶体管的放大能力，工程师在设计放大电路时需要根据具体需求选择合适的 (h_{FE}) 值。</li>
+<li><strong>饱和电压</strong>：集电极 - 发射极饱和电压 (V<em>{CE}(sat)) 在 (I</em>{C}= 100 mAdc)，(I<em>{B} = 10 mAdc) 时为 0.7 Vdc，基极 - 发射极饱和电压 (V</em>{BE}(sat)) 也有相应的参数。这些参数对于设计开关电路等应用非常重要。</li>
+</ul>
+<h3>小<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>特性</h3>
+<ul>
+<li><strong>电流 - 增益 - 带宽积 (f_{T})</strong>：在 (I<em>{c} = 20 mAdc)，(V</em>{cE} = 10 Vdc)，(f = 100 MHz) 条件下，(f_{T}) 为 100 MHz。这一参数反映了晶体管在高频信号处理方面的能力，对于高频电路设计至关重要。</li>
+<li><strong>输出<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a> (C<em>{obo}) 和输入电容 (C</em>{ibo})</strong>：(C<em>{obo}) 在 (V</em>{cB} = 10 Vdc)，(I<em>{e}=0)，(f = 1.0 MHz) 时为 12 pF，(C</em>{ibo}) 在 (V<em>{EB} = 0.5 Vdc)，(I</em>{c} = 0)，(f = 1.0 MHz) 时为 80 pF。电容参数会影响晶体管的高频响应和信号传输特性，在高频电路设计中需要重点考虑。</li>
+</ul>
+<h3>开关特性</h3>
+<p>晶体管的开关特性对于<a href="https://www.elecfans.com/v/tag/8791/" target="_blank"><u>数字电路</u></a>和<a href="https://www.hqchip.com/app/1703" target="_blank"><u>开关电源</u></a>等应用非常关键。导通时间 (t<em>{on}) 在 (I</em>{B1} = I<em>{B2} = 15 mAdc) 时为 100 ns，关断时间 (t</em>{off}) 在 (I<em>{C} = 150 mAdc)，(R</em>{L} = 150) 时为 400 ns。较短的开关时间可以提高电路的工作效率和响应速度。</p>
+<h2>封装与订购信息</h2>
+<p>这两款晶体管采用 SOT - 23 封装，并且是无铅封装。每盘的包装数量为 3000 个，采用带盘包装（Tape &amp; Reel）。对于需要大量使用这两款晶体管的项目来说，这种包装方式便于自动化生产和库存管理。</p>
+<h2>总结</h2>
+<p>BCW65ALT1G 和 BCW65CLT1G 这两款通用晶体管具有环保、性能稳定等优点，在多个领域都有广泛的应用前景。<a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>在设计电路时，需要根据具体的项目需求，综合考虑这些晶体管的各项参数，以确保设计出的电路能够满足性能、可靠性和环保等多方面的要求。你在实际设计中有没有遇到过与晶体管参数相关的挑战呢？欢迎在评论区分享你的经验。 </p>]]></description></item><item>    <title><![CDATA[BUF18830EVM评估板：硬件与软件的深度剖析]]></title>    <link>https://www.elecfans.com/d/8040980.html</link>    <guid>https://www.elecfans.com/d/8040980.html</guid>    <pubDate>2026-07-02 15:20:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8040980" value="https://file.elecfans.com/web2/M00/76/A9/poYBAGNhORGAWAlFADvazmlCeqY425.pdf"/><h1>BUF18830EVM评估板：硬件与软件的深度剖析</h1>
+<p>在电子设计领域，评估板是验证和测试芯片性能的重要工具。今天，我们就来深入探讨一下<a href="https://www.elecfans.com/tags/德州仪器/" target="_blank"><u>德州仪器</u></a>（<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>Te</u></a>xas Instruments）的BUF18830EVM评估板，看看它在硬件和软件方面都有哪些特点和功能。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8040980" target="_blank">BUF18830EVM.pdf</a></p>
+<h2>一、BUF18830EVM概述</h2>
+<p>BUF18830是一款可<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a>的伽马电压发生器和(V<em>{COM})校准器，拥有18个可编程伽马通道和两个可编程(V</em>{COM})通道，非常适合用于10位源<a href="https://www.hqchip.com/app/1522" target="_blank"><u>TF</u></a>T - LCD参考驱动。而BUF18830EVM则是一个用于评估BUF18830在各种<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>、参考和<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>条件下性能的平台。</p>
+<h3>1.1 套件内容</h3>
+<table>
+<thead>
+<tr>
+<th>BUF18830EVM - <a href="https://m.hqchip.com/app/1515" target="_blank"><u>USB</u></a>套件包含了以下硬件：</th>
+<th>物品</th>
+<th>数量</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>BUF18830 <a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>测试板</td>
+<td>1</td>
+</tr>
+<tr>
+<td>USB_DIG_Platform PCB</td>
+<td>1</td>
+</tr>
+<tr>
+<td>USB电缆</td>
+<td>1</td>
+</tr>
+<tr>
+<td>桶形插头电缆组件</td>
+<td>1</td>
+</tr>
+<tr>
+<td>用户指南CD - <a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a></td>
+<td>1</td>
+</tr>
+</tbody>
+</table>
+<p>如果套件中缺少任何组件，可以联系最近的德州仪器产品信息<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>。同时，建议在<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>TI</u></a>网站（www.ti.com）上查看BUF18830产品文件夹，以确保拥有最新版本的相关软件。</p>
+<h3>1.2 相关文档</h3>
+<table>
+<thead>
+<tr>
+<th>与BUF18830EVM组装中使用的德州仪器<a href="https://m.elecfans.com/v/tag/123/" target="_blank"><u>集成电路</u></a>相关的文档如下：</th>
+<th>文档</th>
+<th>文献编号</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>BUF18830产品数据表</td>
+<td>SBOS524</td>
+</tr>
+<tr>
+<td>USB_DIG_Platform用户指南</td>
+<td>SBOU058</td>
+</tr>
+</tbody>
+</table>
+<p>这些文档可以从TI网站获取，文献编号后的字母表示文档的修订版本。</p>
+<h2>二、硬件设置与连接</h2>
+<h3>2.1 硬件原理</h3>
+<p>BUF18830测试板的硬件设置通过一个框图展示，它提供了与USB_DIG_Platform板上(I^{2}C)<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>和通用输入/输出（GPIOs）的连接，同时也为外部的分流电压、总线电压和接地提供了连接点。</p>
+<h3>2.2 信号定义</h3>
+<table>
+<thead>
+<tr>
+<th>J1（25针公DSUB）是BUF18830EVM测试板上的一个重要<a href="https://m.hqchip.com/app/1515" target="_blank"><u>连接器</u></a>，其信号定义如下：</th>
+<th>J1上的引脚</th>
+<th>信号</th>
+<th>BUF18830引脚</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1 - 8</td>
+<td>N/C</td>
+<td>无连接</td>
+</tr>
+<tr>
+<td>9</td>
+<td><a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>_SCK</td>
+<td>无连接</td>
+</tr>
+<tr>
+<td>10</td>
+<td>I2C_<a href="https://www.hqchip.com/app/1522" target="_blank"><u>SD</u></a>A2</td>
+<td>无连接</td>
+</tr>
+<tr>
+<td>11</td>
+<td>N/C</td>
+<td>无连接</td>
+</tr>
+<tr>
+<td>12</td>
+<td>I2C_SCK_ISO</td>
+<td>I2C<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>信号（SCL）通道1；可使用开关断开</td>
+</tr>
+<tr>
+<td>13</td>
+<td>I2C_SDA_ISO</td>
+<td>I2C数据信号（SDA）通道1；可使用开关断开</td>
+</tr>
+<tr>
+<td>14 - 16</td>
+<td>N/C</td>
+<td>无连接</td>
+</tr>
+<tr>
+<td>17</td>
+<td>VDUT</td>
+<td>开关3V/5V电源。注意，当电源关闭时，数字I/O也会关闭</td>
+</tr>
+<tr>
+<td>18</td>
+<td>VCC</td>
+<td>无连接</td>
+</tr>
+<tr>
+<td>19 - 20</td>
+<td>N/C</td>
+<td>无连接</td>
+</tr>
+<tr>
+<td>21</td>
+<td>GND</td>
+<td>公共接地连接</td>
+</tr>
+<tr>
+<td>22 - 25</td>
+<td>N/C</td>
+<td>无连接</td>
+</tr>
+</tbody>
+</table>
+<h3>2.3 典型硬件连接</h3>
+<p>要设置BUF18830EVM硬件，需要将EVM的两个PCB（BUF18830测试板和USB_DIG_Platform板）通过25针DSUB连接器连接在一起，并提供电源。外部连接可以是BUF18830将被集成到的实际系统。</p>
+<h3>2.4 硬件连接步骤</h3>
+<ul>
+<li><strong>连接两个PCB</strong>：轻轻推动DSUB连接器的两侧，确保两个连接器完全连接，松动的连接可能会导致间歇性操作。</li>
+<li><strong>连接电源</strong>：将+6V墙式电源连接到USB_DIG_Platform板上，务必先连接电源，再连接USB电缆。此外，BUF18830EVM还需要一个外部电源，其电压可能根据具体测试需求而有所不同。</li>
+<li><strong>连接USB电缆</strong>：在电源连接好后，将USB电缆连接到USB_DIG_Platform。通常，计算机会弹出“找到新硬件，USB设备”的对话框，这表明设备已准备好使用。</li>
+</ul>
+<h3>2.5 跳线设置</h3>
+<table>
+<thead>
+<tr>
+<th>BUF18830EVM有一些跳线设置，默认情况下，USB_DIG_Platform的跳线设置通常不需要更改，但可以根据具体配置更改BUF18830EVM板上的一些跳线。</th>
+<th>跳线</th>
+<th>默认设置</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>JMP1</td>
+<td>短路</td>
+<td>此跳线将(V<em>{COM})和(AV</em>{DD})相互短路。在打开位置，<a href="https://m.hqchip.com/app/1529" target="_blank"><u>端子</u></a>T6可用于使用外部电源设置(V_{COM})</td>
+</tr>
+<tr>
+<td>JMP2</td>
+<td>L</td>
+<td>此跳线选择(I^{2}C) A0地址选择。根据JMP2设置为高或低，可以选择两个不同的(I^{2}C)地址</td>
+</tr>
+<tr>
+<td>JMP3</td>
+<td>INT</td>
+<td>此跳线选择BUF18830<a href="https://www.elecfans.com/tags/数字电源/" target="_blank"><u>数字电源</u></a>引脚的连接位置。在INT位置，(DV_{DD})引脚连接到USB_DIG<em>Platform生成的可切换(V</em>{DUT})信号</td>
+</tr>
+</tbody>
+</table>
+<h2>三、软件安装与使用</h2>
+<h3>3.1 硬件要求</h3>
+<p>BUF18830EVM软件已在Microsoft Windows XP、Vista和Windows 7<a href="https://m.elecfans.com/v/tag/527/" target="_blank"><u>操作系统</u></a>上进行了测试，并且支持美国和欧洲的区域设置。</p>
+<h3>3.2 软件安装</h3>
+<p>软件包含在EVM套件附带的CD中，也可以通过TI网站上的BUF18830EVM产品文件夹获取。安装步骤如下：</p>
+<ul>
+<li>将光盘插入可用的CD - ROM<a href="https://m.hqchip.com/app/1847" target="_blank"><u>驱动器</u></a>。</li>
+<li>导航到驱动器内容并打开BUF18830EVM软件文件夹。</li>
+<li>使用WinZIP或类似的文件压缩程序打开压缩文件（BUF18830EVM.zip），并将文件提取到硬盘上的特定BUF18830EVM文件夹（例如，C:BUF18830EVM）。</li>
+<li>导航到创建的BUF18830EVM文件夹，找到setup.exe文件并执行它以开始安装。</li>
+</ul>
+<h3>3.3 软件功能</h3>
+<ul>
+<li><strong>I2C地址选择</strong>：通过跳线JMP2设置BUF18830的(I^{2}C)地址引脚，软件中的地址按钮需要与硬件设置匹配，才能实现软件与BUF18830设备的<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>。</li>
+<li><strong>测量电源</strong>：需要测量BUF18830EVM测试板上相对于GND的电源电压（(V<em>{S})），并将其输入到软件界面顶部的(V</em>{SUP})字段中。每个<a href="https://www.elecfans.com/tags/dac/" target="_blank"><u>DAC</u></a>的输出电压根据输入的(V_{S})值计算得出。</li>
+<li><strong>读取DAC</strong>：按下“Re<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>ad</u></a> DAC”按钮，可读取所有BUF18830 DAC/(V_{COM})<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>的当前内容，并更新相应的文本框。</li>
+<li><strong>写入DAC</strong>：写入(DAC / V_{COM})寄存器的方法取决于“Auto Write”功能是否启用。启用该功能后，单个通道写入时，输出电压会立即改变；禁用该功能后，可输入所有通道的值，然后按下“Write DAC”按钮一次性更改所有通道的输出电压。</li>
+<li><strong>复位按钮</strong>：按下“Reset”按钮，会对BUF18830进行通用调用复位，(DAC / V_{COM})寄存器的状态默认为1000000000（即中值电源），并调用“Read DAC”更新相应的通道文本框。</li>
+<li><strong>保存到文件</strong>：使用“Save to File”按钮可将BUF18830 DAC的寄存器配置保存到文本文件中。</li>
+<li><strong>从文件加载</strong>：使用“Load From File”按钮可将之前保存的寄存器配置加载到BUF18830中。</li>
+<li><strong>更改DAC / (V_{COM})<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>电压</strong>：可以通过直接在电压文本框中输入所需电压、使用主软件窗口上的滑块或通过±1 Code和±5 Code按钮来调整任何DAC或(V_{COM})通道的电压。</li>
+<li><strong>运行批处理</strong>：按下“Run Batch”按钮，可使BUF18830循环通过不同的寄存器配置，用于确定给定应用的最佳设置。</li>
+<li><strong>控制面板</strong>：按下“Control Panel”按钮，会弹出一个显示面板，可使用一组图形滑块调整每个通道的输出。</li>
+</ul>
+<h2>四、文档资料</h2>
+<h3>4.1 原理图</h3>
+<p>BUF18830EVM的原理图展示了其电路连接和设计细节，对于深入了解评估板的<a href="https://www.elecfans.com/v/tag/773/" target="_blank"><u>工作原理</u></a>非常有帮助。</p>
+<h3>4.2 PCB布局</h3>
+<p>PCB组件布局图显示了BUF18830EVM测试板上各个组件的位置和排列方式，有助于进行硬件调试和优化。</p>
+<h3>4.3 物料清单</h3>
+<p>物料清单列出了BUF18830EVM所需的所有组件，包括<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>、<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>、连接器等，对于采购和组装评估板非常重要。</p>
+<h2>五、注意事项</h2>
+<ul>
+<li><strong>静电放电警告</strong>：BUF18830EVM上的许多组件容易受到静电放电（<a href="https://www.hqchip.com/app/1587" target="_blank"><u>ESD</u></a>）的损坏，在 unpacking 和 handling EVM 时，建议采取适当的ESD防护措施，如使用接地腕带。</li>
+<li><strong>使用限制</strong>：EVM仅用于产品或软件开发人员在研发环境中进行可行性评估、实验或科学分析，不得直接或间接组装到任何成品中，也不得用于消费或家庭用途。</li>
+<li><strong>安全警告</strong>：操作EVM时应在TI推荐的规格和环境条件下进行，超出指定的性能评级和规格可能会导致人身伤害、死亡或财产损失。</li>
+</ul>
+<p>BUF18830EVM评估板为<a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>提供了一个全面的平台，用于评估BUF18830芯片的性能。通过合理的硬件设置、正确的软件使用和严格遵守注意事项，<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>们可以充分发挥该评估板的优势，为产品设计和开发提供有力支持。你在使用类似评估板时遇到过哪些问题呢？欢迎在评论区分享。 </p>]]></description></item><item>    <title><![CDATA[深入剖析 BUF20800/20820EVM：从硬件到软件的全面指南]]></title>    <link>https://www.elecfans.com/d/8040981.html</link>    <guid>https://www.elecfans.com/d/8040981.html</guid>    <pubDate>2026-07-02 15:20:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8040981" value="https://file.elecfans.com/web2/M00/76/B1/poYBAGNhZEKAHKz2AEUKkgF1_KE762.pdf"/><h3>深入剖析 BUF20800/20820EVM：从硬件到软件的全面指南</h3>
+<p>在电子设计领域，评估板是验证和测试芯片性能的重要工具。今天，我们就来详细探讨一下<a href="https://www.elecfans.com/tags/德州仪器/" target="_blank"><u>德州仪器</u></a>（<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>Te</u></a>xas Instruments）的 BUF20800/20820EVM 评估板，它为评估 BUF20800 和 BUF20820 这两款可<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a>伽马电压发生器和 (V_{COM}) 校准器提供了一个强大的平台。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8040981" target="_blank">BUF20820EVM.pdf</a></p>
+<h4>1. 评估板概述</h4>
+<p>BUF20800 提供两组 18 个可编程伽马通道和两个可编程 (V_{COM}) 通道，非常适合 10 位源 <a href="https://www.hqchip.com/app/1522" target="_blank"><u>TF</u></a>T - LCD 参考<a href="https://m.hqchip.com/app/1847" target="_blank"><u>驱动器</u></a>。而 BUF20820 则具有可编程 OTP 内存，可将伽马电压存储在芯片上，无需外部 EEP<a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a>。BUF20800/20820EVM 就是用于在各种<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>、参考和<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>条件下评估这两款芯片性能的平台。</p>
+<h4>2. 评估板套件内容</h4>
+<p>BUF20800/20820EVM 套件包含了一系列必要的硬件，如 BUF20800/20820 <a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a> 测试板、<a href="https://m.hqchip.com/app/1515" target="_blank"><u>USB</u></a>_DIG_Platform PCB、USB 电缆、+6V 电源以及用户指南 CD - ROM。如果你发现套件中有部件缺失，可联系德州仪器最近的产品信息<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>。同时，建议在 <a href="https://bbs.elecfans.com/group_715" target="_blank"><u>TI</u></a> 网站上的相关产品文件夹中确认是否有最新版本的软件。 </p>
+<p>在使用这个评估板时，我们还需要参考一些相关文档，如 BUF20800/20820 产品数据表（文献编号 SBOS329）和 USB_DIG_Platform 用户指南（文献编号 SBOU058），可以从 TI 网站获取这些文档。</p>
+<h4>3. 硬件设置与操作</h4>
+<h5>3.1 硬件操作原理</h5>
+<p>BUF20800/20820 测试板硬件通过与 USB_DIG_Platform 板的 (I^{2}C^{TM}) <a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>和通用输入/输出（GPIOs）连接，同时提供了外部连接点，用于连接分流电压、总线电压和地。</p>
+<h5>3.2 信号定义</h5>
+<p>J1（25 针公 DSUB）上的信号定义明确，不同的引脚连接着不同的信号，如 <a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>_SCK、I2C_<a href="https://www.hqchip.com/app/1522" target="_blank"><u>SD</u></a>A_ISO 等，部分引脚可通过开关断开连接。了解这些信号定义对于正确使用评估板至关重要。</p>
+<h5>3.3 硬件连接与设置</h5>
+<ul>
+<li><strong>静电放电警告</strong>：评估板上的许多组件容易受到静电放电（<a href="https://www.hqchip.com/app/1587" target="_blank"><u>ESD</u></a>）的损坏，因此在 unpacking 和 handling 时，必须采取适当的 ESD 防护措施，如使用接地腕带。</li>
+<li><strong>典型硬件连接</strong>：将 EVM 的两个 PCB 连接在一起，并为测试板提供电源。外部连接可以是 BUF20800 或 BUF20820 将集成到的实际系统。</li>
+<li><strong>连接硬件</strong>：轻轻推动 DSUB <a href="https://m.hqchip.com/app/1515" target="_blank"><u>连接器</u></a>的两侧，确保两个连接器完全连接，松动的连接可能导致间歇性操作。</li>
+<li><strong>连接电源</strong>：先将 +6V 墙式电源连接到 USB_DIG_Platform 板，再连接 USB 电缆。同时，评估板还需要一个外部电源，其电压可根据测试需求而定。</li>
+<li><strong>连接 USB 电缆</strong>：连接电源后，将 USB 电缆连接到 USB_DIG_Platform。通常，计算机会弹出 “Found New Hardware” 对话框，表明设备准备就绪。</li>
+<li><strong>默认跳线设置</strong>：BUF20800/20820EVM 有默认的跳线设置，不同的跳线有不同的功能，如选择<a href="https://www.elecfans.com/tags/数字电源/" target="_blank"><u>数字电源</u></a>、I2C <a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>和数据线的控制源等。在大多数应用中，部分跳线可使用默认设置，但也可根据具体需求进行调整。</li>
+</ul>
+<h4>4. 软件安装与使用</h4>
+<h5>4.1 硬件要求</h5>
+<p>该软件已在 Microsoft Windows XP、Vista 和 Windows 7 <a href="https://m.elecfans.com/v/tag/527/" target="_blank"><u>操作系统</u></a>上进行了测试，适用于美国和欧洲的区域设置。</p>
+<h5>4.2 软件安装</h5>
+<p>软件包含在 EVM 套件附带的 CD 中，也可从 TI 网站获取。安装时，将光盘插入 CD - ROM 驱动器，解压压缩文件，然后运行 setup.exe 文件，按照提示完成安装，过程中需要接受相关的许可协议。</p>
+<h5>4.3 软件功能与操作</h5>
+<ul>
+<li><strong>启动软件</strong>：通过 Windows 开始菜单启动软件，若 EVM 正常工作，软件界面将正确显示。若出现<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>错误，需检查 USB 电缆连接、电源连接和 PC USB 人机接口设备驱动。</li>
+<li><strong>I2C 地址选择</strong>：跳线 JMP6 用于设置 BUF20800/20820 的 I2C 地址，硬件和软件的地址设置必须匹配，否则软件无法与设备通信。</li>
+<li><strong>测量电源</strong>：需要测量评估板上相对于 GND 的电源电压，并在软件界面的 (V<em>{SUP}) 字段中输入该值。<a href="https://www.elecfans.com/tags/dac/" target="_blank"><u>DAC</u></a> 的输出电压根据输入的 (V</em>{REFH}) 和 (V_{REFL}) 计算得出。</li>
+<li><strong>读写操作</strong>：软件提供了 Re<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>ad</u></a> DAC 和 Write DAC 按钮，用于读取和写入 (DAC / V_{COM}) <a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>的值。Write DAC 的操作方式取决于 Auto Write 功能是否启用。</li>
+<li><strong>其他功能</strong>：软件还提供了 Reset 按钮用于复位设备，Save to File 和 Load From File 按钮用于保存和加载寄存器配置，Run Batch 按钮可使设备循环通过不同的寄存器配置，Control Panel 按钮可通过图形滑块调整每个通道的输出，Prog<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>ram</u></a> OTP All Channels 按钮（仅适用于 BUF20820）可将伽马曲线编程到非易失性存储器中。</li>
+</ul>
+<h4>5. 文档信息</h4>
+<p>评估板的文档包含完整的材料清单和原理图，以及 PCB 布局图。USB_DIG_Platform 的文档可在 TI 网站上的 USB_DIG_Platform 用户指南（SBOU058）中找到。</p>
+<h4>6. 重要注意事项</h4>
+<ul>
+<li>该评估板仅用于工程开发、演示或评估目的，并非适合一般消费者使用的成品。</li>
+<li>操作时需确保输入电压范围在 7V（min）至 18V（max）之间，输出电压范围也在 7V（min）至 18V（max）之间，超出范围可能导致意外操作或不可逆损坏。</li>
+<li>正常运行时，部分电路组件的外壳温度可能高于 +25°C，操作时需注意避免烫伤。</li>
+</ul>
+<p>通过以上对 BUF20800/20820EVM 评估板的详细介绍，相信<a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>们能更好地利用这个平台来评估和开发相关产品。在实际使用过程中，你是否遇到过一些特殊的问题或有独特的使用经验呢？欢迎在评论区分享。 </p>]]></description></item><item>    <title><![CDATA[基于ASC0101S的多电压域I2C总线电平转换完整方案：从单传感器到星型网络的系统级设计]]></title>    <link>https://www.elecfans.com/d/8040942.html</link>    <guid>https://www.elecfans.com/d/8040942.html</guid>    <pubDate>2026-07-02 15:11:00</pubDate>    <description><![CDATA[<div class="vditor-preview__action"/><div class="vditor-reset"><p><em>&gt; 以厦门国科安芯（ANSILIC）推出的工业航天级自动双向电平<a href="https://www.hqchip.com/app/1718" target="_blank"><u>转换器</u></a>ASC0101S为核心，系统性设计覆盖1.8V/2.5V/3.3V/5V多电压域<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>总线的完整方案。ASC0101S在SC70-6封装中集成了NMOS传输门、单稳态加速器（One-Shot）和双10kΩ上拉<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>，无需任何方向控制引脚即可实现自动双向数据传输，将I2C电平转换的BOM复杂度降至最低。</em></p><p><strong>1 引言：I2C总线面临的现实多电压困境</strong></p><p>I2C（In<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>r-Integrated Circuit）总线是<a href="https://m.elecfans.com/v/tag/2447/" target="_blank"><u>嵌入式系统</u></a>中最广泛使用的板级<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>协议之一。其两线制（SCL+SCK）、多主多从架构和内置仲裁机制使其天然适合连接多个不同功能的外围芯片。然而，当一台设备上的I2C总线上同时挂载1.8V的<a href="https://www.elecfans.com/tags/温度传感器/" target="_blank"><u>温度传感器</u></a>、2.5V的EEP<a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a>、3.3V的<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>和5V的<a href="https://m.hqchip.com/app/1731" target="_blank"><u>电源管理</u></a>芯片时，一个看似简单的问题浮现出来：不同电压域的芯片如何在同一根I2C总线上通信？</p><p>传统的解决方案存在明显的工程缺陷。最著名的是<a href="https://bbs.elecfans.com/group_729" target="_blank"><u>NXP</u></a> AN10441推荐的双N沟道<a href="https://www.elecfans.com/tags/mosfet/" target="_blank"><u>MOSFET</u></a>+4个上拉电阻电路——这种方案价格低廉（两颗BSS138约0.02美元+4颗电阻），但存在传导速度慢（受限于MOSFET的Cgd和上拉电阻值）、下冲振荡（寄生电感导致的振铃）、以及不同电压域间上拉电阻值矛盾（低速侧需要更强的上拉，高速侧需要更轻的上拉以减少功耗）等问题。而使用专用电平转换器芯片则能从根本上解决这些问题。</p><p>ASC0101S是ANSILIC专为自动双向总线协议设计的1位电平转换器。与需要DIR引脚控制方向的ASC1T45S不同，ASC0101S通过内部NMOS传输门+单稳态加速器（One-Shot）的组合架构，自动检测<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>边沿并确定传输方向——<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>不再需要关心信号是从A到B还是从B到A，芯片自己搞定。这种“零配置”的特性使ASC0101S成为I2C、SMBus、1-Wire、MDIO等协议的理想桥梁。</p><p><strong>2 方案设计：I2C多电压域<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>网络</strong></p><p>以一个典型的工业传感器采集系统为例：一颗3.3V供电的MCU（如<a href="https://bbs.elecfans.com/zhuti_stm32_1.html" target="_blank"><u>STM32</u></a>系列）作为I2C主机，总线上挂载一个1.8V的温度传感器（如TMP117，最高支持1.8V逻辑）、一个3.3V的<a href="https://www.elecfans.com/tags/湿度传感器/" target="_blank"><u>湿度传感器</u></a>（如SHT4x）和一个5V供电的EEPROM（如AT24C512，需5V逻辑电平）。三个外设分别工作在三个不同的电压域，直接并联到同一I2C总线上将导致<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>冲突甚至永久性损坏。</p><p>使用ASC0101S的解决方案极为简洁。在MCU的I2C总线（3.3V）与每个外设之间，各插入一片ASC0101S。MCU侧统一连接A<a href="https://www.hqchip.com/app/1808" target="_blank"><u>端口</u></a>（VCCA=3.3V），三个外设的B端口分别接入各自电压域（VCCB=1.8V/3.3V/5V）。每片ASC0101S完成对应电压域的电平转换。由于ASC0101S内置了10kΩ上拉电阻（A端和B端各一个），在短距离板级应用中通常无需外部上拉电阻——I2C总线仅需MCU端配置一对4.7kΩ上拉电阻（SCL和<a href="https://m.hqchip.com/app/1522" target="_blank"><u>SD</u></a>A各一个）。</p><p>这里有一个关键的工程约束需要特别注意：ASC0101S的数据手册明确标注了VCCA≥VCCB的电压约束——即A端口的供电电压必须不低于B端口。这个约束来源于内部NMOS传输门的结构：传输门的衬底连接需要确保在任何工作条件下PN结不正向偏置。在VCCA&gt;VCCB时，B端口的逻辑高电平（VCCB）总是低于A端口的逻辑高电平（VCCA），传输门在任意方向都能正确传输信号。如果反向使用（VCCA</p><p>在信号完整性方面，ASC0101S独有的One-Shot加速器是保证I2C快速模式（400kHz）下信号质量的关键。I2C的上升沿完全由上拉电阻对总线<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>充电来实现。假设总线总电容为30pF（包括芯片引脚电容约5pF+<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>走线电容约10pF+其他挂载设备约15pF），仅靠10kΩ上拉电阻充电，RC时间常数≈300ns——仅上升时间就需要约700ns（2.2×RC），已超过400kHz I2C的半个周期（1250ns）的一半。ASC0101S的One-Shot检测到上升沿后，在约30ns的持续时间内以极低阻抗（等效数十Ω）向总线注入<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>，使上升沿在几十纳秒内完成，保证信号满足I2C时序要求。30ns脉冲结束后，由上拉电阻维持高电平——既满足了速度要求，又保证了低功耗特性。</p><p><strong>3 星型拓扑与热插拔保护</strong></p><p>当I2C总线上挂载的设备数量较多时（如超过5个），总线的电容负载会增加到一个影响信号质量的水平。此时可以采用星型拓扑：MCU作为<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>节点，使用一片<a href="https://www.elecfans.com/tags/多路复用器/" target="_blank"><u>多路复用器</u></a>（如I2C Switch/Mux）将总线分为多个分支，每个分支挂载1-3个设备。ASC0101S可以同时完成每个分支的电平转换功能——在Switch的每条下游通道和对应设备之间插入ASC0101S。</p><p>ASC0101S的OE引脚（<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>N5，参考VCCA）提供了硬件级的通道使能/禁用功能。在星型拓扑中，如果某个分支不需要通信（例如对应的传感器进入深度睡眠），MCU可以通过GPIO拉低该分支ASC0101S的OE引脚，将ASC0101S的A和B端口同时置于高阻态。这不仅省电，还能将未使用分支的总线电容从总线上隔离出去——这是AN10441 MOSFET方案无法做到的，因为MOSFET方案始终通过上拉电阻连接到总线。</p><p>值得注意的是ASC0101S支持VCCA和VCCB任意顺序上电（无<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>排序要求），且单侧断电时对应端口呈现高阻态（IOFF特性）。这意味着在进行热插拔操作时，即使一个外设的电源先断开，ASC0101S也不会通过信号线向断电器件注入电流——这对于支持热插拔的模块化系统设计至关重要。</p><p><strong>4 BOM优化与成本分析</strong></p><p>以一个三电压域传感器网络为例（MCU@3.3V+3个外设@1.8V/3.3V/5V），对比三种方案：方案A为分立MOSFET（双BSS138+4×1kΩ电阻/ch×2通道=2颗MOSFET+8颗电阻），方案B为两片ASC0101S（SCL和SDA各一片），方案C为一片2通道的自动双向转换器。方案A的BOM成本最低（约0.05美元），但PCB占用面积大、易受布局影响、不支持400kHz以上速率、缺乏<a href="https://m.hqchip.com/app/1587" target="_blank"><u>ESD</u></a>保护和闩锁防护。方案B的BOM成本约0.15-0.30美元，PCB占用面积仅约20mm²（含两个0402去耦电容），支持24Mbps高速模式，具备HBM±2000V ESD保护和≥100mA闩锁电流额定值。对于工业级、汽车级和航天级产品，方案B的综合性价比远超方案A。</p><p><strong>5 总结</strong></p><p>ASC0101S为多电压域I2C总线提供了一个“零配置、高性能、极紧凑”的电平转换方案。自动方向感应的设计哲学使得工程师无需考虑数据传输方向——芯片自己完成边沿检测和方向判断，将I2C电平转换的工作量降到比单纯画两根走线多不了多少的程度。在方案实施过程中，记住三个关键约束：确保VCCA≥VCCB、核验总线上拉值与总线电容的RC匹配、在长走线应用中评估One-Shot回波风险。遵守这些规则，ASC0101S可以在I2C标准模式（100kHz）到快速模式（400kHz）的全速率范围内提供透明、可靠的自动双向电平转换。</p><p>审核编辑 黄宇</p></div>]]></description></item><item>    <title><![CDATA[ASC0101S SC70-6封装PCB布局与Layout实战指南：自动方向感应电路的特殊考量]]></title>    <link>https://www.elecfans.com/d/8040945.html</link>    <guid>https://www.elecfans.com/d/8040945.html</guid>    <pubDate>2026-07-02 15:12:00</pubDate>    <description><![CDATA[<div class="vditor-preview__action"/><div class="vditor-reset"><p><em>&gt; ASC0101S采用SC70-6微型封装，内置NMOS传输门和One-Shot边沿加速器。其自动方向感应的架构特点对<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>布局提出了独特的要求——特别是One-Shot回波抑制和长线传输的阻抗匹配。本文提供从去耦电容布局到SMT工艺全流程的Layout指导。</em></p><p><strong>1 SC70-6封装物理特性与引脚功能</strong></p><p>ASC0101S采用SC70-6封装（SOT-363变体），外形尺寸2.0×1.25×0.9mm，引脚间距0.65mm。6个引脚的分配为：<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>N1=VCCA（A<a href="https://www.hqchip.com/app/1808" target="_blank"><u>端口</u></a><a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>）、PIN2=GND（地）、PIN3=A（A端口数据，含10kΩ上拉<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>到VCCA）、PIN4=B（B端口数据，含10kΩ上拉电阻到VCCB）、PIN5=OE（输出使能，参考VCCA，内部上拉）、PIN6=VCCB（B端口电源）。封装热阻θJA≈265°C/W（J<a href="https://m.hqchip.com/app/1587" target="_blank"><u>ESD</u></a>-51标准）。由于ASC0101S的静态功耗仅约36μW（3.3V×11μA），即使在最坏工况（推挽模式、24Mbps、5V、30pF负载）下动态功耗也不超过10mW，热问题可以完全忽略。</p><p>引脚排列的一个巧妙之处在于GND（PIN2）位于VCCA（PIN1）和A（PIN3）之间，在物理上起到了电源引脚和数据引脚之间的隔离作用。A和B（PIN3和PIN4）相邻且均位于封装的同一侧，这有利于将两个数据<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>一起走线到总线——但同时也带来了串扰的风险，需要在Layout中采取措施（见下文）。</p><p><strong>2 去耦电容布局：永远不变的基础</strong></p><p>ASC0101S需要两组去耦<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>：VCCA和VCCB各一个0.1μF的<a href="https://www.hqchip.com/app/398" target="_blank"><u>MLCC</u></a>电容。推荐0402封装（1.0×0.5mm）X7R材质。每个电容应紧靠对应电源引脚（距离≤2mm），电容的GND焊盘通过过孔（孔径0.3mm）直接连接到内层GND平面。VCCA和VCCB的去耦电容可以分别放置在芯片的两侧。对于航天级应用，建议在每个电容旁预留第二个并联焊盘，以适应后续增加1μF或10μF大电容的需求。</p><p>特别提醒：ASC0101S的GND引脚（PIN2）承载所有返回<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>。VCCA和VCCB的返回电流也都经过PIN2回流。PIN2焊盘应在PCB上连接到大面积的GND铜皮，并通过至少两个过孔连接到内层GND平面。在四层板设计中，PIN2应通过走线或直接焊盘形状延伸连接到附近的GND过孔。</p><p><strong>3 A和B信号线的特殊Layout规则</strong></p><p>ASC0101S的A和B信号线Layout与普通<a href="https://www.hqchip.com/app/1381" target="_blank"><u>数字信号</u></a>有本质区别——因为ASC0101S的NMOS传输门+One-Shot架构对信号反射非常敏感。ASC0101S的数据手册明确建议：PCB信号走线长度应足够短，以使任何反射的往返延迟小于One-Shot脉冲宽度（30ns）。FR4的信号传播速度约150mm/ns（6ps/mm），30ns对应的往返距离为30×150÷2=2250mm——这说明板级走线的长度通常不会触发这个限制（大多数PCB上<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>走线长度不超过200mm）。然而，如果使用<a href="https://m.hqchip.com/app/1518" target="_blank"><u>FPC</u></a>柔性排线（传播速度较慢，约100mm/ns），30ns对应的单程距离为1.5m，往返750mm——在紧凑型可穿戴设备中使用短FPC（&lt;150mm）是安全的，但长FPC（&gt;500mm）则可能产生One-Shot回波。</p><p>当走线长度不可避免超过建议值时（如大型工业设备中的跨板I2C），建议在ASC0101S的A/B端口附近串联22-50Ω的阻尼电阻。这个电阻的目的不是端接（走线太短无法形成传输线效应），而是增加源端阻抗以衰减One-Shot关闭后可能产生的反射振铃。电阻值选择的原则：足够大以有效衰减振铃，但也足够小以避免显著增加传播延迟。对于3.3V I2C系统，22Ω可衰减约30%的反射能量，增加的RC延迟约22Ω×15pF=330ps——远小于I2C 400kHz的半个周期（1250ns），安全可行。</p><p><strong>4 OE引脚的处理</strong></p><p>OE引脚（PIN5）参考VCCA的电压。如果不使用OE功能（让芯片始终使能），应将OE通过10kΩ电阻连接到VCCA（不能直接接VCCA，内部已有上拉，直接接没问题，但建议串电阻以防ESD事件）。如果要由<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>的GPIO控制OE，注意GPIO的电压必须与VCCA匹配——如果MCU运行在1.8V而VCCA=3.3V，GPIO的高电平1.8V可能低于ASC0101S的VIH阈值（约VCCA×0.7=2.31V），导致OE无法被可靠拉高。在这种情况下，需要在MCU GPIO与ASC0101S OE之间添加一个电平<a href="https://www.hqchip.com/app/1718" target="_blank"><u>转换器</u></a>，或直接使用OE内部上拉+MCU开漏输出的方式驱动。OE走线没有高速要求，一般Layout规则即可。</p><p><strong>5 SMT组装工艺与注意事项</strong></p><p>SC70-6封装的回流焊工艺要求与同系列芯片（ASC1T34S、ASC1T45S）完全一致。钢网厚度推荐0.1mm（4mil），开孔比例1:1。回流温度曲线建议<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>S曲线：浸润区150-180°C持续60-90秒，峰值温度235-245°C，TAL（液相线以上时间）60-90秒。焊后AOI自动光学检测可100%覆盖0.65mm引脚间距的焊点质量检查。</p><p>一个常被忽视的细节是：ASC0101S内部10kΩ上拉电阻的存在意味着在未上电时A和B引脚可能通过上拉电阻与VCC轨道有直流通路。在ICT（在线测试）或边界扫描测试中，测试设备施加的电压可能通过这些上拉电阻向ASC0101S供电，导致异常的电流消耗或假性故障检测。测试<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>应了解这个特性，在测试程序中正确配置电源序列。</p><p><strong>6 Layout检查清单</strong></p><p>以下是一份供<a href="https://bbs.elecfans.com/group_1221" target="_blank"><u>PCB设计</u></a>审查使用的简明检查清单。□ VCCA和VCCB各一个0.1μF 0402 X7R电容，距引脚≤2mm；□ PIN2（GND）连接大面积铜皮，至少两个GND过孔；□ A/B走线长度≤200mm（FR4），或评估FPC走线的One-Shot回波风险；□ 长走线（&gt;200mm FR4或&gt;150mm FPC）配置22-50Ω串联阻尼电阻；□ OE走线无高速要求，注意MCU GPIO电压域匹配；□ A/B走线间距≥2W，可铺设GND屏蔽铜皮以降低串扰；□ 钢网0.1mm厚，1:1开孔，RSS回流曲线。遵循以上清单，ASC0101S的SC70-6封装可以在最小的PCB面积内提供稳定、可靠的自动双向电平转换功能。</p><p>审核编辑 黄宇</p></div>]]></description></item><item>    <title><![CDATA[科技云报到：Token经济席卷而来，云的新秩序正在重建]]></title>    <link>https://www.elecfans.com/d/8040947.html</link>    <guid>https://www.elecfans.com/d/8040947.html</guid>    <pubDate>2026-07-02 15:13:00</pubDate>    <description><![CDATA[<p>
 	科技云报到原创。</p>
 <p>
 	当<a href="https://www.elecfans.com/v/tag/150/" target="_blank"><u>人工智能</u></a>成为全球新一轮科技革命和产业变革的核心驱动力，算力与智能，正在成为衡量一个国家数字竞争力的战略制高点。</p>
@@ -2411,1276 +4025,4 @@
 <p style="text-indent:2em;">
 	</p>
 <p style="text-indent:2em;">
-	</p>]]></description></item><item>    <title><![CDATA[CC3100 SimpleLink™ Wi-Fi®网络处理器：物联网应用的理想之选]]></title>    <link>https://www.elecfans.com/d/8041141.html</link>    <guid>https://www.elecfans.com/d/8041141.html</guid>    <pubDate>2026-07-02 16:00:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8041141" value="https://file.elecfans.com/web2/M00/73/9B/poYBAGNY_s2AIoocACDy-ssvv58319.pdf"/><h1>CC3100 <a href="https://www.hqchip.com/app/1522" target="_blank"><u>Sim</u></a>pleLink™ <a href="https://www.elecfans.com/tags/wi-fi/" target="_blank"><u>Wi-Fi</u></a>®网络处理器：<a href="https://bbs.elecfans.com/group_57" target="_blank"><u>物联网</u></a>应用的理想之选</h1>
-<p>在物联网（<a href="https://www.elecfans.com/tags/iot/" target="_blank"><u>IoT</u></a>）快速发展的今天，如何实现低成本、低功耗<a href="https://www.hqchip.com/app/1380" target="_blank"><u>微控制器</u></a>（<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>）与物联网的连接，成为了众多<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>关注的焦点。<a href="https://www.elecfans.com/tags/德州仪器/" target="_blank"><u>德州仪器</u></a>（<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>TI</u></a>）的CC3100 SimpleLink™ Wi-Fi®网络处理器为这一问题提供了出色的解决方案。本文将对CC3100进行全面介绍，包括其特点、应用、规格等方面，帮助<a href="https://www.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>更好地了解和应用该产品。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8041141" target="_blank">CC3100BOOST.pdf</a></p>
-<h2>一、设备概述</h2>
-<h3>1.1 特点</h3>
-<p>CC3100由Wi-Fi网络处理器和<a href="https://m.hqchip.com/app/1731" target="_blank"><u>电源管理</u></a>子系统组成，是一款经过Wi-Fi CERTIFIED™<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>的芯片。</p>
-<h4>Wi-Fi网络处理器子系统</h4>
-<ul>
-<li><strong>专用<a href="https://m.hqchip.com/app/1378" target="_blank"><u>ARM</u></a> MCU</strong>：采用Wi-Fi Internet-On-a-Chip™技术，能够完全卸载外部微控制器的Wi-Fi和互联网协议，在<a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a>中集成了Wi-Fi驱动和多种互联网协议。</li>
-<li><strong>丰富的协议支持</strong>：包含802.11 b/g/n无线电、基带和介质访问控制（MAC）、Wi-Fi驱动和请求者，以及TCP/IP栈。支持行业标准的B<a href="https://m.hqchip.com/app/1522" target="_blank"><u>SD</u></a>套接字应用<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a><a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>（A<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>s），可同时支持8个TCP或UDP套接字，2个TLS和SSL套接字。</li>
-<li><strong>强大的加密引擎</strong>：具备强大的加密引擎，采用256位AES加密技术，为Wi-Fi和互联网连接提供快速、安全的保障。</li>
-<li><strong>多种工作模式</strong>：支持Station、AP和Wi-Fi Direct®模式，以及WPA2个人和企业安全标准。</li>
-<li><strong>灵活的配置技术</strong>：拥有SimpleLink连接管理器，可实现自动快速的Wi-Fi连接；支持SmartConfig™技术、AP模式和WPS2，便于进行灵活的Wi-Fi配置。</li>
-<li><strong>出色的性能指标</strong>：发射功率方面，1 DSSS时为18.0 dBm，54 OFDM时为14.5 dBm；接收灵敏度方面，1 DSSS时为 -95.7 dBm，54 OFDM时为 -74.0 dBm；应用吞吐量方面，UDP可达16 Mbps，TCP可达13 Mbps。</li>
-<li><strong>广泛的接口支持</strong>：可通过SPI或<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>接口与8位、16位和32位MCU或<a href="https://bbs.elecfans.com/zhuti_fpga_1.html" target="_blank"><u>ASIC</u></a>进行连接，且外部主机驱动占用的代码内存小于7KB，<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>内存小于700 B。</li>
-</ul>
-<h4><a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>管理子系统</h4>
-<ul>
-<li><strong>宽电压支持</strong>：集成<a href="https://m.hqchip.com/app/1703" target="_blank"><u>DC</u></a>-DC<a href="https://www.hqchip.com/app/1718" target="_blank"><u>转换器</u></a>，支持宽范围的电源电压，包括 (V_{BAT}) 宽电压模式（2.1至3.6 V）和预调节1.85-V模式。</li>
-<li><strong>低功耗模式</strong>：具备先进的低功耗模式，如带RTC的休眠模式（4 µA）、低功耗深度睡眠（LPDS）模式（115 µA）等。</li>
-</ul>
-<h4>其他特点</h4>
-<ul>
-<li><strong><a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>源</strong>：采用40.0-MHz晶体和内部<a href="https://www.hqchip.com/app/850" target="_blank"><u>振荡器</u></a>，以及32.768-kHz晶体或外部RTC时钟。</li>
-<li><strong>封装与温度范围</strong>：采用0.5-mm间距、64引脚、9-mm × 9-mm QFN封装，环境温度范围为 -40°C至85°C。</li>
-</ul>
-<h3>1.2 应用</h3>
-<p>CC3100适用于多种物联网应用，如云连接、家庭自动化、家用电器、访问控制、安全系统、智能能源、互联网网关、<a href="https://www.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>、智能插头和计量、无线音频以及IP网络<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>节点等。</p>
-<h3>1.3 描述</h3>
-<p>CC3100是业界首款用于无线联网解决方案的Wi-Fi CERTIFIED芯片，属于新的SimpleLink Wi-Fi系列。它集成了Wi-Fi和互联网的所有协议，大大减少了主机MCU的软件需求。内置的安全协议为用户提供了强大而简单的安全体验。此外，CC3100还提供了完整的平台解决方案，包括各种工具和软件、示例应用、用户和编程指南、参考设计以及TI E2E™支持社区。</p>
-<h2>二、规格参数</h2>
-<h3>2.1 绝对最大额定值</h3>
-<ul>
-<li><strong>电压范围</strong>：(V<em>{BAT}) 和 (V</em>{IO}) 为 -0.5至3.8 V，(V<em>{IO}-V</em>{BAT})（差分）为0.0 V。</li>
-<li><strong>其他参数</strong>：数字输入为 -0.5至 (V_{IO}) + 0.5 V，<a href="https://www.elecfans.com/tongxin/rf/" target="_blank"><u>RF</u></a>引脚为 -0.5至2.1 V，<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>引脚（XTAL）为 -0.5至2.1 V，工作温度范围为 -40至 +85°C。</li>
-</ul>
-<h3>2.2 处理评级</h3>
-<ul>
-<li><strong>存储温度范围</strong>： -55至 +125°C。</li>
-<li><strong>静电放电</strong>：人体模型（HBM）为 -2000至 +2000 V，带电设备模型（CDM）为 -500至 +500 V。</li>
-</ul>
-<h3>2.3 上电小时数</h3>
-<p>在环境温度高达85°C，假设20%为活动模式，80%为睡眠模式的情况下，CC3100可可靠运行10年，上电小时数为17,500小时。</p>
-<h3>2.4 推荐工作条件</h3>
-<ul>
-<li><strong>电压范围</strong>：直接电池连接时，(V<em>{BAT}) 和 (V</em>{IO}) 为2.1至3.6 V；预调节1.85 V时，(V<em>{BAT}) 和 (V</em>{IO}) 为1.76至1.9 V。</li>
-<li><strong>环境热变化率</strong>： -20至20°C/分钟。</li>
-</ul>
-<h3>2.5 欠压和失压</h3>
-<p>当输入电压低于 (V_{BROWN}) 时，设备进入欠压状态，此时除休眠模块（包括32-kHz RTC时钟）外，所有部分都会关闭，<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>约为400 µA。失压状态相当于硬件复位事件，设备内的所有状态都会丢失。欠压和失压的电压水平分别为2.1 V和1.67 V。</p>
-<h3>2.6 <a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>特性（3.3 V，25°C）</h3>
-<p>包括引脚<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>、高低电平输入输出电压、电流等参数。例如，引脚电容最大为4 pF，高电平输入电压为0.65 × (V<em>{DD}) 至 (V</em>{DD}) + 0.5 V等。</p>
-<h3>2.7 WLAN<a href="https://www.hqchip.com/app/1847" target="_blank"><u>接收器</u></a>特性</h3>
-<p>不同速率下的灵敏度不同，如1 DSSS时为 -95.7 dBm，54 OFDM时为 -74.0 dBm等。</p>
-<h3>2.8 WLAN发射器特性</h3>
-<p>不同调制方式下的最大<a href="https://www.hqchip.com/app/1718" target="_blank"><u>RMS</u></a>输出功率不同，如1 DSSS时为18.0 dBm，54 OFDM时为14.5 dBm等。</p>
-<h3>2.9 电流消耗</h3>
-<p>不同工作模式下的电流消耗不同，如TX模式（54 OFDM，最大功率）为223 mA，RX模式（54 OFDM）为53 mA，空闲连接状态为0.690 mA，LPDS模式为0.115 mA，休眠模式为4 mA等。</p>
-<h3>2.10 热特性</h3>
-<p>不同气流条件下的热阻不同，如0 lfm时 (θ_{ja}) 为23 C/W等。</p>
-<h3>2.11 时序和开关特性</h3>
-<p>包括电源供应顺序、复位时序、时钟规格等方面。例如，电源供应顺序要求将 (V<em>{BAT}) 和 (V</em>{IO}) 连接在一起，在电源上升时保持RESET引脚低电平等。</p>
-<h3>2.12 外部接口</h3>
-<ul>
-<li><strong>SPI闪存接口</strong>：外部串行闪存用于存储用户配置文件和固件补丁更新，CC3100作为主设备，SPI串行闪存作为从设备，接口速度可达20 MHz。</li>
-<li><strong>SPI主机接口</strong>：通过SPI接口与外部主机连接，CC3100可通过HOST_INTR线中断主机以启动数据传输，接口速度可达20 MHz。</li>
-<li><strong>主机UART</strong>：支持特定的UART配置，如波特率为115200 bps（可通过特殊命令更改至3 Mbps），数据位为8位，流控制为CTS/RTS等。</li>
-</ul>
-<h2>三、详细描述</h2>
-<h3>3.1 概述</h3>
-<h4>3.1.1 设备特点</h4>
-<ul>
-<li><strong>WLAN</strong>：集成802.11b/g/n无线电、调制解调器和MAC，支持2.4-GHz ISM频段的WLAN<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>；自动校准的无线电，单端50-Ω接口便于连接天线；先进的连接管理器，支持多种Wi-Fi安全模式；SmartConfig技术可实现一键连接；支持802.11<a href="https://www.hqchip.com/app/1809" target="_blank"><u>收发器</u></a>模式。</li>
-<li><strong>网络栈</strong>：集成IPv4 TCP/IP栈，支持8个同时的TCP、UDP或RAW套接字；内置多种网络协议，支持服务发现。</li>
-<li><strong>主机接口和驱动</strong>：可通过4线串行外设接口（SPI）或UART与任何MCU或<a href="https://www.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>连接，提供低占用的驱动，简单的API便于集成。</li>
-<li><strong>系统</strong>：可直接连接电池或使用预调节电源；休眠模式下超低泄漏电流；集成时钟源。</li>
-</ul>
-<h3>3.2 功能框图</h3>
-<p>展示了CC3100 SimpleLink Wi-Fi解决方案的功能框图，包括Wi-Fi网络处理器子系统和电源管理子系统等部分。</p>
-<h3>3.3 Wi-Fi网络处理器子系统</h3>
-<p>包括专用ARM MCU，802.11 b/g/n无线电、基带和MAC，以及强大的加密引擎。支持多种模式和安全标准，集成<a href="https://bbs.elecfans.com/group_1121" target="_blank"><u>嵌入式</u></a>IPv4 TCP/IP栈。</p>
-<h3>3.4 电源管理子系统</h3>
-<p>包含DC-DC转换器，可适应不同的电压和电流需求。支持 (V_{BAT}) 宽电压连接和预调节1.85 V模式。</p>
-<h3>3.5 低功耗操作模式</h3>
-<ul>
-<li><strong>低功耗深度睡眠（LPDS）</strong>：在不活动期间自动进入，可在不到3 ms内唤醒，典型电池消耗为115 µA。</li>
-<li><strong>休眠</strong>：最低功耗模式，所有数字逻辑断电，RTC保持运行，唤醒时间约为50 ms。</li>
-</ul>
-<h3>3.6 内存</h3>
-<ul>
-<li><strong>外部内存要求</strong>：CC3100在SFLASH上维护专有文件系统，存储多种文件。支持多种SFLASH设备，对SFLASH设备有特定的命令要求。</li>
-</ul>
-<h2>四、应用与实现</h2>
-<h3>4.1 典型应用</h3>
-<ul>
-<li><strong>CC3100宽电压模式</strong>：展示了该模式下的原理图和物料清单，适用于直接由电池供电的应用。</li>
-<li><strong>CC3100预调节1.85-V模式</strong>：展示了该模式下的原理图和物料清单，可减少BOM成本。</li>
-</ul>
-<h2>五、设备和文档支持</h2>
-<h3>5.1 设备支持</h3>
-<ul>
-<li><strong>开发支持</strong>：包括SimpleLink无线<a href="https://www.elecfans.com/v/tag/162/" target="_blank"><u>电工</u></a>具和Uniflash闪存编程器等工具，帮助用户进行开发和测试。</li>
-<li><strong>设备命名</strong>：TI为CC3100设备和支持工具的部件号分配前缀，以指定产品开发周期的阶段。</li>
-</ul>
-<h3>5.2 文档支持</h3>
-<p>提供了一系列文档，如布局指南、入门指南、编程指南等，帮助用户更好地使用CC3100。</p>
-<h3>5.3 社区资源</h3>
-<p>提供TI E2E™在线社区和TI嵌入式处理器Wiki等社区资源，方便工程师交流和解决问题。</p>
-<h3>5.4 商标</h3>
-<p>介绍了相关的商标信息，如SimpleLink、Internet-On-a-Chip等为德州仪器的商标。</p>
-<h3>5.5 静电放电注意事项</h3>
-<p>提醒用户该<a href="https://m.elecfans.com/v/tag/123/" target="_blank"><u>集成电路</u></a>易受<a href="https://m.hqchip.com/app/1587" target="_blank"><u>ESD</u></a>损坏，需采取适当的预防措施。</p>
-<h3>5.6 术语表</h3>
-<p>提供了相关术语、首字母缩写和定义的解释。</p>
-<h2>六、<a href="https://m.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>封装和可订购信息</h2>
-<p>介绍了CC3100的机械封装和可订购信息，包括不同封装类型、引脚数量、环保计划、引脚镀层等信息。</p>
-<p>综上所述，CC3100 SimpleLink™ Wi-Fi®网络处理器以其丰富的功能、出色的性能和低功耗特性，为物联网应用提供了一个可靠、便捷的解决方案。电子工程师在设计物联网产品时，可以考虑使用CC3100来实现低成本、低功耗的微控制器与互联网的连接。你在使用CC3100的过程中遇到过哪些问题呢？欢迎在评论区分享交流。 </p>]]></description></item><item>    <title><![CDATA[Onsemi通用NPN硅晶体管BCH817系列：特性、参数与应用指南]]></title>    <link>https://www.elecfans.com/d/8041142.html</link>    <guid>https://www.elecfans.com/d/8041142.html</guid>    <pubDate>2026-07-02 16:00:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8041142" value="https://file1.elecfans.com/web3/M00/68/B0/wKgZPGpGGcWAHuXmAAcqFXOBGLI793.pdf"/><h1>Onsemi通用NPN硅<a href="https://www.hqchip.com/app/1555" target="_blank"><u>晶体管</u></a>BCH817系列：特性、参数与应用指南</h1>
-<p>在电子设计领域，晶体管是不可或缺的基础元件。Onsemi推出的BCH817 - 16L/25L/40L和NSVBCH817 - 16L/25L/40L通用NPN硅晶体管，以其独特的特性和出色的性能，在众多应用场景中展现出强大的竞争力。本文将深入剖析这些晶体管的特点、参数及应用要点，为<a href="https://www.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>们提供全面的设计参考。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8041142" target="_blank">BCH817-16LT1-D.PDF</a></p>
-<h2>一、产品特性</h2>
-<h3>高温适应性</h3>
-<p>该系列晶体管的最高结温（TJ(max)）可达175°C，这使得它们非常适合用于高温、关键任务的应用场景。在一些对稳定性要求极高的工业环境或<a href="https://bbs.elecfans.com/group_78" target="_blank"><u>汽车电子</u></a>系统中，高温可能会对普通晶体管的性能产生严重影响，而BCH817系列凭借其出色的高温耐受性，能够确保设备在恶劣条件下稳定运行。</p>
-<h3>汽车级应用</h3>
-<p>NSV前缀的产品专为汽车和其他需要独特场地和控制变更要求的应用而设计。这些产品通过了AEC - Q101<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>，具备生产件批准程序（PPAP）能力，满足汽车行业严格的质量和可靠性标准。对于汽车电子<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>来说，这意味着在设计汽车发动机控制单元、车载娱乐系统等关键部件时，可以放心使用这些晶体管。</p>
-<h3>环保合规</h3>
-<p>BCH817系列产品符合无铅、无卤素/无溴化阻燃剂（BFR）的环保要求，并且符合RoHS指令。在环保意识日益增强的今天，这一特性使得产品更具市场竞争力，同时也满足了全球各地对电子产品环保标准的要求。</p>
-<h2>二、最大额定值</h2>
-<table>
-<thead>
-<tr>
-<th>额定值</th>
-<th>符号</th>
-<th>值</th>
-<th>单位</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>集电极 - 发射极电压</td>
-<td>VCEO</td>
-<td>45</td>
-<td>V</td>
-</tr>
-<tr>
-<td>集电极 - 基极电压</td>
-<td>VCBO</td>
-<td>50</td>
-<td>V</td>
-</tr>
-<tr>
-<td>发射极 - 基极电压</td>
-<td>VEBO</td>
-<td>5.0</td>
-<td>V</td>
-</tr>
-<tr>
-<td>集电极连续<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a></td>
-<td>IC</td>
-<td>500</td>
-<td>mA<a href="https://m.hqchip.com/app/1703" target="_blank"><u>dc</u></a></td>
-</tr>
-<tr>
-<td>集电极峰值电流</td>
-<td>ICM</td>
-<td>1</td>
-<td>A</td>
-</tr>
-</tbody>
-</table>
-<p>这些最大额定值为工程师在设计电路时提供了重要的参考依据。例如，在选择<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>电压和负载电流时，必须确保不超过这些额定值，否则可能会损坏晶体管，影响设备的可靠性。那么，在实际设计中，如何根据这些额定值来合理规划电路参数呢？这需要工程师结合具体的应用场景进行综合考虑。</p>
-<h2>三、热特性</h2>
-<h3>功率降额</h3>
-<p>当环境温度超过25°C时，晶体管的功率需要进行降额处理，降额值为225mW。这意味着在高温环境下，晶体管的散热能力会受到一定影响，需要合理设计散热措施，以确保其正常工作。</p>
-<h3>热阻与功耗</h3>
-<p>总器件耗散功率（PD）在氧化铝基板上为300mW，热阻为330°C/W。热阻是衡量晶体管散热性能的重要指标，较低的热阻意味着更好的散热效果。在设计散热方案时，工程师可以根据热阻和功耗来选择合适的散热片或其他散热设备。</p>
-<h3>温度范围</h3>
-<p>晶体管的结温和存储温度也有相应的要求。在实际应用中，必须确保晶体管的工作温度在允许范围内，否则可能会导致性能下降甚至损坏。那么，如何有效地监测和控制晶体管的温度呢？这是工程师在设计过程中需要关注的问题。</p>
-<h2>四、<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>特性</h2>
-<h3>截止特性</h3>
-<p>包括集电极 - 发射极击穿电压（V(BR)CEO）、集电极 - 发射极击穿电压（V(BR)CES）、发射极 - 基极击穿电压（V(BR)EBO）和集电极截止电流（ICBO）等参数。这些参数反映了晶体管在截止状态下的性能，对于设计开关电路和<a href="https://www.elecfans.com/tags/保护电路/" target="_blank"><u>保护电路</u></a>非常重要。</p>
-<h3>导通特性</h3>
-<p>直流电流增益（hFE）是衡量晶体管放大能力的重要指标。不同型号的BCH817系列产品在不同的集电极电流和集电极 - 发射极电压条件下，具有不同的电流增益范围。例如，BCH817 - 16和NSVBCH817 - 16在IC = 100mA、VCE = 1.0V时，hFE范围为100 - 250。此外，还包括集电极 - 发射极饱和电压（VCE(sat)）和基极 - 发射极导通电压（VBE(on)）等参数，这些参数对于设计放大电路和<a href="https://www.elecfans.com/soft/data/4-15/" target="_blank"><u>开关电路</u></a>至关重要。</p>
-<h3>小<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>特性</h3>
-<p>电流 - 增益带宽积（fT）和输出<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>（Cobo）是衡量晶体管小信号性能的重要参数。fT表示晶体管在高频下的放大能力，Cobo则影响晶体管的高频响应特性。在设计高频电路时，需要根据这些参数来选择合适的晶体管。</p>
-<h2>五、订购信息</h2>
-<p>该系列产品提供了多种型号可供选择，不同型号的产品具有不同的特定标记和包装方式。例如，BCH817 - 16LT1G等型号采用3000个/卷带包装。在订购时，工程师需要根据具体的应用需求选择合适的型号，并注意产品的释放情况（部分产品需申请）。</p>
-<h2>六、典型特性曲线</h2>
-<p>文档中提供了大量的典型特性曲线，包括直流电流增益与集电极电流的关系、集电极 - 发射极饱和电压与集电极电流的关系等。这些曲线直观地展示了晶体管在不同工作条件下的性能变化，工程师可以根据这些曲线来优化<a href="https://bbs.elecfans.com/zhuti_dianlu_1.html" target="_blank"><u>电路设计</u></a>，提高产品的性能和可靠性。</p>
-<h2>七、<a href="https://m.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>封装与引脚定义</h2>
-<h3>封装尺寸</h3>
-<p>采用SOT - 23封装，尺寸为2.90x1.30x1.00 1.90P。详细的封装尺寸和公差信息为工程师在进行<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>布局设计时提供了精确的参考。</p>
-<h3>引脚定义</h3>
-<p>不同的封装样式具有不同的引脚定义，如STYLE 6的引脚1为基极、引脚2为发射极、引脚3为集电极。在设计电路时，必须准确了解引脚定义，避免因引脚连接错误而导致电路故障。</p>
-<h2>八、总结与应用建议</h2>
-<p>Onsemi的BCH817 - 16L/25L/40L和NSVBCH817 - 16L/25L/40L通用NPN硅晶体管以其高温适应性、汽车级应用、环保合规等特性，以及丰富的电气参数和典型特性曲线，为电子工程师提供了强大的设计工具。在实际应用中，工程师需要根据具体的设计需求，合理选择晶体管型号，严格遵守最大额定值和热特性要求，充分利用典型特性曲线来优化电路设计。同时，要注意产品的订购信息和引脚定义，确保电路的正确性和可靠性。</p>
-<p>希望本文能够为电子工程师们在使用Onsemi的BCH817系列晶体管进行设计时提供有益的参考。在实际设计过程中，你是否遇到过类似晶体管的应用难题？又是如何解决的呢？欢迎在评论区分享你的经验和见解。 </p>]]></description></item><item>    <title><![CDATA[探索onsemi BCP54：通用NPN放大器的性能剖析]]></title>    <link>https://www.elecfans.com/d/8041143.html</link>    <guid>https://www.elecfans.com/d/8041143.html</guid>    <pubDate>2026-07-02 16:00:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8041143" value="https://file1.elecfans.com/web3/M00/68/B0/wKgZPGpGGcWAcwk9AAM7MANmOww639.pdf"/><h1>探索onsemi BCP54：通用NPN<a href="https://www.elecfans.com/tags/放大器/" target="_blank"><u>放大器</u></a>的性能剖析</h1>
-<p>在电子工程领域，找到一款合适的放大器和<a href="https://www.elecfans.com/soft/data/4-15/" target="_blank"><u>开关电路</u></a>元件至关重要。今天，我们就来深入了解onsemi的NPN<a href="https://m.hqchip.com/app/1769" target="_blank"><u>通用放大器</u></a>BCP54，探讨其特性、参数以及应用注意事项。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8041143" target="_blank">BCP54-D.PDF</a></p>
-<h2>一、器件概述</h2>
-<p>BCP54是一款专门为通用中<a href="https://www.elecfans.com/tags/功率放大器/" target="_blank"><u>功率放大器</u></a>和开关电路设计的器件，能够处理高达1.2A的集电极<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>，采用Process 38工艺制造，封装形式为SOT - 223（CASE 318H）。这种封装形式在实际应用中便于焊接和布局，适合多种电路板的设计。</p>
-<h2>二、绝对最大额定值</h2>
-<table>
-<thead>
-<tr>
-<th>在使用任何电子器件时，了解其绝对最大额定值是确保器件安全工作的关键。BCP54的绝对最大额定值如下（环境温度 (T_{A}=25^{circ} C)，除非另有说明）：</th>
-<th>Symbol</th>
-<th>Pa<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>ram</u></a>eter</th>
-<th>Ra<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>ti</u></a>ngs</th>
-<th>Unit</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>VCEO</td>
-<td>集电极 - 发射极电压</td>
-<td>45</td>
-<td>V</td>
-</tr>
-<tr>
-<td>VCBO</td>
-<td>集电极 - 基极电压</td>
-<td>45</td>
-<td>V</td>
-</tr>
-<tr>
-<td>VEBO</td>
-<td>发射极 - 基极电压</td>
-<td>5.0</td>
-<td>V</td>
-</tr>
-<tr>
-<td>Ic</td>
-<td>集电极连续电流</td>
-<td>1.5</td>
-<td>A</td>
-</tr>
-<tr>
-<td>TJ、TSTG</td>
-<td>工作和存储结温范围</td>
-<td>-55 至 +150</td>
-<td>C</td>
-</tr>
-</tbody>
-</table>
-<p>需要注意的是，超过这些额定值可能会损坏器件，影响其功能和可靠性。而且这些额定值是基于最大结温150°C的稳态限制，对于涉及脉冲或低占空比操作的应用，建议咨询厂家。大家在设计电路时，是否会严格考虑这些额定值呢？</p>
-<h2>三、订购与热特性</h2>
-<h3>订购信息</h3>
-<p>BCP54采用无铅的SOT - 223封装，每盘4000个，以卷带包装发货。对于批量生产的<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>来说，这种包装方式便于自动化生产。</p>
-<h3>热特性</h3>
-<p>热特性对于器件的性能和寿命至关重要。BCP54的总器件功耗从结到环境的热阻为83.3°C/W（ (T_{A}=25^{circ} C) ）。在实际应用中，我们需要根据这个参数合理设计散热方案，以确保器件在正常温度范围内工作。大家在处理热设计时，会采用哪些有效的方法呢？</p>
-<h2>四、<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>特性</h2>
-<h3>截止特性</h3>
-<table>
-<thead>
-<tr>
-<th>特性</th>
-<th>条件</th>
-<th>最小值</th>
-<th>最大值</th>
-<th>单位</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>V(BR)CEO 集电极 - 发射极击穿电压</td>
-<td>(IC = 10 mA)，(IB = 0)</td>
-<td>45</td>
-<td>-</td>
-<td>V</td>
-</tr>
-<tr>
-<td>V(BR)CBO 集电极 - 基极击穿电压</td>
-<td>(IC = 100 μA)，(IE = 0)</td>
-<td>45</td>
-<td>-</td>
-<td>V</td>
-</tr>
-<tr>
-<td>V(BR)EBO 发射极 - 基极击穿电压</td>
-<td>(IE = 10 μA)，(IC = 0)</td>
-<td>5.0</td>
-<td>-</td>
-<td>V</td>
-</tr>
-<tr>
-<td>ICBO 集电极截止电流</td>
-<td>(VCB = 30 V)，(IE = 0)；(VCB = 30 V)，(IE = 0)，(TA = 125 C)</td>
-<td>-</td>
-<td>(100 nA)；(10 μA)</td>
-<td/>
-</tr>
-<tr>
-<td>IEBO 发射极截止电流</td>
-<td>(VEB = 5.0 V)，(IC = 0)</td>
-<td>-</td>
-<td>(10 μA)</td>
-<td/>
-</tr>
-</tbody>
-</table>
-<p>这些截止特性参数对于理解器件在截止状态下的性能非常重要，在设计低功耗或开关电路时需要重点考虑。</p>
-<h3>导通特性</h3>
-<table>
-<thead>
-<tr>
-<th>特性</th>
-<th>条件</th>
-<th>最小值</th>
-<th>最大值</th>
-<th>单位</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>hFE 直流电流增益</td>
-<td>(I C = 5.0 mA)，(V CE = 2.0 V)</td>
-<td>25</td>
-<td>-</td>
-<td/>
-</tr>
-<tr>
-<td/>
-<td>(I C = 150 mA)，(V CE = 2.0 V)</td>
-<td>40</td>
-<td>250</td>
-<td/>
-</tr>
-<tr>
-<td/>
-<td>(I C = 500 mA)，(V CE = 2.0 V)</td>
-<td>25</td>
-<td>-</td>
-<td/>
-</tr>
-<tr>
-<td>VCE(sat) 集电极 - 发射极饱和电压</td>
-<td>(I C = 500 mA)，(I B = 50 mA)</td>
-<td>-</td>
-<td>0.5</td>
-<td>V</td>
-</tr>
-<tr>
-<td>VBE(on) 基极 - 发射极导通电压</td>
-<td>(I C = 500 mA)，(V CE = 2.0 V)</td>
-<td>-</td>
-<td>1.0</td>
-<td>V</td>
-</tr>
-</tbody>
-</table>
-<p>需要注意的是，产品的参数性能是在列出的测试条件下给出的，如果在不同条件下操作，器件的性能可能会有所不同。那么在实际设计中，如何根据不同的应用场景选择合适的测试条件呢？</p>
-<h2>五、典型特性</h2>
-<p>文档中还给出了多个典型特性曲线，包括典型脉冲电流增益与集电极电流、集电极 - 发射极饱和电压与集电极电流、基极 - 发射极导通电压与集电极电流等关系曲线。这些曲线能够帮助工程师更好地理解器件在不同工作条件下的性能表现，为<a href="https://bbs.elecfans.com/zhuti_dianlu_1.html" target="_blank"><u>电路设计</u></a>提供更准确的参考。</p>
-<h2>六、<a href="https://m.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>尺寸与安装</h2>
-<p>文档提供了SOT - 223封装的机械尺寸图和详细的尺寸参数，以及推荐的安装 footprint。在进行电路板布局时，仔细参考这些信息可以确保器件的正确安装和良好的电气连接。</p>
-<h2>七、注意事项</h2>
-<p>onsemi公司在文档中强调了产品的相关注意事项，包括有权对产品进行更改而无需进一步通知，不承担产品在特定用途中的适用性保证和相关责任，产品参数可能因应用不同而有所变化等。此外，BCP54产品不适合用于生命支持系统或某些医疗设备等关键应用。工程师在使用该产品时，一定要充分了解这些注意事项，避免因不当使用而带来风险。</p>
-<p>总之，onsemi的BCP54 NPN通用放大器是一款性能优良、应用广泛的器件，但在实际应用中，工程师需要全面了解其各项特性和参数，结合具体的应用场景进行合理设计，以确保电路的稳定性和可靠性。大家在使用类似器件时，有没有遇到过一些特殊的问题呢？欢迎在评论区分享交流。 </p>]]></description></item><item>    <title><![CDATA[通用PNP中功率晶体管BCP53M：特性与应用解析]]></title>    <link>https://www.elecfans.com/d/8041144.html</link>    <guid>https://www.elecfans.com/d/8041144.html</guid>    <pubDate>2026-07-02 16:00:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8041144" value="https://file1.elecfans.com/web3/M00/68/AB/wKgZO2pGGcWAVz8RAARn5PK8Anw399.pdf"/><h1>通用PNP中功率<a href="https://www.hqchip.com/app/1555" target="_blank"><u>晶体管</u></a>BCP53M：特性与应用解析</h1>
-<p>在电子设计领域，晶体管作为基础的电子元件，对于电路的性能起着至关重要的作用。今天，我们就来详细探讨一下<a href="https://www.elecfans.com/tags/安森美/" target="_blank"><u>安森美</u></a>（onsemi）推出的通用PNP中功率晶体管BCP53M，看看它有哪些独特的特性和应用场景。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8041144" target="_blank">BCP53M-D.PDF</a></p>
-<h2>一、产品概述</h2>
-<p>BCP53M主要为<a href="https://m.hqchip.com/app/1769" target="_blank"><u>通用放大器</u></a>应用而设计，采用DFN2020 - 3封装，这种封装形式赋予了它出色的热性能。它非常适合那些对电路板空间要求严格且对可靠性有较高期望的中功率表面贴装应用。</p>
-<p>虽然在搜索DFN2020 - 3封装的优势时遇到了网络问题，但我们知道这种封装通常具有尺寸小、散热好等特点，这使得BCP53M在节省空间的同时能更好地处理热量，保证性能稳定。</p>
-<h2>二、规格特性</h2>
-<h3>2.1 可焊侧翼封装</h3>
-<p>BCP53M采用可焊侧翼封装，这一设计极大地优化了自动光学检测（AOI）过程，能有效提高生产过程中的检测效率和准确性，降低次品率。</p>
-<h3>2.2 汽车级应用支持</h3>
-<p>带有NSV前缀的型号适用于汽车及其他对生产场地和控制变更有特殊要求的应用。这些型号通过了AEC - Q101<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>，具备生产件批准程序（PPAP）能力，为<a href="https://bbs.elecfans.com/group_78" target="_blank"><u>汽车电子</u></a>等对可靠性要求极高的领域提供了可靠的选择。</p>
-<h3>2.3 环保特性</h3>
-<p>该晶体管符合无铅、无卤/无溴化阻燃剂（BFR）标准，并且满足RoHS指令要求，体现了安森美在环保方面的努力和对行业标准的遵循。</p>
-<h2>三、最大额定值</h2>
-<table>
-<thead>
-<tr>
-<th>在实际应用中，我们必须严格遵守晶体管的最大额定值，以确保其正常工作和可靠性。以下是BCP53M在 (T_{A}=25^{circ} C) 时的主要最大额定值：</th>
-<th>额定参数</th>
-<th>符号</th>
-<th>最大值</th>
-<th>单位</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>集电极 - 发射极电压</td>
-<td>(V_{CEO})</td>
-<td>-80</td>
-<td>(V_{<a href="https://m.hqchip.com/app/1703" target="_blank"><u>dc</u></a>})</td>
-</tr>
-<tr>
-<td>集电极 - 基极电压</td>
-<td>(V_{CBO})</td>
-<td>-100</td>
-<td>(V_{dc})</td>
-</tr>
-<tr>
-<td>发射极 - 基极电压</td>
-<td>(V_{EBO})</td>
-<td>-6.0</td>
-<td>(V_{dc})</td>
-</tr>
-<tr>
-<td>集电极连续<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>（注1）</td>
-<td>(I_{C})</td>
-<td>1.0</td>
-<td>A</td>
-</tr>
-<tr>
-<td>集电极峰值电流（注1）</td>
-<td>(I_{CM})</td>
-<td>2.0</td>
-<td>A</td>
-</tr>
-</tbody>
-</table>
-<p>需要注意的是，如果超过这些额定值，可能会对器件造成损坏，影响其功能和可靠性。</p>
-<p>尽管搜索晶体管超过额定值的危害时出现网络问题，但我们知道超过额定值可能导致晶体管过热、性能下降甚至永久性损坏。所以在设计电路时，一定要确保晶体管工作在额定值范围内。</p>
-<h2>四、热特性</h2>
-<p>热特性对于晶体管的性能和可靠性至关重要。虽然文档中热特性部分的数据未完整给出，但我们知道需要关注晶体管的功耗 (P_{D}) 以及在高于 (25^{circ}C) 时的降额情况。一般来说，随着温度的升高，晶体管的性能会受到一定影响，合理的散热设计可以保证其在不同环境温度下稳定工作。</p>
-<p>在搜索晶体管散热设计方法时遇到网络问题，但常见的散热设计方法有使用散热片、增加通风等。在使用BCP53M时，我们可以根据实际情况选择合适的散热方式，以保证其性能稳定。</p>
-<h2>五、<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>特性</h2>
-<table>
-<thead>
-<tr>
-<th>电气特性是评估晶体管性能的关键指标。以下是BCP53M在 (T_{A}=25^{circ} C) 时的部分主要电气特性：</th>
-<th>特性</th>
-<th>符号</th>
-<th>最小值</th>
-<th>最大值</th>
-<th>单位</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>集电极 - 基极击穿电压 ((I<em>{C}=-100 mu A, I</em>{E}=0 ~A))</td>
-<td>(V_{(BR)EBO})</td>
-<td>-5</td>
-<td/>
-<td>V</td>
-</tr>
-<tr>
-<td>直流电流增益（BCP53M）</td>
-<td>(h_{FE})</td>
-<td>63</td>
-<td>250</td>
-<td/>
-</tr>
-<tr>
-<td>基极 - 发射极饱和电压 ((I<em>{C}=-500 ~mA, I</em>{B}=-50 ~mA))</td>
-<td>(V_{BE(on)})</td>
-<td/>
-<td>-2.0</td>
-<td/>
-</tr>
-</tbody>
-</table>
-<p>需要注意的是，产品的参数性能是在特定测试条件下给出的，如果工作条件不同，实际性能可能会有所差异。例如，文档中提到的脉冲条件（脉冲宽度 = 300 (mu s)，占空比 ≤ 2%）会对某些特性产生影响。</p>
-<h2>六、典型特性</h2>
-<p>文档中给出了BCP53M的一系列典型特性曲线，包括直流电流增益、集电极电流与集电极 - 发射极电压关系、集电极 - 发射极饱和电压等。这些曲线可以帮助我们更直观地了解晶体管在不同工作条件下的性能表现，在<a href="https://bbs.elecfans.com/zhuti_dianlu_1.html" target="_blank"><u>电路设计</u></a>时，我们可以根据这些曲线来优化电路参数，确保晶体管工作在最佳状态。</p>
-<p>虽然搜索如何根据晶体管典型特性曲线设计电路时遇到了网络问题，但一般来说，我们可以根据曲线确定晶体管的工作点，选择合适的偏置<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>等参数。大家在实际设计中，不妨多参考这些曲线，结合具体的电路需求进行优化。</p>
-<h2>七、订购信息</h2>
-<p>BCP53M有多种型号可供选择，不同型号在器件标记和适用场景上有所差异。例如，带有NSV前缀的型号适用于汽车等特殊应用。同时，该晶体管采用WDFNW3封装，以3000个/卷带和卷轴的形式包装。在订购时，我们需要根据实际需求选择合适的型号，并注意卷带和卷轴的相关规格。</p>
-<p>虽然搜索电子元件订购注意事项时遇到网络问题，但我们要注意元件的型号、规格、数量、交货期等。大家在订购BCP53M时，一定要仔细核对相关信息，确保满足设计需求。</p>
-<h2>八、<a href="https://m.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>尺寸</h2>
-<p>文档中给出了BCP53M的机械外壳轮廓和封装尺寸信息，这些尺寸对于电路板的布局设计非常重要。在进行<a href="https://bbs.elecfans.com/group_1221" target="_blank"><u>PCB设计</u></a>时，我们需要严格按照这些尺寸来安排晶体管的位置，确保其与其他元件之间的间距和连接符合要求。</p>
-<p>综上所述，BCP53M作为一款通用PNP中功率晶体管，具有多种优秀的特性和广泛的应用前景。在电子设计中，我们可以根据其规格特性、电气特性等合理选择和使用该晶体管，同时要注意遵守其额定值和工作条件，以确保电路的性能和可靠性。大家在实际应用中遇到什么问题，欢迎一起交流探讨。 </p>]]></description></item><item>    <title><![CDATA[深入了解 onsemi BCP53 系列 PNP 硅外延晶体管]]></title>    <link>https://www.elecfans.com/d/8041145.html</link>    <guid>https://www.elecfans.com/d/8041145.html</guid>    <pubDate>2026-07-02 16:00:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8041145" value="https://file1.elecfans.com/web3/M00/68/AB/wKgZO2pGGcWAQoucAAPeRUZrefU753.pdf"/><h1>深入了解 onsemi BCP53 系列 PNP 硅外延<a href="https://www.hqchip.com/app/1555" target="_blank"><u>晶体管</u></a></h1>
-<h2>引言</h2>
-<p>在电子设计领域，选择合适的晶体管对于<a href="https://www.hqchip.com/app/1537" target="_blank"><u>音频</u></a><a href="https://www.elecfans.com/tags/放大器/" target="_blank"><u>放大器</u></a>等应用至关重要。今天我们要探讨的是 onsemi 公司的 BCP53 系列 PNP 硅外延晶体管，它在特定的应用场景中有着独特的优势。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8041145" target="_blank">BCP53T1-D.PDF</a></p>
-<h2>BCP53 系列晶体管概述</h2>
-<p>BCP53 系列是专为音频放大器应用而设计的 PNP 硅外延晶体管。它采用 SOT - 223 封装，这种封装专为中功率表面贴装应用而设计，具有良好的散热性能和<a href="https://m.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>稳定性。其高电流 NPN 互补型号为 BCP56。</p>
-<h3>封装特点</h3>
-<p>SOT - 223 封装可以通过波峰焊或回流焊进行焊接。成型的引脚能够在焊接过程中吸收热应力，从而避免芯片受到损坏。这对于保证产品的可靠性和稳定性非常重要。</p>
-<h3>产品标识</h3>
-<p>不同型号的 BCP53 晶体管有特定的标识，例如：</p>
-<ul>
-<li>BCP53T1G = AH</li>
-<li>BCP53 - 10T1G = AH - 10</li>
-<li>BCP53 - 16T1G = AH - 16</li>
-</ul>
-<p>此外，带有 S 和 NSV 前缀的产品适用于汽车和其他有独特产地和控制变更要求的应用，并且这些产品通过了 AEC - Q101 <a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>，具备生产件批准程序（PPAP）能力。</p>
-<h3>环保特性</h3>
-<p>这些器件均为无铅、无卤素/无溴化阻燃剂（BFR）产品，符合 RoHS 标准，这体现了 onsemi 公司在环保方面的考虑。</p>
-<h2>关键参数与特性</h2>
-<h3>热特性</h3>
-<table>
-<thead>
-<tr>
-<th>特性</th>
-<th>数值</th>
-<th>单位</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>表面贴装热阻</td>
-<td>83.3</td>
-<td>°C/W</td>
-</tr>
-<tr>
-<td>引脚焊接温度（距离外壳 0.0625 英寸）</td>
-<td>260</td>
-<td>°C</td>
-</tr>
-<tr>
-<td>焊接时间</td>
-<td>10</td>
-<td>S</td>
-</tr>
-</tbody>
-</table>
-<p>热阻参数反映了晶体管散热的难易程度，较低的热阻意味着在相同功率下器件的温度上升较小，有助于提高器件的稳定性和寿命。</p>
-<h3>最大额定值</h3>
-<table>
-<thead>
-<tr>
-<th>额定值</th>
-<th>符号</th>
-<th>数值</th>
-<th>单位</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>集电极 - 发射极电压</td>
-<td>VCEO</td>
-<td>- 80</td>
-<td>V</td>
-</tr>
-<tr>
-<td>集电极 - 基极电压</td>
-<td>VCBO</td>
-<td>- 100</td>
-<td>V</td>
-</tr>
-<tr>
-<td>发射极 - 基极电压</td>
-<td>VEBO</td>
-<td>- 5.0</td>
-<td>V</td>
-</tr>
-<tr>
-<td>集电极<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a></td>
-<td>Ic</td>
-<td>1.5</td>
-<td>A</td>
-</tr>
-<tr>
-<td>集电极电流 - 峰值（单脉冲，tp≤1ms）</td>
-<td>ICM</td>
-<td>3.0</td>
-<td>A</td>
-</tr>
-<tr>
-<td>基极电流 - 连续</td>
-<td>lB</td>
-<td>- 0.3</td>
-<td>A</td>
-</tr>
-<tr>
-<td>基极 - 集电极电流 - 峰值（单脉冲，tp ≤1 ms）</td>
-<td>BM</td>
-<td>- 0.4</td>
-<td>A</td>
-</tr>
-<tr>
-<td>总功耗（TA = 25°C）</td>
-<td>Po</td>
-<td>1.5</td>
-<td>W</td>
-</tr>
-<tr>
-<td>总功耗（25°C 以上降额）</td>
-<td/>
-<td>12</td>
-<td>mW/°C</td>
-</tr>
-<tr>
-<td>工作和储存温度范围</td>
-<td>TJ, Tstg</td>
-<td>- 65 至 + 150</td>
-<td>°C</td>
-</tr>
-</tbody>
-</table>
-<p>在设计电路时，我们必须确保晶体管的各项工作参数不超过这些最大额定值，否则可能会导致器件损坏，影响电路的可靠性。比如，如果集电极电流超过了最大额定值，可能会使晶体管过热，缩短其使用寿命甚至直接损坏。</p>
-<h3>订购信息</h3>
-<p>BCP53 系列的不同型号均采用 SOT - 223 无铅封装，通常以卷带包装形式发货，每卷数量大多为 1000 个，部分型号为 4000 个。具体的卷带规格可参考相关的包装规格手册。</p>
-<h3><a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>特性</h3>
-<p>在室温（TA = 25°C）下，该系列晶体管具有特定的电气特性。例如，集电极 - 基极击穿电压、集电极 - 基极截止电流等都有相应的参数范围。不过需要注意的是，产品的参数性能是在特定测试条件下给出的，如果实际工作条件不同，产品性能可能会有所差异。我们在实际应用中需要根据具体情况进行评估和测试。例如，当工作温度升高时，晶体管的某些参数可能会发生变化，这就需要我们重新评估其是否满足电路的要求。</p>
-<h3>典型特性</h3>
-<p>文档中给出了多个典型特性图，如集电极 - 发射极饱和电压与集电极电流的关系、直流电流增益与集电极电流的关系等。这些典型特性曲线能够帮助我们更好地理解晶体管的工作特性，在设计电路时选择合适的工作点。例如，通过直流电流增益与集电极电流的关系曲线，我们可以确定在不同集电极电流下晶体管的增益情况，从而优化放大器的性能。</p>
-<h2>机械尺寸与封装信息</h2>
-<p>文档详细给出了 SOT - 223 封装的机械尺寸和公差要求，同时定义了不同引脚排列的样式。这些信息对于 <a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a> 设计非常关键，我们需要根据这些尺寸精确设计焊接焊盘和布局，以确保晶体管能够正确安装和焊接。设计人员在进行 PCB 布线时，要充分考虑引脚间距、封装大小等因素，避免出现焊接不良或与其他元件干涉的问题。</p>
-<h2>总结</h2>
-<p>BCP53 系列 PNP 硅外延晶体管在音频放大器等中功率表面贴装应用中具有诸多优势，包括适当的封装形式、明确的参数特性和良好的环保性能。但在实际应用中，我们<a href="https://www.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>需要仔细研究其各项参数和特性，根据具体的设计要求进行合理选择和应用，同时要充分考虑工作条件对器件性能的影响，以确保设计出的电路稳定可靠。各位<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>在使用这款晶体管时，有没有遇到过什么独特的问题或挑战呢？欢迎在评论区分享交流。 </p>]]></description></item><item>    <title><![CDATA[探索 onsemi BCP55 NPN 晶体管：通用中功率的理想之选]]></title>    <link>https://www.elecfans.com/d/8041146.html</link>    <guid>https://www.elecfans.com/d/8041146.html</guid>    <pubDate>2026-07-02 16:00:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8041146" value="https://file1.elecfans.com/web3/M00/68/B0/wKgZPGpGGcWAfltsAANBUbpC_NE552.pdf"/><h1>探索 onsemi BCP55 NPN <a href="https://www.hqchip.com/app/1555" target="_blank"><u>晶体管</u></a>：通用中功率的理想之选</h1>
-<p>在<a href="https://www.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>的日常设计中，选择合适的晶体管至关重要。今天，我们将深入探讨 onsemi 的 BCP55 NPN 通用<a href="https://www.elecfans.com/tags/功率放大器/" target="_blank"><u>功率放大器</u></a>晶体管，了解它的性能特点、应用场景以及关键参数。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8041146" target="_blank">BCP55-D.PDF</a></p>
-<h2>一、产品概述</h2>
-<p>BCP55 是一款专为通用中功率放大器和<a href="https://www.elecfans.com/soft/data/4-15/" target="_blank"><u>开关电路</u></a>设计的 NPN 晶体管，能够处理高达 1.0A 的集电极<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>，采用 SOT - 223 封装（CASE 318H）。这种封装形式便于安装和集成到各种电路板中，为<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>提供了便利。</p>
-<h3>二、封装与引脚</h3>
-<p>它采用 SOT - 223 封装，引脚定义如下：引脚 1 为基极（Base），引脚 2 和 4 为集电极（Collector），引脚 3 为发射极（Emit<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>r）。这种引脚布局有助于在<a href="https://bbs.elecfans.com/zhuti_dianlu_1.html" target="_blank"><u>电路设计</u></a>中合理连接各个部分，实现预期的功能。</p>
-<h3>三、绝对最大额定值</h3>
-<table>
-<thead>
-<tr>
-<th>在使用 BCP55 时，必须严格遵守其绝对最大额定值，以确保设备的安全和可靠性。以下是主要的额定值参数：</th>
-<th>Symbol</th>
-<th>Pa<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>ram</u></a>eter</th>
-<th>Ra<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>ti</u></a>ngs</th>
-<th>Unit</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>V<sub>CEO</sub></td>
-<td>集电极 - 发射极电压</td>
-<td>60</td>
-<td>V</td>
-</tr>
-<tr>
-<td>V<sub>CBO</sub></td>
-<td>集电极 - 基极电压</td>
-<td>60</td>
-<td>V</td>
-</tr>
-<tr>
-<td>V<sub>EBO</sub></td>
-<td>发射极 - 基极电压</td>
-<td>5.0</td>
-<td>V</td>
-</tr>
-<tr>
-<td>I<sub>C</sub></td>
-<td>集电极连续电流</td>
-<td>1.5</td>
-<td>A</td>
-</tr>
-<tr>
-<td>T<sub>J</sub>, T<sub>STG</sub></td>
-<td>工作和存储结温范围</td>
-<td>-55 至 +150</td>
-<td>°C</td>
-</tr>
-</tbody>
-</table>
-<p>超过这些额定值可能会损坏设备，影响其功能和可靠性。例如，如果集电极 - 发射极电压超过 60V，晶体管可能会发生击穿，导致电路故障。那么在实际设计中，你是否会时刻关注这些额定值呢？</p>
-<h3>四、订购信息与热特性</h3>
-<table>
-<thead>
-<tr>
-<th>BCP55 以 SOT - 223 无铅封装形式提供，每盘有 4000 个，采用带盘包装。关于热特性，以下是关键参数：</th>
-<th>Symbol</th>
-<th>Char<a href="https://www.hqchip.com/app/1703" target="_blank"><u>ac</u></a>teristic</th>
-<th>Max</th>
-<th>Unit</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>P<sub>D</sub></td>
-<td>总设备耗散（25°C 以上降额）</td>
-<td>1.5（12 mW/°C）</td>
-<td>W</td>
-</tr>
-<tr>
-<td>R<sub>θJA</sub></td>
-<td>结到环境的热阻</td>
-<td>83.3</td>
-<td>°C/W</td>
-</tr>
-</tbody>
-</table>
-<p>热特性对于晶体管的性能和寿命至关重要。较高的热阻可能会导致晶体管温度过高，从而影响其性能和可靠性。在设计散热方案时，你会如何考虑这些热特性参数呢？</p>
-<h3>五、<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>特性</h3>
-<h4>1. 截止特性</h4>
-<ul>
-<li>集电极 - 发射极击穿电压 V<sub>(BR)CEO</sub>：当 I<sub>C</sub> = 10 mA，I<sub>B</sub> = 0 时，为 60V。</li>
-<li>集电极 - 基极击穿电压 V<sub>(BR)CBO</sub>：当 I<sub>C</sub> = 100 μA，I<sub>E</sub> = 0 时，为 60V。</li>
-<li>发射极 - 基极击穿电压 V<sub>(BR)EBO</sub>：当 I<sub>E</sub> = 10 μA，I<sub>C</sub> = 0 时，为 5.0V。</li>
-<li>集电极截止电流 I<sub>CBO</sub>：在不同条件下有不同的值，如 V<sub>CB</sub> = 30V，I<sub>E</sub> = 0 时为 100 nA；V<sub>CB</sub> = 30V，I<sub>E</sub> = 0，T<sub>A</sub> = 125 °C 时为 10 μA。</li>
-<li>发射极截止电流 I<sub>EBO</sub>：当 V<sub>EB</sub> = 5.0V，I<sub>C</sub> = 0 时为 10 μA。</li>
-</ul>
-<h4>2. 导通特性</h4>
-<ul>
-<li>直流电流增益 h<sub>FE</sub>：在不同的集电极电流和集电极 - 发射极电压条件下有不同的值。例如，当 I<sub>C</sub> = 5.0 mA，V<sub>CE</sub> = 2.0V 时，h<sub>FE</sub> 最小值为 25；当 I<sub>C</sub> = 150 mA，V<sub>CE</sub> = 2.0V 时，h<sub>FE</sub> 在 40 至 250 之间。</li>
-<li>集电极 - 发射极饱和电压 V<sub>CE(sat)</sub>：当 I<sub>C</sub> = 500 mA，I<sub>B</sub> = 50 mA 时，最大值为 0.5V。</li>
-<li>基极 - 发射极导通电压 V<sub>BE(on)</sub>：当 I<sub>C</sub> = 500 mA，V<sub>CE</sub> = 2.0V 时，最大值为 1.0V。</li>
-</ul>
-<p>这些电气特性是设计电路时的重要依据，不同的应用场景可能需要不同的电气参数。你在实际设计中，会如何根据这些特性来选择合适的工作点呢？</p>
-<h3>六、典型特性曲线</h3>
-<p>文档中还提供了一系列典型特性曲线，包括脉冲电流增益与集电极电流的关系、集电极 - 发射极饱和电压与集电极电流的关系等。这些曲线可以帮助工程师更好地了解晶体管在不同工作条件下的性能表现，从而优化电路设计。</p>
-<h3>七、<a href="https://m.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>尺寸与安装建议</h3>
-<p>文档给出了 SOT - 223 封装的机械尺寸和推荐的安装脚印。准确的机械尺寸信息对于电路板布局和组装非常重要，确保晶体管能够正确安装在电路板上。</p>
-<h3>八、总结</h3>
-<p>BCP55 NPN 晶体管是一款性能优良的通用中功率晶体管，具有广泛的应用前景。在设计中，工程师需要充分考虑其绝对最大额定值、热特性、电气特性等参数，结合典型特性曲线进行优化设计。同时，要注意遵守相关的安全和使用规范，以确保设备的可靠性和稳定性。你在使用类似晶体管时，是否也会遇到一些挑战呢？欢迎在评论区分享你的经验和想法。 </p>]]></description></item><item>    <title><![CDATA[CC3200 SimpleLink™ Wi-Fi® 和物联网解决方案：音频BoosterPack用户指南解读]]></title>    <link>https://www.elecfans.com/d/8041165.html</link>    <guid>https://www.elecfans.com/d/8041165.html</guid>    <pubDate>2026-07-02 16:05:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8041165" value="https://file.elecfans.com/web2/M00/74/57/pYYBAGNZjEKAX7HsABYQ0wTLVnI091.pdf"/><h1>CC3200 <a href="https://www.hqchip.com/app/1522" target="_blank"><u>Sim</u></a>pleLink™ <a href="https://www.elecfans.com/tags/wi-fi/" target="_blank"><u>Wi-Fi</u></a>® 和<a href="https://bbs.elecfans.com/group_57" target="_blank"><u>物联网</u></a>解决方案：<a href="https://www.hqchip.com/app/1537" target="_blank"><u>音频</u></a>BoosterPack用户指南解读</h1>
-<p>在电子设计领域，音频功能的开发与集成一直是一个热门且具有挑战性的方向。<a href="https://www.elecfans.com/tags/德州仪器/" target="_blank"><u>德州仪器</u></a>（<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>Te</u></a>xas Instruments）的CC3200 SimpleLink™ Wi-Fi® 和物联网解决方案中的音频BoosterPack，为<a href="https://bbs.elecfans.com/group_1231" target="_blank"><u>开发者</u></a>提供了一个便捷且强大的音频开发平台。今天，我们就来深入了解一下这个音频BoosterPack的相关内容。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8041165" target="_blank">CC3200AUDBOOST.pdf</a></p>
-<h2>一、快速上手</h2>
-<h3>1.1 简介</h3>
-<p>SimpleLink™ Wi-Fi® CC3200音频BoosterPack（CC3200AUDBOOST）主要用于评估和开发SimpleLink Wi-Fi CC3200设备上的数字音频外设（I2S）。它可以与版本3.2及更高版本的SimpleLink Wi-Fi CC3200 Launchpad（CC3200 - LAUNCHXL）配合使用。该BoosterPack包含一个D类<a href="https://www.elecfans.com/tags/功率放大器/" target="_blank"><u>功率放大器</u></a>来驱动扬声器，以及一个超低功耗<a href="https://www.hqchip.com/app/1537" target="_blank"><u>音频编解码器</u></a>TLV320<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>C3254，支持可<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a>音频处理。不过，扬声器、耳机和麦克风需要单独购买。<a href="https://m.hqchip.com/app/1522" target="_blank"><u>SD</u></a>K中的示例应用需要两个CC3200 Launch<a href="https://www.elecfans.com/tags/Pads/" target="_blank"><u>Pads</u></a>和CC3200AUDBOOST套件，可应用于Wi-Fi扬声器、门铃、婴儿监视器、Wi-Fi耳机、Wi-Fi音频流和对讲机等场景。大家在实际应用中，有没有想过用它开发一些独特的音频设备呢？</p>
-<h3>1.2 关键特性</h3>
-<ul>
-<li><strong>音频编解码器</strong>：采用TLV320AIC3254超低功耗立体声音频编解码器。</li>
-<li><strong>功率放大器</strong>：TPA2012D2，2.1 W/CH立体声无滤波D类音频功率<a href="https://www.elecfans.com/tags/放大器/" target="_blank"><u>放大器</u></a>。</li>
-<li><strong><a href="https://m.hqchip.com/app/1537" target="_blank"><u>音频接口</u></a></strong>：具备3.5 mm单声道插孔、3.5 mm立体声输入插孔和3.5 mm立体声输出插孔。</li>
-<li><strong>内置麦克风</strong>：方便实现音频采集功能。</li>
-<li><strong>外部连接</strong>：有<a href="https://www.hqchip.com/app/1529" target="_blank"><u>端子</u></a>块可连接外部放大器。</li>
-<li><strong>供电方式</strong>：没有板载<a href="https://m.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>，连接CC3200 - LAUNCHXL后，由其为CC3200AUDBOOST供电，具体为音频编解码器和功率放大器供电。</li>
-</ul>
-<h3>1.3 包含内容</h3>
-<ul>
-<li>CC3200AUDBOOST主板。</li>
-<li>快速入门指南。</li>
-</ul>
-<h2>二、硬件概述</h2>
-<h3>2.1 CC3200AUDBOOST主板</h3>
-<p>CC3200AUDBOOST是一个带有多个<a href="https://www.hqchip.com/app/1515" target="_blank"><u>连接器</u></a>的BoosterPack板，可用于展示CC3200 - LAUNCHXL板上CC3200设备的音频功能。</p>
-<h4>2.1.1 20针引脚头（P1、P2、P3、P4）</h4>
-<p>2x10针的Launchpad引脚头（P1、P2、P3、P4）用于将CC3200AUDBOOST板连接到CC3200 - LAUNCHXL。这些引脚头提供了为音频BoosterPack供电和访问CC3200 - LAUNCHXL板上<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>线路的必要<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>。连接时，要确保P1上的白色三角形与CC3200 - LAUNCHXL对齐。</p>
-<ul>
-<li><strong><a href="https://m.hqchip.com/app/1539" target="_blank"><u>电源连接器</u></a></strong>：CC3200AUDBOOST板由Launchpad提供的3.3 V<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>供电。当Launchpad板通过<a href="https://www.hqchip.com/app/1515" target="_blank"><u>USB</u></a>供电时，无需特殊处理；但当使用2xAA电池供电时，要确保电池电压不低于2.6 V。</li>
-<li><strong>I2C连接</strong>：I2C线路默认通过20针连接器连接到Launchpad。板载音频编解码器的默认I2C地址为0x30。</li>
-</ul>
-<h4>2.1.2 单声道和立体声插孔</h4>
-<ul>
-<li>立体声输入插孔（J3）：3.5 mm音频插孔，用于连接音频源。</li>
-<li>立体声输出插孔（J4）：3.5 mm插孔，用于连接耳机或扬声器。</li>
-<li>单声道音频输入插孔（J5）：3.5 mm音频插孔，用于连接音频源。</li>
-</ul>
-<h4>2.1.3 板载麦克风</h4>
-<p>板载麦克风（U6）采用CMC - 2242PBL - A，可使音频BoosterPack作为麦克风<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>器使用。</p>
-<h4>2.1.4 端子块（U4）</h4>
-<p>通过端子块（U4），CC3200AUDBOOST可以连接到外部放大器。</p>
-<h3>2.2 功率放大器</h3>
-<table>
-<thead>
-<tr>
-<th>板载放大器有增益选择引脚G1（MSB）和G0（LSB），最大支持18 dB的增益。具体增益选择如下表所示：</th>
-<th>G1 (MSB)</th>
-<th>G0 (LSB)</th>
-<th>增益</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>0</td>
-<td>0</td>
-<td>6 dB</td>
-</tr>
-<tr>
-<td>1</td>
-<td>0</td>
-<td>18 dB</td>
-</tr>
-</tbody>
-</table>
-<h3>2.3 连接到CC3200 - LAUNCHXL</h3>
-<h4>2.3.1 CC3200 - LAUNCHXL所需配置</h4>
-<p>无需进行更改，CC3200AUDBOOST应使用默认配置连接到CC3200 - LAUNCHXL。需要确保以下两点：</p>
-<ul>
-<li>烧录二进制文件后，移除CC3200 - LAUNCHXL的SOP2上的跳线J15，并重置板子。</li>
-<li>跳线J2和J3应闭合。</li>
-</ul>
-<h4>2.3.2 连接方式</h4>
-<p>CC3200AUDBOOST板可以通过两个2x10针引脚头连接器直接与CC3200 - LAUNCHXL配合使用。板上标记的白色三角形表示P1的引脚1，必须与CC3200 - LAUNCHXL上的三角形（P1的引脚1）对齐。如果在通电前未正确对齐板子，可能会损坏板子。</p>
-<h4>2.3.3 软件示例</h4>
-<p>通过特定链接可以获取一个示例，该示例展示了在CC3200LAUNCHXL + CC3200AUDBOOST设置上的双向音频应用。该设置包括两个处于站（STA）模式的CC3200 - LAUNCHXL，音频通过Wi-Fi从一个CC3200 - LAUNCHXL流式传输并在另一个上渲染。</p>
-<ul>
-<li><strong>硬件先决条件</strong>：2个CC3200 - LAUNCHXL 3.2或更高版本、2个CC3200AUDBOOST 3.0 - A、2个耳机/扬声器、2个音频源、<a href="https://bbs.elecfans.com/group_360" target="_blank"><u>Android</u></a> / <a href="https://www.elecfans.com/tags/ios/" target="_blank"><u>iOS</u></a>设备（用于智能配置）和接入点。</li>
-<li><strong>软件先决条件</strong>：CC3200 SDK和Uniflash工具。</li>
-</ul>
-<h2>三、额外资源</h2>
-<h3>3.1 原理图和板文件</h3>
-<p>可以从http://www.<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>ti</u></a>.com/tool/ti<a href="https://m.hqchip.com/app/1703" target="_blank"><u>dc</u></a> - cc3200audboost获取最新的设计文件，包括Gerber文件、原理图、物料清单、<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>布局和组装图。</p>
-<h3>3.2 CC3200AUDBOOST维基</h3>
-<p>访问http://processors.wiki.ti.com/index.php/CC32xx_Wifi_Audio_Application可获取示例应用。</p>
-<h3>3.3 社区支持</h3>
-<p>可以在e2e.ti.com的<a href="https://www.elecfans.com/article/bbs/" target="_blank"><u>论坛</u></a>上搜索问题，如果找不到答案，可以向社区提问。</p>
-<p>在使用CC3200AUDBOOST进行音频开发时，我们要充分了解其硬件特性和连接方式，合理利用提供的软件示例和额外资源。同时，也要注意遵守相关的使用条款和注意事项，确保开发过程的顺利进行。大家在实际开发中遇到过哪些问题呢？欢迎在评论区交流分享。 </p>]]></description></item><item>    <title><![CDATA[探索CC3200：物联网世界的无线MCU明星]]></title>    <link>https://www.elecfans.com/d/8041166.html</link>    <guid>https://www.elecfans.com/d/8041166.html</guid>    <pubDate>2026-07-02 16:05:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8041166" value="https://file.elecfans.com/web2/M00/73/B7/poYBAGNZSMqAF405ACvQ5X8w_Rk528.pdf"/><h1>探索CC3200：<a href="https://bbs.elecfans.com/group_57" target="_blank"><u>物联网</u></a>世界的无线<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>明星</h1>
-<p>在物联网（<a href="https://www.elecfans.com/tags/iot/" target="_blank"><u>IoT</u></a>）蓬勃发展的今天，无线微<a href="https://m.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>单元（MCU）扮演着至关重要的角色。它们是连接设备与网络的桥梁，使得各种智能设备能够实现数据的传输和交互。<a href="https://www.elecfans.com/tags/德州仪器/" target="_blank"><u>德州仪器</u></a>（<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>TI</u></a>）的CC3200就是这样一款备受瞩目的无线MCU，它为物联网应用提供了强大而便捷的解决方案。今天，我们就来深入探讨一下CC3200的特点、应用以及使用中需要注意的事项。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8041166" target="_blank">CC3200STK-WIFIMK.pdf</a></p>
-<h2>一、CC3200概述</h2>
-<p>CC3200是一款集成了<a href="https://www.elecfans.com/tags/wi-fi/" target="_blank"><u>Wi-Fi</u></a>功能的单芯片无线MCU，专为物联网应用而设计。它集成了高性能的<a href="https://m.hqchip.com/app/1378" target="_blank"><u>ARM</u></a> Cortex - M4 MCU，让<a href="https://bbs.elecfans.com/group_1231" target="_blank"><u>开发者</u></a>可以使用单个芯片就能够开发出完整的应用程序，无需额外的Wi-Fi模块，大大简化了设计流程，降低了开发成本。而且，即使开发者没有丰富的Wi-Fi开发经验，也能借助CC3200快速实现产品开发。</p>
-<h3>（一）主要特性</h3>
-<ol>
-<li><strong>强大的处理能力与丰富接口</strong>
-<ul>
-<li>搭载ARM Cortex - M4核心，运行频率高达80 MHz，能够为应用提供高效的计算能力。</li>
-<li>具备多种外设<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>，如8位并行相机接口、多声道<a href="https://www.hqchip.com/app/1537" target="_blank"><u>音频</u></a>串口（McASP）、<a href="https://m.hqchip.com/app/1522" target="_blank"><u>SD</u></a>/MMC接口、<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>、SPI、I²C和4通道<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>等，可满足不同的应用需求。例如，在智能安防监控设备中，8位并行相机接口就可以方便地连接摄像头，实现图像数据的采集。</li>
-</ul></li>
-<li><strong>卓越的Wi-Fi性能与安全保障</strong>
-<ul>
-<li>是Wi - Fi CERTIFIED芯片，支持8个并发的TCP或UDP套接字以及2个并发的TLS和SSL套接字，可实现快速、安全的Wi-Fi连接。</li>
-<li>拥有强大的加密引擎，采用256位AES加密技术，为TLS和SSL连接提供可靠的安全保障，有效防止数据在传输过程中被窃取或篡改。在<a href="https://m.elecfans.com/v/tag/663/" target="_blank"><u>智能家居</u></a>应用中，能够确保用户的隐私和设备的安全。</li>
-<li>支持多种Wi-Fi模式，包括Station、AP和Wi - Fi Direct模式，并且具备WPA2个人和企业安全<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>以及WPS 2.0，方便灵活地进行网络配置。</li>
-</ul></li>
-<li><strong>出色的功率管理</strong>
-<ul>
-<li>集成了<a href="https://m.hqchip.com/app/1703" target="_blank"><u>DC</u></a> - DC<a href="https://www.hqchip.com/app/1718" target="_blank"><u>转换器</u></a>，支持宽范围的<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>电压，从2.1 V到3.6 V，还可以工作在预调节的1.85 V模式。这种设计使得CC3200在不同的电源环境下都能稳定工作。</li>
-<li>具备多种低功耗模式，如休眠模式（Hiberna<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>）仅需4 μA<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>，低功耗深度睡眠模式（LPDS）为250 μA。在一些需要长时间续航的物联网设备，如智能<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>节点中，低功耗模式可以大大延长设备的电池使用寿命。</li>
-</ul></li>
-</ol>
-<h3>（二）应用领域</h3>
-<p>CC3200的应用领域非常广泛，涵盖了多个物联网相关的场景：</p>
-<ol>
-<li><strong>智能家居</strong>：实现家居设备的互联互通，如智能门锁、智能家电、<a href="https://www.elecfans.com/v/tag/1453/" target="_blank"><u>环境监测</u></a>传感器等。通过CC3200，用户可以使用<a href="https://m.elecfans.com/v/tag/107/" target="_blank"><u>手机</u></a>App远程控制家中的设备，实现智能化的家居管理。</li>
-<li><strong><a href="https://www.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a></strong>：用于<a href="https://m.elecfans.com/v/tag/633/" target="_blank"><u>工业自动化</u></a>系统中的数据采集与传输，如传感器节点、智能电表、工业无线网关等。可以实时采集生产线上的数据，并将其传输到监控<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>，实现对工业生产过程的远程监控和管理。</li>
-<li><strong>智能能源</strong>：在能源管理系统中，如<a href="https://bbs.elecfans.com/group_346" target="_blank"><u>智能电网</u></a>、太阳能发电系统等，CC3200可以实现设备之间的<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>和数据交互，提高能源利用效率。</li>
-</ol>
-<h2>二、硬件设计要点</h2>
-<h3>（一）引脚配置与复用</h3>
-<p>CC3200采用了大量的引脚复用技术，以在最小的封装内实现最多的外设功能。在进行引脚配置时，建议使用CC3200引脚复用工具来获得理想的引脚布局。同时，需要注意以下几点：</p>
-<ol>
-<li>所有I/O引脚支持2 mA、4 mA和6 mA的驱动强度，并且可以单独配置每个引脚的上拉和下拉<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>（10 μA）。在实际设计中，应根据具体的外设要求选择合适的驱动强度，以避免对WLAN无线电产生干扰。例如，对于一些对<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>强度要求不高的外设，可以选择较低的驱动强度。</li>
-<li>在休眠状态下，所有I/O引脚都处于高阻态，且上拉和下拉电阻不起作用。</li>
-<li>VIO和VBAT电源必须始终连接在一起。</li>
-<li>若有外部设备在CC3200未上电时向信号引脚施加正电压，可能会导致CC3200意外唤醒和启动。为防止这种情况发生，可以采取以下措施：将所有与CC3200连接的设备都连接到同一电源轨；在设备与其他独立电源轨供电的外部设备之间使用电平转换器；在为CC3200提供稳定的VBAT电源之前，将nRESET引脚拉低。</li>
-</ol>
-<h3>（二）电源设计</h3>
-<p>电源设计对于CC3200的稳定运行至关重要。在设计电源时，需要考虑以下几个方面：</p>
-<ol>
-<li><strong>电源电压范围</strong>：CC3200支持宽范围的电源电压（2.1 V - 3.6 V）和预调节的1.85 V模式。在选择电源时，需要根据具体的应用场景和设备的功耗要求来确定合适的电源电压。例如，对于一些对功耗要求较高的设备，可以选择预调节的1.85 V模式，以降低功耗。</li>
-<li><strong>电源纹波</strong>：为确保WLAN性能，在2.1 V - 3.3 V电源上的纹波必须小于±300 mV，在1.85 V电源上的纹波必须小于2%（±40 mV）。可以通过合理选择<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>和电感等滤波元件来降低电源纹波。</li>
-<li><strong>电源上电顺序</strong>：为保证CC3200正常工作，需要按照推荐的上电顺序进行操作。首先，将VBAT（引脚37、39、44）和VIO（引脚54和10）连接在一起；然后，在上电过程中保持RESET引脚低电平，建议使用简单的RC电路（100K || 0.1 uF，RC = 10 ms）；最后，对于外部RTC<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>，在释放RESET（高电平）之前确保时钟稳定。</li>
-</ol>
-<h3>（三）时钟设计</h3>
-<p>CC3200需要两个独立的时钟：一个32.768 kHz的慢速时钟用于RTC，一个40 MHz的快速时钟用于内部处理器和WLAN子系统。在时钟设计时，可以根据实际需求选择不同的时钟源：</p>
-<ol>
-<li><strong>慢速时钟</strong>：可以使用内部<a href="https://www.hqchip.com/app/850" target="_blank"><u>振荡器</u></a>，将RTC晶体连接在RTC_XTAL_P（引脚51）和RTC_XTAL_N（引脚52）之间，晶体频率精度必须为32.768 kHz ±150 ppm；也可以使用外部时钟，将外部RTC时钟输入到RTC_XTAL_P线，同时将RTC_XTAL_N线连接到VIO。在一些对时钟精度要求较高的应用中，使用外部时钟可以提高时钟的稳定性。</li>
-<li><strong>快速时钟</strong>：可以使用外部晶体，将晶体连接在WLAN_XTAL_P（引脚23）和WLAN_XTAL_N（引脚22）之间；也可以使用外部TCXO/XO，将时钟连接到WLAN_XTAL_P引脚，同时将WLAN_XTAL_N引脚连接到GND，并通过TCXO_EN（引脚21）来优化系统功耗。</li>
-</ol>
-<h2>三、软件与开发支持</h2>
-<p>TI为CC3200提供了完整的软件开发平台，包括软件、示例应用程序、工具、用户和<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a>指南以及参考设计。此外，还有TI E2E™支持社区，开发者可以在社区中交流经验、解决问题。</p>
-<h3>（一）开发工具</h3>
-<ol>
-<li><strong><a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>Pi</u></a>nMux工具</strong>：该工具可以帮助开发者选择合适的引脚复用配置，满足最终应用的需求，避免配置错误。</li>
-<li><strong>Radio Tool</strong>：用于在应用板开发过程中对CC3200芯片组设计进行操作和测试，CC3200的自动校准无线电功能使得连接天线变得更加简单，无需专业的无线电电路设计知识。</li>
-<li><strong>Uniflash Flash Prog<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>ram</u></a>mer</strong>：通过简单的GUI界面，开发者可以方便地与CC3200设备进行通信，更新串行闪存，包括文件烧录、存储格式设置、读取引导加载程序和芯片ID版本等功能。</li>
-</ol>
-<h2>四、实际应用案例</h2>
-<h3>（一）智能家居环境监测系统</h3>
-<p>在智能家居环境监测系统中，CC3200可以连接各种环境传感器，如<a href="https://www.elecfans.com/tags/温度传感器/" target="_blank"><u>温度传感器</u></a>、<a href="https://www.elecfans.com/tags/湿度传感器/" target="_blank"><u>湿度传感器</u></a>、空气质量传感器等。传感器采集到的数据通过CC3200的Wi-Fi功能传输到云端服务器，用户可以通过手机App实时查看家中的环境数据。同时，CC3200的低功耗模式可以确保设备在长时间运行时不会消耗过多的电量，延长电池使用寿命。</p>
-<h3>（二）工业无线传感器节点</h3>
-<p>在工业生产环境中，CC3200可以作为无线传感器节点的核心，采集生产线上的各种数据，如温度、压力、振动等。采集到的数据通过Wi-Fi网络传输到工业网关，再由网关将数据上传到监控中心。CC3200的高性能处理能力和稳定的Wi-Fi连接可以确保数据的实时、准确传输，为工业生产的自动化和智能化提供有力支持。</p>
-<h2>五、总结与展望</h2>
-<p>CC3200作为一款高性能的无线MCU，以其强大的处理能力、卓越的Wi-Fi性能、出色的功率管理和丰富的开发支持，为物联网应用提供了一个优秀的解决方案。无论是智能家居、工业控制还是智能能源等领域，CC3200都能够发挥重要的作用。</p>
-<p>在未来的物联网发展中，随着设备数量的不断增加和应用场景的不断丰富，对无线MCU的性能和功能要求也会越来越高。相信CC3200会不断进行升级和优化，为物联网的发展做出更大的贡献。同时，作为<a href="https://www.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>，我们也需要不断学习和掌握新的技术和知识，充分发挥CC3200的优势，开发出更加优秀的物联网产品。</p>
-<p>你在使用CC3200的过程中遇到过哪些问题？又是如何解决的呢？欢迎在评论区分享你的经验和见解。 </p>]]></description></item><item>    <title><![CDATA[Texas Instruments CDC3S04 四通道正弦波时钟缓冲器评估板使用指南]]></title>    <link>https://www.elecfans.com/d/8041167.html</link>    <guid>https://www.elecfans.com/d/8041167.html</guid>    <pubDate>2026-07-02 16:05:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8041167" value="https://file.elecfans.com/web2/M00/76/9B/poYBAGNhBPeAYYajAAZew2Gb_iI146.pdf"/><h1><a href="https://www.elecfans.com/tags/te/" target="_blank"><u>Te</u></a>xas Instruments C<a href="https://m.hqchip.com/app/1703" target="_blank"><u>DC</u></a>3S04 四通道正弦波<a href="https://www.elecfans.com/tags/时钟缓冲器/" target="_blank"><u>时钟缓冲器</u></a>评估板使用指南</h1>
-<p>在电子设计领域，<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>缓冲器对于保障系统时钟<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>的稳定传输至关重要。今天，我们来深入了解 Texas Instruments（<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>TI</u></a>）推出的 CDC3S04 四通道正弦波时钟缓冲器评估板，探讨其特性、使用方法以及相关注意事项。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8041167" target="_blank">CDC3S04EVM.pdf</a></p>
-<h2>一、CDC3S04 概述</h2>
-<p>CDC3S04 是一款四通道低功耗正弦波时钟缓冲器，它能够将单个主时钟信号缓冲并分配到多个外设。其四个正弦波输出（CLK1 - CLK4）具有极小的通道间偏斜和超低的附加输出抖动。每个输出都有自己的时钟请求输入，用于启用专用时钟输出。这些时钟请求为高电平有效（也可通过 (I^2C) 更改为低电平有效），并且会生成一个输出信号发送回主时钟以请求时钟（MCLK_REQ）。MCKL_REQ 是一个开源输出，支持线或功能（默认模式），需要一个外部下拉<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>，也可通过 (I^2C) 更改为线与或推挽功能。</p>
-<h2>二、评估板特性</h2>
-<h3>2.1 易于使用</h3>
-<p>该评估板设计用于展示 CDC3S04 的<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>性能，具有低相位噪声扇出功能，并且设备设置简单。</p>
-<h3>2.2 可配置控制</h3>
-<p>控制引脚可通过跳线进行配置，方便<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>根据实际需求进行调整。</p>
-<h3>2.3 灵活供电</h3>
-<p>评估板可以使用 <a href="https://www.hqchip.com/app/1515" target="_blank"><u>USB</u></a> 或外部<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>供电，为不同的应用场景提供了便利。</p>
-<h2>三、信号路径与<a href="https://www.elecfans.com/soft/data/4-10/" target="_blank"><u>控制电路</u></a></h2>
-<p>评估板上焊接了一个 TCXO（温度补偿晶体<a href="https://www.hqchip.com/app/850" target="_blank"><u>振荡器</u></a>）。如果用户想尝试不同的时钟源，评估板允许将外部信号路由到 CDC3S04，但需要进行电阻的焊接或拆卸操作。具体的配置信息可参考表 1。</p>
-<table>
-<thead>
-<tr>
-<th>组件</th>
-<th>TCXO 在板上</th>
-<th>外部输入</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>R80</td>
-<td>未安装</td>
-<td>未安装</td>
-</tr>
-<tr>
-<td>R74</td>
-<td>未安装</td>
-<td>未安装</td>
-</tr>
-<tr>
-<td>R98</td>
-<td>0R0</td>
-<td>未安装</td>
-</tr>
-<tr>
-<td>R97</td>
-<td>未安装</td>
-<td>0R0</td>
-</tr>
-<tr>
-<td>C8</td>
-<td>15 pF</td>
-<td>15 pF</td>
-</tr>
-</tbody>
-</table>
-<h2>四、使用入门</h2>
-<h3>4.1 电源连接</h3>
-<p>CDC3S04EVM 有三个引脚需要外部电源，分别是 VDD_ANA、VDD_DIG 和 VBAT。这些电源可以来自 USB 或外部电源，具体连接方式可参考表 2。</p>
-<table>
-<thead>
-<tr>
-<th>电源来源</th>
-<th>USB</th>
-<th>外部电源</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>R113</td>
-<td>0R0</td>
-<td>J50 关闭</td>
-</tr>
-<tr>
-<td>R112</td>
-<td>未安装</td>
-<td>J51 关闭</td>
-</tr>
-<tr>
-<td>J50</td>
-<td>打开</td>
-<td>P3 = VDD_ANA</td>
-</tr>
-<tr>
-<td>J51</td>
-<td>打开</td>
-<td>P1 = VDD_DIG</td>
-</tr>
-</tbody>
-</table>
-<p>此外，CDC3S04 内置了一个 <a href="https://m.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>（低压差<a href="https://m.hqchip.com/app/1700" target="_blank"><u>线性稳压器</u></a>），用于为 TCXO 生成电源。这个电压可以使用板上的 TPS71219 或 P2 <a href="https://www.hqchip.com/app/1515" target="_blank"><u>连接器</u></a>来生成。</p>
-<h3>4.2 输出时钟</h3>
-<p>CDC3S04 的输出可以通过任何 SMA 连接器获得，具体对应关系如下表 3 所示。</p>
-<table>
-<thead>
-<tr>
-<th>SMA</th>
-<th>输出</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>J17</td>
-<td>CLK1</td>
-</tr>
-<tr>
-<td>J68</td>
-<td>CLK2</td>
-</tr>
-<tr>
-<td>J21</td>
-<td>CLK3</td>
-</tr>
-<tr>
-<td>J20</td>
-<td>CLK4</td>
-</tr>
-</tbody>
-</table>
-<h3>4.3 输出的启用/禁用</h3>
-<p>评估板上有几个跳线可以控制 CDC3S04 的输出启用，具体功能如下表 4 所示。</p>
-<table>
-<thead>
-<tr>
-<th>跳线</th>
-<th>功能</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>J66</td>
-<td>REQ1</td>
-</tr>
-<tr>
-<td>J67</td>
-<td>REQ2</td>
-</tr>
-<tr>
-<td>J68</td>
-<td>REQ3</td>
-</tr>
-<tr>
-<td>J69</td>
-<td>REQ4</td>
-</tr>
-<tr>
-<td>J74</td>
-<td>RESET</td>
-</tr>
-</tbody>
-</table>
-<h2>五、物料清单</h2>
-<p>评估板的物料清单详细列出了所需的各种元件，包括<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>、电阻、芯片、连接器等。例如，电容有不同的容值和封装，电阻也有不同的阻值和封装。具体的物料清单可参考表 5。这对于工程师在进行设计和维护时非常重要，大家在采购元件时要注意元件的参数和兼容性，你是否在采购元件时遇到过参数不匹配的问题呢？</p>
-<h2>六、原理图</h2>
-<p>评估板的原理图分为三部分，分别展示了不同的电路结构。原理图是理解电路工作原理的关键，工程师可以通过原理图深入了解信号的传输路径、电源的分配等重要信息。你在分析原理图时，有没有什么独特的技巧呢？</p>
-<h2>七、重要注意事项</h2>
-<h3>7.1 使用范围</h3>
-<p>该评估板仅用于工程开发、演示或评估目的，并非适合一般消费者使用的成品。用户必须具备电子技术培训，并遵守良好的工程实践标准。</p>
-<h3>7.2 合规性</h3>
-<p>评估板不在欧盟关于<a href="https://bbs.elecfans.com/group_40" target="_blank"><u>电磁兼容</u></a>性、限制物质（RoHS）、回收（WEEE）、FCC、CE 或 UL 的指令范围内，可能不符合这些指令或其他相关指令的技术要求。</p>
-<h3>7.3 保修政策</h3>
-<p>如果评估板不符合用户指南中规定的规格，用户可以在交货日期起 30 天内退货，以获得全额退款。</p>
-<h3>7.4 操作限制</h3>
-<p>评估板的输入电压范围为 2.2 V 至 3.6 V，输出电压范围也为 2.2 V 至 3.6 V。超过指定的输入范围可能导致意外操作和/或对评估板造成不可逆转的损坏。在连接输入电源之前，如果对输入范围有疑问，请联系 TI 现场代表。</p>
-<p>总之，Texas Instruments 的 CDC3S04 四通道正弦波时钟缓冲器评估板为工程师提供了一个方便的平台来测试和评估 CDC3S04 的性能。在使用过程中，工程师需要严格遵守相关的操作规范和注意事项，以确保评估板的正常运行和测试结果的准确性。你在使用类似评估板时，有没有遇到过一些特殊的问题呢？欢迎在评论区分享你的经验。 </p>]]></description></item><item>    <title><![CDATA[CDC7005评估模块使用指南：高性能时钟同步器的探索]]></title>    <link>https://www.elecfans.com/d/8041168.html</link>    <guid>https://www.elecfans.com/d/8041168.html</guid>    <pubDate>2026-07-02 16:05:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8041168" value="https://file.elecfans.com/web2/M00/76/9E/poYBAGNhDvGAR3sZAAhv0VxGqcE550.pdf"/><h1>C<a href="https://m.hqchip.com/app/1703" target="_blank"><u>DC</u></a>7005评估模块使用指南：高性能<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>同步器的探索</h1>
-<p>在电子设计领域，时钟同步器的性能对于系统的稳定性和精确性至关重要。今天我们要深入探讨的是<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>Te</u></a>xas Instruments的CDC7005评估模块，它为我们提供了一个评估和优化时钟系统性能的绝佳平台。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8041168" target="_blank">CDC7005-EVM.pdf</a></p>
-<h2>一、CDC7005概述</h2>
-<p>CDC7005是一款高性能、低相位噪声和低偏斜的时钟同步器，能够将板载压控晶体<a href="https://www.hqchip.com/app/850" target="_blank"><u>振荡器</u></a>（VCXO）的频率同步到外部参考时钟。它的工作频率最高可达800 MHz，通过选择外部VCXO、环路<a href="https://www.elecfans.com/tags/滤波器/" target="_blank"><u>滤波器</u></a>组件、鉴相器（PFD）的频率和<a href="https://www.hqchip.com/app/1734" target="_blank"><u>电荷泵</u></a><a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>，可以调整PLL环路带宽和阻尼因子，以满足不同的系统需求。该设备的五个差分LVPECL输出可以通过串行外设<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>（SPI）进行<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a>，实现对每个输出的频率和启用/禁用状态的单独控制。此外，它还可以作为一个简单的1:5 LVPECL缓冲器，具有输出分频选项。</p>
-<h2>二、快速启动</h2>
-<p>如果你想快速设置评估模块并进行一些默认设置下的测量，可以按照以下步骤操作：</p>
-<ol>
-<li><strong>供电</strong>：给P1提供3.3 V<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>，此时<a href="https://www.hqchip.com/app/1721" target="_blank"><u>LED</u></a> D4会亮起。</li>
-<li><strong>输入参考时钟</strong>：将单端参考时钟应用到参考时钟输入（REF_IN）。默认情况下，参考时钟必须是VCXO频率的1/8（例如，如果VCXO频率为245.76 MHz，则参考时钟必须为30.72 MHz才能锁定）。</li>
-<li><strong>检查输出<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a></strong>：将Y0/Y0B（或Y1/Y1B）连接到<a href="https://m.elecfans.com/v/tag/577/" target="_blank"><u>示波器</u></a>，确保示波器具有50 Ω接地端接。</li>
-<li><strong>观察状态指示灯</strong>：上电后，如果有有效的参考时钟，D1会亮起；如果有有效的VCXO时钟，D2会亮起；如果参考时钟和VCXO时钟相位锁定，D3会亮起。</li>
-</ol>
-<h2>三、EVM硬件</h2>
-<h3>3.1 板视图和<a href="https://www.hqchip.com/app/1515" target="_blank"><u>连接器</u></a>位置</h3>
-<p>评估模块的板视图展示了各个组件和连接器的位置，这对于理解硬件布局和进行连接非常重要。</p>
-<h3>3.2 连接器描述</h3>
-<table>
-<thead>
-<tr>
-<th>评估模块上的连接器具有不同的功能，例如P1用于提供3.3 V电源，P2为接地端，J5用于状态输出等。具体的连接器功能如下表所示：</th>
-<th>Reference</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>P1</td>
-<td>Power supply 3.3 V</td>
-</tr>
-<tr>
-<td>P2</td>
-<td>GND</td>
-</tr>
-<tr>
-<td>J5</td>
-<td>Status outputs (STATUS_LOCK, STATUS_VCXO, STATUS_REF)</td>
-</tr>
-<tr>
-<td>J6, J7</td>
-<td>Y0/Y0B PECL differen<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>ti</u></a>al output</td>
-</tr>
-<tr>
-<td>J8, J9</td>
-<td>Y1/Y1B PECL differential output</td>
-</tr>
-<tr>
-<td>J10, J11</td>
-<td>Y2/Y2B PECL differential output</td>
-</tr>
-<tr>
-<td>J12, J13</td>
-<td>Y3/Y3B PECL differential output</td>
-</tr>
-<tr>
-<td>J14, J15</td>
-<td>Y4/Y4B PECL differential output</td>
-</tr>
-<tr>
-<td>J17</td>
-<td>VCXO enable</td>
-</tr>
-<tr>
-<td>J36</td>
-<td>Reference clock input sense enable (on or off)</td>
-</tr>
-<tr>
-<td>J19</td>
-<td>Reference clock input</td>
-</tr>
-<tr>
-<td>J20</td>
-<td>Reference clock input sense</td>
-</tr>
-<tr>
-<td>J21, J22</td>
-<td>VCXO_IN/VCXO_INB input selector/VCXO output selector</td>
-</tr>
-<tr>
-<td>J23, J24</td>
-<td>External VCXO_IN/VCXO_INB input/VCXO output sense</td>
-</tr>
-<tr>
-<td>J27</td>
-<td>External prog<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>ram</u></a>ming interface by parallel port</td>
-</tr>
-<tr>
-<td>J28</td>
-<td>External programming interface by universal <a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>pi</u></a>ns</td>
-</tr>
-<tr>
-<td>J29, J34</td>
-<td>Filter type selector</td>
-</tr>
-<tr>
-<td>J30</td>
-<td>Non-inverted OPA input selector (external or internal OPA)</td>
-</tr>
-<tr>
-<td>J31</td>
-<td>Power supply for external OPA (on or off)</td>
-</tr>
-<tr>
-<td>J32</td>
-<td>Inverted OPA input selector (external or internal OPA)</td>
-</tr>
-<tr>
-<td>J33</td>
-<td>OPA output selector (internal or external OPA)</td>
-</tr>
-<tr>
-<td>J35</td>
-<td>VCXO control voltage sense</td>
-</tr>
-<tr>
-<td>SW1</td>
-<td>Power-down key</td>
-</tr>
-<tr>
-<td>SW2</td>
-<td>Reset key</td>
-</tr>
-<tr>
-<td>D1</td>
-<td>STATUS_REF indicator</td>
-</tr>
-<tr>
-<td>D2</td>
-<td>STATUS_VCXO indicator</td>
-</tr>
-<tr>
-<td>D3</td>
-<td>STATUS_LOCK indicator</td>
-</tr>
-</tbody>
-</table>
-<h3>3.3 硬件配置</h3>
-<h4>3.3.1 电源供应</h4>
-<p>使用稳定的外部电源在P1和P2上提供3.3 V ±10%的电压。需要注意的是，切勿在P1上提供超过3.6 V的电压。</p>
-<h4>3.3.2 板载开关和指示灯</h4>
-<ul>
-<li>按下SW1可使CDC7005设备进入掉电模式，此时所有<a href="https://www.hqchip.com/app/1725" target="_blank"><u>电流源</u></a>关闭，所有输出进入三态，所有分频器（M、N和P）复位为默认值。</li>
-<li>按下SW2可使设备进入复位模式，分频器（M、N和P）复位为默认值。</li>
-<li>CDC7005的三个状态输出分别连接到<a href="https://www.hqchip.com/app/1636" target="_blank"><u>LED指示灯</u></a>和引脚头J5。D1亮起表示有有效的参考输入时钟信号，D2亮起表示VCXO输入时钟有效，D3亮起表示PLL已锁定。D4表示电源供应。</li>
-</ul>
-<h4>3.3.3 编程接口</h4>
-<p>设备的SPI用于写入设备的控制<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>，它由三条控制线CTRL_CLK、CTRL_DATA和CTRL_LE组成。有四个30位宽的RAM寄存器，可以通过传输字的两个最低有效位进行寻址。每个传输的字必须有32位，从最高有效位开始。上电或激活掉电模式后，寄存器会内部加载设备的默认值。如果需要为特定应用设置寄存器，可以通过以下两种方式进行外部编程：</p>
-<ul>
-<li>将并行<a href="https://www.hqchip.com/app/1808" target="_blank"><u>端口</u></a>电缆连接到PC和EVM并行端口，这需要控制软件。</li>
-<li>将外部模式发生器连接到J28，并将J27的引脚18接地。
-<h4>3.3.4 环路滤波器</h4>
-<p>环路滤波器是决定PLL环路带宽的关键元件之一，它将电荷泵电流转换为压控振荡器的控制电压。评估模块上实现了三种类型的环路滤波器：</p></li>
-<li><strong>无源环路滤波器</strong>：是一个二阶滤波器（两个极点，一个零点），零点用于整体环路稳定性。R1、C1和C2产生系统的主导极点，R2和C3引入第二个极点。</li>
-<li><strong>有源环路滤波器（使用CDC7005内部<a href="https://www.hqchip.com/app/1737" target="_blank"><u>运算放大器</u></a>）</strong>：需要零点来保证环路稳定性，由R2和C2组件产生。第一个极点由R3和C3引入，第二个极点由R1和C1引入。</li>
-<li><strong>有源环路滤波器（使用外部低噪声运算放大器）</strong>：使用外部OPA时，需要通过连接J31将其打开。</li>
-</ul>
-<table>
-<thead>
-<tr>
-<th>滤波器类型可以通过焊接桥接J29 - J30和J32 - J34来选择，具体配置如下表所示：</th>
-<th>Bridge</th>
-<th>Passive Filter</th>
-<th><a href="https://www.hqchip.com/app/1703" target="_blank"><u>Ac</u></a>tive With An Internal OPA</th>
-<th>Active With An External OPA</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>J29</td>
-<td>1 - 3</td>
-<td>1 - 2</td>
-<td>1 - 2</td>
-</tr>
-<tr>
-<td>J30</td>
-<td>Don't care</td>
-<td>1 - 3</td>
-<td>1 - 2</td>
-</tr>
-<tr>
-<td>J31</td>
-<td>Open</td>
-<td>Open</td>
-<td>Closed</td>
-</tr>
-<tr>
-<td>J32</td>
-<td>Don't care</td>
-<td>1 - 2</td>
-<td>1 - 3</td>
-</tr>
-<tr>
-<td>J33</td>
-<td>Don't care</td>
-<td>1 - 2</td>
-<td>1 - 3</td>
-</tr>
-<tr>
-<td>J34</td>
-<td>1 - 3</td>
-<td>1 - 2</td>
-<td>1 - 2</td>
-</tr>
-</tbody>
-</table>
-<p>默认设置为无源环路滤波器。需要注意的是，使用有源环路滤波器需要通过SPI编程改变电荷泵方向。</p>
-<h4>3.3.5 高速输出和输入</h4>
-<p>CDC7005驱动五个差分LVPECL输出，所有PECL输出都进行了交流<a href="https://www.elecfans.com/tags/耦合/" target="_blank"><u>耦合</u></a>，并通过150 Ω<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>接地端接。参考输入时钟信号必须施加到J19，可以在J20上检测参考输入时钟信号。输入进行了交流耦合（C57），并通过100 - Ω上拉和100 - Ω下拉电阻进行适当偏置。</p>
-<h4>3.3.6 VCXO输入和输出</h4>
-<p>CDC7005需要一个外部VCXO来完成PLL环路。用户可以通过该电路从外部测量板载VCXO输出，也可以将外部LVPECL时钟馈入CDC7005的VCXO_IN/VCXO_INB输入。默认设置为J17打开，J21和J22的1 - 2连接。</p>
-<h2>四、SPI软件</h2>
-<h3>4.1 功能描述</h3>
-<p>编程软件用于对评估模块中CDC7005的内部控制寄存器进行编程，该软件在Windows 2000 / XP / XP *64系统下运行。在以下几种情况下，编程是必需的：</p>
-<ul>
-<li>使用有源环路滤波器。</li>
-<li>参考时钟和VCXO时钟的比例不是1:8。</li>
-<li>更改分频比或禁用某些LVPECL输出。</li>
-<li>更改相位偏移（延迟M/N）。</li>
-<li>更改电荷泵输出电流。</li>
-<li>加宽锁定检测窗口。</li>
-</ul>
-<h3>4.2 软件安装</h3>
-<p>安装SPI控制软件的步骤如下：</p>
-<ol>
-<li>从TI网站（www.ti.com）下载CDC7005 SPI软件。</li>
-<li>运行程序setup.exe。</li>
-<li>重启计算机。</li>
-<li>从“开始” -&gt; “程序” -&gt; “CDC7005 SPI Parallel EVM”运行软件。</li>
-</ol>
-<h2>五、应用级电路图</h2>
-<p>文档讨论了三种环路滤波器配置：</p>
-<ul>
-<li><strong>无源环路滤波器</strong>：前面已经介绍过它是二阶滤波器，关键组件R1、C1、C2、R2和C3共同决定了系统的极点和零点。</li>
-<li><strong>有源环路滤波器（内部运算放大器）</strong>：通过特定组件产生零点和极点，以保证环路稳定性。</li>
-<li><strong>有源环路滤波器（外部运算放大器）</strong>：使用外部OPA341实现。</li>
-</ul>
-<h2>六、零件清单、板布局和原理图</h2>
-<h3>6.1 零件清单</h3>
-<p>文档详细列出了评估模块所需的零件，包括<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>、电阻、连接器、LED、电感等，每个零件都有数量、参考设计器、型号等信息。</p>
-<h3>6.2 板布局</h3>
-<p>提供了组件视图、顶层视图、底层视图、接地平面视图和电源层视图，帮助<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>理解电路板的布局。</p>
-<h3>6.3 原理图</h3>
-<p>包含了CDC7005的原理图，这对于深入了解<a href="https://www.elecfans.com/v/tag/221/" target="_blank"><u>电路原理</u></a>和进行设计优化非常有帮助。</p>
-<p>综上所述，CDC7005评估模块为工程师提供了一个全面的平台，用于评估和优化时钟系统的性能。通过合理使用硬件配置和SPI软件，我们可以根据具体应用需求调整系统参数，实现高性能的时钟同步。你在使用CDC7005评估模块的过程中遇到过哪些问题呢？欢迎在评论区分享你的经验和见解。 </p>]]></description></item><item>    <title><![CDATA[CDC7005（QFN 封装）评估模块：应用与设计全解析]]></title>    <link>https://www.elecfans.com/d/8041169.html</link>    <guid>https://www.elecfans.com/d/8041169.html</guid>    <pubDate>2026-07-02 16:05:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8041169" value="https://file.elecfans.com/web2/M00/77/3B/pYYBAGNhOPqAOllmAAEPvHFvwa0695.pdf"/><h1>C<a href="https://m.hqchip.com/app/1703" target="_blank"><u>DC</u></a>7005（QFN 封装）评估模块：应用与设计全解析</h1>
-<p>作为<a href="https://www.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>，我们在日常工作中经常会接触到各种高性能的<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>组件和<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>驱动产品。今天，我要和大家详细分享一款<a href="https://www.elecfans.com/tags/德州仪器/" target="_blank"><u>德州仪器</u></a>（<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>TI</u></a>）的产品——CDC7005（QFN 封装）评估模块，从它的使用说明、技术要点到设计注意事项，为大家进行一次全面的剖析。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8041169" target="_blank">CDC7005QFN-EVM.pdf</a></p>
-<h2>一、TI 产品声明与重要注意事项</h2>
-<p>在使用 TI 的产品前，我们必须了解一些重要声明。TI 有权对其产品和服务进行修改、改进甚至停产，所以我们在下单前要获取最新信息。TI 对硬件产品提供标准保修，但并非对每个产品的所有参数都进行测试。同时，TI 不承担应用协助、客户产品设计等方面的责任，客户需为自己使用 TI 组件的产品和应用负责。此外，TI 未授予任何与产品使用相关的专利、版权等知识产权许可，若使用相关信息可能需获得第三方或 TI 的许可。</p>
-<p>TI 提供的 CDC7005 评估模块仅用于工程开发或评估，不适合商业用途。该产品可能在设计、营销和制造方面存在不足，也可能不符合<a href="https://bbs.elecfans.com/group_40" target="_blank"><u>电磁兼容</u></a>性指令。若评估模块不符合用户指南中的规格，可在交付后 30 天内全额退款。用户需对产品的正确和安全处理负责，并对 TI 因产品处理或使用产生的所有索赔进行赔偿。产品可能未通过监管<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>，用户要注意静电放电防护。</p>
-<h2>二、评估模块使用警告与限制</h2>
-<h3><a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>电压范围</h3>
-<p>操作 CDC7005 评估模块时，必须将电源电压控制在 3V 至 3.6V 范围内。超过此范围可能导致意外操作或对评估模块造成不可逆损坏。若对输入范围有疑问，连接输入电源前应联系 TI 现场代表。</p>
-<h3>负载连接</h3>
-<p>施加超出指定输出范围的负载可能导致评估模块意外操作或永久性损坏。连接负载到评估模块输出前，需查阅用户指南。若对负载规格不确定，应联系 TI 现场代表。</p>
-<h3>组件温度</h3>
-<p>正常运行时，部分电路组件的外壳温度可能超过 45°C。只要输入和输出范围保持正常，评估模块设计允许某些组件温度高于 60°C，如<a href="https://m.hqchip.com/app/1700" target="_blank"><u>线性稳压器</u></a>、开关<a href="https://www.hqchip.com/app/1555" target="_blank"><u>晶体管</u></a>、传输晶体管和<a href="https://m.hqchip.com/app/1782" target="_blank"><u>电流检测</u></a><a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>等。操作时在这些设备附近放置测量探头，要注意它们可能很烫手。我们可以通过用户指南中的评估模块原理图来识别这些设备。大家在实际操作中有没有遇到过因为组件温度过高而导致的问题呢？</p>
-<h2>三、评估模块手册内容概述</h2>
-<h3>手册用途</h3>
-<p>这本手册详细介绍了如何使用 CDC7005 评估模块，并为构建客户自己的系统提供了指导，包含原理图、布局、材料清单和软件说明等内容。</p>
-<h3>手册章节</h3>
-<ul>
-<li><strong>第一章 引言</strong>：介绍了 CDC7005 的功能框图。通过这个框图，我们可以对 CDC7005 的整体结构和<a href="https://m.elecfans.com/v/tag/773/" target="_blank"><u>工作原理</u></a>有一个初步的认识，为后续的深入学习打下基础。</li>
-<li><strong>第二章 快速入门</strong>：帮助我们快速上手评估模块，了解基本的操作步骤和注意事项。</li>
-<li><strong>第三章 EVM 硬件</strong>
-<ul>
-<li><strong>板视图和<a href="https://www.hqchip.com/app/1515" target="_blank"><u>连接器</u></a>位置</strong>：让我们清楚地知道评估模块的各个部分在板上的位置，方便进行硬件连接和调试。</li>
-<li><strong>硬件配置</strong>：包括电源供应、板载开关和指示器、<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a><a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>、环路<a href="https://www.elecfans.com/tags/滤波器/" target="_blank"><u>滤波器</u></a>、高速输入输出以及 VCXO 输入输出等方面的介绍。不同的硬件配置会对评估模块的性能产生不同的影响，我们需要根据实际需求进行合理的设置。例如，在电源供应方面，需要确保电源的稳定性和合适的输出电压。</li>
-</ul></li>
-<li><strong>第四章 串行外设接口（SPI）软件</strong>
-<ul>
-<li><strong>功能描述</strong>：详细说明了 SPI 软件的功能，使我们了解它如何与硬件进行交互，实现数据的传输和控制。</li>
-<li><strong>软件安装</strong>：指导我们完成 SPI 软件的安装过程，确保软件能够正常运行。</li>
-</ul></li>
-<li><strong>第五章 应用级电路图</strong>：介绍了不同类型的环路滤波器，如无源环路滤波器、使用内部<a href="https://www.hqchip.com/app/1737" target="_blank"><u>运算放大器</u></a>的有源环路滤波器和使用外部运算放大器的有源环路滤波器。不同的环路滤波器在性能和应用场景上有所不同，我们需要根据具体的设计要求选择合适的滤波器。</li>
-<li><strong>第六章 零件清单、板布局和原理图</strong>：提供了评估模块的详细零件清单、板布局和原理图，为我们进行硬件设计和调试提供了重要的参考依据。</li>
-</ul>
-<h2>四、相关资源与求助途径</h2>
-<p>TI 还提供了 CDC7005 数据手册（SCAS685）等相关文档，方便我们进一步了解产品。此外，该设备仅适用于实验室测试环境，可能会产生、使用和辐射<a href="https://m.elecfans.com/v/tag/105/" target="_blank"><u>射频</u></a>能量，若在其他环境中使用可能会干扰无线电通信，用户需自行采取措施纠正干扰。如果在使用过程中需要帮助，可以发送电子邮件至 clocks_apps@list.ti.com。大家在使用 TI 产品时，有没有遇到过需要求助的情况呢？是如何解决的呢？</p>
-<p>总之，CDC7005 评估模块是一款功能强大的产品，但在使用过程中我们需要严格遵守相关的注意事项和操作规范，充分发挥其性能优势。希望通过今天的分享，能帮助大家更好地了解和使用这款评估模块。 </p>]]></description></item>  </channel></rss>
+	</p>]]></description></item>  </channel></rss>
