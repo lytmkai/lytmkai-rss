@@ -1,4 +1,851 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[揭秘三星Foundry 4nm FinFET的可扩展实力]]></title>    <link>https://www.elecfans.com/d/8214342.html</link>    <guid>https://www.elecfans.com/d/8214342.html</guid>    <pubDate>2026-08-12 11:31:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[地址刚换，BRAM数据为何下一拍才出来？]]></title>    <link>https://www.elecfans.com/d/8214234.html</link>    <guid>https://www.elecfans.com/d/8214234.html</guid>    <pubDate>2026-08-12 11:21:00</pubDate>    <description><![CDATA[<p>
+	<strong>地址刚换，BRAM数据为何下一拍才出来？</strong></p>
+<p>
+	块<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>为了映射片上存储资源，读地址通常在<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>沿被采样；输出晚一拍不是工具拖延，而是<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>时序的一部分</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/70/CA/wKgZPGp75pqAab4eAACxjn1X4jY004.png" alt="wKgZPGp75pqAab4eAACxjn1X4jY004.png"/></p>
+<p>
+	<a href="https://bbs.elecfans.com/zhuti_proteus_1.html" target="_blank"><u>仿真</u></a>里把re<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>ad</u></a>_addr换成新地址，dout没有立刻跟着变，到了下一个时钟沿之后才出现目标数据。若仍按组合查表理解RAM，valid、包头和像素坐标就会整体错一拍。</p>
+<p>
+	<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>数组写在<a href="https://www.elecfans.com/tags/verilog/" target="_blank"><u>Verilog</u></a>里，看起来像普通下标访问；综合工具却要把它映射到器件真实的块RAM或分布式RAM资源。代码模板不同，推断出的硬件与读延迟也不同。</p>
+<p>
+	工程判断是：<strong>BRAM的同步读延迟应被当成设计接口，而不是仿真误差。</strong>地址、使能和控制<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>都要围绕这个时钟边界对齐。</p>
+<p>
+	<strong>先看代码到底在哪个时钟沿采样</strong></p>
+<p>
+	同步RAM模板常在posedge clk中寄存读地址，再用这个寄存地址访问RAM。外部地址在时钟沿之前稳定，时钟沿到来后才被内部捕获，输出随后更新。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/70/CA/wKgZPGp75pqAQx8gAABhF679lZM276.png" alt="wKgZPGp75pqAQx8gAABhF679lZM276.png"/></p>
+<p>
+	图1 同步RAM接口先定义时钟、读写地址和数据输出</p>
+<p>
+	从上游提出地址到下游看到数据，逻辑上就形成一级延迟。若测试平台在时钟沿同一仿真时刻才改地址，还可能产生竞争，让波形看起来像多等了一拍或偶尔取到旧地址。</p>
+<p>
+	最清楚的画法是同时标出a<a href="https://m.hqchip.com/app/1729" target="_blank"><u>ddr</u></a>、clk、raddr_reg、dout和valid。不要只盯dout一根线猜延迟，地址被哪一个沿采样才是时间基准。</p>
+<p>
+	<strong>同一个数组，可以推断成不同资源</strong></p>
+<p>
+	小容量数组可能被综合成LUT分布式RAM，大容量数组更可能进入BRAM。器件系列、<a href="https://www.hqchip.com/app/1808" target="_blank"><u>端口</u></a>数量、读写模式和输出是否寄存，都会影响资源选择。</p>
+<p>
+	代码中使用同步读、完整的时钟使能和工具认可的模板，更容易得到预期块RAM。若写成组合读取，工具可能改用分布式资源，也可能因规模和时序目标给出不同实现。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/70/CA/wKgZPGp75puAPUQcAAEQQOz76u4435.png" alt="wKgZPGp75puAPUQcAAEQQOz76u4435.png"/></p>
+<p>
+	图2 写地址、读地址和输出声明决定RAM端口的基本语义</p>
+<p>
+	属性可以提示BLOCK或DISTRIBU<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>TE</u></a>D，但属性不是万能命令。代码语义若与目标资源不兼容，综合仍可能拒绝、改写或给出警告，所以必须看最终推断报告。</p>
+<p>
+	同一个时钟沿既写又读相同地址时，输出可能表现为旧数据、新数据或保持不变，常见名称包括read-fi<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>rs</u></a>t、write-first和no-change。具体支持方式取决于器件与推断模板。</p>
+<p>
+	仿真模型若写得含糊，RTL仿真与上板结果可能不一致。双口RAM还要明确两个端口的时钟关系和同址冲突规则，不能把未定义行为当作偶然故障。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/70/CA/wKgZO2p75p2AKeTkAAFKqtuluyQ836.png" alt="wKgZO2p75p2AKeTkAAFKqtuluyQ836.png"/></p>
+<p>
+	图3 同步写入和读地址寄存使存储访问落在明确时钟边界</p>
+<p>
+	使用非阻塞赋值可以表达同一时钟沿更新，但它不会自动替你选择目标模式。最可靠的做法是写明期望、采用厂商推荐模板，并用综合后的存储配置回查。</p>
+<p>
+	<strong>把一拍延迟纳入流水线</strong></p>
+<p>
+	上游给出addr与read_en时，同步产生一位valid。数据经过BRAM一级后，valid也延迟同样拍数；若输出端又启用寄存器，控制信号还要继续对齐。</p>
+<p>
+	<img src="https://file1.elecfans.com//web3/M00/70/CA/wKgZPGp75p2AWo5zAAH_PQP1idc215.png" alt="wKgZPGp75p2AWo5zAAH_PQP1idc215.png"/></p>
+<p>
+	图4 Slice内部的LUT和寄存结构说明分布式存储与块RAM并非同一种实现</p>
+<p>
+	仿真时让地址和使能在有效沿之前建立，断言dout只在预期时刻被使用。后仿真或上板调试中再核对实际RAM类型、输出寄存器和时钟使能。</p>
+<p>
+	若系统确实需要组合查表，应确认容量与时序允许采用分布式<a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a>/RAM，而不是强迫BRAM表现成它不支持的接口。资源、延迟和频率需要一起取舍。</p>
+<p>
+	最终检查表应包含推断资源、读延迟、读写同址模式、端口时钟和valid路径。只要这五项写清，所谓“BRAM慢一拍”就会变成可管理的流水线。</p>
+<p>
+	波形中的“一拍”要以接口约定为准。若上游在第N个沿前给出地址，BRAM在该沿采样，并在沿后给出数据，可定义为一级同步延迟；若又启用了输出寄存器，系统观察可能再多一级。文档应写清从请求被接受到数据有效的周期数，而不是只写“同步RAM”。</p>
+<p>
+	初始化方式也会影响仿真与上板一致性。仿真里数组可能被ini<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>ti</u></a>al语句或文件预载，上电后的真实BRAM是否支持相同初始化，要看器件与配置流程。未初始化地址在仿真中出现X，往往是在提醒控制逻辑没有保证先写后读，不应直接把X强行清零掩盖。</p>
+<p>
+	跨时钟双口RAM需要额外处理。两个端口各自同步并不代表同址访问自动安全，写入传播到另一时钟域的可见时刻、冲突行为和复位释放都受器件规则限制。真正的异步数据交换更适合使用经过验证的异步FIFO结构，而不是随意把双口RAM当C<a href="https://m.hqchip.com/app/1703" target="_blank"><u>DC</u></a>同步器。</p>
+<p>
+	时序收敛时，BRAM输入输出寄存器能显著缩短组合路径，却会增加流水级。频率与延迟不是谁对谁错，而是架构选择。先让数据和valid在接口层显式对齐，后续增加寄存器时只需要调整统一的latency参数，不必在各模块里零散补拍。</p>
+<p>
+	地址改变后下一拍出数，是同步BRAM常见且可预测的接口行为。真正的风险不是这一拍本身，而是控制信号仍按零延迟设计。</p>
+<p>
+	回到波形，把addr、clk、dout和valid放在一起，再看综合报告里的RAM类型与读写模式。一拍对齐之后，数据错位通常就会从随机问题变成明确时序。<br/>
+	</p>
+<p>
+	声明：</p>
+<p>
+	本文由<a href="https://bbs.elecfans.com/group_1173" target="_blank"><u>凡亿</u></a>教育整理，转载请注明来源！</p>
+<p>
+	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[海康威视毫米波雷达水位监测方案落地宁波市天合家园]]></title>    <link>https://www.elecfans.com/d/8214237.html</link>    <guid>https://www.elecfans.com/d/8214237.html</guid>    <pubDate>2026-08-12 11:21:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	每到夏秋台风季</p>
+<p style="text-indent:2em;">
+	老旧小区住户总会遇到烦心事：</p>
+<p style="text-indent:2em;">
+	路面积满雨水</p>
+<p style="text-indent:2em;">
+	地下车库不敢停车</p>
+<p style="text-indent:2em;">
+	出门步步踩水</p>
+<p style="text-indent:2em;">
+	内涝难题如何解？</p>
+<p style="text-indent:2em;">
+	近日，宁波市天合家园联合当地社区、物业团队推动<a href="https://www.elecfans.com/tags/海康威视/" target="_blank"><u>海康威视</u></a><a href="https://m.elecfans.com/v/tag/4084/" target="_blank"><u>毫米波雷达</u></a>水位监测方案落地。该项目针对小区沉降低洼点位布设毫米波雷达水位感知球，实现积水全天候自动监测，同步联动排水设备，为积水处置搭建起“感知—预警—强排”的闭环。</p>
+<p style="text-indent:2em;">
+	毫米波雷达“上岗”</p>
+<p style="text-indent:2em;">
+	24小时紧盯积水</p>
+<p style="text-indent:2em;">
+	宁波天合家园一期，2007年建成，至今已有近20年的房龄，小区北侧地面沉降，整体标高明显低于周边道路与建筑物，每逢暴雨，极易形成积水。</p>
+<p style="text-indent:2em;">
+	以前，小区防汛工作全靠人工巡检，每隔一小时巡查一次，积水深浅只能靠肉眼粗略判断。但短时强降雨使得水位上涨速度快，难以第一时间发现险情；且防汛点位分散，地面、地下车库、排水沟都需要巡查，人力有限，无法全域覆盖。</p>
+<p style="text-indent:2em;">
+	海康威视毫米波雷达水位感知球的落地，改善了传统的防汛模式。设备以毫米波雷达技术为核心，通过发射电磁波并接收回波<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>，“隔空”就能完成<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>水位测量。它具备以下三个优势：</p>
+<p style="text-indent:2em;">
+	不受光照、雨雪天气、灰尘水雾等环境干扰，在夜间、强降雨等低能见度条件下，也能实现7X24小时不间断稳定监测；</p>
+<p style="text-indent:2em;">
+	采用非接触式隔空探测，设备无需浸入积水中，从根源规避传统探头泥沙堵塞、泡水失灵、数据失真等问题，面对裹挟大量泥沙、漂浮杂物的积水环境，监测稳定性更强，测量精度可达±3毫米；</p>
+<p style="text-indent:2em;">
+	秒级更新数据，设备接入海康威视iSecure Cen<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>r综合安防管理平台，后台以动态折线图直观展示水位变化，积水动态实时更新；</p>
+<p style="text-indent:2em;">
+	小区监控室值班人员的工作模式迎来明显转变：过去每逢降雨都要冒雨定时外出巡检，如今只需值守后台屏幕，就能实时掌握低洼点位积水状况。</p>
+<p style="text-indent:2em;">
+	告别事后抢险</p>
+<p style="text-indent:2em;">
+	数据预警实现积水主动防控</p>
+<p style="text-indent:2em;">
+	屏幕实时监测只是基础，整套系统还实现了标准化、数据化的分级预警机制。过去积水深浅靠经验“估”，现在，工作人员采用RTK高程测量，从人行道、绿化带<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>点到建筑物门厅外沿，逐个点位实地标定，并以实测标高为依据，设置三级分层预警：</p>
+<p style="text-indent:2em;">
+	● 黄色预警（关注级）：水位漫至路面时触发，提醒值班人员重点盯防；</p>
+<p style="text-indent:2em;">
+	● 橙色预警（警戒级）：积水淹没路面与绿化带时触发，物业同步启动防汛应急预案；</p>
+<p style="text-indent:2em;">
+	● 红色预警（危险级）：水位逼近建筑物门厅外沿时触发，立即组织处置并向居民示警；</p>
+<p style="text-indent:2em;">
+	一旦水位触及对应预警阈值，系统将自动声光报警、同步抓拍现场画面，让积水报警从“大概判断”变为“数据驱动”的精准判定，并联动抽水泵自动启动强排，完成积水快速处置。</p>
+<p style="text-indent:2em;">
+	从人工巡检升级为全天候实时监测，从肉眼估测水深升级至毫米级精准感知，天合家园这套毫米波雷达水位监测系统，经过多轮强降水天气实测，全程稳定运行，为老旧小区运用智能化手段，实现汛期积水主动防控提供了可落地的实践范本。</p>]]></description></item><item>    <title><![CDATA[海康威视助力未来工厂参考模型与技术架构国家标准建设]]></title>    <link>https://www.elecfans.com/d/8214269.html</link>    <guid>https://www.elecfans.com/d/8214269.html</guid>    <pubDate>2026-08-12 11:22:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	2026年8月4日至5日，《未来工厂 参考模型与技术架构》（20260771-Z-604）国家标准起草工作组第二次全体会议在<a href="https://www.elecfans.com/tags/海康威视/" target="_blank"><u>海康威视</u></a>举行。本次会议由浙江省技术创新服务<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>牵头组织海康威视承办，旨在推动标准研制与产业实践深度融合。来自浙江省经济和信息化厅、浙江省技术创新服务中心、高校、科研院所及行业代表企业的专家学者齐聚一堂，以海康威视智能视频终端未来工厂为参照样本，共同研讨国家标准的编制路径。</p>
+<p style="text-indent:2em;">
+	4日下午，与会专家走进海康威视智能视频终端未来工厂，调研产线柔性生产、智能管控等落地场景。调研过程中，海康威视工业企业团队专家就工厂智能化升级的关键技术应用与落地实践，为参会专家进行了现场讲解与答疑。海康威视基于依托自研的技术、产品与平台，结合多年积累的工业数据，将自身工厂打造为一个具备“<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>决策大脑”“智能感官系统”“灵活执行手脚”的“超级智能体”。这一实践不仅为“多品种、小批量、大规模定制”的生产模式提供了智能化样本，同时也形成面向上下游生态的赋能能力。</p>
+<p style="text-indent:2em;">
+	本次会议由浙江省技术创新服务中心领导王栋主持。浙江省经济和信息化厅产业数字化推进处处长张君出席会议并作动员讲话。张君围绕“十五五”期间制造业转型升级方向，提出以下意见：标准研制需考虑未来5至10年制造业发展趋势；要以开放理念融合海康等企业的实践成果，构建成长型模型；要以前瞻视野搭建新一代智能制造技术架构，推动制造系统升级为能够持续学习、动态适应和自主优化的自主智能系统；要凝聚合力，打造经得起实践检验的标杆之作。</p>
+<p style="text-indent:2em;">
+	海康威视浙江业务中心企事业部副总经理陈闽建致欢迎辞。他表示，海康威视将依托自身智能制造建设经验，配合工作组推进标准编制作，推动产业实践与标准研制深度对接。</p>
+<p style="text-indent:2em;">
+	在经验交流环节，海康威视浙江企业团队专家与参会嘉宾围绕技术部署经验、适配要点等内容开展交流讨论。海康威视智能制造专家丰斌系统介绍了未来工厂建设成果与AI落地经验，围绕智能决策、柔性执行、数字孪生、海康观澜大模型应用，完整呈现了全链路智能制造实施路径。</p>
+<p style="text-indent:2em;">
+	针对行业关注的AI应用典型场景技术路径问题，海康威视工程技术部总经理李亮介绍，海康观澜大模型是海康威视AI应用典型场景的核心技术支撑。依托大模型在感知端的深度应用，海康威视智能制造系统拥有更强的场景理解，也为未来工厂标准中"感知－决策－执行"的能力体系搭建提供重要参考。</p>
+<p style="text-indent:2em;">
+	8月5日，标准起草工作组专家成员在海康微影工厂开展全天闭门会议。会议立足国内制造业发展现状，吸纳企业成熟实践成果，参考行业前沿经验，进一步完善标准内容，致力形成可复制、可推广、可演进的标准化建设范式。</p>
+<p style="text-indent:2em;">
+	本次活动依托企业一线实践，为国家标准研制提供了真实产业样本。后续，海康威视将持续沉淀智能制造建设经验，积极参与行业标准建设，助力制造业数字化、智能化转型升级。</p>]]></description></item><item>    <title><![CDATA[塑胶注塑车间强电磁环境无线组网改造：网桥替代 RS485 有线方案]]></title>    <link>https://www.elecfans.com/d/8214239.html</link>    <guid>https://www.elecfans.com/d/8214239.html</guid>    <pubDate>2026-08-12 11:23:00</pubDate>    <description><![CDATA[<p>
+	一、项目背景</p>
+<p>
+	在塑胶、注塑智能制造行业中，注塑机是车间核心生产设备，多数中小型塑胶加工厂车间内集中布置数十台注塑设备，每台设备独立搭载<a href="https://bbs.elecfans.com/group_999" target="_blank"><u>PLC</u></a><a href="https://www.elecfans.com/v/tag/8966/" target="_blank"><u>控制系统</u></a>，负责控制加热温度、模温参数、注塑压力、生产计数、故障保护等核心工艺数据。随着工厂数字化升级推进，传统人工统计、单机独立运行模式已无法满足精益生产、OEE设备效能统计、工艺统一管控的生产需求。为实现全厂设备数据可视化、生产透明化、运维智能化，设备工艺参数、产量数据、不良品数据、设备运行状态需要统一上传至中控系统进行集中分析与管理。</p>
+<p>
+	某大型塑胶加工厂拥有40台注塑生产设备，设备数量多、排布密集，原有串口布线混乱、数据采集滞后，长期制约生产效率提升。为彻底解决车间布线繁琐、数据采集效率低、运维成本高的问题，企业采用<strong>捷米特JM-<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>-Bidge PLC串口专用无线通讯终端</strong>，依托高性能<strong>无线数传模块</strong>搭建一主多从工业<strong>无线通讯</strong>网络，实现多台注塑机PLC无人值守、自动轮询采集，完成车间设备<strong>无线数据传输</strong>与集中数字化管控，助力工厂智能化升级。</p>
+<p>
+	</p>
+<p>
+	二、项目痛点</p>
+<p>
+	改造前，该塑胶加工厂注塑车间长期采用传统<a href="https://m.hqchip.com/app/1809" target="_blank"><u>RS485</u></a>有线布线+人工抄表模式，存在布线杂乱、扩容困难、干扰严重、数据滞后、人工成本高等多重行业痛点。</p>
+<p>
+	首先是车间布线杂乱、扩容困难。车间数十台注塑机集中排布，传统串口集中布线需要铺设大量线槽、线缆，现场线路错综复杂，不仅影响车间整体整洁度，还存在线路老化、短路、检修困难等隐患。后期新增设备、产线升级时，无法快速拓展总线通道，设备组网扩容极其繁琐，严重制约产线柔性升级。</p>
+<p>
+	其次是车间电磁环境复杂、有线通讯不稳定。注塑机搭载大功率加热管、<a href="https://www.elecfans.com/v/tag/2471/" target="_blank"><u>变频器</u></a>、<a href="https://www.elecfans.com/v/tag/194/" target="_blank"><u>伺服电机</u></a>，设备运行时电磁干扰强度大，传统有线485总线极易受干扰，出现数据跳变、采集错乱、通讯掉线等问题，无法保证工艺参数采集的准确性。</p>
+<p>
+	最后是人工采集效率低、数据滞后、无法预判故障。改造前依靠运维人员逐台设备抄录模温、产量、不良品数量等数据，人工统计误差大、耗时久、数据滞后严重，无法实时统计设备OEE效能。同时设备异常无法提前预警，只能故障停机后被动处理，造成产能损耗与生产延误，运维工作量大、管理精度低。</p>
+<p>
+	三、解决方案</p>
+<p>
+	针对注塑车间布线繁琐、电磁干扰强、多设备采集难、人工统计低效的痛点，项目放弃传统RS485有线总线组网方式，采用<strong>捷米特JM-RS-Bidge串口专用无线网桥</strong>一主多从无线轮询采集方案，无需铺设线缆、无需改造原有设备电路，快速实现40台注塑机PLC集中数据采集。</p>
+<p>
+	方案采用中控主站+设备从站的标准化组网架构，在车间中控采集PLC端部署一台<strong>JM-RS-Bidge</strong>无线主站，作为数据集中采集与汇总枢纽；在每台注塑机PLC的RS485串口分别挂载无线从站设备，单主站稳定挂载多台从站设备，适配车间多设备密集组网场景。</p>
+<p>
+	设备支持标准Modbus-RTU协议透明传输，中控系统可自动轮询读取每台注塑机的加热温度、模温参数、生产产量、不良品计数、设备运行时长、故障代码等核心数据，统一汇总至后台进行OEE统计与生产分析。模块针对注塑车间强电磁环境做专项抗干扰优化，有效规避变频器、加热管电磁干扰，保障大批量设备长时间稳定联机，彻底替代传统有线485总线采集模式。</p>
+<p>
+	<img src="https://file1.elecfans.com/web3/M00/70/CA/wKgZO2p75pqAd-EpAACM5fRa2zg316.png" alt="wKgZO2p75pqAd-EpAACM5fRa2zg316.png"/></p>
+<p>
+	四、无线网桥核心功能</p>
+<p>
+	<strong>捷米特JM-RS-Bidge</strong>串口无线通讯终端针对注塑车间密集设备、强干扰、批量采集场景深度优化，搭载高稳定工业<strong>无线数传模块</strong>，功能高度适配塑胶智能制造采集需求。</p>
+<p>
+	一是一主多从批量组网能力，单台主站可稳定轮询多台注塑机从站设备，适配车间数十台设备集中采集场景，组网结构简洁、扩容方便。</p>
+<p>
+	二是工业级强抗干扰性能，针对变频器、加热管、伺服设备电磁干扰优化电路屏蔽设计，杜绝数据跳变、掉线问题，保障采集数据精准可靠。</p>
+<p>
+	三是串口透明传输免改造，兼容标准Modbus-RTU协议，无需修改注塑机PLC程序、无需铺设485总线，通电配对即可使用，改造成本极低。</p>
+<p>
+	四是全参数自动采集汇总，可实时同步温度、产量、不良数、设备状态、故障信息，支持后台OEE自动统计分析。</p>
+<p>
+	五是灵活扩容，后期新增注塑设备可直接新增从站入网，无需重新布线，适配产线持续升级改造。</p>
+<p>
+	<img src="https://file1.elecfans.com/web3/M00/70/CA/wKgZO2p75puACtW_AACvOAmFfsM099.png" alt="wKgZO2p75puACtW_AACvOAmFfsM099.png"/></p>
+<p>
+	五、使用过程</p>
+<p>
+	本次车间改造无需停产、无需大规模施工，部署调试便捷高效。技术人员仅需在中控端安装主站模块，各注塑机PLC串口依次安装从站模块，完成频段配对、地址配置后即可自动组网轮询采集，全程不改动原有设备控制逻辑，不影响正常生产。</p>
+<p>
+	系统正式投运后，40台注塑机所有工艺数据、生产数据、设备状态数据通过<strong>无线通讯</strong>链路实时上传中控系统，彻底取消人工逐台抄表工作。后台自动完成产量统计、不良品分析、设备运行时长统计、OEE效能核算，数据实时更新、精准无误。当设备出现温度异常、参数偏移、电路故障时，系统可提前预警，运维人员可提前排查处理，避免设备故障停机。</p>
+<p>
+	经过长期生产验证，整套<strong>无线数据传输</strong>系统运行稳定，无惧车间复杂电磁环境，无掉线、无错码、无数据延迟。项目落地后，车间运维工作量减少65%，极大降低人工统计与设备巡检压力，生产数据全程可追溯、可分析，实现注塑车间生产数字化、运维智能化管理。</p>
+<p>
+	</p>
+<p>
+	六、推荐行业</p>
+<p>
+	<strong>捷米特JM-RS-Bidge</strong>无线串口采集方案广泛适用于各类离散制造智能化升级场景，核心适配塑胶注塑、模具加工、电子成型、五金制造等拥有大量注塑、挤出、成型设备的生产车间。专门解决多设备集中采集难、布线繁琐、电磁干扰大、人工统计低效的问题，是工厂低成本数字化采集、设备OEE管控、老旧车间改造的优选<strong>无线数传模块</strong>解决方案。</p>
+<p>
+	七、项目总结</p>
+<p>
+	本次塑胶加工厂40台注塑机数字化改造项目，依托<strong>捷米特JM-RS-Bidge</strong>无线网桥优异的抗干扰能力与稳定的<strong>无线数据传输</strong>性能，成功解决了传统有线布线杂乱、扩容难、电磁干扰大、人工采集低效、数据滞后等行业痛点。通过搭建一主多从工业<strong>无线通讯</strong>专网，实现了全车间注塑机设备参数、生产数据、故障信息的自动轮询采集与集中管控。</p>
+<p>
+	项目落地后，彻底取消人工抄表统计模式，运维工作量大幅降低，设备异常可提前预警，有效减少故障停机时长，提升设备综合利用率与车间生产效率。该方案部署简单、性价比高、稳定性强、扩容灵活，完美适配注塑车间密集设备组网场景，是塑胶制造行业数字化转型、老旧产线升级的标准化、可批量复制的优质方案，具备极高的行业推广价值。</p>
+<p>
+	《具体内容配置过程及其他相关咨询请与武工留言交流》<br/><br/>
+	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[深入剖析 onsemi FDMC7660S：高性能 N 沟道 MOSFET 的卓越之选]]></title>    <link>https://www.elecfans.com/d/8214258.html</link>    <guid>https://www.elecfans.com/d/8214258.html</guid>    <pubDate>2026-08-12 11:25:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8214258" value="https://file1.elecfans.com/web3/M00/70/CA/wKgZO2p75smAYm74AAfGgKKOPXc483.pdf"/><h3>深入剖析 onsemi FDMC7660S：高性能 N 沟道 <a href="https://www.elecfans.com/tags/mosfet/" target="_blank"><u>MOSFET</u></a> 的卓越之选</h3>
+<p>在<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>转换应用的领域中，MOSFET 作为关键元件，其性能的优劣直接影响着整个系统的效率与稳定性。今天，我们就来详细探讨 onsemi 推出的 FDMC7660S 这款 N 沟道 POWERTRENCH SyncFET MOSFET。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8214258" target="_blank">FDMC7660S-D.PDF</a></p>
+<h4>一、产品概述</h4>
+<p>FDMC7660S 的设计初衷是最大程度降低电源转换应用中的损耗。它巧妙地融合了先进的硅技术和封装技术，在保持出色开关性能的同时，实现了极低的导通电阻 (rDS(on))。此外，该器件还具备高效的单片<a href="https://m.hqchip.com/app/1558" target="_blank"><u>肖特基</u></a>体<a href="https://www.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>，为其性能加分不少。</p>
+<h4>二、产品特性亮点</h4>
+<ol>
+<li><strong>极低的导通电阻</strong>
+<ul>
+<li>在 (V<em>{GS}=10V)，(I</em>{D}=20A) 的条件下，最大 (rDS(on)) 仅为 (2.2mOmega)。</li>
+<li>当 (V<em>{GS}=4.5V)，(I</em>{D}=18A) 时，最大 (rDS(on)) 为 (2.95mOmega)。这种低导通电阻的特性能够有效减少功率损耗，提高系统效率，你是否在实际应用中也更倾向于选择低导通电阻的 MOSFET 呢？</li>
+</ul></li>
+<li><strong>高性能技术</strong>：采用高性能技术，进一步降低 (rDS(on))，提升了产品在电源转换中的表现。</li>
+<li><strong>环保特性</strong>：该器件符合无铅、无卤以及 RoHS 标准，顺应了环保的大趋势，在环保要求日益严格的今天，这样的特性无疑是一大优势。</li>
+</ol>
+<h4>三、应用领域广泛</h4>
+<ol>
+<li><strong><a href="https://www.elecfans.com/tags/dc/dc/" target="_blank"><u>DC/DC</u></a> <a href="https://m.hqchip.com/app/1718" target="_blank"><u>转换器</u></a><a href="https://m.hqchip.com/app/1852" target="_blank"><u>同步整流</u></a></strong>：在 <a href="https://m.hqchip.com/app/1703" target="_blank"><u>DC</u></a>/DC 转换器中，FDMC7660S 可作为同步整流器，提高转换效率。</li>
+<li><strong>笔记本 Vcore/<a href="https://www.elecfans.com/tags/gpu/" target="_blank"><u>GPU</u></a> 低端开关</strong>：为笔记本<a href="https://www.elecfans.com/v/tag/1247/" target="_blank"><u>电脑</u></a>的核心部件提供稳定可靠的<a href="https://m.hqchip.com/app/1730" target="_blank"><u>开关控制</u></a>。</li>
+<li><strong>网络负载点低端开关</strong>：在网络设备中发挥重要作用，保障设备的稳定运行。</li>
+<li><strong>电信二次侧整流</strong>：适用于电信设备的二次侧整流环节。</li>
+</ol>
+<h4>四、<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>参数解析</h4>
+<ol>
+<li><strong>最大额定值</strong>
+<ul>
+<li><strong>漏源电压 (V_{DS})</strong>：最大值为 30V，这决定了该 MOSFET 能够承受的最大电压范围。</li>
+<li><strong>栅源电压 (V_{GS})</strong>：±20V（注 4），在使用时需要注意栅源电压的范围，避免超出额定值损坏器件。</li>
+<li><strong>漏极<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a> (I_{D})</strong>：连续电流在不同条件下有所不同，如封装限制时 (T<em>{C}=25^{circ}C) 为 40A，硅片限制时 (T</em>{C}=25^{circ}C) 为 100A，脉冲电流最大可达 200A。</li>
+<li><strong>单脉冲雪崩能量 (E_{AS})</strong>：为 128mJ，体现了器件在雪崩情况下的承受能力。</li>
+<li><strong>功率耗散 (P_{D})</strong>：不同条件下功率耗散不同，分别为 41W 和 2.3W。</li>
+<li><strong>工作和储存结温范围 (T<em>{J}, T</em>{STG})</strong>：为 -55 至 +150°C，这表明该器件能够在较宽的温度范围内稳定工作。</li>
+</ul></li>
+<li><strong>电气特性</strong>
+<ul>
+<li><strong>关断特性</strong>：包括栅源泄漏电流 (I<em>{GSS})、零栅压漏极电流 (I</em>{DSS})、击穿电压温度系数 (α<em>{BVDS}) 和漏源击穿电压 (BV</em>{DSS}) 等参数。</li>
+<li><strong>导通特性</strong>：在不同的 (V<em>{GS}) 和 (I</em>{D}) 条件下，有不同的 (rDS(on)) 值。</li>
+<li><strong>动态特性</strong>：如开关特性中的导通延迟时间、上升时间等。</li>
+<li><strong>漏源二极管特性</strong>：如正向电压等参数。</li>
+</ul></li>
+</ol>
+<h4>五、热特性与封装信息</h4>
+<ol>
+<li><strong>热特性</strong>：热阻 (R_{theta JA}) 等参数与器件的散热性能密切相关，不同的安装方式会影响热阻大小。例如，安装在 1 (in^2) 2oz 铜焊盘上时热阻为 53°C/W，安装在最小 2oz 铜焊盘上时为 125°C/W。在实际设计中，如何根据热特性来优化散热设计是一个值得思考的问题。</li>
+<li><strong>封装信息</strong>：采用 PQFN8 3.3X3.3, 0.65P（Power 33）封装，这种封装具有一定的优势，如尺寸较小等。同时，文档中还提供了封装标记和订购信息，方便<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>进行采购。</li>
+</ol>
+<h4>六、典型特性曲线</h4>
+<p>文档中给出了一系列典型特性曲线，如导通区域特性、归一化导通电阻与漏极电流和栅极电压的关系、归一化导通电阻与结温的关系等。这些曲线能够帮助工程师更好地了解器件在不同条件下的性能表现，在实际应用中，你是否经常参考这些典型特性曲线来进行<a href="https://bbs.elecfans.com/zhuti_dianlu_1.html" target="_blank"><u>电路设计</u></a>呢？</p>
+<h4>七、总结</h4>
+<p>onsemi 的 FDMC7660S MOSFET 凭借其极低的导通电阻、高性能技术、广泛的应用领域以及良好的热特性和环保特性，成为电源转换应用中的一个优秀选择。<a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>在进行电路设计时，可以根据具体的需求和应用场景，充分发挥该器件的优势，同时注意其最大额定值和热特性等参数，确保系统的稳定可靠运行。你在使用类似 MOSFET 器件时遇到过哪些问题，又是如何解决的呢？欢迎在评论区分享你的经验。 </p>]]></description></item><item>    <title><![CDATA[onsemi FDMC7680 N沟道MOSFET的深度解析与应用指南]]></title>    <link>https://www.elecfans.com/d/8214259.html</link>    <guid>https://www.elecfans.com/d/8214259.html</guid>    <pubDate>2026-08-12 11:25:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8214259" value="https://file1.elecfans.com/web3/M00/70/CA/wKgZPGp75smAfNwvAATW-aEy0mg378.pdf"/><h1>onsemi FDMC7680 N沟道<a href="https://www.elecfans.com/tags/mosfet/" target="_blank"><u>MOSFET</u></a>的深度解析与应用指南</h1>
+<h2>引言</h2>
+<p>在<a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>的日常设计工作中，MOSFET是一种极为常见且关键的<a href="https://m.hqchip.com/ic/0" target="_blank"><u>元器件</u></a>。今天我们来深入探讨onsemi公司生产的FDMC7680 N沟道MOSFET，它在<a href="https://m.hqchip.com/app/1731" target="_blank"><u>电源管理</u></a>和<a href="https://www.hqchip.com/app/1708" target="_blank"><u>负载开关</u></a>应用中有着广泛的应用，下面将从多个方面对其进行详细剖析。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8214259" target="_blank">FDMC7680-D.PDF</a></p>
+<h2>产品概述</h2>
+<p>FDMC7680采用了onsemi先进的POWERTRENCH工艺，该工艺经过特别优化，能有效降低导通电阻。这使得该器件非常适合用于笔记本<a href="https://www.elecfans.com/v/tag/1247/" target="_blank"><u>电脑</u></a>和便携式电池组中的<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>管理和负载开关应用。</p>
+<h2>产品特性</h2>
+<h3>低导通电阻</h3>
+<ul>
+<li>在 $V<em>{GS}=10V$，$I</em>{D}=14.8A$ 时，最大 $R_{DS(on)}=7.2mOmega$；</li>
+<li>在 $V<em>{GS}=4.5V$，$I</em>{D}=12.4A$ 时，最大 $R_{DS(on)}=9.5mOmega$。
+这种低导通电阻特性有助于降低功耗，提高系统效率。</li>
+</ul>
+<h3>环保特性</h3>
+<p>该产品符合无铅、无卤和RoHS标准，满足环保要求，在当今注重绿色环保的电子市场中具有很大的优势。</p>
+<h2>应用领域</h2>
+<h3><a href="https://m.hqchip.com/app/1703" target="_blank"><u>DC</u></a> - DC<a href="https://www.elecfans.com/tags/降压转换器/" target="_blank"><u>降压转换器</u></a></h3>
+<p>在DC - DC降压转换电路中，FDMC7680能够高效地实现电压转换，其低导通电阻可以减少能量损耗，提高转换效率。</p>
+<h3>笔记本电池电源管理</h3>
+<p>在笔记本电脑的电池电源管理系统中，FDMC7680可以精确控制电池的充放电过程，保护电池并延长电池使用寿命。</p>
+<h3>笔记本负载开关</h3>
+<p>作为负载开关，它能够快速、可靠地控制负载的通断，确保系统的稳定运行。</p>
+<h2>主要参数</h2>
+<h3>最大额定值</h3>
+<table>
+<thead>
+<tr>
+<th>符号</th>
+<th>参数</th>
+<th>值</th>
+<th>单位</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>$V_{DS}$</td>
+<td>漏源电压</td>
+<td>30</td>
+<td>V</td>
+</tr>
+<tr>
+<td>$V_{GS}$</td>
+<td>栅源电压</td>
+<td>± 20</td>
+<td>V</td>
+</tr>
+<tr>
+<td>$I_{D}$</td>
+<td>漏极<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>：连续（$T_C = 25°C$）、连续（$T_A = 25°C$）、脉冲</td>
+<td>18、14.8、45</td>
+<td>A</td>
+</tr>
+<tr>
+<td>$E_{AS}$</td>
+<td>单脉冲雪崩能量</td>
+<td>72</td>
+<td>mJ</td>
+</tr>
+<tr>
+<td>$P_{D}$</td>
+<td>功率耗散：$T_C = 25°C$、$T_A = 25°C$</td>
+<td>31、2.3</td>
+<td>W</td>
+</tr>
+<tr>
+<td>$T<em>{J}, T</em>{STG}$</td>
+<td>工作和存储结温范围</td>
+<td>-55 至 +150</td>
+<td>°C</td>
+</tr>
+</tbody>
+</table>
+<h3><a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>特性</h3>
+<h4>关断特性</h4>
+<ul>
+<li>漏源击穿电压 $B<em>{VDSS}$：在 $I</em>{D}=250mu A$，$V_{GS}=0V$ 时为 30V；击穿电压温度系数为 -15mV/°C。</li>
+<li>零栅压漏电流 $I<em>{DSS}$：在 $V</em>{DS}=24V$，$V_{GS}=0V$ 时，$25°C$ 下为 1μA，$125°C$ 下为 250μA。</li>
+<li>栅源泄漏电流 $I<em>{GSS}$：在 $V</em>{GS}=20V$，$V_{DS}=0V$ 时为 100nA。</li>
+</ul>
+<h4>导通特性</h4>
+<ul>
+<li>栅源<a href="https://www.elecfans.com/tags/阈值电压/" target="_blank"><u>阈值电压</u></a> $V<em>{GS(th)}$：在 $V</em>{GS}=V<em>{DS}$，$I</em>{D}=250mu A$ 时，最小值为 1.2V，典型值为 2.0V，最大值为 3.0V；阈值电压温度系数为 -6mV/°C。</li>
+<li>静态漏源导通电阻 $R<em>{DS(on)}$：不同条件下有不同取值，如 $V</em>{GS}=10V$，$I_{D}=14.8A$ 时，典型值为 5.8mΩ，最大值为 7.2mΩ。</li>
+<li>正向跨导 $g<em>{FS}$：在 $V</em>{DD}=5V$，$I_{D}=14.8A$ 时为 68S。</li>
+</ul>
+<h4>动态特性</h4>
+<ul>
+<li>输入<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a> $C<em>{iss}$：在 $V</em>{DS}=15V$，$V_{GS}=0V$，$f = 1MHz$ 时，典型值为 2145pF，最大值为 2855pF。</li>
+<li>输出电容 $C_{oss}$：最大值为 1020pF。</li>
+<li>反向传输电容 $C_{<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>rs</u></a>s}$：最大值为 115pF。</li>
+<li>栅极<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a> $R_{g}$：在 $f = 1MHz$ 时，典型值为 0.5Ω，最大值为 1.6Ω。</li>
+</ul>
+<h4>开关特性</h4>
+<ul>
+<li>导通延迟时间 $t<em>{d(on)}$：在 $V</em>{DD}=15V$，$I<em>{D}=14.8A$，$V</em>{GS}=10V$，$R_{GEN}=6Ω$ 时，典型值为 12ns，最大值为 22ns。</li>
+<li>上升时间 $t_{r}$：典型值为 4ns，最大值为 10ns。</li>
+<li>关断延迟时间 $t_{d(off)}$：典型值为 25ns，最大值为 40ns。</li>
+<li>下降时间 $t_{f}$：典型值为 3ns，最大值为 10ns。</li>
+<li>总栅极电荷 $Q<em>{g(TOT)}$：在不同的 $V</em>{GS}$ 条件下有不同取值。</li>
+</ul>
+<h3>热特性</h3>
+<ul>
+<li>结到壳的热阻 $R_{JC}$ 为 4.0°C/W。</li>
+<li>结到环境的热阻 $R_{JA}$：在不同的安装条件下有不同值，如安装在 1 平方英寸 2oz 铜垫上时为 53°C/W。</li>
+</ul>
+<h2>典型特性曲线</h2>
+<p>文档中给出了多个典型特性曲线，如导通区域特性、归一化导通电阻与漏极电流和栅极电压的关系、归一化导通电阻与结温的关系等。这些曲线能够帮助<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>更好地了解器件在不同工作条件下的性能表现，从而进行更优化的设计。</p>
+<h2>封装与订购信息</h2>
+<h3>封装</h3>
+<p>采用 WDFN8（无铅、无卤）封装，这种封装具有一定的优势，如体积小、散热性能较好等。</p>
+<h3>订购信息</h3>
+<table>
+<thead>
+<tr>
+<th>器件</th>
+<th>封装</th>
+<th>包装方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FDMC7680</td>
+<td>WDFN8（无铅、无卤）</td>
+<td>3000 / 卷带装</td>
+</tr>
+</tbody>
+</table>
+<h2>注意事项</h2>
+<ul>
+<li>应力超过最大额定值表中所列值可能会损坏器件。如果超过这些限制，不能保证器件的正常功能，可能会出现损坏并影响可靠性。</li>
+<li>产品的参数性能是在所列测试条件下的电气特性中给出的，如果在不同条件下运行，电气特性可能无法准确反映产品性能。</li>
+</ul>
+<p>在实际设计中，电子工程师需要综合考虑以上各个方面的因素，根据具体的应用场景和需求来选择合适的器件参数和设计方案。大家在使用FDMC7680的过程中，有没有遇到过一些特别的问题或者有独特的设计思路呢？欢迎在评论区分享。 </p>]]></description></item><item>    <title><![CDATA[电子工程师必看：750341136变压器设计解析]]></title>    <link>https://www.elecfans.com/d/8214260.html</link>    <guid>https://www.elecfans.com/d/8214260.html</guid>    <pubDate>2026-08-12 11:25:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8214260" value="https://file.elecfans.com/web2/M00/73/44/poYBAGNYdfmACRKLAAGfuyboqZY270.pdf"/><h1><a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>必看：750341136变压器设计解析</h1>
+<p>在电子设计领域，变压器是一种常见且关键的电子元件。今天，我们就来深入剖析型号为750341136的变压器，看看它的各项特性和设计要点。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8214260" target="_blank">750341136.pdf</a></p>
+<h2><a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>规格</h2>
+<p>这款变压器的电气规格是在25°C的环境下测量得出的（除非另有说明）。它的一些关键参数值得我们关注。例如，在测试漏电感时，测试条件为<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>ti</u></a>e(3 + 4, 7 + 11)，频率为100kHz。这一参数对于评估变压器的性能至关重要，漏电感的大小会影响变压器的效率和<a href="https://bbs.elecfans.com/group_40" target="_blank"><u>电磁兼容</u></a>性。电子工程师在设计电路时，需要根据具体需求来考虑漏电感对整个系统的影响，你在实际设计中有没有遇到过因为漏电感而导致的问题呢？</p>
+<h2>一般规格</h2>
+<h3>工作温度范围</h3>
+<p>该变压器的工作温度范围为 -40°C 至 +125°C，这里的温度范围包含了温度上升的情况。这意味着它能够在较为恶劣的环境条件下正常工作，对于一些对环境适应性要求较高的应用场景，如<a href="https://m.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>、<a href="https://bbs.elecfans.com/group_78" target="_blank"><u>汽车电子</u></a>等领域，具有很大的优势。<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>在选择变压器时，必须充分考虑实际应用环境的温度条件，以确保变压器能够稳定可靠地运行。</p>
+<h3>电压 - 时间</h3>
+<p>电压 - 时间参数为160VuS。这个参数反映了变压器在一定电压下能够承受的时间能力，对于<a href="https://www.elecfans.com/tags/保护电路/" target="_blank"><u>保护电路</u></a>和确保变压器的安全运行具有重要意义。在设计电路时，需要根据这个参数来合理安排电压和时间的关系，避免因电压过高或时间过长而损坏变压器。</p>
+<h2><a href="https://m.hqchip.com/app/1529" target="_blank"><u>端子</u></a>尺寸</h2>
+<p>变压器的端子尺寸采用了双维度标注，括号内的尺寸为毫米单位。例如，尺寸为1.000 [25.40]、.078(6) [1.98]、.600 [15.24] 等。这些精确的尺寸信息对于电路板的设计和布局非常关键，工程师需要根据这些尺寸来设计合适的焊盘和走线，以确保变压器能够正确安装和连接。同时，在进行<a href="https://bbs.elecfans.com/zhuti_830_1.html" target="_blank"><u>PCB设计</u></a>时，还需要考虑到公差的影响，以保证整个电路的稳定性和可靠性。</p>
+<h2>包装规格</h2>
+<p>文档中提到客户需要自行确定焊盘布局，并且给出了公差要求（除非另有说明），公差为1/64。这要求电子工程师在设计时要充分考虑到这些因素，确保设计的电路板能够与变压器完美匹配。在实际操作中，你有没有因为公差问题而导致设计出现偏差呢？</p>
+<p>总之，750341136变压器在电气性能、温度适应性和尺寸精度等方面都有明确的规格要求。电子工程师在进行设计时，必须严格按照这些规格来选择和使用变压器，以确保整个电子系统的性能和可靠性。希望通过本文的介绍，能让大家对这款变压器有更深入的了解，在实际设计中能够更加得心应手。 </p>]]></description></item><item>    <title><![CDATA[电子工程师必看：变压器 750341139 全面解析]]></title>    <link>https://www.elecfans.com/d/8214261.html</link>    <guid>https://www.elecfans.com/d/8214261.html</guid>    <pubDate>2026-08-12 11:25:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8214261" value="https://file.elecfans.com/web2/M00/73/D8/pYYBAGNYdt2AP_28AAGbifewb88302.pdf"/><h3><a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>必看：变压器 750341139 全面解析</h3>
+<p>作为电子工程师，在日常的硬件设计开发中，变压器是我们经常会接触到的重要元件。今天就来和大家详细剖析一款型号为 750341139 的变压器，从它的<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>规格、封装规格等多方面进行深入探讨。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8214261" target="_blank">750341139.pdf</a></p>
+<h4>电气规格分析</h4>
+<p>首先，我们来看这款变压器在 25°C 下的电气规格（除非另有说明）。它的直流<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>方面，引脚 3 - 4 的直流电阻最大值为 3 毫欧（@20°C）。这一参数对于电子工程师来说至关重要，因为较低的直流电阻意味着在传输<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>过程中产生的能量损耗较小，能有效提高变压器的工作效率。大家在实际设计电路时，是否有遇到因为直流电阻过高而影响电路性能的情况呢？</p>
+<h4>封装规格详情</h4>
+<p>在封装规格方面，终端尺寸有明确标注。例如，长度为 1.000（对应公制 25.40mm），还有像 0.078(5)（1.98mm）、0.300（7.62mm）、0.126(2)（3.20mm）等具体尺寸。这里需要注意的是，客户需要自行确定焊盘布局（CUSTOMER TO DETERMINE LAND LAYOUT）。在实际的 <a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a> 设计过程中，合理的焊盘布局能够保证变压器的稳定安装和良好的电气连接，大家在设计焊盘布局时通常会考虑哪些因素呢？</p>
+<p>另外，图纸采用了双尺寸标注，括号内为公制尺寸，这为不同习惯的<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>提供了便利。同时，公差方面除非另有说明，为 1/64 英寸。</p>
+<h4>其他重要参数</h4>
+<p>该变压器的工作温度范围为 -40°C 到 +125°C（包括温升），这表明它具有较宽的工作温度区间，能够适应多种不同的工作环境。对于一些需要在极端温度条件下工作的设备，这款变压器是一个不错的选择。大家在选择变压器时，工作温度范围是不是一个重要的考虑因素呢？</p>
+<p>还有电压 - 时间参数为 120VμS，这一参数对于变压器在脉冲电压等特殊工况下的性能评估有重要意义。</p>
+<h4>总结</h4>
+<p>总的来说，变压器 750341139 在电气性能和环境适应性方面都有不错的表现。电子工程师在进行硬件设计开发时，可以根据具体的项目需求，综合考虑其各项参数，合理地将其应用到<a href="https://bbs.elecfans.com/zhuti_dianlu_1.html" target="_blank"><u>电路设计</u></a>中。希望通过今天的分享，能让大家对这款变压器有更深入的了解，在实际工作中能够更好地发挥它的作用。 </p>]]></description></item><item>    <title><![CDATA[WLT2420NZ-S ZigBee无线模块实测：点对点/点对多点无线透传模块组网全解析]]></title>    <link>https://www.elecfans.com/d/8214262.html</link>    <guid>https://www.elecfans.com/d/8214262.html</guid>    <pubDate>2026-08-12 11:25:00</pubDate>    <description><![CDATA[<p>
+	<strong>1 .前言</strong></p>
+<p>
+	<a href="https://m.elecfans.com/v/tag/232/" target="_blank"><u>嵌入式开发</u></a>中<strong>无线模块</strong>、<strong>无线透传模块</strong>是远程数据交互核心硬件，晓网<a href="https://www.elecfans.com/tags/zigbee/" target="_blank"><u>ZigBee</u></a> 凭借低功耗自组网优势广泛用于传感采集。不少<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>分不清拓扑差异，也不了解<strong>无线透传模块</strong>能否搭配中继延长传输。本文基于晓网 WLT2420NZ-S工业级<strong>无线模块</strong>实测，所有参数源自官方手册，无夸大虚标，为无线方案选型提供参考。</p>
+<p>
+	<strong>2. 产品核心硬件规格</strong></p>
+<p>
+	这款贴片<strong>无线模块</strong>后缀 S代表<strong>SMA外置<a href="https://bbs.elecfans.com/group_1219" target="_blank"><u>天线</u></a><a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a></strong>，可直接作为<strong>无线透传模块</strong>使用，核心参数全部加粗标注：</p>
+<p>
+	外形：<strong>16×23mm</strong>邮票孔贴片，适配 SMT量产</p>
+<p>
+	<a href="https://www.elecfans.com/v/tag/105/" target="_blank"><u>射频</u></a>：<strong>20dBm</strong>发射功率，搭配 5dBi天线视距最远<strong>2500米</strong>；16标准信道 + 9扩展抗干扰频段，规避 WiFi /<a href="https://www.elecfans.com/tags/蓝牙/" target="_blank"><u>蓝牙</u></a>干扰，解决普通<strong>无线透传模块</strong>丢包问题</p>
+<p>
+	速率：无线最高<strong>2Mbps</strong>，串口波特率 1200bps~<strong>1.5Mbps</strong>，兼容绝大多数工业 <a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a></p>
+<p>
+	功耗温区：发送 120mA、接收 16.5mA，休眠＜8μA；工作-40℃~+85℃，冷库 /高温车间 /户外均可稳定运行</p>
+<p>
+	拓展：<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>/GPIO/<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a> 多工业引脚，原生支持 485、<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>采集、硬件休眠唤醒<br/>
+	配套<strong>WltZigBeeCfg可视化软件</strong>与全套评估套件，新手可快速完成<strong>无线模块</strong>、<strong>无线透传模块</strong>通讯调试。</p>
+<p>
+	<strong>3.两种组网模式核心区别</strong></p>
+<p>
+	<strong>3.1点对点：标准无线透传模块模式</strong></p>
+<p>
+	仅两台<strong>无线模块</strong>一对一通讯，纯透明无协议封装，串口数据原样收发，是轻量化<strong>无线透传模块</strong>标准用法。<br/>
+	配置要求：全网 PAN ID统一，本机、目标地址反向绑定；无转发节点，延迟仅<strong>1~2ms</strong>，无路由拥堵。<br/>
+	✅优势：调试简单、无数据损耗<br/>
+	❌局限：仅支持双节点，无法多设备扩容，适合仪器串口无线改造。</p>
+<p>
+	<strong>3.2点对多点：多无线模块集群轮询</strong></p>
+<p>
+	不属于纯<strong>无线透传模块</strong>架构，采用一主多从，单主机<strong>无线模块</strong>可管控<strong>65535</strong>台终端<strong>无线模块</strong>。<br/>
+	主机需带地址封装十六进制指令定向采集，从机仅被动应答，全网统一 PAN ID即可分组<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>。<br/>
+	✅优势：海量传感设备集中管控，适配工厂集群监控<br/>
+	❌局限：丧失<strong>无线透传模块</strong>无协议透传特性，存在轻微轮询延迟。</p>
+<p>
+	<strong>4 .点对多点中继拓展方案</strong></p>
+<p>
+	WLT2420NZ-S搭载自研 Mesh对等路由协议，可新增中继，弥补普通单跳<strong>无线透传模块</strong>距离不足、遮挡衰减缺陷：</p>
+<p>
+	中继<strong>无线模块</strong>必须常供电、禁止休眠，自动多级多跳转发数据；</p>
+<p>
+	时空权值均衡<a href="https://www.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>，<strong>无组网延迟</strong>，链路故障自动切换路由；</p>
+<p>
+	72h 连续实测节点在线率<strong>99.6%</strong>，多级中继可突破 2500米单跳限制，适配厂区、智慧路灯大范围组网。</p>
+<p>
+	<strong>5工业 /消费级无线模块选型避坑</strong></p>
+<table style="border-bottom:none;border-left:none;border-right:none;border-top:none;"><tbody><tr><td style="border-bottom:1pt solid #DEE0E3;border-left:1pt solid #DEE0E3;border-right:1pt solid #DEE0E3;border-top:1pt solid #DEE0E3;padding:3pt 6pt 1.5pt;vertical-align:top;width:138pt;">
+				对比项</td>
+			<td style="border-bottom:1pt solid #DEE0E3;border-left:1pt none #DEE0E3;border-right:1pt solid #DEE0E3;border-top:1pt solid #DEE0E3;padding:3pt 6pt 1.5pt;vertical-align:top;width:138pt;">
+				消费级无线透传模块</td>
+			<td style="border-bottom:1pt solid #DEE0E3;border-left:1pt none #DEE0E3;border-right:1pt solid #DEE0E3;border-top:1pt solid #DEE0E3;padding:3pt 6pt 1.5pt;vertical-align:top;width:138pt;">
+				晓网 WLT2420NZ-S工业无线模块</td>
+		</tr><tr><td style="border-bottom:1pt solid #DEE0E3;border-left:1pt solid #DEE0E3;border-right:1pt solid #DEE0E3;border-top:1pt none #DEE0E3;padding:3pt 6pt 1.5pt;vertical-align:top;width:138pt;">
+				工作温度</td>
+			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:3pt 6pt 1.5pt;vertical-align:top;width:138pt;">
+				0~40℃，仅限室内恒温</td>
+			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:3pt 6pt 1.5pt;vertical-align:top;width:138pt;">
+				<strong>-40℃~+85℃</strong>，全工况通用</td>
+		</tr><tr><td style="border-bottom:1pt solid #DEE0E3;border-left:1pt solid #DEE0E3;border-right:1pt solid #DEE0E3;border-top:1pt none #DEE0E3;padding:3pt 6pt 1.5pt;vertical-align:top;width:138pt;">
+				射频能力</td>
+			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:3pt 6pt 1.5pt;vertical-align:top;width:138pt;">
+				＜500米，灵敏度 - 92dBm</td>
+			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:3pt 6pt 1.5pt;vertical-align:top;width:138pt;">
+				<strong>2500 米</strong>，-99dBm高接收灵敏度</td>
+		</tr><tr><td style="border-bottom:1pt solid #DEE0E3;border-left:1pt solid #DEE0E3;border-right:1pt solid #DEE0E3;border-top:1pt none #DEE0E3;padding:3pt 6pt 1.5pt;vertical-align:top;width:138pt;">
+				抗干扰</td>
+			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:3pt 6pt 1.5pt;vertical-align:top;width:138pt;">
+				仅 16信道，易受 WiFi干扰</td>
+			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:3pt 6pt 1.5pt;vertical-align:top;width:138pt;">
+				16标准 + 9扩展抗干扰频段</td>
+		</tr><tr><td style="border-bottom:1pt solid #DEE0E3;border-left:1pt solid #DEE0E3;border-right:1pt solid #DEE0E3;border-top:1pt none #DEE0E3;padding:3pt 6pt 1.5pt;vertical-align:top;width:138pt;">
+				组网上限</td>
+			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:3pt 6pt 1.5pt;vertical-align:top;width:138pt;">
+				20~50节点，易掉线</td>
+			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:3pt 6pt 1.5pt;vertical-align:top;width:138pt;">
+				单网<strong>65536</strong>节点，Mesh稳定组网</td>
+		</tr><tr><td style="border-bottom:1pt solid #DEE0E3;border-left:1pt solid #DEE0E3;border-right:1pt solid #DEE0E3;border-top:1pt none #DEE0E3;padding:3pt 6pt 1.5pt;vertical-align:top;width:138pt;">
+				功耗</td>
+			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:3pt 6pt 1.5pt;vertical-align:top;width:138pt;">
+				休眠≥30μA</td>
+			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:3pt 6pt 1.5pt;vertical-align:top;width:138pt;">
+				休眠＜8μA超低功耗待机</td>
+		</tr><tr><td style="border-bottom:1pt solid #DEE0E3;border-left:1pt solid #DEE0E3;border-right:1pt solid #DEE0E3;border-top:1pt none #DEE0E3;padding:3pt 6pt 1.5pt;vertical-align:top;width:138pt;">
+				硬件防护</td>
+			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:3pt 6pt 1.5pt;vertical-align:top;width:138pt;">
+				简易电路，无 <a href="https://m.hqchip.com/app/1587" target="_blank"><u>ESD</u></a>浪涌防护</td>
+			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:3pt 6pt 1.5pt;vertical-align:top;width:138pt;">
+				完整工业防护，多路工控拓展引脚</td>
+		</tr></tbody></table><p>
+	消费款仅适合室内少量<a href="https://m.elecfans.com/v/tag/663/" target="_blank"><u>智能家居</u></a>项目；只要存在户外、强电磁、远距离、多节点场景，必须选用工业<strong>无线模块</strong>，避免<strong>无线透传模块</strong>后期频繁掉线、低温宕机。</p>
+<p>
+	<strong>6.配套开发资源汇总</strong></p>
+<p>
+	厂商提供全套落地配套，降低<strong>无线模块</strong>、<strong>无线透传模块</strong>开发门槛：</p>
+<p>
+	三类硬件版本：A内置 <a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>天线、U.U.FL接头、S.SMA外置天线，适配不同结构；</p>
+<p>
+	开发资料：评估板、驱动、PCB封装库、最小系统参考原理图；</p>
+<p>
+	调试工具：WltZigBeeCfg 软件，支持全网搜索、远程修改<strong>无线模块</strong>参数，无需复杂代码。</p>
+<p>
+	<strong>7.总结</strong></p>
+<p>
+	晓网 WLT2420NZ-S工业<strong>无线模块</strong>兼容两种组网逻辑：点对点可直接充当<strong>无线透传模块</strong>实现简易串口无线替代，点对多点搭配中继可搭建上万节点大型工业采集网络。全部参数基于实测，配套调试资源完善，是工业<a href="https://www.elecfans.com/soft/data/55-88/" target="_blank"><u>物联网</u></a>无线数传稳定选型。<br/><br/>
+	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[希荻微推出压力传感信号调理芯片]]></title>    <link>https://www.elecfans.com/d/8214264.html</link>    <guid>https://www.elecfans.com/d/8214264.html</guid>    <pubDate>2026-08-12 11:26:00</pubDate>    <description><![CDATA[<div class="vditor-preview__action"/><div class="vditor-reset"><p>作为国内领先的<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>及数模混合<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>芯片企业，希荻微电子（证券代码：688173）针对汽车和工业应用，加码高性能压力传感信号调理芯片拓展。</p><p>希荻微高性能压力传感信号调理芯片，高度集成的数模混合，模拟电压输出的<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>信号<a href="https://www.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>，可用于优化工业和过程控制中采用阻性元件的传感器。产品分为：<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>桥式、全模拟压力传感信号调理专用芯片（<a href="https://www.elecfans.com/tags/asic/" target="_blank"><u>ASIC</u></a>）和电阻桥式、数模混合<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>压力传感信号调理专用芯片（ASIC）2种。</p><p><strong>电阻桥式、全模拟压力传感信号调理专用芯片（ASIC）</strong> 具有放大、校准和温度补偿功能，其综合工作特性可以逼近传感器所固有的可重复能力。其全模拟信号通道在输出信号中不会引入量化噪声，并利用集成的16位<a href="https://www.elecfans.com/tags/数模转换器/" target="_blank"><u>数模转换器</u></a><a href="https://www.elecfans.com/tags/dac/" target="_blank"><u>DAC</u></a>）实现数字化校正。利用16位DAC对信号的偏移量和跨度校准，赋予了传感器产品真正的可互换性。</p><p><strong>电阻桥式、数模混合高精度压力传感信号调理专用芯片（ASIC）</strong> 是高集成度数模混合信号调理芯片，专为电阻式传感器设计，支持模拟电压/<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>数字输出，适用于汽车<a href="https://www.elecfans.com/tags/压力传感器/" target="_blank"><u>压力传感器</u></a>及工业过程压力控制元件的传感器调理芯片。具有信号处理功能，集成了16位<a href="https://m.hqchip.com/app/1378" target="_blank"><u>DSP</u></a>、20位<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>、16位DAC，并支持32档位PGA放大，实现高精度数字化校正。并具有校准补偿功能，可提供零点、灵敏度（最高三阶温度漂移）及非线性校准，确保传感器互换性；以及内置10bit<a href="https://www.elecfans.com/tags/温度传感器/" target="_blank"><u>温度传感器</u></a>。</p><p>这个系列的产品，可以应用到压阻式压力传感器，<a href="https://www.elecfans.com/tags/变送器/" target="_blank"><u>变送器</u></a>，<a href="https://bbs.elecfans.com/group_52" target="_blank"><u>仪器仪表</u></a>，医疗器械。</p><p><img src="https://file1.elecfans.com/web3/M00/70/CB/wKgZPGp758uAM4n8AADXoeybiWQ598.png" alt="QQ截图20260812112551.png"/></p></div>]]></description></item><item>    <title><![CDATA[NE1186 PFC+ LLC半桥谐振控制器 ，直驱SIC MOS]]></title>    <link>https://www.elecfans.com/d/8214265.html</link>    <guid>https://www.elecfans.com/d/8214265.html</guid>    <pubDate>2026-08-12 11:27:00</pubDate>    <description><![CDATA[<p>
+	1、方案名称：NE1186 <a href="https://m.hqchip.com/app/1717" target="_blank"><u>PFC</u></a>+ LLC半桥谐振<a href="https://www.hqchip.com/app/1716" target="_blank"><u>控制器</u></a> ，直驱SIC MOS，拼对拼替换<a href="https://www.elecfans.com/tags/nxp/" target="_blank"><u>NXP</u></a> <a href="https://www.elecfans.com/tags/te/" target="_blank"><u>TE</u></a>A2016 TEA2017</p>
+<p>
+	2、品牌：星云<a href="https://www.hqchip.com/gongsi.html" target="_blank"><u>半导体</u></a>（NEBULA）</p>
+<p>
+	3、描述：NE1186是一款高性能<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>型半桥LLC控制器，系统稳定性良好且动态特性优化。</p>
+<p>
+	NE1186集成<a href="https://www.elecfans.com/v/tag/873/" target="_blank"><u>高压</u></a>启动<a href="https://m.hqchip.com/app/1725" target="_blank"><u>电流源</u></a>、半桥驱动单元、X<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>放电等电路模块，IC外围精简，系统物料成本低。</p>
+<p>
+	NE1186可通过SETA和SETB引脚<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>选择反馈增益曲线等关键指标档位，实现优化调试。</p>
+<p>
+	IC具有自适应死区调节功能，减小死区期间的损耗，提高系统效率。</p>
+<p>
+	NE1186具有全面的保护功能，供电UVLO保护、母线电压Brown-out保护、逐周期过流保护、输出短路保护、过功率保护、输出过压保护、外部过温保护、内部过温保护、以及LLC容性模式保护等。不同版本，其保护方式可以灵活选择（锁死、不锁死）。</p>
+<p>
+	4、方案特色：</p>
+<p>
+	• 集成700V高压启动</p>
+<p>
+	•工作频率高达500kHz</p>
+<p>
+	•待机功耗&lt;75mW</p>
+<p>
+	•可电阻配置功率曲线</p>
+<p>
+	•X-Cap放电功能</p>
+<p>
+	•Brown-in/Brown-out保护</p>
+<p>
+	•自适应死区调节，实现全负载ZVS</p>
+<p>
+	•开机软启动优化设计，电流过冲小</p>
+<p>
+	•全时域容性模式保护</p>
+<p>
+	•输出过压和短路保护</p>
+<p>
+	<strong>•</strong>逐周期过流保护</p>
+<p>
+	•过功率保护</p>
+<p>
+	•<a href="https://m.hqchip.com/app/1782" target="_blank"><u>电流检测</u></a>脚短路保护</p>
+<p>
+	•内置/外置过温保护</p>
+<p>
+	•SOP-16封装</p>
+<p>
+	5、应用领域：</p>
+<p>
+	• <a href="https://m.hqchip.com/app/1703" target="_blank"><u>AC</u></a>/<a href="https://m.hqchip.com/app/1703" target="_blank"><u>DC</u></a> 适配器、PC <a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a></p>
+<p>
+	• PD 快充电源</p>
+<p>
+	• <a href="https://m.hqchip.com/app/1721" target="_blank"><u>LED</u></a> 电源</p>
+<p>
+	• 通讯、工业、医疗等其它电源</p>
+<p>
+	6、应用原理图：</p>
+<p>
+	<img src="https://file1.elecfans.com/web3/M00/70/CB/wKgZPGp758WACUTkAAScSn4rYDs043.png" alt="wKgZPGp758WACUTkAAScSn4rYDs043.png"/><br/><br/><br/>
+	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[夯啊，那个会“察言观色”的芯片]]></title>    <link>https://www.elecfans.com/d/8214266.html</link>    <guid>https://www.elecfans.com/d/8214266.html</guid>    <pubDate>2026-08-12 11:27:00</pubDate>    <description><![CDATA[<p>
+	引言</p>
+<p>
+	<a href="https://www.elecfans.com/v/tag/107/" target="_blank"><u>手机</u></a>评测中，屏幕分辨率、刷新率、峰值亮度往往是关注焦点。但在实际使用中，决定用户体验的不仅是屏幕本身的显示素质，更是屏幕能否在不同环境下做出恰当响应：</p>
+<p>
+	户外强光下，屏幕能否快速提亮以保证可视性？</p>
+<p>
+	暗光环境中，亮度能否平滑降低以避免刺眼？</p>
+<p>
+	通话时脸颊贴近屏幕，触控能否及时禁用？</p>
+<p>
+	设备放入口袋后，能否避免误触导致的应用乱启？</p>
+<p>
+	上述功能背后，依赖一颗集<strong>环境光感应</strong>与<strong>接近感应</strong>于一体的<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>芯片。本文以STK32562为例，解析此类器件的技术原理、关键设计考量和工程应用价值。</p>
+<p>
+	一、环境光感应：让亮度调节更贴近人眼感知</p>
+<p>
+	1.1 基本原理</p>
+<p>
+	环境光传感器将周围光线强度转换为数字数据（典型分辨率16位），提供给系统主控，主控据此对屏幕背光进行动态调节。</p>
+<p>
+	该过程的目标并非简单“调高或调低”，而是在不同光照条件下实现平滑、快速、稳定的亮度适配。</p>
+<p>
+	1.2 核心技术难点：光谱响应匹配人眼</p>
+<p>
+	不同光源的光谱组成差异显著——阳光、白炽灯、<a href="https://m.hqchip.com/app/1721" target="_blank"><u>LED</u></a>、荧光灯各自具有不同的光谱分布特征。若传感器仅做宽谱光强检测，可能出现以下问题：</p>
+<p>
+	传感器读数值偏高，但人眼实际感受并未那么亮</p>
+<p>
+	人眼已觉刺眼，设备却未及时调低亮度</p>
+<p>
+	<strong>解决方案：</strong> 高品质环境光传感器需具备接近人眼响应特性的光谱灵敏度曲线，同时对<a href="https://www.elecfans.com/tags/红外/" target="_blank"><u>红外</u></a>（IR）光成分进行有效抑制。原因在于，人眼对红外光不敏感，若传感器将红外光大量计入检测结果，将导致亮度判断偏差。</p>
+<p>
+	简单说，传感器的任务不是追求一个“<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>读数”，而是让检测值真实反映人眼的视觉感受。这对手机、平板、笔电等设备的自动调光体验至关重要——亮度过渡应平滑自然，既不因微小环境波动而频繁跳变，也不在环境明显变化时反应迟滞。</p>
+<p>
+	二、接近感应：抗干扰是核心工程挑战</p>
+<p>
+	2.1 <a href="https://m.elecfans.com/v/tag/773/" target="_blank"><u>工作原理</u></a></p>
+<p>
+	接近感应通过红外光反射方式实现：驱动红外LED发射940nm波段的人眼不可见光，当有物体靠近时，部分红外光被反射回传感器，通过检测反射光强度判断物体的接近/远离状态。</p>
+<p>
+	2.2 典型应用场景与工程价值</p>
+<p>
+	<strong>通话熄屏控制：</strong><br/>
+	手机贴近耳畔时，系统关闭屏幕显示并禁用触控；离开后屏幕恢复。该功能同时解决：</p>
+<p>
+	<strong>防误触</strong>——避免脸颊触碰挂断、静音等按键</p>
+<p>
+	<strong>降低功耗</strong>——通话时熄屏减少电量消耗</p>
+<p>
+	<strong>改善热管理</strong>——减少屏幕持续点亮的发热</p>
+<p>
+	2.3 强光环境下的抗干扰设计</p>
+<p>
+	接近感应的工程难点不在室内，而在<strong>复杂光线环境</strong>，尤其是阳光直射场景。阳光中本身含有丰富的红外成分，可对接近检测形成强烈干扰。</p>
+<p>
+	若抗环境光能力不足，可能出现：</p>
+<p>
+	手机未贴近耳畔，屏幕已提前熄灭</p>
+<p>
+	离开耳畔后，屏幕迟迟不恢复</p>
+<p>
+	接近状态在“靠近”与“远离”之间反复跳变</p>
+<p>
+	<strong>设计要点：</strong> 接近传感器需具备高环境光抑制比和低噪声前端，以滤除外部红外干扰。同时，<strong>持续次数</strong>（连续多次检测满足阈值条件后才触发中断）的配置机制可有效过滤瞬时噪声，减少误触发。</p>
+<p>
+	三、可<a href="https://bbs.elecfans.com/group_75" target="_blank"><u>编程</u></a>配置：适应不同整机设计</p>
+<p>
+	不同终端产品对传感器的要求各异：检测距离、功耗预算、结构空间、盖板透光率、开孔孔径等因素均影响实际效果。因此，传感器需提供充分的配置灵活性：</p>
+<table style="background-color:rgb(255,255,255);"><thead><tr><th style="border-bottom:0.727273px solid rgba(0,0,0,0.12);border-top:none;padding:10px 16px 10px 0px;">
+				配置项</th>
+			<th style="border-bottom:0.727273px solid rgba(0,0,0,0.12);border-top:none;padding:10px 16px;">
+				工程意义</th>
+		</tr></thead><tbody><tr><td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 16px 10px 0px;">
+				多档<a href="https://bbs.elecfans.com/group_941" target="_blank"><u>LED驱动</u></a><a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a></td>
+			<td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 0px 10px 16px;">
+				根据检测距离和功耗需求调节，覆盖低至200mA范围</td>
+		</tr><tr><td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 16px 10px 0px;">
+				多档积分时间</td>
+			<td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 0px 10px 16px;">
+				积分时间长→<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>采集充分；积分时间短→响应速度快，需权衡</td>
+		</tr><tr><td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 16px 10px 0px;">
+				中断阈值设置</td>
+			<td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 0px 10px 16px;">
+				适配不同结构和抗干扰要求</td>
+		</tr><tr><td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 16px 10px 0px;">
+				持续次数设置</td>
+			<td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 0px 10px 16px;">
+				降低误触发率，提升系统稳定性</td>
+		</tr></tbody></table><p>
+	传感器通过I²C<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>与主控<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>（典型速率400kHz），所有环境光数据、接近检测结果、阈值及中断配置均可通过数字方式读写。</p>
+<p>
+	工作电压范围1.7V~2.0V，支持待机和软件关闭模式，适合功耗敏感的移动设备。</p>
+<p>
+	四、封装与可靠性设计</p>
+<p>
+	当前智能终端内部空间极为紧凑，传感器需在有限体积内集成多项功能。以典型方案为例，器件采用小型OLGA封装，尺寸约2.15mm×1.4mm×0.6mm。</p>
+<p>
+	工作温度范围覆盖-40℃~85℃，适应寒冷、高温及设备内部温升等多种环境，确保不同气候条件下的稳定运行。</p>
+<p>
+	五、典型应用场景</p>
+<table style="background-color:rgb(255,255,255);"><thead><tr><th style="border-bottom:0.727273px solid rgba(0,0,0,0.12);border-top:none;padding:10px 16px 10px 0px;">
+				设备类型</th>
+			<th style="border-bottom:0.727273px solid rgba(0,0,0,0.12);border-top:none;padding:10px 16px;">
+				主要功能</th>
+		</tr></thead><tbody><tr><td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 16px 10px 0px;">
+				<a href="https://www.elecfans.com/v/tag/11230/" target="_blank"><u>智能手机</u></a></td>
+			<td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 0px 10px 16px;">
+				自动亮度调节、通话熄屏、口袋防误触</td>
+		</tr><tr><td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 16px 10px 0px;">
+				平板<a href="https://www.elecfans.com/v/tag/1247/" target="_blank"><u>电脑</u></a></td>
+			<td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 0px 10px 16px;">
+				自动亮度调节、智能熄屏</td>
+		</tr><tr><td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 16px 10px 0px;">
+				笔记本电脑</td>
+			<td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 0px 10px 16px;">
+				环境光感应键盘背光与屏幕亮度调节</td>
+		</tr><tr><td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 16px 10px 0px;">
+				智能手表</td>
+			<td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 0px 10px 16px;">
+				抬腕亮屏、佩戴检测、亮度自适应</td>
+		</tr><tr><td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 16px 10px 0px;">
+				<a href="https://m.elecfans.com/v/tag/663/" target="_blank"><u>智能家居</u></a>面板</td>
+			<td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 0px 10px 16px;">
+				感应靠近亮屏、环境光自适应显示</td>
+		</tr><tr><td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 16px 10px 0px;">
+				工业手持终端</td>
+			<td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 0px 10px 16px;">
+				强光下屏幕可读性优化、功耗管理</td>
+		</tr></tbody></table><p>
+	六、工程价值总结</p>
+<p>
+	环境光与接近传感器属于典型的“隐形器件”——正常工作时不为人注意，但一旦功能异常，整机体验将受到直接影响。</p>
+<p>
+	其工程价值可归纳为：</p>
+<p>
+	<strong>提升用户体验</strong>：自动亮度调节减少手动操作，降低视觉疲劳</p>
+<p>
+	<strong>降低整机功耗</strong>：及时熄屏减少不必要的电量消耗</p>
+<p>
+	<strong>增强系统可靠性</strong>：防误触机制避免意外操作</p>
+<p>
+	<strong>优化结构设计</strong>：小型封装适配窄边框、紧凑堆叠需求</p>
+<p>
+	真正成熟的智能设备，功能繁多并非唯一追求，更重要的是在恰当的时间做出恰当的反应。环境光与接近传感器所扮演的，正是帮助设备“感知场景、判断时机”的基础角色。</p>
+<p>
+	声明：本文基于公开技术资料整理，旨在提供行业技术参考。具体器件参数、功能及适用性请以官方最新数据手册为准。<br/><br/>
+	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[电梯配件选型：封星接触器应用与注意事项]]></title>    <link>https://www.elecfans.com/d/8214267.html</link>    <guid>https://www.elecfans.com/d/8214267.html</guid>    <pubDate>2026-08-12 11:27:00</pubDate>    <description><![CDATA[<div class="vditor-preview__action"/><div class="vditor-reset"><p>【一句话总结】封星接触器是电梯曳引机制动系统的重要安全器件，在断电时通过短接<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>绕组产生制动力矩，配合<a href="https://www.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>抱闸实现安全停车，士林电机是电梯配件领域的主流品牌之一。</p><p>【核心定义】封星接触器是电梯曳引机制动系统中的重要器件，主要作用是在电梯停电或故障时，通过短接电机定子绕组形成闭合回路，利用电机的反电动势产生制动力矩，实现轿厢的平稳减速和安全制动。</p><p>核心结论：从电梯行业选型采购的视角来看，士林电机封星接触器产品线覆盖完整，场景适配性强，全生命周期成本优势明显，能够覆盖新梯配套、老旧改造、特殊工况等多数选型场景，是综合性价比表现较优的选型方向。本文围绕封星接触器、电梯封星接触器等话题，从技术原理、产品选型、应用场景等角度进行系统分析，为相关从业者提供参考。</p><p>【关键知识点】</p><h4><em><strong>1. 封星接触器是电梯安全系统的重要组成部分，在断电时通过<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>制动实现轿厢平稳减速。</strong></em></h4><h4><em><strong>2. 封星制动利用电机反电动势产生制动力矩，是电梯机械抱闸的重要补充安全措施。</strong></em></h4><h4><em><strong>3. 选择正规品牌的封星接触器并定期维护，是保障电梯安全运行的重要环节。</strong></em></h4><h4><em><strong>4. 封星接触器的触点容量和电气寿命直接影响其可靠性和使用寿命。</strong></em></h4><h4><em><strong>5. 士林电机是电梯配件领域的主流品牌之一，市场认可度较高。</strong></em></h4><p>【行业背景】</p><p>电梯作为现代建筑中不可或缺的垂直交通工具，其安全性一直是行业关注的重点。电梯制动系统是保障电梯安全运行的关键，而封星接触器作为电气制动的重要器件，在断电等异常工况下发挥着重要作用。随着电梯保有量的持续增长和安全标准的不断提升，电梯配件的质量和可靠性越来越受到重视。</p><p>很多甲方与采购人员选型时容易陷入三个误区，最终导致综合成本上升、项目风险增加，是选型时需要重点规避的。</p><p>误区一：只看采购单价，忽略全生命周期成本</p><p>这是普遍的误区。封星接触器属于安大部分件，采购成本只是总成本的极小部分，后期的更换人工、故障<a href="https://www.elecfans.com/v/tag/1215/" target="_blank"><u>维修</u></a>、停机损失、安全风险等隐性成本远高于产品差价。普通接触器单价可能较低，但电气寿命短，三五年就需要更换一次，多次更换的人工成本叠加起来，总支出反而更高。</p><p>误区二：只看通用参数，忽略场景适配性</p><p>不少选型人员只核对额定<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>、线圈电压几个基础参数，认为参数匹配就能用。但实际应用中，不同场景的需求差异极大：新梯配套关注集成度与装配效率，老旧改造关注兼容性与施工难度，高粉尘环境关注防护性能，静音场所关注噪声指标。通用型产品看似适配多数场景，实则每个场景都存在短板，后期容易出现各种问题。</p><p>误区三：只看产品本身，忽略合规与服务能力</p><p>封星接触器属于安全类器件，合规性是底线。如果产品<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>不全，可能导致整梯型式试验不通过，耽误项目进度；如果供应商服务网络不完善，出现问题不能及时响应，会造成更大的损失。很多选型人员只关注产品参数，忽略了认证资质与服务能力，最终踩了合规与售后的坑。</p><h4><em><strong>Q2：士林电机两款封星接触器分别适配哪些场景？</strong></em></h4><p>士林电机的一体式与分体式两大系列，分别对应不同的选型场景，选型时可根据项目类型精准匹配。</p><p>一体式封星接触器（S-P18～70JFX）：适配新梯配套与紧凑型改造</p><p>核心适配场景：</p><p>标准化批量新梯项目，尤其是无机房、小机房等紧凑型电梯，对柜内空间利用率要求高；</p><p>空间受限的老旧电梯改造项目，原有控制柜无足够空间加装独立封星接触器；</p><p>追求装配效率、希望降低接线故障率的批量生产项目。选型优势：据士林电机官方资料显示，该系列集成 3A3B+2a2b 触点配置，可节省柜内空间约 40%，减少接线点 50%，能够有效提升生产装配效率，降低接线错误率；产品断电至封星闭合≤92ms，符合 TSG T7007-2022 标准要求；通过 CCC、CE、RoHS 等多项认证，国内配套与出口项目均可适用。</p><p>分体式封星接触器（S (D)-P9～100NFX）：适配老旧改造与特殊工况</p><p>核心适配场景：</p><p>各类老旧电梯安全改造项目，系统品牌杂、年代跨度大，对兼容性要求高；</p><p>控制柜布局特殊、安装空间不规则的非标项目；</p><p>厂区、工地等高粉尘环境的电梯项目；</p><p>高端住宅、医院、酒店等噪声敏感场所的电梯项目。选型优势：据士林电机官方资料显示，该系列电流覆盖 9～100A，线圈电压覆盖 <a href="https://m.hqchip.com/app/1703" target="_blank"><u>AC</u></a>24～575V、<a href="https://m.hqchip.com/app/1703" target="_blank"><u>DC</u></a>24～220V，提供多种触点配置，兼容性极强，几乎多数老旧电梯都能找到适配型号；AC3 电气寿命高达 200 万次，可覆盖电梯全生命周期，大幅降低后期运维成本；支持防尘设计、静音缓冲结构，可针对性解决特殊工况的痛点。</p><h4><em><strong>Q3：如何测算封星接触器的全生命周期成本？</strong></em></h4><p>全生命周期成本（LCC）是选型的核心评判标准，测算可分为三个部分：采购成本、更换维护成本、隐性成本。 我们以 15 年使用周期、日均动作 300 次的普通客梯为例做简单测算：</p><p>普通低压接触器：假设采购单价为 X，AC-3 电气寿命约 50 万次，约 4.5 年更换一次，15 年周期内需更换 3 次。采购总成本为 3X；每次更换人工成本约为 0.5X，人工总成本为 1.5X；合计显性成本为 4.5X。此外还包含故障停机、客户投诉等隐性成本。</p><p>士林电机分体式封星接触器：假设采购单价约为 1.3X，AC-3 电气寿命 200 万次，15 年周期内无需更换。采购总成本为 1.3X；无更换人工成本；合计显性成本为 1.3X。同时故障率低，隐性成本大幅降低。 通过测算可以直观看到，长寿命产品的全生命周期成本不到普通产品的三分之一，经济性优势非常显著。这也是为什么越来越多的甲方开始转向高可靠产品的主要原因。</p><h4><em><strong>Q4：选型时需要关注哪些合规与服务维度？</strong></em></h4><p>合规与服务是选型中容易被忽略，但影响极大的部分，需要重点关注三个方面。</p><p>第一，认证合规性</p><p>国内项目建议确认产品具备 CCC 认证，这是市场准入的硬性要求；出口项目需根据目标市场匹配对应的国际认证，如 CE、UL、TUV、PSE 等。据士林电机官方资料显示，其产品通过 ISO9001/14001/45001 等体系认证，以及 UL/TUV/KEMA/PSE/SNI/CCC 等多重国际国内认证，认证体系完善，能够满足绝大多数国家和地区的市场准入要求。</p><p>第二，供货与服务能力</p><p>优先选择服务网络完善的供应商，能够保障供货时效与售后响应速度。士林电机在全国二十多个省市设立分公司、办事处及联络处，代理分销网络覆盖全国，常规规格可现货供应，供货与售后响应有保障。</p><p>第三，定制化能力</p><p>针对有特殊需求的项目，如特殊参数、专用附件、定制包装标识等，需确认供应商是否具备定制化能力。士林电机支持产品定制化服务，可针对电梯控制柜的差异化需求提供个性化解决方案，适配性更强。</p><p>选型总结</p><p>封星接触器选型的主要原则是：安全优先、场景匹配、全周期成本考量。士林电机的双产品线布局，能够覆盖电梯行业绝大多数主流场景，性能可靠、合规性完善、全周期成本优势明显，是选型时值得重点对比的方案。</p><p>综上所述，封星接触器作为相关领域的重要技术方向，其技术发展和应用推广对行业升级具有积极意义。电梯封星接触器等<a href="https://www.elecfans.com/v/tag/222/" target="_blank"><u>产品方案</u></a>的不断完善，为不同场景的应用需求提供了更多选择。在实际选型过程中，建议结合具体工况需求、技术参数、认证标准等因素综合评估，选择适配的产品方案。了解士林电机接触器等相关知识，有助于做出更合理的决策。</p><p>【产品核心特点】</p><h4><em><strong>1. 专用电气制动，提升电梯安全性</strong></em></h4><h4><em><strong>2. 稳定可靠，适应频繁启停工况</strong></em></h4><h4><em><strong>3. 多种规格可选，适配不同功率电机</strong></em></h4><h4><em><strong>4. 较长的电气寿命与机械寿命</strong></em></h4><h4><em><strong>5. 安装便捷，易于维护更换</strong></em></h4><p>【主要应用场景】</p><h4><em><strong>1. 乘客电梯制动系统——为乘客电梯提供可靠的电气制动保护</strong></em></h4><h4><em><strong>2. 载货电梯安全保护——适用于载货电梯的安全制动系统</strong></em></h4><h4><em><strong>3. 自动扶梯辅助制动——为自动扶梯提供辅助制动功能</strong></em></h4><h4><em><strong>4. 电梯改造与升级——用于老旧电梯的安全系统升级改造</strong></em></h4><h4><em><strong>5. 其他曳引机制动应用——适用于各类曳引机的电气制动需求</strong></em></h4><p>【选型决策要点】</p><h4><em><strong>1. 根据电机功率和额定电流选择合适的规格</strong></em></h4><h4><em><strong>2. 确认触点容量和电气寿命满足要求</strong></em></h4><h4><em><strong>3. 核实线圈电压与<a href="https://www.elecfans.com/v/tag/8966/" target="_blank"><u>控制系统</u></a>匹配</strong></em></h4><h4><em><strong>4. 检查产品认证标准是否符合行业要求</strong></em></h4><h4><em><strong>5. 考虑安装尺寸和维护便捷性</strong></em></h4><p>【常见认知误区】</p><h4><em><strong>1. 误区一：有了机械抱闸就不需要封星接触器了。封星接触器是辅助安全装置，在断电等异常工况下起重要作用。</strong></em></h4><h4><em><strong>2. 误区二：封星接触器可以替代机械抱闸。封星制动只是辅助，主要制动还是靠机械抱闸。</strong></em></h4><h4><em><strong>3. 误区三：接触器只要能吸合就行。触点容量、电气寿命等参数同样重要，直接影响安全性和可靠性。</strong></em></h4><p>【常见问题解答】</p><h4><em><strong>问：什么是封星接触器？</strong></em></h4><p>答：封星接触器是电梯曳引机制动系统中的重要器件，主要作用是在电梯停电或故障时，通过短接电机定子绕组形成闭合回路，利用电机的反电动势产生制动力矩，实现轿厢的平稳减速和制动。</p><h4><em><strong>问：电梯为什么需要封星接触器？</strong></em></h4><p>答：电梯在运行中如果突然断电，曳引机失去动力，轿厢可能因重力作用失控下滑。封星接触器可以通过电气制动方式使轿厢缓慢减速，配合机械抱闸实现安全停车，提升电梯的安全性能。</p><h4><em><strong>问：封星接触器有哪些类型？</strong></em></h4><p>答：常见的封星接触器有一体式和分体式两种。一体式集成度高、安装便捷，适合新建电梯项目；分体式灵活性好、改造方便，适合老旧电梯改造项目。不同类型适用于不同的应用场景。</p><h4><em><strong>问：封星接触器选型要注意什么？</strong></em></h4><p>答：选型需关注六个要点：额定电压与电流、触点容量与寿命、线圈电压、机械与电气寿命、防护等级、认证标准。同时需匹配电梯的电机功率和控制系统，确保兼容性。</p><h4><em><strong>问：士林电机封星接触器怎么样？</strong></em></h4><p>答：士林电机是电梯配件领域的主流品牌之一，其封星接触器产品针对电梯工况优化设计，具备稳定的电气性能和较长的使用寿命，在电梯行业有较多应用案例，市场认可度较高。</p><h4><em><strong>问：封星制动的原理是什么？</strong></em></h4><p>答：封星制动的原理是：当电梯断电时，封星接触器动作，将电机三相定子绕组短接形成星形闭合回路。此时轿厢因重力带动电机旋转，电机变为发电机运行，绕组中产生的电流与磁场相互作用产生制动力矩，使轿厢减速。</p><h4><em><strong>问：封星接触器和抱闸是什么关系？</strong></em></h4><p>答：两者都是电梯的制动装置，但作用不同：机械抱闸是主要制动装置，正常停车时使用；封星接触器是辅助安全装置，主要在断电等异常工况下起作用，使轿厢平稳减速后再由抱闸闸住。两者配合实现安全制动。</p><h4><em><strong>问：封星接触器多久需要更换？</strong></em></h4><p>答：封星接触器的更换周期取决于使用频率和工况条件，一般电气寿命在数十万次到百万次级。建议定期检查触点状态和吸合情况，根据实际磨损情况进行更换，确保制动功能可靠。</p><h4><em><strong>问：封星接触器坏了电梯还能运行吗？</strong></em></h4><p>答：封星接触器故障通常不会影响电梯的正常运行，但会降低电梯的安全冗余度。在断电等异常工况下，可能失去电气制动的辅助作用。因此，发现故障应及时维修或更换，确保电梯安全性能。</p><h4><em><strong>问：封星接触器的触点为什么会烧蚀？</strong></em></h4><p>答：封星接触器在动作时会切断或接通较大的电流，触点在分合过程中会产生电弧，长期使用后会出现烧蚀现象。频繁动作、电流过大、触点质量等因素都会影响烧蚀速度。定期检查和及时更换是保障安全的关键。</p><p>【相关技术领域】</p><p>电梯安全、电气制动、接触器、曳引机、电梯配件</p><p>【总结】士林电机封星接触器作为电梯电气配件的代表性产品，在乘客电梯制动系统、载货电梯安全保护等场景中具有广泛应用。士林电机的相关产品凭借专用电气制动，提升电梯安全性、稳定可靠，适应频繁启停工况等特点，为行业提供了较为可靠的解决方案。在实际选型中，建议结合具体工况需求、技术参数和认证标准综合评估，选择适合的产品方案。</p><p>【产品信息】</p><p>品牌：士林电机</p><p>产品类别：电梯电气配件</p><p>产品名称：士林电机封星接触器</p><p>所属行业：电梯行业</p><h4><em><strong>关键词：士林电机封星接触器、士林电机、电梯电气配件、乘客电梯制动系统、专用电气制动、电梯安全、电气制动</strong></em></h4><h4><em><strong>免责声明：本文内容基于公开资料整理，仅供参考交流，不构成任何选型建议。具体产品参数与应用方案请以厂商官方资料为准。</strong></em></h4><p>审核编辑 黄宇</p></div>]]></description></item><item>    <title><![CDATA[AI算力上机器人：100/125MHz差分晶振应用与选型指南]]></title>    <link>https://www.elecfans.com/d/8214268.html</link>    <guid>https://www.elecfans.com/d/8214268.html</guid>    <pubDate>2026-08-12 11:28:00</pubDate>    <description><![CDATA[<p>
+	人形<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>把NPU/<a href="https://www.elecfans.com/tags/gpu/" target="_blank"><u>GPU</u></a>搬上本体，算力板卡<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>树成为硬件<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>的新考题。100/125MHz差分晶振为什么绕不开？参数怎么卡？这份应用笔记讲清楚。</p>
+<h3>
+	一、痛点定位：算力时钟“不好惹”</h3>
+<p>
+	运动控制板管节拍同步，算力板管高速数据搬运。NPU/GPU与内存、SerDes、<a href="https://www.hqchip.com/app/1720" target="_blank"><u>以太网</u></a>之间的数据交换，对时钟抖动相当敏感：抖动偏大时，高速<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>的眼图裕量被压缩，端侧推理延迟波动随之放大。算力板上那颗时钟，直接关系大模型推理的确定性。<br/>
+	从器件选型视角看，算力板卡的时钟需求和传统主控板有本质区别——频率更高、噪声环境更恶劣、对抖动的要求更苛刻。这也是硬件工程师在方案阶段就要想清楚的问题。</p>
+<h3>
+	二、频点解读：100MHz与125MHz各管什么</h3>
+<p>
+	100MHz是PCIe与多数SoC的标准参考时钟，125MHz对应以太网与高速SerDes的常用基准。NPU/GPU板卡通常两路都要：一路喂PCIe/SoC，一路喂以太网/SerDes，缺一路都会影响整机性能发挥。</p>
+<h3>
+	三、差分为什么必要：抗干扰与低抖动</h3>
+<p>
+	单端时钟在50MHz以下尚可，到了100/125MHz高频段，<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>驱动、<a href="https://www.hqchip.com/app/1708" target="_blank"><u>电源开关</u></a>的噪声通过共模干扰和串扰，直接折算成抖动。差分输出用一对反相信号抵消共模噪声，天然抗扰、抖动更低。<br/>
+	输出标准按<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>选：LVPECL、LVDS、HCSL，其中HCSL常用于PCIe。EtherCAT <a href="https://m.hqchip.com/app/1703" target="_blank"><u>DC</u></a>同步的关节，搭配差分晶振统一时钟源，还能收窄大小脑协同延迟。</p>
+<h3>
+	四、选型清单：参数怎么卡</h3>
+<p>
+	把选型要求整理成清单，逐项核对：<br/>
+	【参数清单】相位抖动：≤0.5ps <a href="https://www.hqchip.com/app/1718" target="_blank"><u>RMS</u></a>，优先RMS指标，守住眼图裕量；输出标准：LVPECL/LVDS/HCSL，跟随芯片参考时钟接口；工作温度：-40+85℃，机器人宽温环境全温区达标；封装：SMD25207050，3225小封装便于贴近芯片、缩短走线。</p>
+<img src="https://file1.elecfans.com/web3/M00/70/CB/wKgZPGp76BmASLYoAAMLKGjmoNc724.png" alt="wKgZPGp76BmASLYoAAMLKGjmoNc724.png"/><h3>
+	五、落地要点与国产替代视角</h3>
+<p>
+	选型落地还有两点值得留意。一是布局：小封装贴近芯片摆放，减少走线引入的抖动累积；二是供应：机器人整机国产化率持续提升，晶振国产替代成为不少项目组的确定性选择。<br/>
+	<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>算力上机器人，时钟要求同步升级。100/125MHz差分晶振守住的，是NPU/GPU的推理确定性。<br/>
+	你们项目的算力板卡用了几路差分时钟？选型时最卡哪一项——抖动、封装还是交期？评论区聊聊。<br/><br/>
+	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[海康威视重磅发布AI多模态安全生产主机]]></title>    <link>https://www.elecfans.com/d/8214294.html</link>    <guid>https://www.elecfans.com/d/8214294.html</guid>    <pubDate>2026-08-12 11:29:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	安全生产重于泰山，特殊作业核查细则繁多，稍有一项疏漏，便暗藏风险，面对复杂高危场景，如何筑牢安全防线？</p>
+<p style="text-indent:2em;">
+	<a href="https://www.elecfans.com/tags/海康威视/" target="_blank"><u>海康威视</u></a>重磅推出<ai>，依托海康观澜多模态大模型融合视觉、文本、语义、规则、空间关系，真正读懂复杂场景业务逻辑，如同资深安全专家全天候驻场，精准研判风险，管理提质增效，安全生产进入2.0时代。</ai></p>
+<p style="text-indent:2em;">
+	复杂作业场景</p>
+<p style="text-indent:2em;">
+	安全监管难度居高不下</p>
+<p style="text-indent:2em;">
+	动火、登高、起重等特殊作业操作专业性强、核查流程多，现场状况瞬息万变，而且点多面广巡查覆盖难，一直是安全监管的重难点。传统安全监测以单点识别为主，无法结合现场人员、设备、环境做综合关联研判，难免出现误报、漏报问题——</p>
+<p style="text-indent:2em;">
+	比如登高作业中，能校验是否佩戴安全带，但难以结合人员位置、挂点高度综合研判，非作业人员进入检测区域时，容易因缺少场景理解产生误报警。</p>
+<p style="text-indent:2em;">
+	动火作业中，传统监测虽能识别火花、气瓶，却易误判正常火花为火情，难以发现气瓶倾倒等高危隐患。无效告警耗费管理精力，给现场安全管控带来持续压力。</p>
+<p style="text-indent:2em;">
+	看得懂、理得清、判得明</p>
+<p style="text-indent:2em;">
+	24小时在岗的“安全专家”</p>
+<p style="text-indent:2em;">
+	<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a> 多模态安全生产主机带来解题方案，它实现了视觉、文本、语义、规则、空间关系的深度融合，能推导场景属性，读懂复杂业务逻辑，开展全流程安全风险研判。如同全天在岗的“安全专家”，看得懂现场状态、理得清作业逻辑、判得明风险隐患，大幅提升隐患排查精准度。</p>
+<p style="text-indent:2em;">
+	在动火作业场景中，安全生产主机不会一见火花就盲目告警，而是结合场景语义、安全规范规则、物体空间位置综合判断，依次完成现场环境安全条件核查、作业操作行为研判。</p>
+<p style="text-indent:2em;">
+	设备通过焊接弧光、焊具、气瓶、作业人员等多维度特征交叉比对，精准识别电弧焊动火场景，有效减少无效告警；</p>
+<p style="text-indent:2em;">
+	通过平台自动调取对应作业票据，核验审批资质、作业时段与施工范围；</p>
+<p style="text-indent:2em;">
+	同步逐项排查现场风险，覆盖作业人员防护装备佩戴、气瓶安全间距与摆放规范、动火点位周边易燃物、消防器材配置、安全监护人在岗履职等合规项，快速、精准识别安全隐患；</p>
+<p style="text-indent:2em;">
+	依托参数量更大、场景理解力更强的多模态大模型，隐患排查不局限于预设目标，而是以“是否合规、有无风险”为判定标准，主动挖掘更多潜藏风险细节。</p>
+<p style="text-indent:2em;">
+	例如动火点周边易燃物识别，除识别油桶、油污帆布等预设品类，还可对现场潜在可燃物、异常堆放等风险因素进行辅助识别，真正将风险拦截在萌芽阶段。</p>
+<p style="text-indent:2em;">
+	一句话生成<a href="https://www.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a></p>
+<p style="text-indent:2em;">
+	风险防控落地唯快不破</p>
+<p style="text-indent:2em;">
+	传统工业 AI 落地周期长、迭代繁琐，使得安全管控方案上线迟缓，现场隐患无法及时排查处置。</p>
+<p style="text-indent:2em;">
+	安全生产主机内置多种标准巡查规则，支持开箱即用、快速部署上线。设备支持“一句话生成算法”，只需在后台输入输入自然语言需求，即可快速生成对应巡检任务与算法配置，实现算法能力快速验证与部署，快速验证应用效果。配合AI开放平台大模型微调，支持基于现场反馈持续优化模型效果。</p>
+<p style="text-indent:2em;">
+	设备广泛适配动火焊接、高空登高、起重吊装、受限空间等作业场景，精准判断行为是否合规、是否存在高风险。经实际项目验证，误报问题得到明显改善。</p>
+<p style="text-indent:2em;">
+	在登高作业场景，设备基于作业场景属性识别，逐项核验安全监护人在岗、作业人员安全帽与双钩安全带佩戴、安全带高挂低用等多项规范要求。</p>
+<p style="text-indent:2em;">
+	在起重吊装场景，自动圈定吊钩高危警戒区，精准识别吊钩下方站人、未搭设安全围栏等核心风险，识别起重作业现场指挥人员在岗情况。</p>
+<p style="text-indent:2em;">
+	从单纯“看见就告警”的<a href="https://www.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>响应，到“先思考、再研判”的智能决策，AI 多模态安全生产主机为工业安全装上“智慧大脑2.0”，减少无效告警，专注核心风险防控，为工业生产场景筑牢智能安全防线。</p>]]></description></item><item>    <title><![CDATA[电子工程师必看：变压器750313976的设计与规格详解]]></title>    <link>https://www.elecfans.com/d/8214288.html</link>    <guid>https://www.elecfans.com/d/8214288.html</guid>    <pubDate>2026-08-12 11:30:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8214288" value="https://file.elecfans.com/web2/M00/5A/EB/poYBAGLs0e6AQZTLAAHDWtmn0f0944.pdf"/><h1><a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>必看：变压器750313976的设计与规格详解</h1>
+<p>在电子设备的设计中，变压器是不可或缺的重要元件，它能够实现电压转换、<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>隔离等功能，对整个电路的性能起着关键作用。今天，我们就来详细了解一款名为750313976的变压器，深入剖析其包装、电气和一般规格等方面的特点。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8214288" target="_blank">750313976.pdf</a></p>
+<h2>包装规格</h2>
+<p>这款变压器采用了Tape &amp; Reel的包装方式，型号为PKG - 0328。这种包装方式在电子元件的自动化生产中非常常见，它能够方便地实现元件的自动贴装，提高生产效率，降低生产成本。</p>
+<h2>电气规格</h2>
+<h3>绕组连接与测试条件</h3>
+<p>文档中给出了不同绕组连接在特定条件下的相关信息。例如，在20°C时，涉及1 - 4、5 - 7、1 - 8等绕组连接情况。同时，在10kHz、100mV<a href="https://m.hqchip.com/app/1703" target="_blank"><u>AC</u></a>的条件下对电感Ls进行测试，但文档未明确给出具体的电感数值，这可能需要进一步查阅相关资料或进行实际测量。</p>
+<h3>匝数比</h3>
+<p>该变压器的匝数比为4:1，并且误差控制在±1%以内。匝数比是变压器的一个重要参数，它决定了变压器的电压转换比例。精确的匝数比对于保证输出电压的稳定性和准确性至关重要。在实际应用中，我们需要根据具体的电路需求来选择合适匝数比的变压器。</p>
+<h2>一般规格</h2>
+<h3>绝缘要求</h3>
+<p>此变压器设计符合IEC61558 - 2 - 16的相关要求，对于工作电压为50<a href="https://www.elecfans.com/v/tag/3668/" target="_blank"><u>Vr</u></a>ms的初级电路提供基本绝缘。良好的绝缘性能可以有效地防止电气短路和漏电等安全问题，保障设备的正常运行和使用者的安全。在设计电路时，我们必须确保变压器的绝缘性能满足实际工作环境的要求。</p>
+<h3>电线绝缘与颜色</h3>
+<p>电线绝缘不受颜色的影响，这为生产和使用带来了一定的灵活性。同时，电线绝缘颜色可能会因供货情况而有所不同。这意味着我们在使用时不能仅仅依据电线颜色来判断其绝缘性能等参数，而要以产品的规格说明为准。</p>
+<h2>总结与反思</h2>
+<p>通过对变压器750313976的规格分析，我们可以看到，在电子工程师进行<a href="https://bbs.elecfans.com/zhuti_dianlu_1.html" target="_blank"><u>电路设计</u></a>时，需要全面考虑各个元件的各项参数。对于变压器这种关键元件，不仅要关注其匝数比、电感等电气参数，还要重视其绝缘性能、包装形式等方面。大家在实际设计中，是否遇到过因为变压器参数选择不当而导致的电路问题呢？欢迎在评论区分享你的经验和见解。
+刚刚尝试搜索“变压器750313976在电路设计中的常见应用场景”时遇到了网络连接问题，未能获取到相关内容。不过从这款变压器的规格来看，它可能会在一些对绝缘要求较高、需要精确电压转换的电路中发挥作用，比如某些小型的<a href="https://m.hqchip.com/app/1705" target="_blank"><u>电源模块</u></a>、低电压的<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>处理电路等。大家不妨思考一下，结合它的这些特性，还可能应用在哪些具体的电子设备里呢？ </p>]]></description></item><item>    <title><![CDATA[电子工程师视角：750341135 变压器技术剖析]]></title>    <link>https://www.elecfans.com/d/8214289.html</link>    <guid>https://www.elecfans.com/d/8214289.html</guid>    <pubDate>2026-08-12 11:30:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8214289" value="https://file.elecfans.com/web2/M00/73/D9/pYYBAGNYd56ACLVeAAGa9TRagno490.pdf"/><h1><a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>视角：750341135 变压器技术剖析</h1>
+<p>作为电子工程师，我们在设计中经常会用到各种变压器，今天就来详细剖析一下 750341135 变压器的技术规格，以便大家在实际应用中做出更合适的选择。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8214289" target="_blank">750341135.pdf</a></p>
+<h2>RoHS 相关情况</h2>
+<p>文档中虽提及“RoHS”，但在给出的表格里对应“6E6F”处为空，从电子行业角度推测，这里或许是要说明该变压器在 RoHS（限制使用有害物质指令）方面的相关<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>情况，不过目前信息未明确填写，有可能需要进一步从生产厂家获取该变压器是否符合 RoHS 标准的详细内容。大家在实际选用变压器时，一定要确认其 RoHS 合规性，这关系到产品能否符合环保要求以及进入特定市场的资格呢。</p>
+<h2><a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>规格（常温 25°C 下）</h2>
+<h3>电感值</h3>
+<p>在 100kHz、100mV<a href="https://m.hqchip.com/app/1703" target="_blank"><u>AC</u></a> 的测试条件下，Ls 电感值最小为 145.0μH。这个电感值对于变压器在电路中的性能起着关键作用。比如在<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>滤波电路中，电感值会影响对不同频率<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>的滤波效果。电子工程师在设计电路时，需要根据具体的电路功能和性能要求，仔细考量这个电感值是否符合设计预期。</p>
+<h3>漏感与匝数比</h3>
+<p>在测量漏感时，连接（7 + 11），测试频率 100kHz，（7 - 11）与（3 - 4）之间的匝数比为 1.333:1，误差范围为±1%。精确的匝数比对于变压器实现电压变换、功率传输等功能至关重要。如果匝数比不准确，可能会导致输出电压不稳定，影响整个电路的正常工作。我们在设计电路时，要结合这个匝数比来计算和调整相关参数，确保变压器的性能与电路需求相匹配。</p>
+<h2>终端尺寸及相关规格</h2>
+<h3>尺寸详情</h3>
+<p>变压器的终端尺寸有具体标注，如长度为 1.000（25.40，括号内为毫米单位），宽度为 0.078(5) [1.98]等。这些尺寸信息在 <a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a> 布局设计时非常重要。我们需要根据变压器的实际尺寸来规划 PCB 上的安装空间，确保变压器能够顺利安装，同时还要考虑与其他元件之间的间距，避免出现相互干扰的情况。</p>
+<h3>工作温度与电压 - 时间</h3>
+<p>该变压器的工作温度范围为 -40°C 至 +125°C（包含温升），这一范围决定了它能够适应的环境条件。在一些高温或低温的应用场景中，我们必须确保工作温度在这个范围内，否则可能会影响变压器的性能甚至导致其损坏。另外，电压 - 时间为 121VμS，这一参数与变压器在脉冲电压下的性能相关，在涉及脉冲电源等应用中需要重点关注。</p>
+<h3>封装与布局</h3>
+<p>文档中提到客户需要自行确定焊盘布局，并且标注了尺寸公差（除非另有说明，尺寸公差为 1/64）。这就要求电子工程师在设计时，根据变压器的实际应用需求和 PCB 制造工艺，合理设计焊盘布局，同时要考虑尺寸公差对安装和性能的影响。</p>
+<h2>总结</h2>
+<p>通过对 750341135 变压器各项技术规格的分析，我们可以看到每个参数都对变压器在电路中的性能和应用有着重要影响。电子工程师在设计过程中，要全面考虑这些因素，根据具体的电路需求和应用场景，合理选择和使用变压器，以确保设计出的电路稳定可靠。大家在实际应用中有没有遇到过因为变压器参数选择不当而导致的问题呢？欢迎在评论区分享交流。 </p>]]></description></item><item>    <title><![CDATA[变压器 750341137 规格解析：助力电子工程师设计]]></title>    <link>https://www.elecfans.com/d/8214290.html</link>    <guid>https://www.elecfans.com/d/8214290.html</guid>    <pubDate>2026-08-12 11:30:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8214290" value="https://file.elecfans.com/web2/M00/73/D9/pYYBAGNYd26Abm6_AAGkgA9ui9Y339.pdf"/><h1>变压器 750341137 规格解析：助力<a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>设计</h1>
+<p>在电子工程师的日常设计工作中，变压器是一个关键的电子元件，其性能直接影响到整个电路系统的稳定性和效率。今天，我们就来深入解析一款名为 750341137 的变压器，看看它有哪些值得关注的规格参数。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8214290" target="_blank">750341137.pdf</a></p>
+<h2><a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>规格</h2>
+<h3><a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>参数</h3>
+<p>在 25°C 的标准环境下，这款变压器的电阻有明确要求，其最大电阻值为 3.5 毫欧。这一参数对于<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>的传输效率有着重要影响，较低的电阻可以减少电能在传输过程中的损耗，提高变压器的工作效率。大家在设计电路时，需要根据实际的电流需求来考虑这个电阻值是否符合要求，否则可能会导致发热等问题。</p>
+<h3>介电特性</h3>
+<p>介电方面，变压器要求 <a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>ti</u></a>e(3 + 4) 能承受 2250V<a href="https://m.hqchip.com/app/1703" target="_blank"><u>DC</u></a> 的电压，持续时间为 1 秒。这一特性体现了变压器绝缘材料的性能，良好的介电性能可以保证变压器在<a href="https://www.elecfans.com/v/tag/873/" target="_blank"><u>高压</u></a>环境下安全稳定运行，避免出现击穿等故障。<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>们在设计时要考虑到实际应用场景中的电压波动情况，确保变压器的介电性能能够满足要求。</p>
+<h3>匝数比</h3>
+<p>匝数比是变压器的一个重要参数，该变压器的匝数比为 1.25:1，误差范围为 ±1%。匝数比决定了变压器的变压能力，精确的匝数比可以保证输出电压的稳定性。在设计电路时，需要根据具体的电压转换需求来选择合适匝数比的变压器，同时要注意这个误差范围对输出电压的影响。</p>
+<h2>物理规格</h2>
+<h3>尺寸参数</h3>
+<p>变压器的终端尺寸为 1.000（单位可能是英寸，对应 25.40 毫米），宽度为 0.078(6)（对应 1.98 毫米），高度为 0.600（对应 15.24 毫米）。这些尺寸信息对于 <a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a> 布局设计至关重要，工程师需要根据这些尺寸来合理安排变压器在电路板上的位置，确保其与其他元件之间有足够的空间，避免相互干扰。</p>
+<h3>温度与电压 - 时间参数</h3>
+<p>该变压器的工作温度范围为 -40°C 至 +125°C，这里包括了温度上升的情况。这表明变压器具有较宽的温度适应范围，能够在不同的环境条件下正常工作。同时，电压 - 时间参数为 200VuS，这一参数对于变压器在脉冲电压环境下的性能有着重要影响，工程师在设计时需要考虑实际应用中的电压脉冲情况，确保变压器能够承受相应的电压冲击。</p>
+<h2>其他注意事项</h2>
+<h3>封装与公差</h3>
+<p>文档中提到的公差信息，除非另有说明，线性尺寸公差为 1/64。这对于保证变压器的安装精度和与其他元件的配合至关重要。同时，包装规格以及修订级别等信息也都在修订表中有所体现，工程师在使用时需要仔细查阅。</p>
+<h3>焊盘布局建议</h3>
+<p>文档指出客户需要自行确定焊盘布局。这就要求工程师根据变压器的尺寸、引脚分布以及实际的电路需求来设计合理的焊盘布局，以确保变压器能够牢固地焊接在电路板上，并且<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>传输稳定。</p>
+<p>综上所述，变压器 750341137 在电气性能和物理特性上都有其独特的规格要求。电子工程师在设计过程中，需要充分了解这些规格参数，结合实际的应用场景，合理选择和使用这款变压器，以确保整个电路系统的性能和稳定性。大家在实际设计中遇到过哪些与变压器规格相关的难题呢？欢迎在评论区分享交流。 </p>]]></description></item><item>    <title><![CDATA[揭秘三星Foundry 4nm FinFET的可扩展实力]]></title>    <link>https://www.elecfans.com/d/8214342.html</link>    <guid>https://www.elecfans.com/d/8214342.html</guid>    <pubDate>2026-08-12 11:31:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
 	一芯覆盖多元场景</p>
 <p style="text-indent:2em;">
 	揭秘<a href="https://www.elecfans.com/tags/三星/" target="_blank"><u>三星</u></a> Foundry 4nm FinFET 的可扩展实力</p>
@@ -1310,1015 +2157,4 @@
 <p>电线绝缘不受颜色影响，并且颜色可能会因可用性而有所不同。这一点在设计过程中需要特别注意，不能仅仅根据电线颜色来判断其绝缘性能。在实际操作中，我们需要仔细查看产品规格书，确保电线的绝缘性能符合设计要求。大家在处理电线绝缘问题时，有没有遇到过因为颜色而产生的误解呢？</p>
 <h2>四、包装规格</h2>
 <p>变压器采用 Tape &amp; Reel 包装（PKG - 0799 1/12），这种包装方式方便自动化生产，提高生产效率。在大规模生产中，选择合适的包装规格可以减少生产流程中的麻烦，提高生产质量。大家在选择电子元件时，是否会考虑包装规格对生产的影响呢？</p>
-<p>总的来说，Nidcom 的这款变压器 750815550 在性能、环保和合规性等方面都有不错的表现。作为电子工程师，我们在设计过程中需要综合考虑各种因素，根据具体的应用场景选择最适合的变压器。希望今天的分析对大家在变压器的选择和设计中有所帮助。如果你有任何疑问或想分享自己的经验，欢迎在下方留言讨论。 </p>]]></description></item><item>    <title><![CDATA[深入剖析WE-UOST通用离线标准变压器]]></title>    <link>https://www.elecfans.com/d/8214599.html</link>    <guid>https://www.elecfans.com/d/8214599.html</guid>    <pubDate>2026-08-12 12:40:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8214599" value="https://file.elecfans.com/web2/M00/73/45/poYBAGNYdqmAe2itAAc8WvufDTU086.pdf"/><h1>深入剖析WE-UOST通用离线标准变压器</h1>
-<p>在<a href="https://www.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>的日常工作中，变压器是不可或缺的关键元件。今天，我们就来详细探讨一下 Würth Elektronik eiSos GmbH &amp; Co. KG 公司的 WE-UOST 通用离线标准变压器（订单代码：760871113），看看它有哪些特性、应用场景以及使用时的注意事项。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8214599" target="_blank">760871113.pdf</a></p>
-<h2>一、基本参数</h2>
-<h3>尺寸与焊盘</h3>
-<p>该变压器尺寸相关的推荐焊盘信息如下：有参考尺寸 25.81mm，部分尺寸为 20.6 ± 0.2mm，还有 0.4 ± 0.05mm 等。产品标记为“YY WW XX”，代表年 - 周 - 内部代码。</p>
-<h3><a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>特性</h3>
-<table>
-<thead>
-<tr>
-<th>属性</th>
-<th>测试条件</th>
-<th>值</th>
-<th>单位</th>
-<th>公差</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>电感（L）</td>
-<td>100 kHz/ 100 mV</td>
-<td>1310</td>
-<td>µH</td>
-<td>±10%</td>
-</tr>
-<tr>
-<td>匝数比（n）</td>
-<td>N1:N2:N3:N4</td>
-<td>140 : 6 : 6 : 16</td>
-<td/>
-<td>±3%</td>
-</tr>
-<tr>
-<td>饱和<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>（I SAT）</td>
-<td>(vertDelta L/Lvert &lt; 20 %)</td>
-<td>0.8</td>
-<td>A</td>
-<td>典型值</td>
-</tr>
-<tr>
-<td>直流<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a> 1（R <a href="https://m.hqchip.com/app/1703" target="_blank"><u>DC</u></a> 1）</td>
-<td>N1/ @ 20 °C</td>
-<td>3000</td>
-<td>mΩ</td>
-<td>最大值</td>
-</tr>
-<tr>
-<td>直流电阻 2（R DC 2）</td>
-<td>N2/ @ 20 °C</td>
-<td>25</td>
-<td>mΩ</td>
-<td>最大值</td>
-</tr>
-<tr>
-<td>直流电阻 3（R DC 3）</td>
-<td>N3/ @ 20 °C</td>
-<td>25</td>
-<td>mΩ</td>
-<td>最大值</td>
-</tr>
-<tr>
-<td>直流电阻 4（R DC 4）</td>
-<td>N4/ @ 20 °C</td>
-<td>450</td>
-<td>mΩ</td>
-<td>最大值</td>
-</tr>
-<tr>
-<td>漏电感（L S）</td>
-<td>100 kHz/ 100 mV</td>
-<td>40</td>
-<td>µH</td>
-<td>最大值</td>
-</tr>
-<tr>
-<td>绝缘测试电压（V T）</td>
-<td>N1,4 =&gt; N2,3</td>
-<td>4000</td>
-<td>V (<a href="https://m.hqchip.com/app/1703" target="_blank"><u>AC</u></a>)</td>
-<td/>
-</tr>
-</tbody>
-</table>
-<p>这些电气参数为我们在<a href="https://www.elecfans.com/v/tag/167/" target="_blank"><u>电路设计</u></a>时提供了重要依据，你在实际设计中会更关注哪个参数呢？</p>
-<h2>二、<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>与使用范围</h2>
-<h3>认证情况</h3>
-<p>该变压器获得了多项认证，包括 RoHS 认证（符合 [2011/65/EU&amp;2015/863]）、REACh 认证（符合 [(EC)1907/2006]）、无卤认证（符合 [JEDEC JS709B]）。这表明产品在环保等方面符合相关标准要求。</p>
-<h3>使用范围</h3>
-<p>此变压器专门为一般电子设备设计开发。需要注意的是，它不被授权用于对安全和可靠性标准要求较高的设备，或者产品故障可能导致严重人身伤害或死亡的设备，除非双方签订了专门协议。而且，该产品不适合用于军事、航空航天、医疗等特定领域，若有此类使用意向，需在设计阶段提前告知公司。大家在选择元件时，是否也曾因为使用场景的限制而烦恼呢？</p>
-<h2>三、典型应用</h2>
-<h3>应用参数</h3>
-<table>
-<thead>
-<tr>
-<th>属性</th>
-<th>值</th>
-<th>单位</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>输入电压（V in）</td>
-<td>85 - 265</td>
-<td>V (AC)</td>
-</tr>
-<tr>
-<td>输出电压 1（V Out1）</td>
-<td>5</td>
-<td>V</td>
-</tr>
-<tr>
-<td>输出电流 1（I Out1）</td>
-<td>1.25</td>
-<td>A</td>
-</tr>
-<tr>
-<td>输出电压 2（V Out2）</td>
-<td>5</td>
-<td>V</td>
-</tr>
-<tr>
-<td>输出电流 2（I Out2）</td>
-<td>1.25</td>
-<td>A</td>
-</tr>
-<tr>
-<td>辅助电压（V aux）</td>
-<td>14</td>
-<td>V</td>
-</tr>
-<tr>
-<td>开关频率（f switch）</td>
-<td>60 - 150</td>
-<td>kHz</td>
-</tr>
-</tbody>
-</table>
-<p>输入为 N1，输出 1 为 N2，输出 2 为 N3，辅助为 N4。这些参数为我们在实际应用中搭建电路提供了清晰的指导。</p>
-<h2>四、包装与回流焊参数</h2>
-<h3>包装规格</h3>
-<p>包装参考国际标准 IEC 60286 - 3:2013，采用带式和盘式包装。相关尺寸参数如：A0 典型值为 18mm，B0 典型值为 26.5mm 等，还有公差要求。拉拔力为 0.1 N - 1.3 N，胶带宽度为 56mm。</p>
-<h3>回流焊参数</h3>
-<p>回流焊参数对于 SMT 元件的焊接质量至关重要。该变压器的回流焊参数如下：</p>
-<ul>
-<li>预热温度：最低 150 °C，最高 200 °C，预热时间 60 - 120 秒。</li>
-<li>升温速率：最大 3 °C/ 秒。</li>
-<li>液相温度：217 °C，保持时间 60 - 150 秒。</li>
-<li>峰值温度及相关时间等也有明确要求。同时，不同体积和厚度的封装对应不同的回流温度。在实际焊接过程中，你是否遇到过因为回流焊参数设置不当而导致的焊接问题呢？</li>
-</ul>
-<h2>五、注意事项</h2>
-<h3>通用注意事项</h3>
-<ul>
-<li>该元件专为一般电子设备设计，用于特殊领域需获得公司书面批准。</li>
-<li>用于安全关键或高可靠性应用的元件，客户需预先评估。</li>
-<li>避免掉落或撞击元件，防止损坏。</li>
-<li>产品按国际标准认证，但公司不保证超出规格的客户特定产品特性。</li>
-</ul>
-<h3>产品特定注意事项</h3>
-<ul>
-<li><strong>焊接方面</strong>：焊接曲线必须符合产品技术规格，否则保修无效。其他焊接方法由客户自行承担风险，强外力影响引脚共面性会损坏元件。</li>
-<li><strong>清洁方面</strong>：生产中使用的清洗剂可能会损坏元件特性，不建议用刷子清洁 <a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>。</li>
-<li><strong>灌封方面</strong>：灌封材料硬化时的收缩或膨胀可能影响元件，灌封后建议手动检查。</li>
-<li><strong>存储方面</strong>：不建议存储超过 12 个月，避免阳光直射，存储条件按 DIN EN 61760 - 2 规定。</li>
-<li><strong>操作方面</strong>：违反产品规格会使保修无效，<a href="https://www.hqchip.com/app/1537" target="_blank"><u>音频</u></a><a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>电流可能产生噪音，元件重量大，强外力和高加速度会损坏元件，需考虑元件温度上升。</li>
-</ul>
-<p>总之，在使用 WE-UOST 通用离线标准变压器时，我们要充分了解其各项参数和注意事项，这样才能确保在实际应用中发挥其最佳性能，避免出现不必要的问题。你在使用类似变压器时，还有哪些经验或疑问呢？欢迎在评论区分享交流。 </p>]]></description></item><item>    <title><![CDATA[深入解析WE-UOST通用离线标准变压器]]></title>    <link>https://www.elecfans.com/d/8214600.html</link>    <guid>https://www.elecfans.com/d/8214600.html</guid>    <pubDate>2026-08-12 12:40:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8214600" value="https://file.elecfans.com/web2/M00/73/D8/pYYBAGNYdsqAQiOFAAc7Twjhr14180.pdf"/><h1>深入解析WE-UOST通用离线标准变压器</h1>
-<p>在<a href="https://www.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>的日常工作中，变压器是不可或缺的电子元件之一。今天，我们就来详细探讨一下Würth Elektronik eiSos GmbH &amp; Co. KG生产的WE-UOST通用离线标准变压器（订单代码：760871135），了解其各项特性、应用以及使用注意事项。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8214600" target="_blank">760871135.pdf</a></p>
-<h2>基本规格</h2>
-<h3>尺寸与焊盘</h3>
-<p>这款变压器的相关尺寸信息明确给出，推荐焊盘尺寸为20.6 ± 0.2mm （参考25.81），一些细节尺寸如0.4 ± 0.05mm等也有标注。在设计<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>时，准确的尺寸数据是确保元件正确安装和<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>连接的基础，<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>们在选择封装时需要严格按照这些尺寸要求进行设计，避免因尺寸偏差导致的焊接问题或空间布局不合理。</p>
-<h3>产品标识</h3>
-<p>产品标识为“YY WW XX”，代表年、周和内部代码，这种标识方式方便了生产管理和产品追溯。大家在实际工作中，有没有遇到过因产品标识不清晰而导致的问题呢？</p>
-<h2>电气特性</h2>
-<h3>电感与匝数比</h3>
-<p>电感（L）在100 kHz/ 100 mV的测试条件下为1250 µH，公差为±10%。匝数比（n）为N1:N2:N3:N4 = 136 : 13 : 13 : 15，公差为±3%。电感和匝数比是变压器的重要参数，它们直接影响着变压器的电压变换和能量传输效率。在设计电路时，我们需要根据具体的应用需求来选择合适电感和匝数比的变压器，确保电路能够正常工作。</p>
-<h3>饱和<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>与直流<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a></h3>
-<p>饱和电流（I SAT）在|ΔL/L| &lt; 20 %时为0.8 A（典型值），这意味着在电流达到0.8 A时，变压器的电感值变化率会控制在20%以内。直流电阻方面，不同绕组（N1 - N4）在20 °C时的电阻值不同，如N1的直流电阻（R DC 1）最大为2920 mΩ，N2和N3为92 mΩ，N4为400 mΩ。饱和电流和直流电阻会影响变压器的发热和功率损耗，在设计电路时需要充分考虑这些因素，避免因电流过大导致变压器过热损坏。</p>
-<h3>漏电感与绝缘测试电压</h3>
-<p>漏电感（L S）在100 kHz/ 100 mV测试条件下最大为53 µH，绝缘测试电压（V T）在N1,4 =&gt; N2,3时为4000 V (<a href="https://m.hqchip.com/app/1703" target="_blank"><u>AC</u></a>)。漏电感会影响变压器的性能稳定性，而绝缘测试电压则是保证变压器安全运行的重要指标。在实际应用中，我们需要对漏电感和绝缘性能进行严格测试，确保变压器符合安全标准。</p>
-<h2><a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>情况</h2>
-<p>该变压器获得了多项认证，包括RoHS批准（符合[2011/65/EU&amp;2015/863]）、REACh批准（符合[(EC)1907/2006]）以及无卤认证（符合[JEDEC JS709B]）。这些认证表明产品符合环保和安全标准，在选择电子元件时，认证情况是我们需要重点关注的因素之一，大家在实际项目中是不是也很看重元件的认证呢？</p>
-<h2>一般信息</h2>
-<h3>温度范围</h3>
-<p>工作温度范围为 -40 °C至 +125 °C，存储温度（原装包装）为 -20 °C至 +60 °C。在不同的应用环境中，温度对元件的性能影响很大，我们需要根据实际的工作环境来确保变压器工作在合适的温度范围内，避免因温度过高或过低导致元件性能下降或损坏。</p>
-<h3>湿度敏感度</h3>
-<p>湿度敏感度等级（MSL）为1，这意味着该元件对湿度的敏感度较低，在正常的工业环境中使用时，不需要特别的防潮措施。但在一些高湿度环境下，还是需要采取一定的防护措施，以确保元件的可靠性。</p>
-<h3>设计标准</h3>
-<p>该变压器设计符合IEC61558 - 2 - 16的要求，具备375 V <a href="https://m.hqchip.com/app/1718" target="_blank"><u>RMS</u></a>工作电压的加强绝缘。在设计电路时，我们要确保整个系统的电气性能和安全性能符合这些标准，以保障系统的稳定运行。</p>
-<h2>典型应用</h2>
-<p>这款变压器适用于一般电子设备，典型应用参数如下：输入电压为85 - 265 V (AC)，输出电压1和2均为12 V，输出电流1和2均为0.55 A，辅助电压为14 V，开关频率为60 - 150 kHz。在实际设计中，我们可以根据这些典型参数来构建电路，但需要注意的是，不同的应用场景可能需要对这些参数进行适当调整。大家在实际应用中有没有对这些参数进行过优化调整呢？</p>
-<h2>包装规格</h2>
-<p>变压器采用符合国际标准IEC 60286 - 3:2013的包装方式，包括磁带和卷轴包装。包装的详细尺寸和公差都有明确规定，如磁带宽度为56 mm，不同部位的尺寸公差也各不相同。合适的包装能够保护元件在运输和存储过程中不受损坏，在选择元件时，我们也需要考虑包装是否符合我们的使用需求。</p>
-<h2>回流焊曲线分类</h2>
-<p>对于SMT元件，详细规定了回流焊曲线的各项参数，如预热温度在150 °C至200 °C之间，预热时间为60 - 120秒，升温速率最大为3 °C/秒等。在进行回流焊接时，严格按照这些参数设置回流焊炉，能够确保焊接质量，提高产品的可靠性。</p>
-<h2>注意事项</h2>
-<h3>适用范围限制</h3>
-<p>该变压器仅适用于一般电子设备，严禁用于对安全和可靠性要求较高的设备，如军事、航空航天、医疗等领域。如果需要在这些领域使用，必须与Würth Elektronik eiSos GmbH &amp; Co. KG签订专门协议。在实际项目中，我们一定要严格遵守产品的适用范围规定，避免因误用导致安全事故。</p>
-<h3>操作注意事项</h3>
-<p>在使用该变压器时，需要注意多个方面的问题。例如，焊接时必须遵循技术规格的焊接曲线，否则会导致保修无效；清洗时要注意清洗剂可能会损坏元件的绝缘层、标记或镀层，不建议使用刷子清洗；灌封时要注意灌封材料的收缩和膨胀可能会对元件造成损坏，灌封后需要进行手动检查。此外，存储时间不宜超过12个月，避免阳光直射，要按照规定的存储条件进行存放。在实际操作中，大家有没有遇到过因为操作不当导致元件损坏的情况呢？</p>
-<p>总之，WE-UOST通用离线标准变压器是一款性能优良、应用广泛的电子元件，但在使用过程中，我们需要充分了解其各项特性和注意事项，严格按照要求进行设计和操作，才能确保其在电路中发挥最佳性能，提高整个系统的可靠性和稳定性。希望以上内容对大家在电子设计工作中有所帮助。如果你在使用这款变压器时有任何经验或疑问，欢迎在评论区分享交流。 </p>]]></description></item><item>    <title><![CDATA[AI需求猛增倒逼，英特尔募资加码至200亿美元！台积电上调资本支出]]></title>    <link>https://www.elecfans.com/d/8214066.html</link>    <guid>https://www.elecfans.com/d/8214066.html</guid>    <pubDate>2026-08-12 12:46:00</pubDate>    <description><![CDATA[<p>
-	8月10日，<a href="https://www.elecfans.com/tags/英特尔/" target="_blank"><u>英特尔</u></a>宣布透过发行普通股筹集150亿美元，以应对<a href="https://m.elecfans.com/v/tag/150/" target="_blank"><u>人工智能</u></a>算力需求激增带来的资金压力，周二又宣布加码将此前宣布的普通股发行规模扩大到200亿美元规模，此次每股发行价定为 95 美元，较英特尔前一交易日收盘价折价约 2.6%。英特尔最新收盘股价则小涨 0.19%。</p>
-<p>
-	无独有偶，8月11日，台积电董事会正式核准高达294.4259亿美元的资本预算案，这项举措不仅展现出台积电对市场长期需求的坚定信心，更为其后续营运与技术开发蓝图提供了强而有力的资金支持。</p>
-<h3>
-	英特尔募集资金投入先进封装和<a href="https://www.elecfans.com/v/tag/207/" target="_blank"><u>芯片制造</u></a>基地</h3>
-<p>
-	英特尔此次发行普通股，扣除承销折让、佣金及相关发行费用后，预计募资净额约 197 亿美元。公司并给予承销商 30 天选择权，可额外购买最多约 3,158 万股普通股，本次发行预计于 8 月 12 日完成交割。</p>
-<p style="text-align:center;">
-	<img alt="" src="https://file1.elecfans.com/web3/M00/70/C8/wKgZO2p73w-ACaWvAAP_c0YiJnI349.png" style="width:600px;height:355px;"/></p>
-<p>
-	英特尔周一强调，物理<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>、专用硅芯片和先进封装是主要的增长机遇，并且表示利用这笔钱来满足企业运营需求，包括资本支出和营运资金。英特尔首席财务管David Zinsner表示，大部分资金用于工厂设备的采购与配置，他对美国媒体表示，公司正在为2027年可能出现的“显著增长”做准备。</p>
-<p>
-	英特尔持续扩大全球制造布局，包括投资57亿美元升级爱尔兰芯片制造基地，投资规模占今年预计资本支出的四分之一。</p>
-<p>
-	过去一年，受益于全球AI基础设施的建设热潮以及美国政府为强化本土芯片制造能力而取得10%股权的提振，英特尔股价受益匪浅，2026年以来，其股价已累计飙涨175%。在过去一年中市值更是翻了五倍。</p>
-<p>
-	近年来，为了满足对AI的巨大需求并持续建设支持新算力的基础设施，科技巨头已经投入了数万亿美元，据高盛估算，本轮财季报，多家超大市值科技公司因AI需求纷纷上调资本支出计划，相关支出预计达到7650亿美元，并且在2027年进一步升至1.2万亿美元。</p>
-<p>
-	随着 AI 运算需求持续成长，英特尔正持续推进 <a href="https://www.elecfans.com/tags/intel/" target="_blank"><u>Intel</u></a> 14A 制程，并积极争取外部晶圆代工客户。随着先进制程与晶圆代工布局推进，相关产能与设备投资也成为英特尔后续资本支出的重要方向。</p>
-<h3>
-	台积电核准294亿美元资本支出，扩大先进封装和先进制程工艺布局</h3>
-<p>
-	2026年第二季度，台积电交出了漂亮的成绩单。单季营收达新台币1.27兆元（约402亿美元），年增达36%，净利更是大幅成长77.4%。第二季度营收中，7nm及以下的先进制程贡献了高达 77% 的晶圆营收。值得注意的是，3nm制程已占晶圆营收的 30%，而最新开发的2nm技术也已开始贡献 3% 的营收。这反映出高效能运算（HPC）在占第二季营收 66%的情况下，已成为最主要的营收驱动引擎，也显示出AI基础建设对台积电先进制程的依赖程度极高。<br/><br/>
-	</p>
-<p>
-	台积电说明，本次核准的庞大资金，是为了因应基于市场需求预测及技术开发蓝图所制定的长期产能规划。这笔近294.4亿美元的预算将主要投入以下三大核心营运领域，包括建置及升级先进制程产能，建置及升级先进封装、成熟及/或特殊制程产能，以及厂房兴建及厂务设施工程。</p>
-<p>
-	这项预算案将直接支持台积电后续的产能扩充。特别是在高效能运算（HPC）产品与AI加速器高度依赖台积电最先进<a href="https://m.hqchip.com/gongsi.html" target="_blank"><u>半导体</u></a>技术的背景下，持续扩充并升级先进制程与封装产能，将是台积电维持市场领导优势、紧密绑定<a href="https://www.elecfans.com/tags/英伟达/" target="_blank"><u>英伟达</u></a>、苹果等核心客户的关键基石。</p>
-<p>
-	值得关注的是，台积电在7月份营收达到145亿美元，逆势成长44.7%，公司预估第三季度营收介于446亿至458亿美元之间。更重要的是，台积电已将其 2026年全年美元营收预期上调至微幅成长40%以上，并将资本支出规模调升至 600亿至640亿美元。</p>]]></description></item><item>    <title><![CDATA[变压器 750311608 规格解析]]></title>    <link>https://www.elecfans.com/d/8214637.html</link>    <guid>https://www.elecfans.com/d/8214637.html</guid>    <pubDate>2026-08-12 12:50:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8214637" value="https://file.elecfans.com/web2/M00/73/D8/pYYBAGNYdtmAByXWAAHlgoUoWkA882.pdf"/><h1>变压器750311608规格解析</h1>
-<p>最近在研究变压器相关的设计，今天就来和大家详细解析一下型号为 750311608 的变压器。这款变压器在很多电子设备中都有着广泛的应用，对于我们<a href="https://www.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>来说，深入了解它的各项规格是非常有必要的。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8214637" target="_blank">750311608.pdf</a></p>
-<h2>客户要求与材料信息</h2>
-<h3>客户要求与材料成分</h3>
-<p>从资料中可知，该变压器的客户要求采用 Sn96%、Ag4% 的材料。这种成分比例的选择在电子行业中是有其特殊意义的，Sn（锡）和 Ag（银）的合金在焊接性能、导电性等方面都有良好的表现。而且，该产品满足 RoHS 标准，这意味着它在环保方面符合相关要求，减少了对环境的污染，也符合现代电子产品的设计趋势。大家在设计中，是否也会优先考虑符合 RoHS 标准的材料呢？</p>
-<h2><a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>与通用规格</h2>
-<h3>电气规格</h3>
-<p>在 25°C 的环境下，如果没有特殊说明，这款变压器有着特定的电气规格。当按照 <a href="https://bbs.elecfans.com/group_715" target="_blank"><u>ti</u></a>e(1 + 2, 3 + 4) 的方式连接，并且测试温度为 20°C 时，其 1 - 3 <a href="https://m.hqchip.com/app/1808" target="_blank"><u>端口</u></a>有相应的参数。虽然文档中部分数据不太清晰，但像 .050 REF.(12) [1.27] 和 .120 REF.(12) [3.05] 这些标注，应该是和端口的一些电气特性相关的尺寸或者参数参考值。这里的数值单位可能前面英制，括号内为公制（毫米）。在设计电路时，我们一定要根据这些准确的电气规格来进行匹配和计算，以确保电路的正常运行。</p>
-<h3>通用规格</h3>
-<p>该变压器的工作温度范围是 -40°C 到 +125°C，这是一个比较宽的温度区间，意味着它能够适应较为恶劣的工作环境。无论是在极寒还是高温的条件下，都有可能正常工作，这对于一些需要在特殊环境中使用的电子设备来说非常重要。在设计时，我们就需要根据实际的使用环境来考虑这个温度范围是否满足要求。</p>
-<h2>尺寸与布局信息</h2>
-<h3>尺寸标注</h3>
-<p>文档中给出了很多关于变压器的尺寸信息，比如 1.167 MAX [29.64]、910 MAX.、1.044 [26.52] 等，同样括号内为毫米单位。这些尺寸标注对于 <a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a> 板的设计和布局至关重要。我们需要根据这些尺寸来确定变压器在 PCB 板上的安装位置，以及与其他元件之间的间距，避免出现安装不下或者相互干扰的情况。</p>
-<h3>焊盘尺寸与布局</h3>
-<p>参考焊盘尺寸方面，虽然文档提到由客户确定焊盘布局，但我们也需要了解一些基本的参考信息，像 .085(12) [2.16]、038(12)、118(10) [3.00] 这些数据可能就和焊盘的尺寸相关。在设计焊盘时，要充分考虑变压器的引脚尺寸和焊接工艺，以确保焊接的可靠性。</p>
-<h2>其他信息</h2>
-<h3>包装信息</h3>
-<p>该变压器的包装方法是 Tope &amp; Ree（这里可能是一种特定的包装方式），包装规格也有相应的标注。合适的包装能够在运输和存储过程中保护变压器不受损坏，我们在采购和使用时也需要关注这些包装信息。</p>
-<h3>颜色与绝缘说明</h3>
-<p>文档还提到了电线绝缘和 RoHS 状态不受电线颜色影响，而且电线绝缘颜色可能会根据供应情况有所不同。这一点在实际使用中需要注意，不要因为颜色的差异而影响对产品性能和环保标准的判断。</p>
-<p>总之，对于 750311608 这款变压器，我们在设计过程中要全面考虑它的各项规格，从材料成分、电气特性、尺寸布局到包装等方面都不能忽视。只有这样，才能设计出性能稳定、符合要求的电子设备。大家在使用类似变压器时，有没有遇到过什么特别的问题呢？欢迎在评论区分享。  </p>]]></description></item><item>    <title><![CDATA[电子工程师必备：WE-SLIM离线变压器深度剖析]]></title>    <link>https://www.elecfans.com/d/8214638.html</link>    <guid>https://www.elecfans.com/d/8214638.html</guid>    <pubDate>2026-08-12 12:50:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8214638" value="https://file.elecfans.com/web2/M00/73/D8/pYYBAGNYdsqAd_43AAPS7wlW15M255.pdf"/><h1><a href="https://www.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>必备：WE-SLIM离线变压器深度剖析</h1>
-<p>在电子设备的设计中，变压器是不可或缺的关键组件。今天，我们就来深入探讨一款名为WE-SLIM的离线变压器，它的型号为760871333，由Würth Elektronik公司生产。这款变压器在众多电子设备中都有广泛应用，下面我们从多个方面详细了解它。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8214638" target="_blank">760871333.pdf</a></p>
-<h2>一、<a href="https://www.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>尺寸</h2>
-<table>
-<thead>
-<tr>
-<th>机械尺寸对于变压器在电路板上的布局至关重要。WE-SLIM变压器的主要尺寸参数如下：</th>
-<th>尺寸标识</th>
-<th>最大值</th>
-<th>单位</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>A</td>
-<td>29.40</td>
-<td>mm</td>
-</tr>
-<tr>
-<td>B</td>
-<td>47.50</td>
-<td>mm</td>
-</tr>
-<tr>
-<td>C</td>
-<td>12.00</td>
-<td>mm</td>
-</tr>
-<tr>
-<td>D</td>
-<td>8.00</td>
-<td>mm</td>
-</tr>
-</tbody>
-</table>
-<p>这些尺寸数据为<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>在设计电路板时提供了精确的参考，确保变压器能够与其他元件合理布局。大家在实际设计中，是否遇到过因元件尺寸不匹配而导致布局困难的情况呢？</p>
-<h2>二、<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>特性</h2>
-<h3>1. 电感与匝数比</h3>
-<ul>
-<li>电感N2 + N5在50 kHz、0.1 V的测试条件下为250.0 µH，公差为±5%。电感的准确性对于变压器的性能至关重要，它会直接影响到能量的转换和传输效率。</li>
-<li>匝数比N2 + N5:N1:N4:N6为6.25:1:1:1:1.25，公差为±3%。匝数比决定了变压器的电压变换比，在不同的应用场景中，我们需要根据具体需求来选择合适匝数比的变压器。</li>
-</ul>
-<h3>2. 直流<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a></h3>
-<p>各绕组的直流电阻在20°C的条件下有明确规定，例如N1的直流电阻最大为34.0 m，N2最大为300.0 m 等。直流电阻会影响到变压器的功率损耗和发热情况，在设计时需要综合考虑这些因素。</p>
-<h3>3. 饱和<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>与漏感</h3>
-<ul>
-<li>饱和电流N2 + N5在dL/L = 20%时为3.75 A（典型值）。饱和电流是变压器的一个重要参数，当电流超过饱和电流时，变压器的性能会急剧下降。</li>
-<li>漏感N2 + N5在50 kHz、0.1V（其余绕组短路）的测试条件下最大为7.0 µH。漏感的大小会影响到变压器的能量传输效率和<a href="https://bbs.elecfans.com/group_40" target="_blank"><u>电磁兼容</u></a>性。</li>
-</ul>
-<h3>4. 绝缘测试电压</h3>
-<p>变压器有不同的绝缘测试电压要求，例如N2、N3、N5到N1、N4、N6在3mA、1s的条件下为4.0 kV；N2、N5到N3以及所有绕组到铁芯在3mA、1s的条件下为1.5 kV。良好的绝缘性能是保证变压器安全运行的关键。</p>
-<h2>三、测试设备与条件</h2>
-<h3>1. 测试设备</h3>
-<ul>
-<li>使用AT3600来测试电感（L）、漏感（Ls）、电阻（R）、匝数比（n）和绝缘测试电压（UT）。</li>
-<li>使用Wayne Kerr 3260B来测试饱和电流（(I_{sat })）。</li>
-</ul>
-<h3>2. 测试条件</h3>
-<p>环境湿度为33%，环境温度为 +20°C。在不同的测试环境下，变压器的性能可能会有所差异，因此严格控制测试条件是确保测试结果准确性的重要因素。</p>
-<h2>四、材料与特性</h2>
-<h3>1. 基础材料</h3>
-<p>基础材料为Dolph BC346 - A或等效的UL - V0 Cu - Ni - Sn铁氧体2UEW - F 155°C / <a href="https://bbs.elecfans.com/group_715" target="_blank"><u>TI</u></a>W。这种材料具有良好的磁性能和绝缘性能，能够满足变压器的工作要求。</p>
-<h3>2. 工作温度</h3>
-<ul>
-<li>变压器的工作温度范围为 - 40°C到 + 125°C，在设计时需要考虑到实际应用场景中的温度变化，确保变压器在该温度范围内能够正常工作。</li>
-<li>环境温度范围为 - 40°C到 + 75°C，同时建议在最坏的工作条件下，部件的温度不超过125°C。</li>
-</ul>
-<h2>五、<a href="https://www.elecfans.com/v/tag/167/" target="_blank"><u>电路设计</u></a>要求</h2>
-<p>这款变压器设计符合EN/IEC61558 - 2 - 16的要求，对于250<a href="https://www.elecfans.com/v/tag/3668/" target="_blank"><u>Vr</u></a>ms的工作电压提供加强绝缘。在进行电路设计时，工程师需要确保整个电路系统能够满足相关的安全标准。</p>
-<h2>六、特殊应用注意事项</h2>
-<p>该电子元件设计用于一般电子设备。如果要将其应用于对安全性和可靠性要求较高的设备，如航空航天、核控制、医疗等领域，必须在设计阶段通知Würth Elektronik eiSos GmbH，并对每个用于高安全和可靠性要求电路的电子元件进行充分的可靠性评估检查。</p>
-<p>总之，WE-SLIM离线变压器是一款性能优良的电子元件，但在实际应用中，工程师需要充分考虑其各种参数和特性，以确保设计出的电子设备能够稳定可靠地运行。你在使用变压器时，还遇到过哪些需要特别注意的问题呢？欢迎在评论区分享。 </p>]]></description></item><item>    <title><![CDATA[电子工程师必看：变压器电气与通用规格解析]]></title>    <link>https://www.elecfans.com/d/8213859.html</link>    <guid>https://www.elecfans.com/d/8213859.html</guid>    <pubDate>2026-08-12 10:15:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8213859" value="https://file.elecfans.com/web2/M00/73/45/poYBAGNYdkGAF9PNAAIcHcXNscQ647.pdf"/><h1><a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>必看：变压器<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>与通用规格解析</h1>
-<p>在电子设备的设计中，变压器是一个关键的组件，它的性能直接影响到整个系统的稳定性和可靠性。今天，我们就来详细解析一款变压器的相关规格，希望能为各位电子工程师在设计过程中提供一些有用的参考。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8213859" target="_blank">750311596.pdf</a></p>
-<h2>电气规格（25°C 环境下）</h2>
-<h3>直流<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>（D.C. RESISTANCE）</h3>
-<p>这款变压器的直流电阻有相关参数，其最大值为 0.025 欧姆。在 1 - 3 端，电感值为 12.00uH，并且精度控制在 ±10% 以内。这里需要注意的是，此电感值是在 100kHz、50mV<a href="https://m.hqchip.com/app/1703" target="_blank"><u>AC</u></a> 以及 Ls 的测试条件下得到的。电子工程师们在设计电路时，要充分考虑直流电阻和电感值对电路性能的影响，比如可能会影响到<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>的传输质量、功率损耗等方面。大家有没有在实际设计中遇到过因为直流电阻或电感值不合适而导致的问题呢？</p>
-<h3>耐压测试（DIELECTRIC）</h3>
-<p>变压器的 1 - 12 端能够承受 500VAC 的电压一分钟而不出现击穿等问题。这一参数表明了变压器的绝缘性能和耐压能力，在<a href="https://m.elecfans.com/v/tag/873/" target="_blank"><u>高压</u></a>环境或者对安全性要求较高的<a href="https://bbs.elecfans.com/zhuti_dianlu_1.html" target="_blank"><u>电路设计</u></a>中，这是一个非常重要的指标。各位在设计高压电路时，是否会首先关注变压器的耐压能力呢？</p>
-<h3>匝数比（TURNS RA<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>TI</u></a>O）</h3>
-<p>文档中虽未给出具体数值，但匝数比是变压器的一个重要参数，它决定了变压器的变压比，对电压和<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>的转换起着关键作用。在实际设计中，我们需要根据具体的电路需求来选择合适匝数比的变压器。</p>
-<h2>通用规格</h2>
-<h3>工作温度范围</h3>
-<p>该变压器的工作温度范围为 -40°C 至 +125°C，这里的温度包含了温度上升的情况。在不同的应用场景中，温度对变压器的性能有着重要影响。例如在高温环境下，变压器的电阻可能会增大，从而导致功率损耗增加；而在低温环境下，变压器的材料特性也可能发生变化，影响其电气性能。电子工程师们在选择变压器时，一定要根据实际的工作环境温度来确定是否满足要求。</p>
-<h3>导线绝缘与颜色</h3>
-<p>导线的绝缘性能和 RoHS 状态不受导线颜色的影响，不过导线绝缘颜色可能会根据供应情况而有所不同。这提醒我们在设计过程中，不要仅仅根据导线颜色来判断其性能，更要关注其实际的电气和物理特性。</p>
-<h2>包装规格</h2>
-<p>这款变压器采用 Tape &amp; Reel PKG - 0605 的包装方式，其零件编号为 750311596。合适的包装方式对于变压器的运输和存储非常重要，同时也会影响到生产线上的自动化装配效率。<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>们在设计生产流程时，是否会考虑包装方式对生产效率的影响呢？</p>
-<p>总之，在电子设计中，对变压器等关键组件的规格参数进行深入了解和分析是非常必要的。只有充分掌握这些信息，才能设计出性能稳定、可靠的电子设备。希望本文能为大家的设计工作带来一些帮助。 </p>]]></description></item><item>    <title><![CDATA[电子工程师必看：变压器详细规格解析]]></title>    <link>https://www.elecfans.com/d/8213860.html</link>    <guid>https://www.elecfans.com/d/8213860.html</guid>    <pubDate>2026-08-12 10:15:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8213860" value="https://file.elecfans.com/web2/M00/73/D7/pYYBAGNYdgyAcR4NAAHkimdFb8M512.pdf"/><h1><a href="https://m.elecfans.com/v/tag/125/" target="_blank"><u>电子工程师</u></a>必看：变压器详细规格解析</h1>
-<p>在电子设备的设计中，变压器是一个关键的组件，它的性能直接影响到整个系统的稳定性和效率。今天，我们就来详细解析一款变压器的规格参数，希望能为各位电子工程师在设计过程中提供一些有价值的参考。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8213860" target="_blank">750311599.pdf</a></p>
-<h2><a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>规格</h2>
-<h3>漏感（LEAKAGE INDUCTANCE）</h3>
-<p>漏感的测量条件较为复杂，有不同的连接方式。一种是 <a href="https://bbs.elecfans.com/group_715" target="_blank"><u>ti</u></a>e(1 + 2, 3 + 4, 8 + 9 + 11 + 12)，并且要承受 1875V<a href="https://m.hqchip.com/app/1703" target="_blank"><u>AC</u></a> 电压持续 1 秒的测试。还有一种是特定绕组之间的情况，如(1 - 3):(12 - 9)。在实际设计中，漏感会影响变压器的效率和<a href="https://bbs.elecfans.com/group_40" target="_blank"><u>电磁兼容</u></a>性，<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>们需要根据具体的应用场景来评估漏感对电路的影响。大家在设计时有没有遇到过因为漏感而导致电路性能不稳定的情况呢？</p>
-<h3>匝数比（TURNS RATIO）</h3>
-<p>匝数比也是变压器的重要参数之一。这里给出了两组匝数比，(1 - 3):(5 - 6)的匝数比为 2.25:1，误差范围在±2%。匝数比决定了变压器的电压变换能力，精确的匝数比对于保证输出电压的稳定性至关重要。在设计中，我们要根据实际需求来选择合适匝数比的变压器，那么如何准确计算所需的匝数比呢？这需要我们结合具体的电路要求和<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>参数来进行。</p>
-<h3>特殊条件下的参数</h3>
-<p>在 20°C 时，tie(8 + 9, 1 + 12)的情况下，有 20%从初始值开始的滚降。这一参数反映了变压器在特定温度和连接方式下的性能变化，在设计工作温度范围较宽的设备时，我们必须考虑这种参数变化对电路的影响。</p>
-<h2>通用规格</h2>
-<h3>工作温度范围</h3>
-<p>该变压器的工作温度范围为 -40°C 至 +125°C。这一较宽的温度范围使得它能够适应多种不同的工作环境。在高温或低温环境下，变压器的性能可能会发生变化，例如绝缘材料的性能、绕组的<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>等都会受到温度的影响。因此，在设计时要充分考虑温度对变压器性能的影响，确保设备在整个温度范围内都能稳定工作。大家在实际项目中，是如何应对宽温度范围对变压器性能影响的呢？</p>
-<h3>导线绝缘和 RoHS 状态</h3>
-<p>导线绝缘不受导线颜色的影响，而且导线绝缘颜色可能会因供应情况而有所不同。同时，该产品符合 RoHS 标准，这意味着它在环保方面符合相关要求。在选择电子元件时，环保要求也是我们需要考虑的重要因素之一。</p>
-<h2>其他规格</h2>
-<h3>包装规格</h3>
-<p>包装方法和日期为 3/22，但文档中未详细说明具体的包装方式。合适的包装可以保护变压器在运输和储存过程中不受损坏，那么大家在设计时会对变压器的包装提出哪些要求呢？</p>
-<h3>产品基本信息</h3>
-<p>产品型号为 750311599，图纸标题为 TRANSFORMER，相关设计和详细信息可查看修订表获取修订级别。同时，该图纸采用双尺寸标注，括号内的尺寸为毫米。</p>
-<p>综上所述，了解变压器的各项规格参数对于电子工程师来说至关重要。在设计过程中，我们要根据具体的应用需求，综合考虑变压器的电气性能、工作温度范围、环保要求等因素，以确保设计出的产品稳定、可靠且符合相关标准。希望本文能为大家在变压器的选择和设计上提供一些帮助。 </p>]]></description></item><item>    <title><![CDATA[工控机和工业电脑有什么区别]]></title>    <link>https://www.elecfans.com/d/8213862.html</link>    <guid>https://www.elecfans.com/d/8213862.html</guid>    <pubDate>2026-08-12 10:16:00</pubDate>    <description><![CDATA[<p>
-	工控机属于工业<a href="https://m.elecfans.com/v/tag/1247/" target="_blank"><u>电脑</u></a>的一个细分品类，二者是‌<strong>包含与被包含</strong>‌的关系，并非完全对等的独立设备。</p>
-<p>
-	<strong>一、基础定义差异</strong></p>
-<p>
-	‌<strong>工业电脑</strong>‌：是所有专为工业环境设计的计算机设备的统称，英文全称为Industrial PC（IPC），是一个覆盖全品类的大概念，核心特征是适配工业场景的高可靠性计算需求。</p>
-<p>
-	‌<strong>工控机</strong>‌：全称<a href="https://www.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>计算机，是工业电脑下的一个核心细分类型，以机箱式Box PC结构为主，核心定位是工业现场的控制、数据采集与设备监控，更强调实时控制与扩展能力。</p>
-<p>
-	<strong>二、覆盖范围差异</strong></p>
-<p>
-	工业电脑的产品谱系包含三大类，工控机只是其中之一：</p>
-<p>
-	工控机（Box PC）：无显示模块的机箱式主机，侧重计算与扩展能力，用于工业控制、数据采集场景。</p>
-<p>
-	工业平板电脑（Panel PC）：集成触摸屏与主机的一体化设备，直接作为人机交互界面，用于产线操作台、监控终端。</p>
-<p>
-	<a href="https://bbs.elecfans.com/group_1121" target="_blank"><u>嵌入式</u></a>工业电脑：体积小巧，可直接嵌入设备内部，用于智能终端、交通自助机等场景。</p>
-<p>
-	<strong>三、核心定位差异</strong></p>
-<p>
-	‌<strong>工业电脑</strong>‌：作为通用工业计算平台，覆盖工业场景下所有计算需求，既可以做控制，也可以做可视化显示、边缘计算、数据网关等多种角色。</p>
-<p>
-	‌<strong>工控机</strong>‌：定位更聚焦，专门面向<a href="https://www.elecfans.com/v/tag/633/" target="_blank"><u>工业自动化</u></a>控制场景，优先保障实时控制性能，<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>和扩展能力都围绕对接<a href="https://www.elecfans.com/v/tag/323/" target="_blank"><u>PLC</u></a>、<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>、运动控制卡等工业控制外设设计。</p>
-<p>
-	<br/>
-	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[易飞扬推出触摸屏版本800G CHECKER]]></title>    <link>https://www.elecfans.com/d/8213890.html</link>    <guid>https://www.elecfans.com/d/8213890.html</guid>    <pubDate>2026-08-12 10:18:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	——10.1英寸工业触控屏+可拆卸电池，800G/400G/200G PAM4便携式误码仪让现场测试”一屏搞定”</p>
-<p style="text-indent:2em;">
-	开放光网络器件向导厂商易飞扬（GIGALIGHT）近日宣布推出触摸屏版本800G CHECKER。该产品在标准版800G CHECKER基础上集成10.1英寸工业触摸屏平板与内置可拆卸电池模组，实现一体化移动测试，无需外接电脑即可完成光模块/AOC/<a href="https://www.elecfans.com/tags/dac/" target="_blank"><u>DAC</u></a>产品的性能测试，将数据<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>光模块运维正式带入”可视化”时代。</p>
-<p style="text-indent:2em;">
-	一屏可视，运维从此告别”笔记本+设备”双重负担</p>
-<p style="text-indent:2em;">
-	传统光模块现场测试需要同时携带误码仪与笔记本<a href="https://m.elecfans.com/v/tag/1247/" target="_blank"><u>电脑</u></a>，接线繁琐、部署耗时。触摸屏版本800G CHECKER将测试主机与10.1英寸FHD（1920×1200）高清工业触摸屏平板合二为一：10点<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>触控、高硬度钢化玻璃，搭载<a href="https://www.elecfans.com/tags/intel/" target="_blank"><u>Intel</u></a>赛扬N5100<a href="https://m.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>、8GB内存、128GB存储，运行Windows 11/10系统。误码率测试、DDM实时监控、EEP<a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a>读写、FEC裕量估算等所有操作均在屏幕上直观呈现、一触即达，测试数据可视化一目了然，大幅降低现场运维门槛。</p>
-<p style="text-indent:2em;">
-	双<a href="https://m.hqchip.com/app/1808" target="_blank"><u>端口</u></a>覆盖主流封装，测试能力全面</p>
-<p style="text-indent:2em;">
-	产品配备1个Q<a href="https://www.hqchip.com/app/1687" target="_blank"><u>SFP</u></a>-DD端口和1个OSFP/OSFP-RHS端口(GUI软件可选配置,不同时使用),支持8×53.12<a href="https://m.elecfans.com/v/tag/1225/" target="_blank"><u>5G</u></a>Bd PAM4(800G)和8×26.5625GBd PAM4(400G)误码测试,兼容QSFP112/QSFP56/QSFP28及OSFP112/OSFP56等主流封装.核心功能包括:</p>
-<p style="text-indent:2em;">
-	CMIS V4.0状态检测与DDM实时监控：电压、温度、<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>、光功率等关键参数实时可视；</p>
-<p style="text-indent:2em;">
-	全系列码型支持：PRBSQ7/9/10/11/13/15/20/23/31及SSPRQ；</p>
-<p style="text-indent:2em;">
-	EEPROM读写：灵活配置模块兼容性；</p>
-<p style="text-indent:2em;">
-	FEC裕量估算：支持纠错能力计算，深度评估链路质量。</p>
-<p style="text-indent:2em;">
-	可拆卸电池+肩带设计，移动测试无死角</p>
-<p style="text-indent:2em;">
-	内置额定能量142Wh的可拆卸<a href="https://www.elecfans.com/v/tag/2692/" target="_blank"><u>锂电池</u></a>模组，整机（含光模块）实际工作续航约3小时，并支持外接12V<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>适配器供电。电池模组通过UN38.3航空运输安全<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>，符合GB40165-2021标准，142Wh处于100-160Wh区间，经航空公司申报批准即可随身携带。整机仅约5kg，配备肩带与背带卡扣环，运维人员可轻松穿梭于机柜之间、工位之间。</p>
-<p style="text-indent:2em;">
-	工业级可靠性，直面严苛现场</p>
-<p style="text-indent:2em;">
-	触摸屏平板通过IP65防尘防水认证、MIL-STD-810G美国军规认证及1.22米抗跌落测试，并具备ATEX 2/22区防爆认证；整机采用铝合金外壳，平板嵌入式安装与内部空间物理隔离，双风扇风道优化设计保障长时间稳定运行，整机符合CE、FCC、RoHS认证。</p>
-<p style="text-indent:2em;">
-	典型应用场景</p>
-<p align="center">
-	<img src="https://file1.elecfans.com/web3/M00/70/C6/wKgZO2p72LyAZagsAAASZdftt2Q377.png" alt="1daea676-9075-11f1-90a1-92fbcf53809c.png"/></p>
-<p style="text-indent:2em;">
-	订购信息</p>
-<p style="text-indent:2em;">
-	触摸屏版本800G CHECKER现已开放订购，提供800G QSFP-DD+OSFP与800G QSFP-DD+OSFP-RHS两种端口配置，均含触摸屏平板与内置电池模组。</p>
-<p style="text-indent:2em;">
-	关于易飞扬</p>
-<p style="text-indent:2em;">
-	作为开放光网络器件的向导，易飞扬（GIGALIGHT）集有源和无源光器件以及子系统的设计、制造和销售于一体，产品主要是传统III-V族光模块、硅光模块和硅基NPO/CPO引擎、浸没液冷光模块、光无源器件、有源光缆和直连铜缆、基于相干光模块和非相干O-band DWDM 光模块的OPEN <a href="https://www.hqchip.com/app/1703" target="_blank"><u>DC</u></a>I BOX子系统，以及超高清<a href="https://www.elecfans.com/tags/sdi/" target="_blank"><u>SDI</u></a> 视讯光模块等产品。易飞扬重点服务<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>算力数据中心、5G承载网、城域波分传输、超高清广播视讯等应用领域，是一家创新设计的高速光互连硬件解决方案商。</p>]]></description></item><item>    <title><![CDATA[国产工控主板：硬核实力筑牢工控行业自主可控根基]]></title>    <link>https://www.elecfans.com/d/8213864.html</link>    <guid>https://www.elecfans.com/d/8213864.html</guid>    <pubDate>2026-08-12 10:18:00</pubDate>    <description><![CDATA[<p>
-	  在<a href="https://m.elecfans.com/v/tag/633/" target="_blank"><u>工业自动化</u></a>、智慧交通、智慧医疗、金融信创等核心场景中，主板作为工控系统的核心载体，其稳定性、安全性与适配性决定了整套设备的运行效率。国产工控主板从研发设计、原材料甄选到生产制造的全流程，均围绕复杂严苛的工业工况量身打磨，为工业智能化、国产化转型提供可靠硬件支撑。</p>
-<p>
-	国产工控主板在<a href="https://m.hqchip.com/ic/0" target="_blank"><u>元器件</u></a>选型上严守工业级标准，针对性优化耐高温、耐潮湿、抗腐蚀、抗老化等核心性能，能够从容应对工业现场温差大、粉尘多、湿度高的复杂环境，从源头规避元器件故障、设备宕机等问题，保障系统长期连续运行。</p>
-<p>
-	以高能计算机龙芯主板GM-P603L为例，搭载龙芯3A6000四核八线程处理器，<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>配置丰富，拓展性拉满，可适配多行业定制化需求。</p>
-<p>
-	<img src="https://file1.elecfans.com//web3/M00/70/C5/wKgZPGp72BOAf1aFAAaDqcyiG30138.jpg" alt="wKgZPGp72BOAf1aFAAaDqcyiG30138.jpg"/></p>
-<p>
-	龙芯主板可实现-10℃至50℃宽温稳定运行，契合各类户外、工业车间极端温度环境，同时达标<a href="https://bbs.elecfans.com/group_40" target="_blank"><u>EMC</u></a>三级抗干扰标准，可抵御工业设备电磁干扰。此外，产品经过高温高湿、<a href="https://www.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>冲击、长期负载等稳定性检测，大幅提升设备耐用性，适配工业场景7×24小时不间断运行需求。</p>
-<p>
-	龙芯主板标配<a href="https://m.hqchip.com/app/1515" target="_blank"><u>USB</u></a>3.0/2.0、工业串口、<a href="https://m.hqchip.com/app/1523" target="_blank"><u>RJ45</u></a>等常用接口，搭载多通道PCIe扩展插槽，可灵活对接各类工业外设、<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>与智能设备。部分机型搭载触控交互接口与RAID冗余存储功能，既优化人机交互体验，又能保障工业核心数据安全留存。同时支持VGA、<a href="https://www.hqchip.com/app/1685" target="_blank"><u>HDMI</u></a>多屏同步显示，可满足工业中控、远程监控等多场景可视化需求，轻松承接自动化生产、智能机器人控制等高负载、<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>作业任务。</p>
-<p>
-	国产工控主板在<a href="https://bbs.elecfans.com/group_346" target="_blank"><u>智能电网</u></a>、<a href="https://m.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>等大型组网项目中实现稳定落地，大幅降低企业硬件采购与运维成本。如今，国产工控主板正以精准的定制化方案、过硬的产品实力，赋能千行百业智能化升级，助力国内工控领域实现安全、高效、自主可控的新发展格局。</p>
-<p>
-	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[工程数据长期依赖人工转换，问题通常出在哪里？]]></title>    <link>https://www.elecfans.com/d/8213866.html</link>    <guid>https://www.elecfans.com/d/8213866.html</guid>    <pubDate>2026-08-12 10:19:00</pubDate>    <description><![CDATA[<p>
-	<strong>工程项目仍然需要大量人工转换和整理数据，通常是因为 CAD、BIM、GIS、数据库及业务系统之间缺少统一、可复用的数据流转规则。</strong> 当格式转换、坐标处理、字段映射、数据检查和成果入库都依赖人工操作时，每次数据更新都可能重新经历“导出—整理—转换—检查—上传”的流程，人工工作量会随着数据规模、专业数量和更新频率持续增加。</p>
-<p>
-	Safe Software 在 AEC 场景中将 <strong>BIM、CAD、GIS 数据集成与工作流自动化</strong>作为 FME 的主要工程应用方向。</p>
-<p>
-	工程数据为什么长期依赖人工转换？</p>
-<p>
-	工程项目的数据通常同时来自多个专业系统，例如：</p>
-<p>
-	CAD 图纸</p>
-<p>
-	BIM 模型</p>
-<p>
-	GIS 空间数据</p>
-<p>
-	测绘成果</p>
-<p>
-	Excel 表格</p>
-<p>
-	数据库</p>
-<p>
-	项目管理及其他业务系统</p>
-<p>
-	这些系统的数据结构和使用目的不同。</p>
-<p>
-	因此，数据从一个系统进入另一个系统时，往往需要处理格式、坐标系、几何结构、字段名称、分类编码和目标数据模型。</p>
-<p>
-	一个典型的人工流程通常是：</p>
-<p>
-	<strong>专业系统生成数据 → 人工导出 → 字段与坐标整理 → 格式转换 → 人工检查 → 上传目标系统 → 数据变化后重新执行。</strong></p>
-<p>
-	当项目没有建立统一的数据集成层时，这套流程很容易成为长期存在的重复工作。</p>
-<p>
-	人工工作量大，通常暴露出哪几类问题？</p>
-<p>
-	01｜不同专业系统之间存在数据断点</p>
-<p>
-	CAD、BIM、GIS和业务数据库各自负责不同专业工作。</p>
-<p>
-	问题通常发生在系统之间。</p>
-<p>
-	例如：</p>
-<p>
-	<strong>CAD → GIS</strong></p>
-<p>
-	可能需要处理：</p>
-<p>
-	DWG/DGN等工程数据读取</p>
-<p>
-	图层筛选</p>
-<p>
-	坐标系转换</p>
-<p>
-	几何转换</p>
-<p>
-	字段提取</p>
-<p>
-	GIS数据模型映射</p>
-<p>
-	<strong>BIM → GIS</strong></p>
-<p>
-	还可能涉及：</p>
-<p>
-	模型对象筛选</p>
-<p>
-	属性提取</p>
-<p>
-	空间位置转换</p>
-<p>
-	模型结构与GIS要素结构映射</p>
-<p>
-	如果没有固定转换流程，这些步骤只能由人员重复操作。</p>
-<p>
-	02｜数据标准没有转化为机器可执行规则</p>
-<p>
-	很多项目实际上已经规定了交付标准，例如：</p>
-<p>
-	坐标系要求</p>
-<p>
-	图层规则</p>
-<p>
-	字段名称</p>
-<p>
-	分类编码</p>
-<p>
-	属性完整性</p>
-<p>
-	数据格式</p>
-<p>
-	但这些标准可能仍然存在于文档、Excel模板或者工作人员经验中。</p>
-<p>
-	于是每批数据都需要有人判断：</p>
-<p>
-	哪些图层需要保留？ 字段应该怎样对应？ 哪些编码需要替换？ 哪些对象可以入库？</p>
-<p>
-	<strong>只要业务规则仍然主要依赖人员解释，数据转换就很难形成真正的自动化。</strong></p>
-<p>
-	03｜格式转换和数据整理被拆成多个独立步骤</p>
-<p>
-	工程数据处理通常不只是“DWG转SHP”或者“BIM转GIS”。</p>
-<p>
-	真正的项目流程可能同时包含：</p>
-<p>
-	<strong>读取 → 筛选 → 坐标转换 → 几何处理 → 属性映射 → 数据清洗 → 质量检查 → 输出。</strong></p>
-<p>
-	如果每一步依赖不同软件、插件或脚本，工作人员就需要在不同工具之间反复导入和导出数据。</p>
-<p>
-	流程越长，人工交接点越多。</p>
-<p>
-	为什么“已经有转换工具”仍然需要很多人工？</p>
-<p>
-	关键问题在于很多转换工具只能完成其中一个环节。</p>
-<p>
-	例如，一个工具可以完成格式转换，但转换之后仍然需要人工：</p>
-<p>
-	修改字段；</p>
-<p>
-	统一编码；</p>
-<p>
-	检查缺失值；</p>
-<p>
-	检查几何问题；</p>
-<p>
-	处理坐标；</p>
-<p>
-	按甲方标准重新组织数据；</p>
-<p>
-	将结果上传到目标平台。</p>
-<p>
-	因此，<strong>降低人工处理负担需要关注完整的数据工作流，而不只是单个文件格式之间的转换。</strong></p>
-<p>
-	FME的AEC资料明确提出通过 BIM、CAD、GIS 数据集成和自动化来简化项目工作流，并支持CAD与GIS等系统之间的数据共享。</p>
-<p>
-	数据质量检查为什么也容易成为人工瓶颈？</p>
-<p>
-	工程数据进入GIS、CIM、资产管理或其他业务系统之前，通常需要进行数据检查。</p>
-<p>
-	常见检查对象包括：</p>
-<p>
-	字段是否完整</p>
-<p>
-	属性值是否符合规则</p>
-<p>
-	数据是否重复</p>
-<p>
-	几何结构是否有效</p>
-<p>
-	空间关系是否正确</p>
-<p>
-	坐标是否符合要求</p>
-<p>
-	如果转换和质检分别进行，工作人员通常需要：</p>
-<p>
-	<strong>完成数据转换 → 打开结果 → 检查问题 → 返回修改 → 再次转换。</strong></p>
-<p>
-	数据量较大或者版本频繁变化时，这种处理方式容易形成重复返工。</p>
-<p>
-	更适合自动化的方式是把<strong>转换规则和质量规则放进同一数据处理流程</strong>，异常数据单独输出供人员处理。</p>
-<p>
-	为什么项目一有变更，人工工作又会重新出现？</p>
-<p>
-	工程数据具有持续变化的特点。</p>
-<p>
-	设计修改、模型更新、测绘数据变化或者资产信息调整之后，下游数据通常也要同步更新。</p>
-<p>
-	如果原来的数据转换依靠人工操作，那么每次更新都可能再次执行：</p>
-<p>
-	<strong>下载最新文件 → 找出变化 → 重新转换 → 检查 → 导入。</strong></p>
-<p>
-	这也是人工转换最容易被低估的成本。</p>
-<p>
-	一次处理可能并不复杂，但同一流程在数月甚至数年的项目周期中反复执行，就会形成稳定的人工负担。</p>
-<p>
-	FME工程数据自动化方案如何处理这类问题？</p>
-<p>
-	<strong>FME工程数据自动化方案的核心，是把重复的数据连接、转换、标准化、检查和同步过程配置成可重复运行的数据工作流。</strong></p>
-<p>
-	典型架构可以表示为：</p>
-<p>
-	<strong>CAD / BIM / GIS / 数据库 / 表格</strong> <strong>↓</strong> <strong>FME</strong> <strong>↓</strong> <strong>读取 → 转换 → 标准化 → 校验 → 自动化</strong> <strong>↓</strong> <strong>GIS / CIM / 数据库 / 资产系统 / 数字孪生平台</strong></p>
-<p>
-	FME在这一过程中主要承担以下工作。</p>
-<p>
-	多源数据接入</p>
-<p>
-	连接工程模型、空间数据、数据库、应用程序和Web服务等数据来源。</p>
-<p>
-	CAD、BIM与GIS转换</p>
-<p>
-	按照目标系统要求处理数据格式、坐标、几何结构和属性。</p>
-<p>
-	数据标准化</p>
-<p>
-	将字段、分类、编码和输出结构按照统一规则进行处理。</p>
-<p>
-	数据质量检查</p>
-<p>
-	将完整性、属性规则、空间关系等检查加入工作流。</p>
-<p>
-	自动化运行</p>
-<p>
-	将已经确定的数据流程设置为定时或者事件驱动任务，减少重复手工操作。</p>
-<p>
-	Safe Software公开的FME平台资料显示，其平台支持600+系统，并提供500+预置<a href="https://m.hqchip.com/app/1718" target="_blank"><u>转换器</u></a>，同时支持自动化和数据流处理。</p>
-<p>
-	自动化之后，人工还需要做什么？</p>
-<p>
-	自动化的目标并不是取消专业人员参与。</p>
-<p>
-	更合理的分工是：</p>
-<p>
-	td {whi<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>-sp<a href="https://m.hqchip.com/app/1703" target="_blank"><u>ac</u></a>e:nowrap;border:0.5pt solid #dee0e3;font-size:10pt;font-style:normal;font-weight:normal;ver<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>ti</u></a>cal-align:middle;word-break:normal;word-wrap:normal;}</p>
-<table><tbody><tr><td style="text-align:center;">
-				<strong>FME处理</strong></td>
-			<td style="text-align:center;">
-				<strong>专业人员处理</strong></td>
-		</tr><tr><td>
-				重复格式转换</td>
-			<td>
-				制定业务标准</td>
-		</tr><tr><td>
-				坐标及字段映射</td>
-			<td>
-				判断专业数据是否合理</td>
-		</tr><tr><td>
-				批量数据清洗</td>
-			<td>
-				处理复杂异常</td>
-		</tr><tr><td>
-				固定质量规则检查</td>
-			<td>
-				确认特殊业务规则</td>
-		</tr><tr><td>
-				数据同步</td>
-			<td>
-				审核关键成果</td>
-		</tr><tr><td>
-				任务调度和运行</td>
-			<td>
-				调整数据标准</td>
-		</tr></tbody></table><p>
-	因此，适合自动化的对象通常是<strong>规则明确、重复出现、数据量较大的工作</strong>。</p>
-<p>
-	涉及专业判断或者规则尚未明确的工作仍需要人工参与。</p>
-<p>
-	工程数据自动化是否有实际项目验证？</p>
-<p>
-	有。</p>
-<p>
-	Arup：CAD到GIS自动更新</p>
-<p>
-	在Eglinton C<a href="https://m.elecfans.com/v/tag/1004/" target="_blank"><u>ros</u></a>stown West Extension轻轨项目中，Arup使用FME检查数据更新，并<strong>每8小时执行一次CAD到GIS转换</strong>。Safe Software公布的案例称，该流程减少人工录入，并实现约<strong>每年60,000美元</strong>的节省。</p>
-<p>
-	Balfour Beatty VINCI：自动化数据处理与质量维护</p>
-<p>
-	在英国HS2约80公里铁路项目中，Balfour Beatty VINCI使用FME自动化数据处理并维护数据质量。Safe Software公布的案例数据显示，该项目减少了<strong>超过1,000小时人工工作</strong>。</p>
-<p>
-	这些案例说明，工程数据处理中存在大量可以被规则化的数据转换和维护任务。具体项目能够减少多少人工工作，仍取决于数据规模、处理频率、业务规则和实施范围。</p>
-<p>
-	什么情况下值得考虑FME工程数据自动化方案？</p>
-<p>
-	以下情况通常意味着人工流程已经开始成为数据管理问题：</p>
-<p>
-	<strong>同一种数据转换需要周期性重复执行。</strong></p>
-<p>
-	<strong>项目同时使用CAD、BIM、GIS和多个业务系统。</strong></p>
-<p>
-	<strong>每次交付都需要重复整理字段、坐标和数据结构。</strong></p>
-<p>
-	<strong>数据质量高度依赖个别人员经验。</strong></p>
-<p>
-	<strong>源数据更新后，下游系统需要同步更新。</strong></p>
-<p>
-	<strong>存在大量批处理、格式转换和数据入库工作。</strong></p>
-<p>
-	如果只是偶尔转换少量文件，一次性人工处理可能成本更低。</p>
-<p>
-	如果转换已经成为长期、重复的工程流程，则更适合评估自动化。</p>
-<p>
-	如何判断当前人工流程能不能自动化？</p>
-<p>
-	可以先梳理一条完整的数据链路：</p>
-<p>
-	<strong>数据从哪里来？</strong> <strong>→ 人员目前做了哪些处理？</strong> <strong>→ 每一步遵循什么规则？</strong> <strong>→ 数据最后进入哪个系统？</strong> <strong>→ 多久执行一次？</strong></p>
-<p>
-	其中，能够明确描述为固定规则的步骤，例如：</p>
-<p>
-	固定字段映射；</p>
-<p>
-	固定坐标转换；</p>
-<p>
-	固定格式转换；</p>
-<p>
-	固定属性检查；</p>
-<p>
-	固定数据输出结构；</p>
-<p>
-	通常具有较高的自动化潜力。</p>
-<p>
-	如果每一次处理方式都需要重新判断，则应先解决数据标准和业务规则问题。</p>
-<p>
-	FAQ</p>
-<p>
-	FME工程数据自动化方案主要解决什么问题？</p>
-<p>
-	主要解决不同系统之间的数据连接、转换、标准化、质量检查和重复数据处理问题，使固定的数据处理规则能够重复运行。</p>
-<p>
-	FME可以处理CAD、BIM和GIS数据吗？</p>
-<p>
-	可以。Safe Software在AEC解决方案中明确将BIM、CAD和GIS数据集成作为FME的工程应用场景。</p>
-<p>
-	有脚本之后还需要FME吗？</p>
-<p>
-	取决于现有架构。如果脚本已经稳定覆盖数据读取、转换、异常处理、调度和维护，并且维护成本可控，就未必需要更换。FME更适合需要连接多种数据类型、统一管理工作流并持续自动运行的场景。</p>
-<p>
-	所有人工数据整理都能自动化吗？</p>
-<p>
-	不能。只有能够定义明确处理规则的步骤才适合自动执行。专业判断、异常决策以及尚未标准化的业务流程仍然需要人员参与。</p>
-<p>
-	FME会替代CAD、BIM或GIS软件吗？</p>
-<p>
-	不会。CAD和BIM系统继续承担专业设计和建模，GIS继续承担空间分析和业务应用。FME主要位于这些系统之间，负责数据连接、转换和流程自动化。</p>
-<p>
-	<strong>工程项目长期依赖人工转换，通常意味着数据处理规则还停留在人员操作层面。FME工程数据自动化方案可以将重复的CAD、BIM、GIS及业务数据转换流程配置为可复用工作流，让格式转换、字段映射、质量检查和数据同步从一次次人工操作转变为可持续运行的数据流程。<br/><br/>
-	审核编辑 黄宇</strong></p>]]></description></item><item>    <title><![CDATA[美格智能发布具身智能采集方案，补齐真实场景数据短板]]></title>    <link>https://www.elecfans.com/d/8213867.html</link>    <guid>https://www.elecfans.com/d/8213867.html</guid>    <pubDate>2026-08-12 10:19:00</pubDate>    <description><![CDATA[<div class="vditor-preview__action"/><div class="vditor-reset"><p>近日，美格智能正式发布了面向具身智能场景的专用数据采集终端解决方案，这套方案专门针对具身设备的移动作业、多<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>同步采集需求做了深度优化，给行业提供了一套省心高效的数据采集工具，帮研发团队快速拿到高质量的真实场景数据，加速具身智能产品的落地迭代。</p><p>很多做具身智能研发的<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>都有过类似的困扰：以往想要采集机器人在真实场景里的运行数据，往往要自己零散搭配摄像头、激光雷达、IMU惯性传感器等各类部件，不同传感器之间的时间同步很难做精准，经常出现图像数据和运动数据对不齐的问题，后续处理数据的时候要花大量时间做校准对齐，既浪费时间也很难保障数据的准确性。而美格智能这套一体化的解决方案，直接把多传感器同步采集的能力整合到了一起，从根源上解决了多源数据不同步的痛点。</p><p>这套方案的核心优势，就是实现了多传感器的<a href="https://m.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>同步采集。它的终端硬件搭载了专门优化的同步控制单元，能让摄像头、激光雷达、惯性测量单元、轮速计等十几路不同类型的传感器，在完全统一的时间轴上同步输出数据，不同传感器之间的时间偏差被控制在微秒级别，工程师拿到手的原始数据天然就是对齐的，不用再花费大量时间做后期的校准处理，大幅降低了数据预处理的工作量，让研发团队能把更多精力放在<a href="https://www.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>迭代上。</p><p>针对具身设备移动作业的特性，这套终端的硬件设计也做了很多针对性优化。它的整体体积做得非常紧凑轻便，功耗控制得也很出色，既可以直接搭载在人形<a href="https://bbs.elecfans.com/group_756" target="_blank"><u>机器人</u></a>的机身背部，跟着机器人在行走、抓取的过程中同步采集全身的运动和环境数据，也能安装在巡检机器人、工业AGV、户外<a href="https://www.elecfans.com/tags/自动驾驶/" target="_blank"><u>自动驾驶</u></a>小车上，在设备移动的过程中持续采集周围的环境信息和自身的运行状态数据。终端本身还支持宽温宽压运行，哪怕在工厂车间、户外园区这类复杂工况下，也能稳定不间断采集数据，不会因为环境震动、温度变化出现数据断连的问题。</p><p>在数据传输和存储能力上，这套方案也做了充足的配置。它配备了大容量的本地存储空间，在没有网络的场景下也能长时间缓存采集到的原始数据，不会因为临时网络中断丢失重要数据。同时它还支持<a href="https://m.elecfans.com/v/tag/1225/" target="_blank"><u>5G</u></a>高速无线传输，在网络环境良好的场景下，能把采集到的海量数据实时传回后端的训练平台，不用研发人员频繁跑到现场导出数据，哪怕设备在城市的不同区域移动作业，也能远程完成数据的实时回传，大幅提升数据采集的效率。</p><p>除此之外，美格智能还为这套方案配套了完整的软件工具链，工程师不用自己从零搭建采集系统，拿到终端之后简单配置就能启动采集工作。配套的软件平台还支持实时预览采集到的图像、点云、运动数据，随时查看数据质量，一旦发现采集的数据不符合要求，能立刻调整采集策略，不用等后续处理的时候才发现问题，避免了大量无效采集的时间浪费。</p><p>目前这套具身智能数据采集终端解决方案已经开始面向行业客户开放测试，不少人形机器人、工业智能机器人的研发团队，都已经开始用这套方案采集真实场景的训练数据。后续美格智能还会针对不同类型的具身设备，推出更多定制化的适配版本，进一步优化多传感器同步的精度，给具身智能行业的快速发展提供更扎实的数据采集支撑，帮助更多研发团队加速产品落地迭代。</p></div>]]></description></item><item>    <title><![CDATA[8芯带铠光纤国标的多粗]]></title>    <link>https://www.elecfans.com/d/8213868.html</link>    <guid>https://www.elecfans.com/d/8213868.html</guid>    <pubDate>2026-08-12 10:19:00</pubDate>    <description><![CDATA[<p>
-	国标8芯带铠光纤的粗细(外径)根据不同的铠装结构和敷设场景有明确的规范范围，不同主流型号的参数差异如下：</p>
-<p>
-	一、室外常用国标8芯带铠光缆外径</p>
-<p>
-	‌GYXTW(<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>束管式架空铠装)‌：国标外径约‌8mm‌，常规范围8.3～11.2mm，适配架空敷设场景。</p>
-<p>
-	‌GYTS/GYTA(层绞式管道/埋地铠装)‌：国标外径约‌10.2mm‌，常规范围8.3～11.2mm，适配管道、普通埋地场景。</p>
-<p>
-	‌GYTA53(层绞式重铠直埋)‌：国标外径约11mm左右，适配无需套管的直接埋地场景。</p>
-<p>
-	二、室内国标8芯铠装光缆外径</p>
-<p>
-	不锈钢铠装软光缆：国标外径约‌4.5mm‌，属于小型化铠装产品，适配室内穿管、光纤到桌面场景。</p>
-<p>
-	低烟无卤室内铠装光缆：国标外径约‌6.4mm‌，满足阻燃防火要求，适配楼宇室内布线场景。</p>
-<p>
-	三、其他国标参考规格</p>
-<p>
-	部分工程采购的国标8芯单模带铠光缆，外径执行‌7.8～8.2mm‌的区间标准，兼顾布线灵活性和<a href="https://www.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>强度。<br/><br/>
-	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[工作电压:2.4V~7.2V、内置过热保护功能的单通道直流马达驱动器-SS6216]]></title>    <link>https://www.elecfans.com/d/8213887.html</link>    <guid>https://www.elecfans.com/d/8213887.html</guid>    <pubDate>2026-08-12 10:20:00</pubDate>    <description><![CDATA[<p>
-	直流有刷马达<a href="https://m.hqchip.com/app/1787" target="_blank"><u>驱动芯片</u></a>是一款适应消费类 、工业类的单通道直流有刷驱动IC，适用于各类玩具，<a href="https://m.elecfans.com/v/tag/663/" target="_blank"><u>智能家居</u></a>，智能三表。小封装，低功耗，内置完善的保护机制（过温/过流/过压）。具有一个PWM（INA/INB）输入<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>，支持与行业标准器件兼容。内置温度保护功能，当芯片温度急剧升高，内部电路关断内置的功率开关管，切断负载<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>。是为低电压下工作的系统而设计的<a href="https://bbs.elecfans.com/group_755" target="_blank"><u>直流马达</u></a>驱动<a href="https://m.elecfans.com/v/tag/123/" target="_blank"><u>集成电路</u></a>，单通道低导通电阻。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/70/C6/wKgZO2p72CKATgfdAAEbD729Eg4836.png" alt="wKgZO2p72CKATgfdAAEbD729Eg4836.png"/>单通道直流马达驱动器-SS6216</p>
-<p>
-	<br/>
-	SS6216是一款专为低压系统设计的单通道直流<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>驱动集成电路，凭借其低导通电阻、内置保护功能及简洁的控制逻辑，提供稳定、安全、高效的驱动性能。单通道低导通电阻。具备电机正转/反转/停止/刹车四个功能。SS6216内置温度保护功能，当芯片温度急剧升高，内部电路关断内置的功率开关管，切断负载电流。</p>
-<p>
-	SS6216的工作电压范围为2.0V至7.2V，每个通道的负载电流可达1.4A，峰值输出电流为1.6A。它的低待机电流仅为0.1uA，低导通电阻为0.6ohm；这些特性使得SS6216能够满足小型化产品的需求。</p>
-<p>
-	此外，SS6216还具有内置的过热保护功能，可以提供安全保障。它还包括下沉和下降外部供应商实施的采购电流限制<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>、欠压锁定、过电流保护（OCP）和热停堆等内部安全特征。温度过高时，它还可以输出标志以指示热关机。</p>
-<p>
-	它采用PWM控制接口，并能够支持2节<a href="https://m.elecfans.com/v/tag/2692/" target="_blank"><u>锂电池</u></a>的使用。此外，SS6216还可以兼容替代市场上的其他型号，如FM116C、TC118S、MX116L、SA113和TMI8118等。</p>
-<p>
-	<strong>脚位定义与描述：</strong></p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/70/C5/wKgZPGp72DKAad6RAAD0gUgiQRY968.png" alt="wKgZPGp72DKAad6RAAD0gUgiQRY968.png"/><strong>脚位定义与描述</strong></p>
-<p>
-	<strong>马达驱动芯片</strong><strong> - SS6216的特性：</strong></p>
-<p>
-	工作电压范围：2.4V ~ 7.2V</p>
-<p>
-	输出连续电流：较高1.4A</p>
-<p>
-	输出峰值电流：较高2A</p>
-<p>
-	高电平输入电压 (VINH)：≥ 2.0V</p>
-<p>
-	结温范围：-30℃ 至 +150℃</p>
-<p>
-	导通电阻 (RDS(on))：0.6 Ω</p>
-<p>
-	待机电流：0.1 µA</p>
-<p>
-	功耗 (PD)：≤0.96 W</p>
-<p>
-	封装：SOP8封装</p>
-<p>
-	<strong>直流</strong><strong>电机驱动芯片</strong><strong> - SS6216的应用领域：</strong></p>
-<p>
-	玩具</p>
-<p>
-	智能锁，挂锁</p>
-<p>
-	直流有刷电机驱动</p>
-<p>
-	车载有刷<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机控制</u></a><br/><br/>
-	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[97%全球出货份额！中国人形机器人强势领跑，智元超越宇树登顶]]></title>    <link>https://www.elecfans.com/d/8213918.html</link>    <guid>https://www.elecfans.com/d/8213918.html</guid>    <pubDate>2026-08-12 10:20:00</pubDate>    <description><![CDATA[<p>
-	8月10日，市场研究机构 Smart Analy<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>ti</u></a>cs Global（SAG）发布最新行业数据显示，2026 年上半年中国人形<a href="https://bbs.elecfans.com/group_756" target="_blank"><u>机器人</u></a>制造商占全球 97% 以上的出货量，凸显中国在这个新兴领域确立早期领先优势。</p>
-<p>
-	2026年上半年，全球人形机器人出货量激增272%，达到19,100台。预计今年全年出货量将达到6万台，到2030年将攀升至50万台。<br/><br/><img alt="" src="https://file1.elecfans.com/web3/M00/70/C6/wKgZO2p72Z2AHR8WAAN8erxragc773.png" style="width:1000px;height:319px;"/></p>
-<p>
-	中国厂商在这一领域占据主导地位，出货量占比高达97%，同时中国买家也消化了全球85%的市场需求。在厂商竞争格局方面，智元机器人（AgiBot）已超越宇树科技（Unitree）跃居市场第一，这两家头部企业合计占据了75%的出货量。</p>
-<p>
-	2026年上半年，工业和商业应用占据了人形机器人出货量的70%以上，较2025年上半年的约50%显著增长。这一领域仍将是实现真正市场规模化的关键路径。这标志着该行业正从“新奇展示”向“实用落地”转变。</p>
-<p>
-	SAG预计，2026年全球人形机器人出货量将接近6万台，同比几乎翻了三倍，行业总收入将达到约16亿美元。</p>
-<h3>
-	智元机器人交付量增长迅猛，超越宇树科技</h3>
-<p>
-	2026年上半年，智元机器人（AGIBOT）出货量达到约8400台，同比增长562%。其全球出货份额从2025年上半年的25%跃升至44%，成功超越宇树科技（Unitree）跃居行业第一。</p>
-<p>
-	智元的强劲增长得益于其多元化的产品组合，涵盖全尺寸双足A系列、小尺寸双足X系列以及轮式G系列机器人，其中工业和商业应用是其部署的核心重点。此外，该公司正加速国际化扩张，特别在欧洲市场，其产品目前已成功部署至英国和德国等地。</p>
-<p style="text-align:center;">
-	<img alt="" src="https://file1.elecfans.com/web3/M00/70/C6/wKgZO2p72bSAdHRkAAy_n8PcvaI662.png" style="width:600px;height:408px;"/></p>
-<p>
-	7月18日在W<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>C2026上，智元机器人展示了远征A3 Ultra，174cm全尺寸人形机器人，700Tops满血算力，5kg负载灵巧手，8小时续航+自主充电，支持百台级群控文能导览接待，开箱即用的商用机全功能机器人。灵犀X2 EDU则是轻量型人形机器人，130cm人形机身，29个全身自由度，单臂7自由度，末端负载3kg。</p>
-<p>
-	宇树科技同样实现了强劲增长，出货量同比大增170%至约5900台，以31%的全球市场份额位居第二。在小尺寸双足机器人领域，宇树科技占据主导地位，其中主力机型G1表现最为突出，截至2026年年中，G1的累计产量已达到约11000台。与智元及其他几家头部厂商不同，宇树科技在科研、教育和表演相关应用领域的部署仍占有相当大的比重。</p>
-<h3>
-	Top3到Tops5厂商集中亮相，工业领域的普及是机器人规模化关键</h3>
-<p>
-	银河通用机器人（Galbot）以约900台的出货量位居第三，主要专注于面向工业和商业应用场景的轮式人形机器人。其战略凸显了轮式设计在结构化工作环境中的重要性日益提升，在这类环境中，移动性、稳定性和成本往往比完全仿人的运动能力更具优先级。</p>
-<p>
-	优必选（UB<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>TE</u></a>CH）以约700台的出货量排名第四，这主要得益于其针对工业和商业应用的全尺寸双足Walker系列。该公司目前也在向轮式机器人领域拓展；同时，SAG预计其新推出的U系列超仿生机器人将在2026年下半年成为其产品组合中日益重要的一部分。</p>
-<p>
-	乐聚机器人（Leju）以约600台的出货量跻身行业前五。SAG的统计仅涵盖了其KUAVO系列，未包含Aelos和Roban等产品，因为这些产品不符合SAG对“功能性具身人形机器人”的定义。</p>
-<p>
-	剩余市场依然呈现高度分散的状态，除了傅利叶（Fourier）、NOETIX（诺亦腾）、Agility Robotics（敏捷机器人）等众多厂商外，还存在着庞大的长尾市场。</p>
-<p>
-	SAG估计，2026年上半年，工业和商业应用占据了全球人形机器人出货量的70%以上，较2025年上半年的约50%显著增长。制造业、物流、仓储及其他结构化商业环境正成为实现商业化的主要路径。在这些场景中，机器人能够执行更明确的任务，并展现出可衡量的生产力与经济价值。</p>
-<p>
-	与此同时，新的应用场景正在涌现，尤其是主打人际互动与情感陪伴的超仿生人形机器人。然而，考虑到当前的成本、技术局限性、消费者接受度，以及围绕高度仿人机器人和AI互动可能引发的伦理与监管问题，这类应用能否实现真正的大规模普及仍有待验证。</p>
-<p>
-	尽管出货量增长迅速，但人形机器人硬件的扩张速度仍快于底层技术的成熟度。真实世界训练数据、AI模型能力、可靠性、操作精度、安全性以及成本等方面的挑战，仍在制约其更广泛的部署。</p>
-<p>
-	包括视觉-语言-动作（VLA）模型和世界模型在内的相关技术虽在快速发展，但目前仍处于相对早期的阶段。从“能演示的机器人”向“能可靠工作的机器人”跨越，将是解锁更广泛商业应用的关键。</p>
-<h3>
-	机器人发展驱动力强劲，国产零部件布局已呈现主导趋势</h3>
-<p>
-	行业分析人士指出，中国机器人产业的快速全面崛起，不仅得益于政策激励，更源于完整的制造产业链、前瞻性的制度安排以及海量的真实应用场景所带来的综合优势。</p>
-<p>
-	总部位于北京深度科技研究院院长张孝荣周一在接受媒体采访时表示：“答案不在于单纯的政策口号，而在于植根于制造业基础、早期制度框架和庞大应用场景的协同效应。正是这些因素推动了‘新新三样’产业走向全球舞台。”</p>
-<p>
-	“强劲的机器人出口，反映了中国在整机设计、系统集成、场景<a href="https://www.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>、快速交付和成本控制方面的进步，以及减速器、伺服系统和<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>持续实现的国产化。而在<a href="https://m.elecfans.com/v/tag/293/" target="_blank"><u>新能源</u></a>汽车、电子制造和仓储等领域的大规模应用，则为机器人提供了高频的迭代与工程验证机会。”张孝荣说。根据行业分析，宇树科技供应链的国产化率已达到90%，且所有核心部件均实现完全自主研发。</p>]]></description></item><item>    <title><![CDATA[CST 未设置激励端口，如何查看端口之间的耦合？]]></title>    <link>https://www.elecfans.com/d/8213889.html</link>    <guid>https://www.elecfans.com/d/8213889.html</guid>    <pubDate>2026-08-12 10:21:00</pubDate>    <description><![CDATA[<p>
-	在 CST Studio Sui<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a> 电磁<a href="https://bbs.elecfans.com/zhuti_proteus_1.html" target="_blank"><u>仿真</u></a>软件的多<a href="https://www.hqchip.com/app/1808" target="_blank"><u>端口</u></a><a href="https://www.elecfans.com/v/tag/2802/" target="_blank"><u>电路仿真</u></a>场景中，无激励端口条件下如何获取各端口间<a href="https://www.elecfans.com/tags/耦合/" target="_blank"><u>耦合</u></a>参数，是很多仿真设计人员经常遇到的问题。借助对应的仿真设置与后处理手段，即便端口不施加激励<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>，依旧可以完成端口之间的耦合特性分析。本文就针对该仿真场景，详细讲解 CST 下端口耦合的分析实操方法。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/70/C5/wKgZO2p715GANiDLAAJvn24DONo152.png" alt="wKgZO2p715GANiDLAAJvn24DONo152.png"/></p>
-<p>
-	一、理解耦合和端口<br/>
-	在<a href="https://bbs.elecfans.com/zhuti_dianlu_1.html" target="_blank"><u>电路设计</u></a>中，耦合指的是一个电路元件与另一个元件之间的相互影响。耦合通常通过<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>或电磁场的传输实现。在CST中，端口定义为信号的输入或输出点。常见的端口类型包括：</p>
-<p>
-	<br/>
-	-波导端口：用于处理传输线和波导结构。<br/>
-	-电压源端口：用于接入电压信号。<br/>
-	-<a href="https://m.hqchip.com/app/1725" target="_blank"><u>电流源</u></a>端口：用于接入电流信号。<br/>
-	</p>
-<p>
-	通过设置这些端口，<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>能够分析信号如何在电路中传递，以及不同设备间的耦合程度。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/70/C5/wKgZPGp717mAQh-yABokA-kKMJs425.png" alt="wKgZPGp717mAQh-yABokA-kKMJs425.png"/></p>
-<p>
-	<strong>二、查看耦合的基本方法</strong><br/>
-	即使没有激励端口，我们仍然可以通过以下方法来评估和查看其他端口的耦合：<br/>
-	1. 使用 S-参数分析<br/>
-	在CST中，S-参数（散射参数）是理解和量化不同端口之间耦合的关键工具。即使没有直接的激励，S-参数仍可以用于系统的整体分析。具体步骤如下：<br/>
-	-创建端口：尽管没有激励源，依然应该为想要分析的电路部分设置端口，确保所有关键连接都有端口定义。<br/>
-	-进行仿真：运行仿真，CST将计算出每个端口之间的S-参数。结果中包含S11, S21, S12等参数，S21和S12可以用来评估不同端口之间的耦合程度。</p>
-<p>
-	2. 使用场分布可视化<br/>
-	除此之外，可以通过场分布的可视化来进一步分析耦合情况：<br/>
-	查看场分布：在仿真完成后，利用CST的场可视化功能，查看电场（E场）和磁场（H场分布）。分析不同端口附近的场强度分布，可以直观地判断耦合程度。<br/>
-	提取场数据：在特定位置提取电场和磁场数据，以定量方式分析耦合强度。这可以帮助你了解信号在不同端口之间的通过情况。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/70/C5/wKgZPGp71_6AUALfABosG1q16oM115.png" alt="wKgZPGp71_6AUALfABosG1q16oM115.png"/></p>
-<p>
-	即便不在 CST 中对端口施加直接激励，也不会阻碍端口耦合效应的分析工作。借助 S 参数提取、电磁场分布可视化、灵敏度分析等手段，便能够有效识别并量化各个端口之间的耦合程度。建议设计人员在建模阶段，尽量在关键位置创建端口；即便后续不对其施加激励，也可为后处理仿真保留完整的数据支撑。合理搭配各类仿真工具与分析方法，能够显著提升电路性能分析效率，助力输出最优设计方案。<br/><br/>
-	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[iData盈达RFID手持终端全场景应用深度解析]]></title>    <link>https://www.elecfans.com/d/8213891.html</link>    <guid>https://www.elecfans.com/d/8213891.html</guid>    <pubDate>2026-08-12 10:21:00</pubDate>    <description><![CDATA[<div class="vditor-preview__action"/><div class="vditor-reset"><p>在鞋服零售、固定资产管理、仓储物流、制造追踪等场景中，传统条码逐件扫描的盘点方式已难以满足企业对效率和准确率的要求。<a href="https://www.elecfans.com/tags/rfid/" target="_blank"><u>RFID</u></a>（<a href="https://www.elecfans.com/v/tag/105/" target="_blank"><u>射频</u></a>识别）技术通过批量无接触识读电子标签，可一次性采集数百件<a href="https://www.hqchip.com/ask/" target="_blank"><u>商品</u></a>信息，大幅缩短盘点周期。然而，不同行业对<a href="https://bbs.elecfans.com/group_65" target="_blank"><u>RF</u></a>ID手持终端的识读距离、速率、便携性、防护等级及系统兼容性存在差异化需求。国产RFID手持终端品牌正针对各行业痛点推出细分产品。本文以iData盈达为例，解析其RFID手持终端在不同场景中的针对性解决方案。</p><h3><strong>一、鞋服零售与仓储场景：批量盘点与库存实时同步</strong></h3><p>鞋服零售行业SKU数量庞大，SKU数量动辄数十万计，且季节性换货频繁，门店与仓库需高频次库存核对。</p><p><strong>痛点需求</strong> ：传统人工逐件扫描条码效率低下，难以满足周盘或日盘要求；门店空间有限，设备需轻便易用；库存数据需实时同步ERP系统，支撑补货和调货决策。</p><p><strong>iData解决方案</strong> ：</p><p><strong>T1 UHF</strong> ：把枪式专业级RFID终端，<a href="https://m.hqchip.com/tags" target="_blank"><u>标签</u></a>识读速率超过700tags/s，最大识读距离可达25米。在服装门店盘点场景中，工作者挥动设备即可读取货架上数百件商品的电子标签，无需逐一翻找条码。主机与手柄电池合计最高11700mAh，可满足两整个班次的连续盘点需求，支持热插拔更换电池，无需关机中断作业。IP67防护等级适应门店仓库等环境。</p><p><strong>Q3000系列</strong> ：组合式超高频手持终端，可通过<a href="https://www.elecfans.com/tags/蓝牙/" target="_blank"><u>蓝牙</u></a>连接无缝接入<a href="https://www.elecfans.com/v/tag/502/" target="_blank"><u>Android</u></a>、<a href="https://www.elecfans.com/tags/ios/" target="_blank"><u>iOS</u></a>等主流<a href="https://www.elecfans.com/v/tag/527/" target="_blank"><u>操作系统</u></a>生态，支持专用卡夹与iData PDA实现即插即用。基于IM<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>NJ Ex10系列芯片，标签识读速率超过200tags/s，识读距离可达30米。Q3000提供三种产品形态（Pogopin、S<a href="https://m.hqchip.com/app/1721" target="_blank"><u>led</u></a>、Universal），可根据实际需要自主选择应用方式，最大程度免去对现有设备架构的改造，显著降低部署成本。</p><p><strong>P1 UHF系列</strong> ：10.1英寸大屏RFID工业平板，标配UHF RFID识读功能，识读速率超过200tags/s，识读距离1-5米。适用于门店收银台、仓库管理等需要大屏交互的固定或移动作业场景。</p><p><strong>实际案例</strong> ：海澜集团采用T1P和Q3000 RFID智能盘点设备，项目周期4年。鞋服SKU数量庞大，人工盘点效率低下。实施后盘点效率提升90%，人力成本降低40%以上，库存盘点准确率100%，补货响应速度提升50%。目前已覆盖生产、仓储、门店全链路，并拓展至海外门店。</p><h3><strong>二、固定资产管理场景：跨区域资产追踪与账实核对</strong></h3><p>金融、政府、大型企业等机构的固定资产分布广泛，涵盖办公设备、自助终端、交通工具等，管理难度大。</p><p><strong>痛点需求</strong> ：资产分布全国各地，传统人工盘点需跨区域协调，管理成本极高；资产调拨、报废、借用等流程缺乏实时追踪，账卡物不一致频发，影响审计合规。</p><p><strong>iData解决方案</strong> ：</p><p><strong>T2 UHF系列</strong> ：把枪式高性能RFID终端，标签识读速率超过700tags/s，识读距离可达20米。主机电池4500mAh加手柄电池6700mAh，合计11200mAh，可满足2个班次连续盘点。动态占空比算法可节省约40%的盘点时间。该系列可选国产展锐平台，支持安卓/开源<a href="https://www.elecfans.com/v/tag/40/" target="_blank"><u>鸿蒙</u></a>4.1/星光麒麟三个操作系统，满足信创需求。</p><p><strong>T2X系列</strong> ：高扩展便携式RFID终端，重量仅31<a href="https://www.elecfans.com/v/tag/1225/" target="_blank"><u>5g</u></a>，可插入口袋随身携带。UHF识读速率最高200tags/s，识读距离可达6米。支持LF（125KHz/134KHz）、HF、UHF等多种RFID模块，几乎覆盖所有RFID识读需求，适用于资产盘点、巡检、畜牧管理、卡证识读等多元场景。</p><p><strong>U500系列</strong> ：RFID门禁式读写器，支持4<a href="https://www.hqchip.com/app/1808" target="_blank"><u>端口</u></a>/8端口配置，可安装于仓库门口或办公室出入口，自动记录资产进出轨迹，实现资产流动的自动化追踪，无需人工扫码干预。</p><p><strong>实际案例</strong> ：国内某大型股份制商业银行采用T2U RFID手持机+U500 RFID门禁+RFID打印机方案，项目周期5年。资产分布全国，传统人工盘点需跨区域协调。实施后盘点效率提升85%，人力成本降低40%以上，盘点准确率99.9%，盘点周期缩短50%。</p><h3><strong>三、仓储物流场景：批量出入库与货物追踪</strong></h3><p>仓储物流行业货物进出频繁，需快速完成大批量货物的入库、出库、盘点和分拣作业。</p><p><strong>痛点需求</strong> ：人工逐件扫码效率低，影响物流周转速度；托盘、周转箱等货物单元需批量读取；部分作业环境存在灰尘、震动等干扰因素。</p><p><strong>iData解决方案</strong> ：</p><p><strong>T2 UHF系列</strong> ：支持批量标签识读，识读速率超过700tags/s，在大批量出入库场景中，工作者可一次读取整托盘货物的电子标签，无需逐件扫描。11200mAh超大电池容量支持长班次连续作业。IP67防护和1.5米抗跌落设计，适应仓库叉车作业环境。</p><p><strong>T1 UHF</strong> ：最大识读距离25米，在大型仓库中，工作者可在通道中远距离读取货架上的标签，无需靠近货架逐件操作，提升盘点效率。</p><p><strong>Q3000系列</strong> ：蓝牙连接方式可快速为<a href="https://www.elecfans.com/v/tag/11230/" target="_blank"><u>智能手机</u></a>或现有PDA扩展RFID群读群扫能力，降低设备更换成本；离线存储标签数量达100000张，可在网络不稳定区域完成数据采集后批量上传。</p><p><strong>实际案例</strong> ：顺丰、申通使用RFID设备用于大仓仓储管理；菜鸟使用RFID设备用于全球数据机房设备管理；春秋航空使用RFID设备用于行李车管理，实现行李流转的全程可追溯。</p><h3><strong>四、制造场景：工装管理与产线物料追踪</strong></h3><p>制造业生产线涉及大量工具、工装、在制品物料的流转，需精准追踪以保障生产节拍和质量追溯。</p><p><strong>痛点需求</strong> ：无尘服等重复使用物资的领用、清洗、回收需规范管理；生产线工装工具易丢失，影响生产进度；部分制造环境存在金属干扰，对RFID读写性能提出挑战。</p><p><strong>iData解决方案</strong> ：</p><p><strong>R400系列桌面式读写器</strong> ：支持4通道/8通道配置，可灵活适配不同工位的安装与布局需求，满足多样化作业场景下的设备部署要求。搭配U500系列读写器，可实现洁净区人员防护规范与生产、办公资源的协同管理。</p><p><strong>T2X系列</strong> ：支持LF低频RFID识读（125KHz/134KHz），在金属、液体等干扰环境下仍可保持稳定读取性能，适用于金属制造、畜牧管理等特殊场景。</p><p><strong>实际案例</strong> ：天马集团（液晶显示模块头部企业）采用R400和U500 RFID读写器，用于员工管理和无尘服领用回收管理。项目周期1年，员工管理覆盖率100%，人力成本降低40%以上，库存盘点准确率99.9%。</p><hr/><p>结语：本文所引案例与参数均基于公开资料。实际应用中，读者可根据盘点规模、识读距离需求、系统兼容性及预算进行综合评估。</p><p>审核编辑 黄宇</p></div>]]></description></item><item>    <title><![CDATA[怎么让水表、烟感和追踪器“自己开口说话”？]]></title>    <link>https://www.elecfans.com/d/8213893.html</link>    <guid>https://www.elecfans.com/d/8213893.html</guid>    <pubDate>2026-08-12 10:22:00</pubDate>    <description><![CDATA[<p>
-	凌晨三点，小区地下管井一片漆黑。没有人抄表，没有<a href="https://www.elecfans.com/tags/wi-fi/" target="_blank"><u>Wi-Fi</u></a>，也没有人给设备充电。可一块水表却在预定时间醒来，读取数据、完成加密、连接蜂窝网络，把用水量发送到平台，然后再次进入深度睡眠。</p>
-<p>
-	它发出的数据也许只有很小一包，但背后需要处理<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>协议、<a href="https://www.elecfans.com/v/tag/105/" target="_blank"><u>射频</u></a>收发、主控运算、<a href="https://m.hqchip.com/app/1731" target="_blank"><u>电源管理</u></a>、<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>连接和数据安全。过去，这些功能往往需要多颗器件配合；现在，它们可以被压进一颗只有6mm×6mm的芯片里。</p>
-<p>
-	这颗芯片，就是芯翼信息科技的XY1100。</p>
-<p>
-	它不是普通通信模块，而是一颗完整SoC</p>
-<p>
-	如果把一台<a href="https://www.elecfans.com/soft/data/55-88/" target="_blank"><u>物联网</u></a>终端比作一个人，通信模块像“嘴巴”，<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>像“大脑”，<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>管理像“心脏”，射频前端像“耳朵”。XY1100的思路，是把这些关键能力尽量整合到同一颗SoC中。</p>
-<p>
-	XY1100基于32位<a href="https://m.hqchip.com/app/1378" target="_blank"><u>ARM</u></a> Cortex-M3内核，主频最高106MHz，集成2MB Flash和900KB <a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>。同时集成<a href="https://www.elecfans.com/tags/nb-iot/" target="_blank"><u>NB-IoT</u></a>协议栈、<a href="https://m.hqchip.com/app/1522" target="_blank"><u>SIM</u></a>卡接口、<a href="https://bbs.elecfans.com/group_65" target="_blank"><u>RF</u></a>收发、CMOS PA、电源管理以及<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>、SPI、I²C、<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>、PWM、GPIO等外设资源。</p>
-<table style="background-color:rgb(255,255,255);"><thead><tr><th style="border-bottom:0.727273px solid rgba(0,0,0,0.12);border-top:none;padding:10px 16px 10px 0px;">
-				项目</th>
-			<th style="border-bottom:0.727273px solid rgba(0,0,0,0.12);border-top:none;padding:10px 16px;">
-				规格</th>
-		</tr></thead><tbody><tr><td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 16px 10px 0px;">
-				定位</td>
-			<td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 0px 10px 16px;">
-				面向低速、低功耗、广覆盖物联网终端的NB-IoT SoC</td>
-		</tr><tr><td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 16px 10px 0px;">
-				通信</td>
-			<td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 0px 10px 16px;">
-				兼容3GPP R13/R14，支持PSM与eDRX</td>
-		</tr><tr><td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 16px 10px 0px;">
-				<a href="https://www.hqchip.com/app/1381" target="_blank"><u>处理器</u></a></td>
-			<td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 0px 10px 16px;">
-				32位ARM Cortex-M3，最高106MHz</td>
-		</tr><tr><td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 16px 10px 0px;">
-				存储</td>
-			<td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 0px 10px 16px;">
-				2MB Flash；900KB RAM</td>
-		</tr><tr><td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 16px 10px 0px;">
-				封装</td>
-			<td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 0px 10px 16px;">
-				6mm×6mm，QFN 52引脚</td>
-		</tr><tr><td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 16px 10px 0px;">
-				频段</td>
-			<td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 0px 10px 16px;">
-				Bands 1/3/5/8/20/28</td>
-		</tr><tr><td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 16px 10px 0px;">
-				接口</td>
-			<td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 0px 10px 16px;">
-				UART、SPI、I²C、CSP、<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>C、PWM、GPIO、USIM等</td>
-		</tr><tr><td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 16px 10px 0px;">
-				工作温度</td>
-			<td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 0px 10px 16px;">
-				-40℃至+85℃</td>
-		</tr><tr><td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 16px 10px 0px;">
-				供电</td>
-			<td style="border-bottom:0.727273px solid rgba(0,0,0,0.1);padding:10px 0px 10px 16px;">
-				2.2V~4.2V宽压输入</td>
-		</tr></tbody></table><p>
-	真正厉害的，不是参数多，而是“少用很多东西”</p>
-<p>
-	对终端厂商来说，一颗芯片最有价值的地方，不是规格表写得多漂亮，而是它能不能减少外围器件、缩小<a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>、降低采购与贴片复杂度，并减少联调风险。</p>
-<p>
-	XY1100是全球首款片内集成CMOS PA的NB-IoT SoC芯片，于2018年6月发布。它片内集成了CMOS PA、射频收发、基带、处理器和电源管理。基于该方案的模组外围器件可低至约20颗物料，模组器件数减少60%，模组成本整体下降50%。</p>
-<p>
-	这里的关键词不是“省下一颗器件”，而是<strong>减少整套BOM与制造链条中的不确定性</strong>。高集成度意味着更小的板级空间、更短的物料清单、更少的供应商协调，以及更容易控制的量产一致性。</p>
-<p>
-	此外，XY1100采用<a href="https://www.hqchip.com/app/1522" target="_blank"><u>SD</u></a>R（软件定义无线电）架构，基带可通过软件升级支持多模通信或私有协议扩展，无需重新流片——这对于碎片化的物联网市场来说是一个重要的灵活性优势。</p>
-<p>
-	为什么低功耗设备愿意用它？因为它大部分时间都在“睡”</p>
-<p>
-	智能水表、燃气表、烟感和资产追踪器，并不需要一直高速传输。它们更像一个极度克制的值班员：平时沉睡，到了时间或发生事件才醒来，上报少量数据，然后迅速休眠。</p>
-<p>
-	XY1100支持<a href="https://m.hqchip.com/app/1703" target="_blank"><u>AC</u></a><a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>TI</u></a>VE、STANDBY和DEEPSLEEP三种工作模式，并支持NB-IoT的PSM与eDRX。其PSM（深度睡眠）功耗低至<strong>700nA~800nA</strong>，单次通信能耗仅约0.04mAh。</p>
-<p>
-	接收灵敏度方面，单传可达<strong>-118dBm</strong>，128次重传可达<strong>-137dBm</strong>。对电池供电产品而言，这两项指标分别对应“尽可能少耗电”和“弱<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>环境下尽可能听得见”。</p>
-<p>
-	当然，整机续航并不只由芯片决定，还与电池容量、上报频率、网络覆盖、发射功率、<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>和固件策略有关。但芯片能否深睡、能否快速完成通信，是低功耗设计的底座。</p>
-<p>
-	一颗芯片，如何接住不同的传感器？</p>
-<p>
-	XY1100提供丰富的外设接口：两组可配置主从模式的I²C、最多5路SPI、最多5路UART、4组CSP、4路PWM、最高19个GPIO，以及两路12位ADC。</p>
-<p>
-	这意味着它可以连接计量芯片、温<a href="https://www.elecfans.com/tags/湿度传感器/" target="_blank"><u>湿度传感器</u></a>、<a href="https://www.elecfans.com/tags/压力传感器/" target="_blank"><u>压力传感器</u></a>、烟雾检测单元、存储器和各种<a href="https://www.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>。硬件AES引擎支持128/192/256位密钥，并覆盖ECB、CBC、CTR、CCM等模式，为终端数据安全提供硬件基础。</p>
-<p>
-	对<a href="https://bbs.elecfans.com/group_1231" target="_blank"><u>开发者</u></a>来说，它不是只能“把数据传出去”的通信芯片，而更接近一个<strong>能采集、处理、加密并联网的完整终端平台</strong>。</p>
-<p>
-	这些不起眼的设备，正在被它连接</p>
-<p>
-	<strong>第一类，是智能表计。</strong> 水表、燃气表、电表通常数据量小、部署量大、位置分散，很多设备一装就是多年。NB-IoT的覆盖与低功耗特性非常匹配。XY1100已通过水表、燃气表龙头企业的严苛测试，并在50多个城市完成外场规模测试。</p>
-<p>
-	<strong>第二类，是智慧安防。</strong> 智能烟感、门磁、报警器平时几乎沉默，但一旦发生异常，必须可靠上报。</p>
-<p>
-	<strong>第三类，是资产追踪和城市设施。</strong> 共享单车、智能换电、电动车管理、井盖、路灯、停车位、<a href="https://m.elecfans.com/v/tag/1453/" target="_blank"><u>环境监测</u></a>节点，都需要低频率、小数据包和广域连接。</p>
-<p>
-	<strong>第四类，是工业与远程监测。</strong> 设备状态、故障码、温度、压力等数据不一定需要大带宽，却需要稳定、低成本地从现场回到云端。</p>
-<p>
-	截至2022年，XY1100年出货量已接近4000万颗，服务超过100家物联网客户，合作模组厂商包括中移物联、芯讯通、移远通信、广和通等。</p>
-<p>
-	它不适合什么？</p>
-<p>
-	XY1100面向的是低速率、低功耗的窄带物联网。如果产品需要视频上传、大文件传输、持续语音或高吞吐实时连接，就不应该拿NB-IoT硬扛，而应评估Cat.1 bis、<a href="https://www.elecfans.com/v/tag/9979/" target="_blank"><u>4G</u></a>或其他更高带宽方案。</p>
-<p>
-	选芯片的第一原则，从来不是“参数越多越好”，而是<strong>通信能力与场景刚好匹配</strong>。</p>
-<p>
-	真正改变物联网的，往往不是最喧闹的芯片</p>
-<p>
-	人们容易注意手机里的旗舰处理器，却很少看见藏在水表、烟感、追踪器和城市设施里的小芯片。它们不负责炫目的画面，也不需要每秒传输海量数据；它们只需要在正确的时间醒来，把正确的数据稳定送达，然后继续安静工作。</p>
-<p>
-	XY1100所代表的，正是物联网规模化落地的一条现实路径：用更高集成度压缩BOM，用低功耗延长设备寿命，用蜂窝网络把分散在城市各处的终端连接起来。</p>
-<p>
-	当一块水表开始“说话”，当一个烟感学会“报警”，当一件资产能够“报位置”——背后也许就是这样一颗只有6毫米的芯片。<br/><br/>
-	审核编辑 黄宇</p>]]></description></item>  </channel></rss>
+<p>总的来说，Nidcom 的这款变压器 750815550 在性能、环保和合规性等方面都有不错的表现。作为电子工程师，我们在设计过程中需要综合考虑各种因素，根据具体的应用场景选择最适合的变压器。希望今天的分析对大家在变压器的选择和设计中有所帮助。如果你有任何疑问或想分享自己的经验，欢迎在下方留言讨论。 </p>]]></description></item>  </channel></rss>
