@@ -1,4 +1,1161 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[安捷伦信号发生器维修避坑指南：别自己拆机，先做这5步]]></title>    <link>https://www.elecfans.com/d/8226605.html</link>    <guid>https://www.elecfans.com/d/8226605.html</guid>    <pubDate>2026-08-14 17:50:00</pubDate>    <description><![CDATA[<p>
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[零知派——STM32智能小车系列教程（六）：蓝牙/串口双通道通信协议设计]]></title>    <link>https://www.elecfans.com/d/8226595.html</link>    <guid>https://www.elecfans.com/d/8226595.html</guid>    <pubDate>2026-08-14 17:47:00</pubDate>    <description><![CDATA[<p>
+	<strong>引言：</strong>智能小车要实现的功能很多——避障、跟随、贴边、灭火、直线行驶，每一个模块单独调试起来都有自己的难点。如果一开始就把所有模块塞进一个工程里联调，出了问题很难分清到底是<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>硬件的问题、电平极性的问题，还是上层控制算法的问题</p>
+<p>
+	所以这一系列教程的思路是：<strong>先把每个功能模块单独拎出来，配一个不依赖其他硬件的最小测试程序，把模块本身调通调透，再回头看它在完整项目里是怎么被使用的</strong></p>
+<p>
+	<strong>目录</strong></p>
+<p>
+	一、引言</p>
+<p>
+	二、<a href="https://www.elecfans.com/tags/蓝牙/" target="_blank"><u>蓝牙</u></a>串口模块硬件原理</p>
+<p>
+	2.1 SPP协议的本质</p>
+<p>
+	2.2两种工作模式</p>
+<p>
+	2.3 常用 AT 指令</p>
+<p>
+	三、硬件接线说明</p>
+<p>
+	3.1 引脚定义</p>
+<p>
+	3.2 接线方案表</p>
+<p>
+	3.3 连接示意图</p>
+<p>
+	四、<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>协议设计</p>
+<p>
+	4.1 双通道架构</p>
+<p>
+	4.2 单字符命令解析</p>
+<p>
+	4.3多字符命令解析</p>
+<p>
+	4.4模式切换与状态管理</p>
+<p>
+	五、独立测试程序</p>
+<p>
+	5.1 测试步骤</p>
+<p>
+	5.2 系统流程图</p>
+<p>
+	六、蓝牙控制模式</p>
+<p>
+	七、常见问题 FAQ</p>
+<p>
+	Q1：蓝牙模块可以同时连接多个设备吗？</p>
+<p>
+	Q2：收到数据全是乱码？</p>
+<p>
+	一、引言</p>
+<p>
+	前五篇教程分别讲了循迹、超声波云台、<a href="https://www.elecfans.com/tags/红外/" target="_blank"><u>红外</u></a>双目跟随、测速+<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>D闭环、DHT11与灭火，每一篇的核心都是<strong>某一个功能模块</strong>。这一篇不一样——它讲的是把前面所有模块串起来、对外提供操作入口的那一层：<strong>通信协议</strong>。</p>
+<p>
+	这台小车目前支持<strong>两条完全独立的通信通道</strong>同时工作：</p>
+<p>
+	一条是<a href="https://m.hqchip.com/app/1515" target="_blank"><u>USB</u></a>转串口（连<a href="https://m.elecfans.com/v/tag/1247/" target="_blank"><u>电脑</u></a>，通常配合XCOM或<a href="https://www.elecfans.com/v/tag/62/" target="_blank"><u>Arduino</u></a>串口监视器调试）</p>
+<p>
+	另一条是HC-05/BT06蓝牙模块（连手机APP或者电脑虚拟串口）</p>
+<table><thead><tr><th style="width:172px;">
+				特性</th>
+			<th style="width:517px;">
+				说明</th>
+		</tr></thead><tbody><tr><td style="width:172px;">
+				双通道</td>
+			<td style="width:517px;">
+				USB 串口（有线调试）+ 蓝牙（无线遥控），共用同一套命令解析</td>
+		</tr><tr><td style="width:172px;">
+				双模式</td>
+			<td style="width:517px;">
+				单字符命令（模式切换/方向控制）+ 多字符命令（参数设置/查询）</td>
+		</tr><tr><td style="width:172px;">
+				实时性</td>
+			<td style="width:517px;">
+				非阻塞轮询，蓝牙超时自动刷帧</td>
+		</tr><tr><td style="width:172px;">
+				可扩展性</td>
+			<td style="width:517px;">
+				命令表驱动，新增命令无需改动核心解析逻辑</td>
+		</tr></tbody></table><p>
+	两条通道物理上互不干扰，但需要共享同一套命令解析逻辑——用户不管是在电脑上敲命令还是拿<a href="https://www.elecfans.com/v/tag/107/" target="_blank"><u>手机</u></a>发指令，最终都应该执行完全一致的行为，"双通道、单一解析入口"的架构设计，</p>
+<p>
+	<strong>系列进度：</strong></p>
+<table><thead><tr><th>
+				篇号</th>
+			<th>
+				主题</th>
+			<th>
+				核心硬件</th>
+		</tr></thead><tbody><tr><td>
+				第一篇（已完成）</td>
+			<td>
+				五路循迹模块</td>
+			<td>
+				TCRT5000 + LM393/LM339</td>
+		</tr><tr><td>
+				第二篇（已完成）</td>
+			<td>
+				HC-SR04超声波+SG90舵机云台</td>
+			<td>
+				HC-SR04 + SG90</td>
+		</tr><tr><td>
+				第三篇（已完成）</td>
+			<td>
+				红外双目跟随模块</td>
+			<td>
+				红外避障对管</td>
+		</tr><tr><td>
+				第四篇（已完成）</td>
+			<td>
+				红外对射式测速+直线行驶PID闭环</td>
+			<td>
+				槛型红外计数模块+码盘+PID</td>
+		</tr><tr><td>
+				第五篇（已完成）</td>
+			<td>
+				DHT11温湿度、火焰传感器、风扇灭火</td>
+			<td>
+				DHT11+火焰传感器+风扇</td>
+		</tr><tr><td>
+				<strong>第六篇（本文）</strong></td>
+			<td>
+				<strong>蓝牙/串口双通道通信协议设计</strong></td>
+			<td>
+				<strong>HC-05/BT06</strong></td>
+		</tr><tr><td>
+				终篇（待更新）</td>
+			<td>
+				整车项目架构总览</td>
+			<td>
+				全模块整合</td>
+		</tr></tbody></table><p>
+	二、蓝牙串口模块硬件原理</p>
+<p>
+	蓝牙串口模块是一种基于<strong>蓝牙 SPP（Serial Port Profile，串口<a href="https://m.hqchip.com/app/1808" target="_blank"><u>端口</u></a>协议）</strong>的<a href="https://www.elecfans.com/soft/data/43-45/" target="_blank"><u>无线通信</u></a>模块。它的核心作用是<strong>“<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>有线串口”</strong>——把蓝牙无线通信转换成标准的 <a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a> 串口通信，<a href="https://bbs.elecfans.com/group_1231" target="_blank"><u>开发者</u></a>不需要理解复杂的蓝牙协议栈，只需要像操作普通串口一样收发数据即可</p>
+<p>
+	<strong>2.1 SPP协议的本质</strong></p>
+<p>
+	SPP 是蓝牙协议栈中的一个标准规范，它规定如何在两个蓝牙设备之间建立一个<strong>虚拟串行链路</strong></p>
+<p>
+	<img alt="wKgZPGp-5AyAfFLhAADSqsUXQ3k922.png" src="https://file1.elecfans.com/web3/M00/71/6A/wKgZPGp-5AyAfFLhAADSqsUXQ3k922.png"/></p>
+<p>
+	这个链路模拟了传统 <a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>-232 串口的所有特性——数据以字节流形式传输、全双工通信、无需复杂的握手协议。对上层应用来说，蓝牙连接和一根 USB 串口线没有区别。</p>
+<p>
+	<strong>HC-05 与 HC-06 的区别</strong>：</p>
+<p>
+	本项目同时支持 HC-05 和 HC-06 两种蓝牙模块：</p>
+<table><thead><tr><th>
+				对比项</th>
+			<th>
+				HC-05</th>
+			<th>
+				HC-06</th>
+		</tr></thead><tbody><tr><td>
+				主从模式</td>
+			<td>
+				<strong>主从一体</strong>，可动态切换</td>
+			<td>
+				<strong>纯从机</strong>，只能被连接</td>
+		</tr><tr><td>
+				角色切换</td>
+			<td>
+				支持（AT+ROLE=1 切为主机）</td>
+			<td>
+				不支持</td>
+		</tr><tr><td>
+				AT 指令</td>
+			<td>
+				完整指令集，可配置所有参数</td>
+			<td>
+				精简指令集，仅支持基础配置</td>
+		</tr><tr><td>
+				默认波特率</td>
+			<td>
+				38400（AT 模式）</td>
+			<td>
+				9600</td>
+		</tr><tr><td>
+				价格</td>
+			<td>
+				较高</td>
+			<td>
+				较低</td>
+		</tr><tr><td>
+				适用场景</td>
+			<td>
+				需要主动连接其他设备</td>
+			<td>
+				手机→小车单向控制</td>
+		</tr></tbody></table><p>
+	如果只需要手机控制小车（手机作为主机主动连接），HC-06 完全够用且更便宜。如果需要小车之间组网通信或主动发起连接，选择 HC-05</p>
+<p>
+	2.2两种工作模式</p>
+<p>
+	HC-05 模块具有<strong>两种工作模式</strong>：</p>
+<p>
+	<strong>① 命令响应工作模式（AT 模式）</strong>：</p>
+<p>
+	用于配置模块参数（修改名称、波特率、主从角色等）</p>
+<p>
+	进入方式：上电时将 KEY 引脚拉高</p>
+<p>
+	串口波特率通常为 38400（HC-05）或 9600（HC-06）</p>
+<p>
+	数据格式固定：8 位数据位、1 位停止位、无校验位、无流控制</p>
+<p>
+	<strong>② 自动连接工作模式（透传模式）</strong>：</p>
+<p>
+	正常通信模式，数据透明传输</p>
+<p>
+	模块可作为主机（Master）、从机（Slave）或回环（Loopb<a href="https://m.hqchip.com/app/1703" target="_blank"><u>ac</u></a>k）角色</p>
+<p>
+	配对成功后，串口数据直接通过蓝牙发送</p>
+<p>
+	2.3 常用 AT 指令</p>
+<p>
+	HC-05 模块的所有功能通过 AT 指令集控制。以下是最常用的几条：</p>
+<table><thead><tr><th style="width:146px;">
+				AT 指令</th>
+			<th style="width:366px;">
+				功能</th>
+			<th style="width:177px;">
+				示例响应</th>
+		</tr></thead><tbody><tr><td style="width:146px;">
+				AT</td>
+			<td style="width:366px;">
+				测试指令</td>
+			<td style="width:177px;">
+				OK</td>
+		</tr><tr><td style="width:146px;">
+				AT+NAME=</td>
+			<td style="width:366px;">
+				设置模块名称</td>
+			<td style="width:177px;">
+				OK</td>
+		</tr><tr><td style="width:146px;">
+				AT+BAUD=</td>
+			<td style="width:366px;">
+				设置波特率（1=1200, 2=2400, 3=4800, 4=9600, 5=19200, 6=38400...）</td>
+			<td style="width:177px;">
+				OK</td>
+		</tr><tr><td style="width:146px;">
+				AT+ROLE=</td>
+			<td style="width:366px;">
+				设置角色（0=从机, 1=主机）</td>
+			<td style="width:177px;">
+				OK</td>
+		</tr><tr><td style="width:146px;">
+				AT+<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>DR?</td>
+			<td style="width:366px;">
+				查询模块地址</td>
+			<td style="width:177px;">
+				+ADDR:xxxx:xx:xxxxxx</td>
+		</tr><tr><td style="width:146px;">
+				AT+RESET</td>
+			<td style="width:366px;">
+				复位模块</td>
+			<td style="width:177px;">
+				OK</td>
+		</tr></tbody></table><p>
+	发送 AT 指令时，每条指令必须以rn</p>
+<p>
+	三、硬件接线说明</p>
+<p>
+	3.1 引脚定义</p>
+<p>
+	本项目蓝牙模块的引脚定义（与pin<a href="https://m.hqchip.com/app/1522" target="_blank"><u>sd</u></a>efine.h一致）：</p>
+<p>
+	</p>
+<pre>
+#define BTSerial        Serial2   // 蓝牙模块使用硬件串口3</pre>
+<p>
+	</p>
+<p>
+	零知派迷你板的硬件串口分配：</p>
+<table><thead><tr><th>
+				串口</th>
+			<th>
+				引脚</th>
+			<th>
+				用途</th>
+		</tr></thead><tbody><tr><td>
+				Serial</td>
+			<td>
+				PA9(TX)/PA10(RX)</td>
+			<td>
+				USB 串口（调试用）</td>
+		</tr><tr><td>
+				Serial1</td>
+			<td>
+				PA2(TX)/PA3(RX)</td>
+			<td>
+				预留</td>
+		</tr><tr><td>
+				Serial2</td>
+			<td>
+				PB10(TX)/PB11(RX)</td>
+			<td>
+				<strong>蓝牙模块</strong></td>
+		</tr></tbody></table><p>
+	3.2 接线方案表</p>
+<table><thead><tr><th>
+				模块</th>
+			<th>
+				引脚</th>
+			<th>
+				零知派迷你板引脚</th>
+			<th>
+				说明</th>
+		</tr></thead><tbody><tr><td>
+				HC-05/06</td>
+			<td>
+				VCC</td>
+			<td>
+				5V</td>
+			<td>
+				供电</td>
+		</tr><tr><td>
+				HC-05/06</td>
+			<td>
+				GND</td>
+			<td>
+				GND</td>
+			<td>
+				共地</td>
+		</tr><tr><td>
+				HC-05/06</td>
+			<td>
+				TXD</td>
+			<td>
+				PB11（RX3）</td>
+			<td>
+				模块发送→主控接收</td>
+		</tr><tr><td>
+				HC-05/06</td>
+			<td>
+				RXD</td>
+			<td>
+				PB10（TX3）</td>
+			<td>
+				主控发送→模块接收</td>
+		</tr><tr><td>
+				HC-05</td>
+			<td>
+				KEY</td>
+			<td>
+				可选 GPIO</td>
+			<td>
+				AT 模式使能（HC-06 无此引脚）</td>
+		</tr></tbody></table><p>
+	模块的 TXD 接主控的 RX，模块的 RXD 接主控的 TX——这是串口通信的基本规则，接反了将无法通信</p>
+<p>
+	3.3 连接示意图</p>
+<p>
+	<img alt="wKgZPGp-4_WAQa80AAYbY9V4ZVs345.png" src="https://file1.elecfans.com/web3/M00/71/6A/wKgZPGp-4_WAQa80AAYbY9V4ZVs345.png"/></p>
+<p>
+	<strong>蓝牙模块初始化</strong></p>
+<p>
+	在setup()中初始化蓝牙串口</p>
+<p>
+	</p>
+<pre>
+Serial.begin(115200);   // USB 串口，115200
+delay(100);
+BTSerial.begin(9600);   // 蓝牙模块，9600（与手机蓝牙助手匹配）
+delay(50);</pre>
+<p>
+	</p>
+<p>
+	<strong>波特率匹配</strong>：蓝牙模块的波特率必须与手机蓝牙助手 APP 中设置的波特率一致</p>
+<p>
+	四、通信协议设计</p>
+<p>
+	4.1 双通道架构</p>
+<p>
+	整车项目的通信系统采用<strong>双通道并行</strong>架构，给USB串口写一套parseUSB()，给蓝牙写一套parseBT()，两边各自处理各自的命令</p>
+<p>
+	</p>
+<pre>
+class CommManager {
+public:
+    void upda<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>();   // 每帧调用，非阻塞轮询两条物理通道
+private:
+    char    _usbBuf[48];
+    uint8_t _usbIdx = 0;
+    char    _btBuf[48];
+    uint8_t _b<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>tI</u></a>dx = 0;
+    unsigned long _btLastByte = 0;
+    static const uint8_t BT_FLUSH_MS = 30;
+
+    void parseLine(const char *raw, bool fromBT);   // 统一入口
+    void parseCmd(char c, bool fromBT);
+};</pre>
+<p>
+	</p>
+<p>
+	<strong>①双通道优势</strong></p>
+<table><thead><tr><th>
+				通道</th>
+			<th>
+				用途</th>
+			<th>
+				特点</th>
+		</tr></thead><tbody><tr><td>
+				USB 串口（Serial）</td>
+			<td>
+				固件调试、参数设置、日志输出</td>
+			<td>
+				有线稳定，适合开发调试</td>
+		</tr><tr><td>
+				蓝牙（Serial2）</td>
+			<td>
+				无线遥控、实时命令</td>
+			<td>
+				无线便捷，适合成品使用</td>
+		</tr></tbody></table><p>
+	两个通道<strong>共用同一套命令解析逻辑</strong>，保证有线调试和无线遥控的行为完全一致</p>
+<p>
+	<strong>②结束行判定</strong></p>
+<p>
+	 <strong>手机蓝牙串口助手APP发送数据时不一定带换行符</strong>，如果只靠换行判断结束，用户在APP里点发送后命令会一直卡在缓冲区里等不到n</p>
+<p>
+	</p>
+<pre>
+void CommManager::update()
+{
+    // USB Serial（XCOM，换行结帧）
+    while (Serial.av<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>ai</u></a>lable()) {
+        char c = (char)Serial.read();
+        if (c == 'n' || c == 'r') {
+            if (_usbIdx &gt; 0) { _usbBuf[_usbIdx] = ''; parseLine(_usbBuf, false); _usbIdx = 0; }
+        } else if (_usbIdx &lt; sizeof(_usbBuf) - 1) {
+            _usbBuf[_usbIdx++] = c;
+        } else { _usbIdx = 0; }
+    }
+
+    // BTSerial（超时30ms自动刷帧，兼容不发换行的蓝牙助手）
+    while (BTSerial.available()) {
+        char c = (char)BTSerial.read();
+        _btLastByte = millis();
+        if (c == 'n' || c == 'r') {
+            if (_btIdx &gt; 0) { _btBuf[_btIdx] = ''; parseLine(_btBuf, true); _btIdx = 0; }
+        } else if (_btIdx &lt; sizeof(_btBuf) - 1) {
+            _btBuf[_btIdx++] = c;
+        } else { _btIdx = 0; }
+    }
+    if (_btIdx &gt; 0 &amp;&amp; (millis() - _btLastByte) &gt;= BT_FLUSH_MS) {
+        _btBuf[_btIdx] = ''; parseLine(_btBuf, true); _btIdx = 0;
+    }
+}</pre>
+<p>
+	</p>
+<p>
+	额外记录最后一次收到字节的时间_btLastByte,缓冲区里有数据、且超过30毫秒没有收到新字节，就认为这一帧已经发送完毕，主动触发解析</p>
+<p>
+	<strong>关键设计</strong>：</p>
+<table><thead><tr><th>
+				设计点</th>
+			<th>
+				说明</th>
+		</tr></thead><tbody><tr><td>
+				<strong>非阻塞轮询</strong></td>
+			<td>
+				不会因为等待串口数据而阻塞主循环</td>
+		</tr><tr><td>
+				<strong>行缓冲</strong></td>
+			<td>
+				分别维护 USB 和蓝牙的接收缓冲区</td>
+		</tr><tr><td>
+				<strong>蓝牙超时刷帧</strong></td>
+			<td>
+				30ms 无新数据自动处理已收到的字符【sc_comms.h†L35】</td>
+		</tr><tr><td>
+				<strong>双通道隔离</strong></td>
+			<td>
+				USB 和蓝牙独立缓冲，互不干扰</td>
+		</tr></tbody></table><p>
+	4.2 单字符命令解析</p>
+<p>
+	</p>
+<pre>
+void CommManager::parseCmd(char c, bool /*fromBT*/)
+{
+    switch (c) {
+        // ── 模式切换 ──────────────────────────────────────────────
+        case 'A': setMode(MODE_MANUAL);   return;
+        case 'B': setMode(MODE_AVOID);    return;
+        // ... 其他模式
+
+        // ── 功能查询 ──────────────────────────────────────────────
+        case 'T': {  // DHT11 温湿度
+            byte t = 0, h = 0;
+            g_env.getTempHumi(&amp;t, &amp;h);
+            return;
+        }
+        case 'I': {  // IR 传感器状态
+            bool lIR = false, rIR = false;
+            g_ir.read(&amp;lIR, &amp;rIR);
+            Serial.print(F("[IR] L=")); Serial.print(lIR);
+            Serial.print(F(" R=")); Serial.println(rIR);
+            return;
+        }
+        case 'U': {  // 启动自整定
+            if (g_mode != MODE_STRAIGHT) {
+                Serial.println(F("[AUTOTUNE] 请先切换到H(直线)模式"));
+                return;
+            }
+            startAutoTune();
+            return;
+        }
+    }
+
+    // ── 方向控制（手动/直线/灭火模式有效） ──────────────────────
+    if (g_mode == MODE_MANUAL || g_mode == MODE_STRAIGHT || g_mode == MODE_FIRE) {
+        switch (c) {
+            case '1': g_motor.goWithDirec(ca<a href="https://www.elecfans.com/tongxin/rf/" target="_blank"><u>rF</u></a>orward);  break;
+            case '2': g_motor.goWithDirec(carBack);     break;
+            // ... 其他方向
+            case '0': case '9': g_motor.stop();         break;
+        }
+    }
+}</pre>
+<p>
+	</p>
+<p>
+	<strong>单字符命令格式（即时响应）</strong></p>
+<table><thead><tr><th>
+				命令</th>
+			<th>
+				功能</th>
+			<th>
+				说明</th>
+		</tr></thead><tbody><tr><td>
+				A</td>
+			<td>
+				切换到手动模式</td>
+			<td>
+				用户遥控驾驶</td>
+		</tr><tr><td>
+				B</td>
+			<td>
+				切换到避障模式</td>
+			<td>
+				自动避障</td>
+		</tr><tr><td>
+				C</td>
+			<td>
+				切换到循迹模式</td>
+			<td>
+				自动循迹</td>
+		</tr><tr><td>
+				D</td>
+			<td>
+				切换到魔术手模式</td>
+			<td>
+				超声波手势跟随</td>
+		</tr><tr><td>
+				E</td>
+			<td>
+				切换到贴边模式</td>
+			<td>
+				沿墙行驶</td>
+		</tr><tr><td>
+				F</td>
+			<td>
+				切换到灭火模式</td>
+			<td>
+				手动驾驶 + 自动灭火</td>
+		</tr><tr><td>
+				G</td>
+			<td>
+				切换到跟随模式</td>
+			<td>
+				红外双目跟随</td>
+		</tr><tr><td>
+				H</td>
+			<td>
+				切换到直线模式</td>
+			<td>
+				PID 闭环直线行驶</td>
+		</tr><tr><td>
+				1~8</td>
+			<td>
+				方向控制</td>
+			<td>
+				前后左右及组合方向</td>
+		</tr><tr><td>
+				0/9</td>
+			<td>
+				停止</td>
+			<td>
+				急停</td>
+		</tr><tr><td>
+				T</td>
+			<td>
+				读取温湿度</td>
+			<td>
+				DHT11 数据</td>
+		</tr><tr><td>
+				I</td>
+			<td>
+				读取 IR 状态</td>
+			<td>
+				红外传感器调试</td>
+		</tr><tr><td>
+				U</td>
+			<td>
+				启动自整定</td>
+			<td>
+				仅在 H 模式下有效</td>
+		</tr><tr><td>
+				HELP</td>
+			<td>
+				打印命令帮助</td>
+			<td>
+				多字符命令</td>
+		</tr></tbody></table><p>
+	4.3多字符命令解析</p>
+<p>
+	</p>
+<pre>
+void CommManager::parseLine(const char *raw, bool fromBT)
+{
+    char buf[48];
+    uint8_t len = 0;
+    for (const char *p = raw; *p &amp;&amp; len &lt; 47; p++) {
+        char ch = *p;
+        if (ch == ' ' || ch == 't') continue;
+        buf[len++] = (ch &gt;= 'a' &amp;&amp; ch &lt;= 'z') ? (ch - 32) : ch;
+    }
+    buf[len] = '';
+    if (len == 0) return;
+    if (len == 1) { parseCmd(buf[0], fromBT); return; }
+
+    if (strcmp(buf, "INFO") == 0) { printInfo(); return; }
+    if (strcmp(buf, "HELP") == 0) { printHelp(); return; }
+
+    if (startsWithCS(buf, "TKP=")) {
+        g_track.setTunings(floatAfter(buf, 4), g_track.Kd);
+        Serial.print(F("[SET] TKp=")); Serial.println(g_track.Kp);
+        BTSerial.print(F("[SET] TKp=")); BTSerial.println(g_track.Kp); return;
+    }
+    if (startsWithCS(buf, "TKD=")) {
+        g_track.setTunings(g_track.Kp, floatAfter(buf, 4));
+        Serial.print(F("[SET] TKd=")); Serial.println(g_track.Kd);
+        BTSerial.print(F("[SET] TKd=")); BTSerial.println(g_track.Kd); return;
+    }
+    if (startsWithCS(buf, "SPD=")) {
+        g_track.setBaseSpeed(intAfter(buf, 4));
+        Serial.print(F("[SET] TSPD=")); Serial.println(g_track.baseSpeed);
+        BTSerial.print(F("[SET] TSPD=")); BTSerial.println(g_track.baseSpeed); return;
+    }
+    if (startsWithCS(buf, "KP=")) { g_track.setTunings(floatAfter(buf, 3), g_track.Kd); return; }
+    if (startsWithCS(buf, "KD=")) { g_track.setTunings(g_track.Kp, floatAfter(buf, 3)); return; }
+
+    if (startsWithCS(buf, "WKP=")) {
+        g_wall.Kp = floatAfter(buf, 4);
+        g_wall.setTunings(g_wall.Kp, g_wall.Ki, g_wall.Kd);
+        Serial.print(F("[SET] WKp=")); Serial.println(g_wall.Kp);
+        BTSerial.print(F("[SET] WKp=")); BTSerial.println(g_wall.Kp); return;
+    }
+    if (startsWithCS(buf, "WKI=")) {
+        g_wall.Ki = floatAfter(buf, 4);
+        g_wall.setTunings(g_wall.Kp, g_wall.Ki, g_wall.Kd);
+        Serial.print(F("[SET] WKi=")); Serial.println(g_wall.Ki);
+        BTSerial.print(F("[SET] WKi=")); BTSerial.println(g_wall.Ki); return;
+    }
+    if (startsWithCS(buf, "WKD=")) {
+        g_wall.Kd = floatAfter(buf, 4);
+        g_wall.setTunings(g_wall.Kp, g_wall.Ki, g_wall.Kd);
+        Serial.print(F("[SET] WKd=")); Serial.println(g_wall.Kd);
+        BTSerial.print(F("[SET] WKd=")); BTSerial.println(g_wall.Kd); return;
+    }
+    if (startsWithCS(buf, "WSET=")) {
+        g_wall.setDistance(floatAfter(buf, 5));
+        Serial.print(F("[SET] WDist=")); Serial.println(g_wall.setpoint);
+        BTSerial.print(F("[SET] WDist=")); BTSerial.println(g_wall.setpoint); return;
+    }
+
+    if (strcmp(buf, "RESET")  == 0) { resetStraightPID(); return; }
+    if (strcmp(buf, "LRESET") == 0) { setStraightPID(true,  0.5, 0.01, 0.0); return; }
+    if (strcmp(buf, "RRESET") == 0) { setStraightPID(false, 0.5, 0.01, 0.0); return; }
+
+    if (startsWithCS(buf, "LKP=")) { setStraightPID(true,  floatAfter(buf, 4), s_lKi, s_lKd); return; }
+    if (startsWithCS(buf, "LKI=")) { setStraightPID(true,  s_lKp, floatAfter(buf, 4), s_lKd); return; }
+    if (startsWithCS(buf, "LKD=")) { setStraightPID(true,  s_lKp, s_lKi, floatAfter(buf, 4)); return; }
+    if (startsWithCS(buf, "RKP=")) { setStraightPID(false, floatAfter(buf, 4), s_rKi, s_rKd); return; }
+    if (startsWithCS(buf, "RKI=")) { setStraightPID(false, s_rKp, floatAfter(buf, 4), s_rKd); return; }
+    if (startsWithCS(buf, "RKD=")) { setStraightPID(false, s_rKp, s_rKi, floatAfter(buf, 4)); return; }
+
+    if (startsWithCS(buf, "SSPD=")) {
+        s_setpoint = floatAfter(buf, 5);
+        Serial.print(F("[SET] Setpoint=")); Serial.println(s_setpoint);
+        BTSerial.print(F("[SET] Setpoint=")); BTSerial.println(s_setpoint); return;
+    }
+    // 新增：码盘每圈脉冲数现场调整（原来写死为20）
+    if (startsWithCS(buf, "PPR=")) {
+        int ppr = intAfter(buf, 4);
+        setEncoderPPR(ppr);
+        Serial.print(F("[SET] PPR=")); Serial.println(ppr);
+        BTSerial.print(F("[SET] PPR=")); BTSerial.println(ppr); return;
+    }
+
+    if (startsWithCS(buf, "EA=")) {
+        setEncoderEmaAlpha(floatAfter(buf, 3));
+        BTSerial.print(F("[SET] EA=")); BTSerial.println(floatAfter(buf, 3));
+        return;
+    }
+
+    Serial.print(F("[WARN] 未知命令: ")); Serial.println(raw);
+    if (fromBT) { BTSerial.print(F("[WARN] Unknown: ")); BTSerial.println(raw); }
+}
+
+</pre>
+<p>
+	</p>
+<p>
+	<strong>①字符串解析优化</strong></p>
+<p>
+	</p>
+<pre>
+// 全部基于 char*，不触碰堆，避免内存碎片
+static bool startsWithCS(const char* s, const char* prefix) {
+    return strncmp(s, prefix, strlen(prefix)) == 0;
+}
+static float floatAfter(const char* s, uint8_t prefixLen) {
+    return atof(s + prefixLen);
+}
+static int intAfter(const char* s, uint8_t prefixLen) {
+    return atoi(s + prefixLen);
+}</pre>
+<p>
+	</p>
+<p>
+	String 类在堆上动态分配内存，长时间运行会产生内存碎片。buf本身是栈上的固定大小数组，strncmp和atof都是不涉及堆分配的标准库函数，全程不产生任何动态内存分配</p>
+<p>
+	<strong>②多字符命令格式（参数设置/查询）</strong></p>
+<table><thead><tr><th>
+				命令格式</th>
+			<th>
+				功能</th>
+			<th>
+				示例</th>
+		</tr></thead><tbody><tr><td>
+				TKP=数值</td>
+			<td>
+				设置循迹比例系数</td>
+			<td>
+				TKP=6.5</td>
+		</tr><tr><td>
+				TKD=数值</td>
+			<td>
+				设置循迹微分系数</td>
+			<td>
+				TKD=0.5</td>
+		</tr><tr><td>
+				SPD=数值</td>
+			<td>
+				设置循迹基础速度</td>
+			<td>
+				SPD=80</td>
+		</tr><tr><td>
+				WKP=数值</td>
+			<td>
+				设置贴边比例系数</td>
+			<td>
+				WKP=4.0</td>
+		</tr><tr><td>
+				WKI=数值</td>
+			<td>
+				设置贴边积分系数</td>
+			<td>
+				WKI=0.02</td>
+		</tr><tr><td>
+				WKD=数值</td>
+			<td>
+				设置贴边微分系数</td>
+			<td>
+				WKD=0.2</td>
+		</tr><tr><td>
+				WSET=数值</td>
+			<td>
+				设置贴边目标距离</td>
+			<td>
+				WSET=17</td>
+		</tr><tr><td>
+				LKP=数值</td>
+			<td>
+				设置左轮比例系数</td>
+			<td>
+				LKP=1.2</td>
+		</tr><tr><td>
+				LKI=数值</td>
+			<td>
+				设置左轮积分系数</td>
+			<td>
+				LKI=0.45</td>
+		</tr><tr><td>
+				LKD=数值</td>
+			<td>
+				设置左轮微分系数</td>
+			<td>
+				LKD=0.05</td>
+		</tr><tr><td>
+				RKP=数值</td>
+			<td>
+				设置右轮比例系数</td>
+			<td>
+				RKP=1.2</td>
+		</tr><tr><td>
+				RKI=数值</td>
+			<td>
+				设置右轮积分系数</td>
+			<td>
+				RKI=0.45</td>
+		</tr><tr><td>
+				RKD=数值</td>
+			<td>
+				设置右轮微分系数</td>
+			<td>
+				RKD=0.05</td>
+		</tr><tr><td>
+				SSPD=数值</td>
+			<td>
+				设置目标转速</td>
+			<td>
+				SSPD=120</td>
+		</tr><tr><td>
+				PPR=数值</td>
+			<td>
+				设置码盘每圈脉冲数</td>
+			<td>
+				PPR=20</td>
+		</tr><tr><td>
+				EA=数值</td>
+			<td>
+				设置滤波 EMA 系数</td>
+			<td>
+				EA=0.4</td>
+		</tr><tr><td>
+				RESET</td>
+			<td>
+				恢复 PID 默认参数</td>
+			<td>
+				—</td>
+		</tr><tr><td>
+				LRESET</td>
+			<td>
+				恢复左轮默认参数</td>
+			<td>
+				—</td>
+		</tr><tr><td>
+				RRESET</td>
+			<td>
+				恢复右轮默认参数</td>
+			<td>
+				—</td>
+		</tr><tr><td>
+				INFO</td>
+			<td>
+				打印全部当前参数</td>
+			<td>
+				—</td>
+		</tr><tr><td>
+				HELP</td>
+			<td>
+				打印命令帮助</td>
+			<td>
+				—</td>
+		</tr></tbody></table><p>
+	4.4模式切换与状态管理</p>
+<p>
+	</p>
+<pre>
+void CommManager::setMode(CarMode m)
+{
+    if (g_mode == m) return;
+
+    // ── 离开直线模式时强制中止自整定 ────────────────────────────
+    if (g_mode == MODE_STRAIGHT &amp;&amp; g_autoTuning) {
+        g_autoTuning = false;
+        Serial.println(F("[AUTOTUNE] 强制中止"));
+    }
+
+    // ── 离开舵机相关模式时舵机回正 ──────────────────────────────
+    if (g_mode == MODE_AVOID || g_mode == MODE_NEARWALL || g_mode == MODE_MAGIC) {
+        g_sonar.setAngle(SERVO_DEFAULT_POS);
+    }
+
+    g_motor.stop();
+    g_mode = m;
+
+    // ── 进入新模式时调用 onEnter() ──────────────────────────────
+    switch (m) {
+        case MODE_AVOID:    g_avoid.onEnter();   break;
+        case MODE_TRACK:    g_track.onEnter();   break;
+        // ...
+    }
+}</pre>
+<p>
+	</p>
+<p>
+	<strong>状态管理的核心原则</strong></p>
+<table><thead><tr><th>
+				原则</th>
+			<th>
+				实现</th>
+		</tr></thead><tbody><tr><td>
+				离开时清理</td>
+			<td>
+				停止<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>、中止自整定、舵机回正</td>
+		</tr><tr><td>
+				进入时初始化</td>
+			<td>
+				调用对应模式的onEnter()</td>
+		</tr><tr><td>
+				状态隔离</td>
+			<td>
+				不同模式的状态变量互不干扰</td>
+		</tr></tbody></table><p>
+	五、独立测试程序</p>
+<p>
+	不依赖整车其他模块，单独验证双通道命令解析架构本身：</p>
+<p>
+	</p>
+<pre>
+/**************************************************************************************
+ * 文件: DualChannel_Comm_Standalone_Test.ino
+ * 作者：零知实验室（深圳市在芯间科技有限公司）
+ * 功能：蓝牙/串口双通道命令解析架构 独立测试沙盒
+ *       复现主项目 sc_comms.cpp 的核心解析逻辑，验证USB和蓝牙两条通道
+ *       是否都能正确识别单字符命令和多字符命令（尤其是带=号的参数命令）
+ *
+ * 引脚：BTSerial = Serial2，与主项目 pinsdefine.h 保持一致
+ *
+ * 测试方法：
+ *   1. USB串口（Serial）用Arduino串口监视器测试，可以正常带换行发送
+ *   2. 蓝牙通道用手机APP或电脑虚拟串口测试，即使不带换行符也应该
+ *      在约30ms后被自动识别执行
+ *   3. 分别测试单字符命令（如 A）和多字符命令（如 INFO），两条通道
+ *      应该有完全一致的响应
+ **************************************************************************************/
+
+#define BTSerial  Serial2
+
+char    g_usbBuf[48];
+uint8_t g_usbIdx = 0;
+char    g_btBuf[48];
+uint8_t g_btIdx = 0;
+unsigned long g_btLastByte = 0;
+const uint8_t BT_FLUSH_MS = 30;
+
+void parseCmd(char c, bool fromBT)
+{
+    Serial.print(F("[CMD] 单字符命令: '"));
+    Serial.print(c);
+    Serial.print(F("'  来源: "));
+    Serial.println(fromBT ? F("蓝牙") : F("USB"));
+
+    switch (c) {
+        case 'A': case 'a': Serial.println(F("[ACTION] 切换到手动模式")); break;
+        case 'B': case 'b': Serial.println(F("[ACTION] 切换到避障模式")); break;
+        case '1': Serial.println(F("[ACTION] 前进")); break;
+        case '2': Serial.println(F("[ACTION] 后退")); break;
+        default:  Serial.println(F("[WARN] 未识别的单字符命令")); break;
+    }
+    if (fromBT) BTSerial.println(F("[ACK] 命令已收到"));
+}
+
+void parseLine(const char *raw, bool fromBT)
+{
+    char buf[48];
+    uint8_t len = 0;
+    for (const char *p = raw; *p &amp;&amp; len &lt; 47; p++) {
+        char ch = *p;
+        if (ch == ' ' || ch == 't') continue;
+        buf[len++] = (ch &gt;= 'a' &amp;&amp; ch &lt;= 'z') ? (ch - 32) : ch;
+    }
+    buf[len] = '';
+    if (len == 0) return;
+    if (len == 1) { parseCmd(buf[0], fromBT); return; }
+
+    Serial.print(F("[CMD] 多字符命令: ""));
+    Serial.print(buf);
+    Serial.print(F(""  来源: "));
+    Serial.println(fromBT ? F("蓝牙") : F("USB"));
+
+    if (strcmp(buf, "INFO") == 0) {
+        Serial.println(F("[ACTION] 打印系统信息（模拟）"));
+        if (fromBT) BTSerial.println(F("[INFO] System OK"));
+        return;
+    }
+    if (strncmp(buf, "TKP=", 4) == 0) {
+        float val = atof(buf + 4);
+        Serial.print(F("[ACTION] 设置 Kp = ")); Serial.println(val);
+        if (fromBT) { BTSerial.print(F("[SET] Kp=")); BTSerial.println(val); }
+        return;
+    }
+    Serial.println(F("[WARN] 未识别的多字符命令"));
+}
+
+void setup()
+{
+    Serial.begin(115200);
+    BTSerial.begin(9600);
+    delay(200);
+    Serial.println(F("=========================================="));
+    Serial.println(F(" 蓝牙/串口双通道命令解析 独立测试沙盒       "));
+    Serial.println(F(" USB波特率:115200  蓝牙波特率:9600         "));
+    Serial.println(F(" 测试命令: A B 1 2 INFO TKP=数值            "));
+    Serial.println(F("=========================================="));
+}
+
+void loop()
+{
+    // ── USB通道：换行结帧 ──────────────────────────────────────
+    while (Serial.available()) {
+        char c = (char)Serial.read();
+        if (c == 'n' || c == 'r') {
+            if (g_usbIdx &gt; 0) { g_usbBuf[g_usbIdx] = ''; parseLine(g_usbBuf, false); g_usbIdx = 0; }
+        } else if (g_usbIdx &lt; sizeof(g_usbBuf) - 1) {
+            g_usbBuf[g_usbIdx++] = c;
+        } else { g_usbIdx = 0; }
+    }
+
+    // ── 蓝牙通道：换行或30ms超时自动结帧 ────────────────────────
+    while (BTSerial.available()) {
+        char c = (char)BTSerial.read();
+        g_btLastByte = millis();
+        if (c == 'n' || c == 'r') {
+            if (g_btIdx &gt; 0) { g_btBuf[g_btIdx] = ''; parseLine(g_btBuf, true); g_btIdx = 0; }
+        } else if (g_btIdx &lt; sizeof(g_btBuf) - 1) {
+            g_btBuf[g_btIdx++] = c;
+        } else { g_btIdx = 0; }
+    }
+    if (g_btIdx &gt; 0 &amp;&amp; (millis() - g_btLastByte) &gt;= BT_FLUSH_MS) {
+        g_btBuf[g_btIdx] = ''; parseLine(g_btBuf, true); g_btIdx = 0;
+    }
+}</pre>
+<img alt="poYBAGDYdXCAWkKMAAAAK8RNs4s030.png" src="https://file1.elecfans.com/web2/M00/03/FB/poYBAGDYdXCAWkKMAAAAK8RNs4s030.png"/><p>
+	</p>
+<p>
+	5.1 测试步骤</p>
+<p>
+	<strong>①验证USB通道</strong></p>
+<p>
+	零知派串口监视器发送INFO（带换行），确认打印出[CMD] 多字符命令: "INFO" 来源: USB</p>
+<p>
+	<strong>②验证蓝牙通道多字符命令</strong></p>
+<p>
+	用手机蓝牙APP连接后发送INFO（不带换行也可以），确认约30ms后同样能正确识别为多字符命令而不是被拆成I、N、F、O四条无效单字符命令</p>
+<p>
+	<strong>③验证带参数命令</strong></p>
+<p>
+	发送TKP=6.5，确认能正确解析出数值6.5，两条通道结果应该一致</p>
+<p>
+	<strong>5.2 系统流程图</strong></p>
+<p>
+	<img alt="wKgZO2p-47iAc71TABpWif_5QYY783.png" src="https://file1.elecfans.com/web3/M00/71/6A/wKgZO2p-47iAc71TABpWif_5QYY783.png"/></p>
+<p>
+	六、蓝牙控制模式</p>
+<p>
+	本项目支持四种蓝牙控制模式</p>
+<p>
+	</p>
+<pre>
+enum BTCtrlMode : uint8_t {
+    Button   = 0,   // 按键模式：单字节命令
+    Gravity  = 1,   // 重力感应：手机姿态控制
+    JoyStick = 2,   // 摇杆模式：双轴遥感
+    Rocker   = 3    // 摇杆模式：另一种协议
+};</pre>
+<p>
+	</p>
+<p>
+	<strong>按键模式（Button）</strong></p>
+<p>
+	最简单的控制模式，每个按键对应一个单字节命令</p>
+<p>
+	</p>
+<pre>
+void LZSmartCarMotor::btnControl()
+{
+    switch (cmd[0]) {
+        case 1: goWithDirec(carForward);  break;
+        case 2: goWithDirec(carBack);     break;
+        case 3: goWithDirec(carForLeft);  break;
+        case 4: goWithDirec(carForRight); break;
+        case 0: case 9: stop();           break;
+    }
+}</pre>
+<p>
+	</p>
+<p>
+	<strong>重力感应模式（Gravity）</strong></p>
+<p>
+	利用手机<a href="https://www.elecfans.com/tags/陀螺仪/" target="_blank"><u>陀螺仪</u></a>数据控制小车方向</p>
+<p>
+	</p>
+<pre>
+void LZSmartCarMotor::gravityControl()
+{
+    x = cmd[0]; y = cmd[1];
+    speed = map(x, 10, 90, 20, 255);
+    // y 值决定转向方向和幅度
+    int sR = (y &lt; 90 &amp;&amp; y &gt; -90) ? map(y, 10, 90, speed, 20) : map(y, 170, 90, speed, 0);
+    int sL = (y &lt; 90 &amp;&amp; y &gt; -90) ? map(y, -90, -10, 20, speed) : map(y, -90, -170, 0, speed);
+    // ...
+}</pre>
+<p>
+	</p>
+<p>
+	<strong>摇杆模式（JoyStick / Rocker）</strong></p>
+<p>
+	双轴摇杆控制，x 轴控制速度，y 轴控制转向</p>
+<p>
+	</p>
+<pre>
+void LZSmartCarMotor::joyStickControl()
+{
+    x = cmd[0]; y = cmd[1];
+    speedLeft  = (y &lt; 470) ? map(y, 470,    0, 0, -255) :
+                 (y &gt; 550) ? map(y, 550, 1023, 0,  255) : 0;
+    speedRight = speedLeft;
+    int xAdj  = (x &lt; 470) ? map(x, 470,    0, 0,  255) :
+                (x &gt; 550) ? map(x, 550, 1023, 0,  255) : 0;
+    // [BUG_NOTE] 原代码 xAdj 在左右两侧都是 left+adj/right-adj（只向左偏），
+    //            x&gt;550 应为 left-adj / right+adj，此处仍保持原逻辑待实车验证
+    speedLeft  += xAdj;
+    speedRight -= xAdj;
+    motorRun(speedLeft, speedRight);
+}
+
+void LZSmartCarMotor::bleControl()
+{
+    if (getCommand(cmd)) {
+        switch (_mode) {
+            case Button:   btnControl();      break;
+            case Gravity:  gravityControl();  break;
+            case Rocker:   rockerControl();   break;
+            case JoyStick: joyStickControl(); break;
+        }
+    }
+}</pre>
+<p>
+	</p>
+<p>
+	七、常见问题 FAQ</p>
+<p>
+	Q1：蓝牙模块可以同时连接多个设备吗？</p>
+<p>
+	   A：不能。HC-05 和 HC-06 都是点对点蓝牙模块，同一时间只能与一个设备保持连接。如果需要多设备连接，需要考虑其他方案（如 WiFi 或 BLE 多连接）</p>
+<p>
+	Q2：收到数据全是乱码？</p>
+<p>
+	   A：波特率不匹配或数据格式不一致。确认 USB 串口监视器波特率为 115200、确认蓝牙模块波特率为 9600（HC-06 默认）或 38400（HC-05）、蓝牙模块数据格式固定为 8N1（8 位数据、无校验、1 位停止位）</p>
+<p>
+	通信协议是整车<strong>项目的“神经系统”</strong>——它把<strong>用户的意图</strong>从手机/电脑传递到小车，把<strong>小车状态</strong>从传感器反馈给用户。一套设计良好的通信协议，应该做到：<strong>有线/无线双通道统一</strong>、单字符/多字符命令兼容、解析逻辑高效稳定、模式切换干净利落<br/><br/>
+	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[安捷伦信号发生器维修避坑指南：别自己拆机，先做这5步]]></title>    <link>https://www.elecfans.com/d/8226605.html</link>    <guid>https://www.elecfans.com/d/8226605.html</guid>    <pubDate>2026-08-14 17:50:00</pubDate>    <description><![CDATA[<p>
 	实验室里的安捷伦<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>发生器突然无输出，项目进度被卡住，联系厂家返厂周期长、费用高，自己拆开又怕越修越坏……很多<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>都遇到过这种两难。其实，安捷伦信号发生器<a href="https://m.elecfans.com/v/tag/1215/" target="_blank"><u>维修</u></a>并没有想象中那么复杂，关键是要找对判断方法和专业团队。今天结合我们十八年电子测量仪器维修经验，从用户角度分享一些实用排查思路和避坑建议，希望能帮您少走弯路。</p>
 <p>
 	<img src="https://file1.elecfans.com/web3/M00/71/6A/wKgZO2p-5L2AShsaAAEzyypod8Y975.png" alt="wKgZO2p-5L2AShsaAAEzyypod8Y975.png"/></p>
@@ -1677,59 +2834,4 @@
 <p style="text-indent:2em;">
 	从首个合作车型落地、获评金牌伙伴，到联合实验室揭牌，长安汽车与荣耀手机正从产品共创走向技术生态共建，开启更深维度的协同创新。</p>
 <p style="text-indent:2em;">
-	未来，双方将依托联合创新开放实验室持续深挖手机与车机协同场景，打造无缝智能的车内第三生活空间。</p>]]></description></item><item>    <title><![CDATA[汉思新材料：底部填充胶 dispensing 工艺参数调试手册（附常见问题排查表）]]></title>    <link>https://www.elecfans.com/d/8226606.html</link>    <guid>https://www.elecfans.com/d/8226606.html</guid>    <pubDate>2026-08-14 17:09:00</pubDate>    <description><![CDATA[<h4 style="margin-left:0px;"><span style="color:rgb(0,0,0);"><strong>一、引言</strong></span></h4><p style="margin-left:0px;"><span style="color:rgb(0,0,0);">在BGA、CSP等先进封装制程中，<strong>底部填充胶（Unde<a href="https://bbs.elecfans.com/group_65" target="_blank"><u>rf</u></a>ill）</strong>的dispensing（点胶）工艺是保障产品抗跌落、抗热冲击可靠性的核心环节。然而，由于胶水粘度、芯片尺寸及<a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>阻焊层设计的差异，现场常面临填充不饱满、气泡残留或溢胶等挑战。本手册旨在为工艺<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>提供一套标准化的dispensing pa<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>ram</u></a>ete<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>rs</u></a> 调试逻辑与troubleshooting guide。结合<strong>汉思新材料（Hanstars）</strong>在<a href="https://bbs.elecfans.com/group_67" target="_blank"><u>芯片封装</u></a>胶领域的深厚技术积淀与成熟产品线，助力企业提升良率，减少售后支持压力。</span></p><p/><h4 style="margin-left:0px;"><span style="color:rgb(0,0,0);"><strong>二、核心dispensing parameters 调试指南</strong></span></h4><p style="margin-left:0px;"><span style="color:rgb(0,0,0);"><strong>1. 胶量与体积计算</strong></span><br/><span style="color:rgb(0,0,0);">精准的胶量是成功填充的前提。理论胶量计算公式为：所需胶水体积≈ (芯片面积× 芯片与PCB间隙高度)× 1.5。其中，1.5为安全系数，用于补偿胶水固化收缩及毛细流动损耗。在实际调试中，建议通过“点胶前后称重法”进行验证，确保实际胶量偏差控制在±10%以内。</span></p><p style="margin-left:0px;"><span style="color:rgb(0,0,0);"><strong>2. 点胶路径与速度控制</strong></span><br/><span style="color:rgb(0,0,0);">路径设计需顺应毛细作用规律。对于大尺寸芯片，推荐采用“I形多点”或“L形单边”点胶法，避免在芯片四角直接点胶（角部毛细作用最弱，易形成气阻）。在dispensing 速度上，应遵循“先慢后快再慢”的原则：起始位置短暂停留0.2秒形成胶滴，中段匀速移动（推荐速度约8mm/s），结束位置再次停留后抬笔，以防止拉丝（Stringing）和断胶。</span></p><p style="margin-left:0px;"><span style="color:rgb(0,0,0);"><strong>3. 针头高度与气压匹配</strong></span><br/><span style="color:rgb(0,0,0);">点胶针头距离基板表面的高度通常控制在0.1-0.5mm之间。高度过低易刮伤阻焊层或导致针头堵塞，过高则易产生气泡或胶点偏移。气压设置需与胶水粘度动态匹配。以汉思新材料的超低粘度系列（如HS711）为例，其低粘高流配方使得胶水仅依靠自然毛细作用即可在10-30秒内快速渗入≤50μm的超窄间隙，此时需适当降低气压以防溢胶；而对于常规高粘度胶水，则需配合40-60℃的预热以降低粘度，确保出胶稳定。</span></p><p style="margin-left:0px;"><span style="color:rgb(0,0,0);"/></p><h4 style="margin-left:0px;"><span style="color:rgb(0,0,0);"><strong>三、常见问题排查表（TroubleshootingGuide）</strong></span></h4><h4 style="margin-left:0px;"><strong/></h4><img src="https://file1.elecfans.com/web3/M00/71/67/wKgZO2p-2t2ARPXEAAEN9XE8K34575.png" alt="wKgZO2p-2t2ARPXEAAEN9XE8K34575.png"/><p/><h4 style="margin-left:0px;"><span style="color:rgb(0,0,0);"><strong>四、工艺环境与设备维护建议</strong></span></h4><p style="margin-left:0px;"><span style="color:rgb(0,0,0);">卓越的dispensing 工艺离不开稳定的环境与设备状态。车间需严格控制温湿度（推荐25±2℃，湿度40-60%RH），防止胶水吸潮变质。设备方面，需定期校准XYZ轴运动精度，确保针头定位误差小于15µm；同时建立预防性维护机制，定期清理点胶阀内部通道，避免残胶固化影响出胶稳定性。</span></p><p style="margin-left:0px;"><span style="color:rgb(0,0,0);">针对高可靠性场景（如<a href="https://bbs.elecfans.com/group_78" target="_blank"><u>汽车电子</u></a>、医疗），建议引入真空辅助填充系统，配合<strong>汉思新材料</strong>具备宽工艺窗口的产品，从源头消除气泡，确保空洞率&lt;0.1%。通过规范化的参数调试与故障排查，企业可将底部填充工艺的隐性风险降至最低，为高可靠性电子产品的量产保驾护航。</span></p>]]></description></item><item>    <title><![CDATA[安世中国即将亮相PCIM Asia 2026]]></title>    <link>https://www.elecfans.com/d/8226500.html</link>    <guid>https://www.elecfans.com/d/8226500.html</guid>    <pubDate>2026-08-14 17:09:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	当能源变革与<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>算力重塑产业格局，<a href="https://bbs.elecfans.com/group_934" target="_blank"><u>电力电子</u></a>行业对功率半导体的性能、效率与供应链韧性提出了前所未有的要求。</p>
-<p style="text-indent:2em;">
-	2026年8月26日至28日，全球基础<a href="https://www.hqchip.com/gongsi.html" target="_blank"><u>半导体</u></a>器件领域行业专家安世中国将重磅亮相PCIM Asia 2026。本次展会，我们将携功率器件矩阵、IC及系统级解决方案，展示在「汽车・工业・AI」三大应用领域的技术底座能力。</p>
-<p style="text-indent:2em;">
-	我们驭电而生，全面赋能这个能源与算力交汇的时代。</p>
-<p style="text-indent:2em;">
-	诚邀您莅临深圳国际会展<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>16馆C16展位，与安世中国共启高效未来。</p>
-<p style="text-indent:2em;">
-	立足中国，覆盖全球。安世中国致力于提供超越行业标准的高可靠性功率半导体解决方案，持续推进技术迭代与严苛的品质验证，打造从研发到制造的完整产业闭环，以强大的产能网络与韧性供应链保障可靠交付，实现与行业伙伴共建长期价值的坚定承诺。</p>
-<p style="text-indent:2em;">
-	本次展会，我们将全方位展示这一不断前进的力量如何精准落地，让半导体技术创新成为赋能汽车、工业与AI系统的强劲动力。</p>
-<p style="text-indent:2em;">
-	深耕汽车：</p>
-<p style="text-indent:2em;">
-	全链路赋能，让每一次出发值得信赖</p>
-<p style="text-indent:2em;">
-	作为车规级功率半导体龙头，安世中国深知<a href="https://bbs.elecfans.com/group_78" target="_blank"><u>汽车电子</u></a>对一致性的极致要求。我们构筑了覆盖“光储充+电驱”全链路的全谱系功率矩阵。历经严苛的极限测试，我们以车规级品质，确保客户的<a href="https://m.elecfans.com/v/tag/293/" target="_blank"><u>新能源</u></a>系统不仅“敢用”，而且经得起时间考验的“耐用”。依托中国本土供应链闭环优势，我们助力交付与定制的双向提速。</p>
-<p style="text-indent:2em;">
-	驱动工业：</p>
-<p style="text-indent:2em;">
-	高可靠护航，让复杂系统可靠运转</p>
-<p style="text-indent:2em;">
-	在现代<a href="https://www.elecfans.com/v/tag/633/" target="_blank"><u>工业自动化</u></a>与<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机控制</u></a>系统中，提升功率密度与优化热管理是核心痛点。安世中国持续提升器件的开关性能与导通效率，提供兼具高性能与高耐受度的解决方案，从工厂自动化、工业<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>到新能源发电侧，支撑工业系统的高效运转。</p>
-<p style="text-indent:2em;">
-	赋能AI：</p>
-<p style="text-indent:2em;">
-	高能效创新，为澎湃算力筑牢基座</p>
-<p style="text-indent:2em;">
-	AI数据中心算力密度的指数级攀升，对服务器电源架构提出了严苛的能效挑战。安世中国聚焦先进封装与高密度<a href="https://www.hqchip.com/app/1731" target="_blank"><u>电源管理</u></a>技术，致力于突破传统器件的能效瓶颈，用高能效的“芯”动力，为未来的智算中心构建坚实、绿色的AI算力高效能源基座。</p>
-<p style="text-indent:2em;">
-	技术论道：安世中国技术专家演讲</p>
-<p style="text-indent:2em;">
-	为了深入探讨技术的未来演进，安世中国的技术专家也将在此次PCIM同期<a href="https://www.elecfans.com/article/bbs/" target="_blank"><u>论坛</u></a>上，与行业同仁面对面分享前瞻性的半导体应用洞察。</p>
-<p style="text-indent:2em;">
-	参展指南：精彩不停</p>
-<p style="text-indent:2em;">
-	深度技术讲解：展台现场将有安世中国资深应用<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>进行技术讲解，探讨下一代创新设计。</p>
-<p style="text-indent:2em;">
-	展台现场互动：参与展台专属打卡或互动体验活动，即有机会赢取限量好礼。</p>
-<p style="text-indent:2em;">
-	预约有礼，即刻行动</p>
-<p style="text-indent:2em;">
-	我们为预约到场的观众准备了专属礼品。扫描下方二维码，或进入【安世半导体】微信公众号，在后台回复「PCIM」，提交问卷获取核销码，凭核销码截图在展会期间前往16馆C16展台领取。</p>
-<p style="text-indent:2em;">
-	驭电而生，共启未来</p>
-<p style="text-indent:2em;">
-	PCIM Asia 2026我们不见不散！</p>
-<p style="text-indent:2em;">
-	<a href="https://www.elecfans.com/tags/nexperia/" target="_blank"><u>Nexperia</u></a> (安世半导体)</p>
-<p style="text-indent:2em;">
-	作为基础半导体器件开发和生产的领跑者，Nexperia（安世半导体）的器件被广泛应用于汽车、工业、移动和消费等多个应用领域，几乎为世界上所有电子设计的基本功能提供支持。</p>
-<p style="text-indent:2em;">
-	Nexperia（安世半导体）为全球客户提供服务，每年的产品出货量超过1,000亿件。这些产品在效率（如工艺、尺寸、功率及性能）方面成为行业基准，获得广泛认可。Nexperia（安世半导体）拥有丰富的IP产品组合和持续扩充的产品范围，并获得了IATF 16949、ISO 9001、ISO 14001和ISO 45001标准<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>，充分体现了公司对于创新、高效、可持续发展和满足行业严苛要求的坚定承诺。</p>
-<p style="text-indent:2em;">
-	Nexperia：效率致胜。</p>]]></description></item>  </channel></rss>
+	未来，双方将依托联合创新开放实验室持续深挖手机与车机协同场景，打造无缝智能的车内第三生活空间。</p>]]></description></item><item>    <title><![CDATA[汉思新材料：底部填充胶 dispensing 工艺参数调试手册（附常见问题排查表）]]></title>    <link>https://www.elecfans.com/d/8226606.html</link>    <guid>https://www.elecfans.com/d/8226606.html</guid>    <pubDate>2026-08-14 17:09:00</pubDate>    <description><![CDATA[<h4 style="margin-left:0px;"><span style="color:rgb(0,0,0);"><strong>一、引言</strong></span></h4><p style="margin-left:0px;"><span style="color:rgb(0,0,0);">在BGA、CSP等先进封装制程中，<strong>底部填充胶（Unde<a href="https://bbs.elecfans.com/group_65" target="_blank"><u>rf</u></a>ill）</strong>的dispensing（点胶）工艺是保障产品抗跌落、抗热冲击可靠性的核心环节。然而，由于胶水粘度、芯片尺寸及<a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>阻焊层设计的差异，现场常面临填充不饱满、气泡残留或溢胶等挑战。本手册旨在为工艺<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>提供一套标准化的dispensing pa<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>ram</u></a>ete<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>rs</u></a> 调试逻辑与troubleshooting guide。结合<strong>汉思新材料（Hanstars）</strong>在<a href="https://bbs.elecfans.com/group_67" target="_blank"><u>芯片封装</u></a>胶领域的深厚技术积淀与成熟产品线，助力企业提升良率，减少售后支持压力。</span></p><p/><h4 style="margin-left:0px;"><span style="color:rgb(0,0,0);"><strong>二、核心dispensing parameters 调试指南</strong></span></h4><p style="margin-left:0px;"><span style="color:rgb(0,0,0);"><strong>1. 胶量与体积计算</strong></span><br/><span style="color:rgb(0,0,0);">精准的胶量是成功填充的前提。理论胶量计算公式为：所需胶水体积≈ (芯片面积× 芯片与PCB间隙高度)× 1.5。其中，1.5为安全系数，用于补偿胶水固化收缩及毛细流动损耗。在实际调试中，建议通过“点胶前后称重法”进行验证，确保实际胶量偏差控制在±10%以内。</span></p><p style="margin-left:0px;"><span style="color:rgb(0,0,0);"><strong>2. 点胶路径与速度控制</strong></span><br/><span style="color:rgb(0,0,0);">路径设计需顺应毛细作用规律。对于大尺寸芯片，推荐采用“I形多点”或“L形单边”点胶法，避免在芯片四角直接点胶（角部毛细作用最弱，易形成气阻）。在dispensing 速度上，应遵循“先慢后快再慢”的原则：起始位置短暂停留0.2秒形成胶滴，中段匀速移动（推荐速度约8mm/s），结束位置再次停留后抬笔，以防止拉丝（Stringing）和断胶。</span></p><p style="margin-left:0px;"><span style="color:rgb(0,0,0);"><strong>3. 针头高度与气压匹配</strong></span><br/><span style="color:rgb(0,0,0);">点胶针头距离基板表面的高度通常控制在0.1-0.5mm之间。高度过低易刮伤阻焊层或导致针头堵塞，过高则易产生气泡或胶点偏移。气压设置需与胶水粘度动态匹配。以汉思新材料的超低粘度系列（如HS711）为例，其低粘高流配方使得胶水仅依靠自然毛细作用即可在10-30秒内快速渗入≤50μm的超窄间隙，此时需适当降低气压以防溢胶；而对于常规高粘度胶水，则需配合40-60℃的预热以降低粘度，确保出胶稳定。</span></p><p style="margin-left:0px;"><span style="color:rgb(0,0,0);"/></p><h4 style="margin-left:0px;"><span style="color:rgb(0,0,0);"><strong>三、常见问题排查表（TroubleshootingGuide）</strong></span></h4><h4 style="margin-left:0px;"><strong/></h4><img src="https://file1.elecfans.com/web3/M00/71/67/wKgZO2p-2t2ARPXEAAEN9XE8K34575.png" alt="wKgZO2p-2t2ARPXEAAEN9XE8K34575.png"/><p/><h4 style="margin-left:0px;"><span style="color:rgb(0,0,0);"><strong>四、工艺环境与设备维护建议</strong></span></h4><p style="margin-left:0px;"><span style="color:rgb(0,0,0);">卓越的dispensing 工艺离不开稳定的环境与设备状态。车间需严格控制温湿度（推荐25±2℃，湿度40-60%RH），防止胶水吸潮变质。设备方面，需定期校准XYZ轴运动精度，确保针头定位误差小于15µm；同时建立预防性维护机制，定期清理点胶阀内部通道，避免残胶固化影响出胶稳定性。</span></p><p style="margin-left:0px;"><span style="color:rgb(0,0,0);">针对高可靠性场景（如<a href="https://bbs.elecfans.com/group_78" target="_blank"><u>汽车电子</u></a>、医疗），建议引入真空辅助填充系统，配合<strong>汉思新材料</strong>具备宽工艺窗口的产品，从源头消除气泡，确保空洞率&lt;0.1%。通过规范化的参数调试与故障排查，企业可将底部填充工艺的隐性风险降至最低，为高可靠性电子产品的量产保驾护航。</span></p>]]></description></item>  </channel></rss>
