@@ -1,4 +1,248 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[智能反射面技术重塑无线网络的五大场景]]></title>    <link>https://www.elecfans.com/d/8305842.html</link>    <guid>https://www.elecfans.com/d/8305842.html</guid>    <pubDate>2026-09-10 17:15:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[最近调电源路径挖到的宝：NCP45790高边负载开关实操参数梳理+踩坑预警]]></title>    <link>https://www.elecfans.com/d/8305825.html</link>    <guid>https://www.elecfans.com/d/8305825.html</guid>    <pubDate>2026-09-10 17:10:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8305825" value="https://file1.elecfans.com/web3/M00/77/AF/wKgZO2qichOAG6k-AAZsME4msGE593.pdf"/><h1>最近调<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>路径挖到的宝：NCP45790高边<a href="https://m.hqchip.com/app/1708" target="_blank"><u>负载开关</u></a>实操参数梳理+踩坑预警</h1>
+<p>前阵子做工业24V供电的负载板，需要个支持20A通断、自带过流保护、缓启、电源时序<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>的高边开关，翻了一圈选到<a href="https://www.elecfans.com/tags/安森美/" target="_blank"><u>安森美</u></a>这款NCP45790，把手册撸完+初步调试验证下来确实好用，整理点干货给有需要的同行省时间。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8305825" target="_blank">NCP45790-D.PDF</a></p>
+<hr/>
+<h2>一、先上核心参数速览，快速判断能不能用</h2>
+<table>
+<thead>
+<tr>
+<th>这款是集成N沟道MOS的高边负载开关，外围电路极其简单，核心参数先列出来：</th>
+<th>参数项</th>
+<th>规格</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>输入电压范围</td>
+<td>3V~24V</td>
+<td>覆盖绝大多数低压工业、消费、服务器供电场景</td>
+</tr>
+<tr>
+<td>连续过流能力</td>
+<td>20A @Ta=25℃</td>
+<td>24V下支持最大480W负载通断</td>
+</tr>
+<tr>
+<td>供电VCC范围</td>
+<td>3V~5.5V</td>
+<td>可以直接和主控3.3V/5V供电共 rail</td>
+</tr>
+<tr>
+<td>封装</td>
+<td>DFN14 4x4mm</td>
+<td>占板面积很小，手工焊接也没难度</td>
+</tr>
+</tbody>
+</table>
+<h3>引脚重点注意事项（别踩低级错误）</h3>
+<p>我把新手最容易错的引脚拎出来单独说：</p>
+<ol>
+<li><strong>电源引脚要分<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>接</strong>：VIN的1/12/15脚里，负载电流&gt;0.5A必须接15脚；VOUT的10/16脚里，&gt;0.5A必须接16脚，别随便接小电流引脚，大电流下直接烧焊盘。</li>
+<li><strong>不用的功能引脚别悬空</strong>：
+<ul>
+<li>EN脚内部自带下拉，默认关断，不用额外下拉<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>；</li>
+<li>OCP不需要过流保护就直接接GND，硬短路保护依然生效，不会完全失去防护；</li>
+<li>PG不用就接GND，用的话必须外接≥100kΩ上拉电阻，开漏输出不接上拉读不到电平；</li>
+<li>SR缓启脚不调就浮空，要调压摆率就接电容到GND就行。</li>
+</ul></li>
+</ol>
+<hr/>
+<h2>二、核心功能怎么用？实测的经验分享</h2>
+<h3>1. 缓启（压摆率）调节</h3>
+<p>带大容性负载的时候最怕上电过冲，这款的缓启调起来很简单，公式直接套：
+<code>压摆率 SR = K_SR / C_SR （V/s）</code>
+其中K_SR看手册典型值大概20μA，比如你要1V/ms的上电斜率，C_SR选20nF就行。我自己测下来，SR脚浮空的时候24V输入默认压摆率大概10V/ms，带容性负载&gt;1000μF的话建议加<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>调慢点，避免上电尖峰触发保护。</p>
+<h3>2. 过流保护两个坑要注意</h3>
+<p>NCP45790分硬短、软短两层保护：</p>
+<ul>
+<li>硬短保护：VIN和VOUT压差超过阈值就触发，18V以下支持≤250mΩ的直接对地短路防护，18~24V支持软短防护，触发后直接锁死关断。</li>
+<li>软短OCP：可以通过OCP脚对地接电阻调节阈值，触发后也是锁死状态，需要拉低EN或者重启VCC才能恢复。
+⚠️ 重点踩坑点：如果你的OCP阈值设的比较低（对应电流远小于20A），大电流下芯片自热可能先触发过温保护，不会走到OCP阈值，做低电流限流场景要多留余量。</li>
+</ul>
+<h3>3. PG电源好信号省了半个时序电路</h3>
+<p>这个功能我觉得是最大的亮点：PG脚在MOS栅极完全充满、输出稳定后才会输出高电平，直接可以接到后端负载的EN引脚，天然实现电源时序，不用<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>多输出IO控时序，省了外围电路还可靠。我自己用的时候直接上拉到3.3V接后级<a href="https://www.hqchip.com/app/1703" target="_blank"><u>DC</u></a>DC的EN，上电时序误差&lt;1ms，非常稳。</p>
+<hr/>
+<h2>三、Layout避坑指南，别画板的时候埋雷</h2>
+<ol>
+<li>大电流路径要够宽：1oz铜厚的话，20A电流至少走40mil以上的线，最好直接铺铜，VIN15、VOUT16脚的走线尽量短，减少压降。</li>
+<li>底部散热焊盘必须处理：这款Rja是28.6℃/W，Rjc是1.7℃/W，底部散热焊盘多打6~8个过孔到地平面，我实测15A连续工作温升大概20℃，没打散热孔的话温升至少翻一倍。</li>
+<li>小信号走线远离电源路径：EN、SR、OCP这些信号别和大电流走线平行走，避免干扰导致误触发保护，SR脚的电容尽量贴芯片引脚放，否则缓启精度会飘。</li>
+</ol>
+<hr/>
+<p>我自己的样板现在跑18V15A的负载已经稳定跑了3天，没出任何问题，20A以内的高边开关场景这款性价比真的很高。有没有用过这款的兄弟？评论区聊聊你们还踩过什么坑？</p>]]></description></item><item>    <title><![CDATA[实测真香：安森美NCP81295/6 50A智能热插拔保险丝，省掉采样电阻的12V高密供电方案]]></title>    <link>https://www.elecfans.com/d/8305826.html</link>    <guid>https://www.elecfans.com/d/8305826.html</guid>    <pubDate>2026-09-10 17:10:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8305826" value="https://file1.elecfans.com/web3/M00/77/AC/wKgZPGqichOAScszABfr_QSy2v4342.pdf"/><h1>实测真香：<a href="https://www.elecfans.com/tags/安森美/" target="_blank"><u>安森美</u></a>NCP81295/6 50A智能热插拔<a href="https://m.hqchip.com/app/1598" target="_blank"><u>保险丝</u></a>，省掉采样<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>的12V高密供电方案</h1>
+<p>最近在给新项目做12V服务器节点的热插拔保护，要求单路扛50A，还要过流、过温监测，本来打算用「<a href="https://m.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>+外置MOS+检流电阻」的分立方案，一算BOM占的<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>面积快30mm²了，布线还得考虑检流走线的寄生阻抗，头大得很。翻安森美手册翻到这颗NCP81295/6，集成度直接拉满，调了俩月跑了稳定性测试，踩了些坑，给大伙分享下实装经验。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8305826" target="_blank">NCP81295-D.PDF</a></p>
+<hr/>
+<h2>为啥选它？核心参数先摸个底</h2>
+<p>这颗属于安森美主打高密12V供电的智能热插拔保险丝，核心参数对我来说刚好戳中痛点：</p>
+<ul>
+<li>内置0.65mΩ功率MOS+热插拔控制器+<a href="https://www.hqchip.com/app/1179" target="_blank"><u>电流采样</u></a>，<strong>完全不需要外置检流电阻</strong>，单颗就能扛50A连续<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>、60A峰值，输入范围4.5V~18V完美覆盖12V供电场景</li>
+<li>两个型号功能唯一区别：<code>NCP81295</code>触发保护后锁存关断，适合不允许意外自重启的工业/服务器场景；<code>NCP81296</code>触发后自动重试，适合无人值守的基站、边缘设备场景，不用额外做复位逻辑</li>
+<li>封装是5x5mm LQFN32，比我之前的分立方案省了至少2/3的PCB面积，对高密板卡太友好了</li>
+</ul>
+<hr/>
+<h2>几个我觉得最实用的集成特性，真的省了事</h2>
+<h3>1. 内置电流采样精度够打，省了额外的电流<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a></h3>
+<p>官方给的参数是25A以上电流采样精度±4%，我实际测了30A/50A两个常用负载点，IMON脚读出来的电流误差不到3%，完全满足系统功耗监测的要求，不用额外加霍尔或者分流器，光这一项就省了至少5毛钱BOM+10mm²的布线空间。</p>
+<h3>2. 保护逻辑全可<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a>，不用搭额外电路</h3>
+<ul>
+<li>软启动时间靠SS脚的<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>调，我用100nF电容测出来刚好是100ms左右的软启，上电冲流控制在额定电流的1.2倍以内，完全满足热插拔的要求</li>
+<li>过流阈值靠CLREF脚设置，我用121k电阻对地接，刚好设到55A的过流告警点，D_OC脚是开漏输出直接连到BMC的IO口，过流了直接上报告警，不用额外搭比较电路</li>
+<li>过温保护内置125℃阈值，V<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>TE</u></a>MP脚输出的电压和芯片结温成正比，25℃时大概400mV，100℃时大概1.2V，直接接<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>的<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>就能读温度，多颗并联的时候还能直接线与，自动输出最热的那颗的温度，这个设计真的贴心。</li>
+</ul>
+<h3>3. 保护逻辑够全，不用自己写固件</h3>
+<p>内置了延时过流、快速短路保护、过温关断、软启动超时保护，基本覆盖了12V供电的所有故障场景，我测了50A负载下直接短路输出，芯片1μs以内就关断了，后级电路一点事都没有。</p>
+<hr/>
+<h2>实测踩过的几个坑，大伙避避雷</h2>
+<p>都是我实际调的时候踩过的，手册里写的不算特别显眼的点：</p>
+<ol>
+<li><strong>CS脚绝对不能加滤波电容</strong>！我一开始手贱给CS脚加了100nF滤波，结果过流保护乱触发，一问FAE才知道CS脚是内部过流检测的输入，除了PCB寄生电容不能加额外电容，要滤波就给IMON脚加，不影响内部保护逻辑。</li>
+<li><strong>NCP81295锁存后拉ON脚没用，要复位VDD</strong>。一开始我以为拉低ON脚就能复位锁存的故障，搞了半天没用，手册里写了要把VDD拉到UVLO以下（&lt;4V）才能复位，做设计的时候如果要远程复位，要么加个控制电路拉VDD，要么直接选NCP81296自动重试的版本。</li>
+<li><strong>并联扩流注意走线等长</strong>。我做了3颗并联的150A方案，每颗的VIN、VOUT走线阻抗差要控制在0.1mΩ以内，实测均流误差在5%以内，完全符合要求；如果走线差太大，会有单颗过载的风险。</li>
+<li>散热焊盘留够：50A满负载的时候，MOS损耗是<code>0.65mΩ * 50A² = 1.625W</code>，LQFN32封装热阻大概25℃/W，25℃环境下结温不到70℃，只要把底部散热焊盘接4层以上的地，不用额外加散热器。</li>
+</ol>
+<hr/>
+<h2>几种典型接法，直接抄作业</h2>
+<h3>1. 单路独立使用（最简方案）</h3>
+<p>适合10~50A的小功率节点，不需要外接控制器：ON脚接3.3V使能，CLREF接电阻设过流阈值，IMON、VTEMP接MCU <a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>C，D_OC、GOK接告警IO，上电直接工作，BOM不到10个器件。</p>
+<h3>2. 带外接控制器的可调方案</h3>
+<p>适合需要动态限流的服务器、存储场景：CLREF接<a href="https://www.elecfans.com/tags/dac/" target="_blank"><u>DAC</u></a>输出，可以动态调整过流阈值，配合系统功耗调度降额运行，适合刀片服务器这种需要功耗控制的场景。</p>
+<h3>3. 多颗并联扩流</h3>
+<p>单颗不够用的话直接并联，最多我测过4颗并联200A，均流没问题，所有GOK、D_OC脚线与，只要有一颗故障全链路告警，适合大电流的机柜输入、<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>背板场景。</p>
+<hr/>
+<h2>最后总结下</h2>
+<p>这颗芯片我觉得最适合的就是12V服务器、存储、基站的高密供电场景，集成度高，BOM少，调试也简单，我这边测了1000次热插拔、200次过流触发、50次短路测试，都没出问题，稳定性够打。
+唯一要注意的就是选型别搞混：要锁存保护选NCP81295，要自动重试选NCP81296，别下错单。</p>
+<p>有没有兄弟也用过这颗片子？评论区聊聊你们踩过的坑~</p>]]></description></item><item>    <title><![CDATA[华工科技即将亮相CIOE 2026中国光博会]]></title>    <link>https://www.elecfans.com/d/8305828.html</link>    <guid>https://www.elecfans.com/d/8305828.html</guid>    <pubDate>2026-09-10 17:10:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	中国国际<a href="https://www.elecfans.com/v/tag/2800/" target="_blank"><u>光电</u></a>博览会（CIOE）将于9月9—11日在深圳国际会展<a href="https://m.hqchip.com/tags" target="_blank"><u>中心</u></a>盛大开幕。华工科技将携面向<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>智算中心、下一代<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>基础设施的AI光互联新品矩阵亮相并现场动态点亮演示，展现公司在高速光互联领域多路线并行布局的技术实力；同时还将带来双lens<a href="https://www.elecfans.com/tags/耦合/" target="_blank"><u>耦合</u></a>智能装备、<a href="https://www.elecfans.com/v/tag/4854/" target="_blank"><u>光学</u></a>棱镜激光倒角智能装备等AI+激光智能制造解决方案。</p>
+<p style="text-indent:2em;">
+	AI光互联新品动态首发</p>
+<p style="text-indent:2em;">
+	01 3.2T CPO 光引擎</p>
+<p style="text-indent:2em;">
+	本次展会上，3.2T CPO光引擎将带来现场动态演示。作为面向下一代超算平台的共封装光学方案，该产品立足自研硅光平台，搭载微环调制收发一体芯片，采用TGV玻璃基板2.5D先进封装，搭配EL<a href="https://www.hqchip.com/app/1687" target="_blank"><u>SFP</u></a>密集波分复用外置光源（量子点光频梳激光芯片），是CPO架构的核心配套部件。</p>
+<p style="text-indent:2em;">
+	02 6.4T NPO硅光光引擎</p>
+<p style="text-indent:2em;">
+	6.4T NPO硅光光引擎将作为本次展会的重点展品亮相，采用去<a href="https://m.hqchip.com/app/1378" target="_blank"><u>DSP</u></a>硅光架构，32通道212.<a href="https://m.elecfans.com/v/tag/1225/" target="_blank"><u>5G</u></a> PAM4<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a><a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>，单模光纤传输距离可达500米，兼容IEEE 802.3dj、CMIS5.3协议，工作温度覆盖0‑70℃，适配AI大模型训练集群、超大规模智算中心场景。</p>
+<p style="text-indent:2em;">
+	NPO作为从传统可插拔向CPO演进的关键过渡路线，将光引擎贴近交换芯片部署，大幅缩短高速电信号传输距离，在实现功耗优化的同时保留模块可维护特性，兼容现有数据中心基础设施，降低机房改造门槛；单位面积速率容量较1.6T OSFP模块实现数倍提升，有效提升单机柜带宽上限，兼顾生态开放性与工程落地可行性，是现阶段AI算力建设的重要候选方案。据Light Coun<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>ti</u></a>ng数据预测，到2030年，NPO/CPO将占据数据中心通信市场25%以上的份额，2026-2028年的增量将以NPO为主流。华工科技曾率先发布业界首款3.2T NPO产品。</p>
+<p style="text-indent:2em;">
+	03 12.8T XPO超高密度可插拔光模块</p>
+<p style="text-indent:2em;">
+	全球首款新一代12.8T XPO超高密度可插拔液冷光模块，为AI算力集群提供另一条高可靠技术路径。XPO作为新一代可插拔光互联标准，单模块带宽达到12.8Tbps，使得机架带宽密度较传统1.6T产品提升4倍，产品原生集成液冷散热结构，适配AI机房高功耗散热场景，兼顾可插拔模块运维便捷优势，面向大规模横向扩展算力集群场景，补齐超高密度可插拔产品能力，推动行业多元技术路线并行发展。</p>
+<p style="text-indent:2em;">
+	华工科技核心子公司华工正源作为XPO MSA创始成员，将深度参与下一代光模块标准制定，推动产业链协同与技术兼容，进一步巩固在AI高速光模块领域的技术领先地位。</p>
+<p style="text-indent:2em;">
+	04 单波400G的3.2T可插拔光模块</p>
+<p style="text-indent:2em;">
+	现场将动态演示单波400G的3.2T可插拔光模块，单波448G极致速率，关键光电性能指标达到行业第一梯队。该方案沿用成熟可插拔形态，为AI智算数据中心提供高带宽、低功耗超高光互联核心方案。</p>
+<p style="text-indent:2em;">
+	05 6G 、卫星通信光模块</p>
+<p style="text-indent:2em;">
+	当前6G空天地一体化网络研究持续推进，星间激光通信成为卫星互联网、天地融合网络的核心底座。华工科技同步展出全球封装尺寸最小的6G光模块与卫星通信光模块，以针对太空复杂环境的特殊可靠性设计，满足低轨卫星星座高速数据传输需求，拓展光通信应用边界，服务国家空天地一体化通信建设。</p>
+<p style="text-indent:2em;">
+	AI+激光智能装备</p>
+<p style="text-indent:2em;">
+	01 双LENS耦合智能装备</p>
+<p style="text-indent:2em;">
+	双lens耦合设备专用于光模块收发一体双lens透镜的<a href="https://m.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>耦合，满足800G及以上硅光模块量产需求。</p>
+<p style="text-indent:2em;">
+	智能“找光”<a href="https://m.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>：自主研发先进算法，智能识别，自动标定</p>
+<p style="text-indent:2em;">
+	高精度六轴精密运动平台：六轴联动，实现（X/Y/Z/θ）三维角度的稳定精准定位，分辨率最小10nm，重复定位±50nmm、角度±0.002°</p>
+<p style="text-indent:2em;">
+	自研Z向力反馈吸头：找底准、防压伤、固化不跑值、良率更高</p>
+<p style="text-indent:2em;">
+	多通道并行耦合：支持8通道并行作业，单次耦合时间最快90s</p>
+<p style="text-indent:2em;">
+	02 光学棱镜激光倒角智能装备</p>
+<p style="text-indent:2em;">
+	专为光学棱镜高精度边缘加工设计，广泛应用于<a href="https://m.elecfans.com/v/tag/11230/" target="_blank"><u>智能手机</u></a>光学棱镜、光学镜片等精密光学元件的批量化生产。</p>
+<p style="text-indent:2em;">
+	高质量加工：采用超快皮秒激光器，倒角表面比CNC加工更精细，一致性更好，适合后序的油墨附着</p>
+<p style="text-indent:2em;">
+	高精度控制：高速高精度直线<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>及振镜系统，加工效率14s/pcs</p>
+<p style="text-indent:2em;">
+	高稳定平台：大理石加工平台，平整度好，不易变形，抗震吸震能力强</p>
+<p style="text-indent:2em;">
+	高兼容适应：可兼容多重型号及产品尺寸加工，实现一键切换</p>]]></description></item><item>    <title><![CDATA[福晶科技IOE 2026中国光博会亮点抢先看]]></title>    <link>https://www.elecfans.com/d/8305832.html</link>    <guid>https://www.elecfans.com/d/8305832.html</guid>    <pubDate>2026-09-10 17:13:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	第27届CIOE 中国光博会展中快讯抢先看！</p>
+<p style="text-indent:2em;">
+	9月9日，第二十七届中国国际<a href="https://www.elecfans.com/v/tag/2800/" target="_blank"><u>光电</u></a>博览会盛大启幕。福晶科技深耕光电领域36载，开展首日，展位前咨询客户络绎不绝，现场交流气氛热烈。</p>
+<p style="text-indent:2em;">
+	基于 AOD 的无惯性激光微加工方案</p>
+<p style="text-indent:2em;">
+	本次 CIOE 展会，福晶科技重磅带来基于 AOD 的无惯性激光微加工方案，采用AOD+振镜的混合扫描架构：振镜负责大范围快速定位，AOD 实现局部纳秒级超高速精细扫描，兼顾大幅面、高效率与微米级精度。系统集成自研核心声光器件、<a href="https://www.elecfans.com/v/tag/105/" target="_blank"><u>射频</u></a>驱动与控制软件，支持定制与二次开发，适用于高密度微孔加工等高端场景。欢迎莅临现场体验"大范围定位+局部超快扫描"的复合加工魅力。</p>
+<p style="text-indent:2em;">
+	基于 AOTF 的高分辨率快速滤波系统</p>
+<p style="text-indent:2em;">
+	此外，福晶科技在展会现场展示基于 AOTF 的高分辨率快速滤波系统：利用声光可调谐滤波器实现输出波长的电子调谐，具有调谐速度快、光谱分辨率高、无<a href="https://m.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>运动、波长可随机选取等优势。现场展示方案覆盖 450-700 nm 可见光波段，支持预设波长、任意波长设置与连续扫描，可直观观察不同颜色光的快速切换。系统集成自研核心分光器件、射频驱动与控制软件，支持定制设计，适用于光谱分析、高光谱成像、农业检测等场景，欢迎莅临展位体验。</p>]]></description></item><item>    <title><![CDATA[Pack 级监测：储能热失控预警的底层技术逻辑，从标准到传感器方案]]></title>    <link>https://www.elecfans.com/d/8305830.html</link>    <guid>https://www.elecfans.com/d/8305830.html</guid>    <pubDate>2026-09-10 17:13:00</pubDate>    <description><![CDATA[<p>
+	随着储能系统不断向高能量密度、小型化方向发展，储能舱内部空间愈发紧凑，电池热管理的安全风险持续上升。当储能大规模配套 <a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a> 算力、数据<a href="https://m.hqchip.com/tags" target="_blank"><u>中心</u></a>等高价值场景，一旦发生电池热失控事故，造成的损失远不止电池硬件本身。场景价值越高，行业对于储能 “零事故” 的追求也就越迫切。</p>
+<p>
+	但储能火灾事故依旧频发。复盘多起现场案例不难发现，很多安全隐患根源不在于缺少报警器，而是<strong><a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>监测架构设计不合理</strong>。传感器布在哪一层（舱级、簇级、Pack 级）、监测哪些物理 / 化学参数，决定了能不能捕捉热失控从萌芽、发展到扩散的完整过程。今天就从工程角度聊聊储能监测架构的选型逻辑，以及 Pack 级监测方案的技术实现思路。</p>
+<p>
+	为什么传统舱级监测方案，在储能场景下存在先天短板？</p>
+<p>
+	储能系统层级关系：电芯→电池 Pack 包→电池柜 / 储能簇→集装箱储能舱。</p>
+<p>
+	目前很多存量储能电站采用<strong>舱级监测方案</strong>：在储能舱顶部、通风风道位置布置温感、烟感<a href="https://www.hqchip.com/app/1831" target="_blank"><u>探测器</u></a>，期望依靠少数几个探头实现整舱安全监测。大量火灾事故复盘报告已经验证了这套方案的局限性：</p>
+<p>
+	<strong>预警滞后严重</strong> 电池 Pack 外壳密闭性很强，热失控早期产生的热量、烟雾很难快速扩散到储能舱的顶部。等到舱内烟感、温感触发报警的时候，电芯往往已经释放大量 CO、氢气、有机电解液蒸汽，热失控已经进入不可逆阶段，留给处置的窗口极短。</p>
+<p>
+	<strong>故障定位缺失，处置方式只能一刀切</strong> 舱级报警后，消防系统只能执行整舱断电、全淹没灭火。系统无法定位到底是哪一个 Pack 出现故障。整舱停机不仅严重拉低储能电站运营收益，还会造成电网侧负载剧烈波动，带来高额二次经济损失。</p>
+<p>
+	简单总结：舱级监测是 “事后报警”，而 Pack 级监测追求的是<strong>前兆预警，把风险遏制在单个电池包内部</strong>。</p>
+<p>
+	国内外标准推动，Pack 级监测成为行业硬性方向</p>
+<p>
+	国内国标要求</p>
+<p>
+	GB/T 42288-2022《电化学储能电站安全规程》（2023 实施）：<a href="https://www.elecfans.com/v/tag/6503/" target="_blank"><u>锂离子电池</u></a>舱自动灭火系统最小保护单元宜为电池模块 Pack，每个 Pack 可独立配置探火管或者灭火喷头。安全防护最小单元，已经下沉到 Pack 层级。</p>
+<p>
+	GB/T 46261-2025《电化学储能电站火灾监测预警系统通用技术要求》（2026-09-01 实施）：明确监测报警装置需要集成气体、温度、烟雾、压力多参数监测能力。</p>
+<p>
+	国际标准参考</p>
+<p>
+	UL9540A 储能电池热失控评估体系，对热失控的局部抑制、阻止热蔓延提出严苛测试要求。从工程实践来看，想要通过 UL9540A 测试，理想方案就是<strong>Pack 内部布设复合传感节点</strong>，提前捕获 CO、H₂、电解液蒸气等特征气体，搭配全氟己酮这类不导电灭火剂，实现单包早期精准抑爆，不让热失控扩散到相邻 Pack。<br/><br/>
+	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[艾迈斯欧司朗发布面向智能手机的影像与显示协同技术方案，引领下一代移动视觉体验革新]]></title>    <link>https://www.elecfans.com/d/8305831.html</link>    <guid>https://www.elecfans.com/d/8305831.html</guid>    <pubDate>2026-09-10 17:14:00</pubDate>    <description><![CDATA[<p>
+	艾迈斯欧司朗（SIX：<a href="https://www.elecfans.com/tags/ams/" target="_blank"><u>AMS</u></a>）今日宣布，在2026中国国际<a href="https://www.elecfans.com/v/tag/2800/" target="_blank"><u>光电</u></a>博览会（以下简称：CIOE）上发布其面向<a href="https://m.elecfans.com/v/tag/11230/" target="_blank"><u>智能手机</u></a>终端的影像与显示协同技术方案。该技术方案集成了艾迈斯欧司朗最新一代<a href="https://bbs.elecfans.com/zhuti_control_1.html" target="_blank"><u>传感技术</u></a>，能够帮助智能手机在环境光识别、影像捕捉和空间感测方面实现“更准确、更稳定、更精准”的效果，打通影像与显示协同链路，助力移动设备打造“所见即所得”的视觉体验。</p>
+<p>
+	<img src="https://file1.elecfans.com/web3/M00/77/B0/wKgZO2qidFGAcwcVAAZF2hkX-X8150.png" alt="wKgZO2qidFGAcwcVAAZF2hkX-X8150.png"/></p>
+<p>
+	<br/>
+	艾迈斯欧司朗<a href="https://www.elecfans.com/v/tag/4854/" target="_blank"><u>光学</u></a>传感与光电技术事业部、集成式光学传感产品线副总裁Matthias Win<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>r现场致辞</p>
+<p>
+	此次发布的影像与显示协同技术方案集成了艾迈斯欧司朗光谱颜色<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>、环境光谱与频闪检测多通道光谱传感器，以及直接飞行时间（dToF）传感器，由艾迈斯欧司朗携手合作伙伴vivo推进产品落地。该方案为行业首个实现前后置环境光光谱传感与后置空间感知技术的协同应用，突破性地打通从环境光感知、影像采集到空间理解的技术链路，为移动终端光学传感技术拓展更多应用场景与创新可能。</p>
+<p>
+	<img src="https://file1.elecfans.com/web3/M00/77/B0/wKgZO2qidGGAep4qAA0TzLDSuj0379.png" alt="wKgZO2qidGGAep4qAA0TzLDSuj0379.png"/></p>
+<p>
+	艾迈斯欧司朗光学传感产品线全球产品市场负责人Julia Stübinger发表面向智能手机的影像与显示协同技术方案演讲</p>
+<p>
+	艾迈斯欧司朗面向智能手机的影像与显示协同技术方案集成了其最新一代传感技术：<br/>
+	·<strong><a href="https://www.elecfans.com/tags/oled/" target="_blank"><u>OLED</u></a>屏下光谱颜色传感器</strong>：艾迈斯欧司朗专为OLED屏下光谱与颜色感知设计的传感器，支持五通道光谱或RGB颜色感知，凭借高灵敏度与高信噪比，可适配超低透光率OLED屏幕，并在低照度环境下精准测量环境光，实现精细化的屏幕亮度、色温与色彩管理。产品还具备<a href="https://www.elecfans.com/tags/红外/" target="_blank"><u>红外</u></a>光抑制、接近检测和良好的环境适应能力，可帮助<a href="https://www.elecfans.com/v/tag/107/" target="_blank"><u>手机</u></a>根据环境光变化动态优化显示效果，为全面屏终端带来更自然、舒适、真实的视觉体验。<br/>
+	·<strong>环境光谱与频闪检测多通道光谱传感器</strong>：艾迈斯欧司朗最新推出的多通道光谱传感器集<a href="https://m.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>颜色与光谱感知、光源识别及频闪检测于一体。其八通道版本面向智能手机后置摄像头，可模拟人眼色彩感知，为自动白平衡、自动曝光和抗频闪处理提供精准的环境光数据。凭借高灵敏度、通道独立增益及连续HDR频闪测量能力，该产品可在复杂光源、低光及高动态范围场景下快速识别光源与频闪，提升照片和视频的色彩还原与稳定性；同时，芯片内置光学校准信息，有助于补偿器件差异并简化手机产线校准流程。<br/>
+	·<strong>直接飞行时间（dToF）传感器TMF8829</strong>：艾迈斯欧司朗最新一代48×32多区dToF深度传感器首次应用于智能手机，拥有80°对角线视场角，支持多种分区模式，可实时获取多区域深度信息，精准识别主体距离与空间位置。凭借完整的出厂校准和紧凑设计，该产品可提升自动对焦与运动主体追踪表现，并支持人像景深分割、三维重构、AR测距及空间扫描等应用，推动手机从“看见画面”向“理解空间”升级。</p>
+<p>
+	在该技术方案的助力下，智能手机厂商能为用户打造不受环境光变化影响、始终如一的视觉体验。无论身处户外强光、复杂室内光源还是夜间低光场景，用户都能获得舒适、自然的屏幕显示，以及稳定、真实的拍摄效果。<br/>
+	随着手机体验迈向“感知驱动”，光学传感作为显示与影像升级关键入口的重要性日益凸显。手机显示与影像体验的提升不仅依赖<a href="https://m.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>后处理，还需要更强大的前端环境感知、光谱理解与空间感知能力作为支撑。相应地，光学传感的能力也正从基础的环境亮度检测，拓展至环境光谱、色温、照度、光源频闪和空间深度等多维信息感知，让手机从“看见”环境，进一步迈向“读懂”光线与空间，为下一代显示与影像体验奠定感知基础。</p>
+<p>
+	<strong>携手合作伙伴打造终端展示机型，引领下一代手机视觉体验革新</strong><br/>
+	在本届CIOE现场，艾迈斯欧司朗携手合作伙伴vivo展示了搭载高精度多光谱传感器VUS的原型机，采用了艾迈斯欧司朗影像与显示协同技术方案，分别围绕屏幕显示亮度优化、复杂光源及背景下的影像提升，以及实时深度感知进行演示。通过现场对比与互动体验，观众可直观感受手机在不同环境光下更加自然、舒适的显示效果，复杂光源及频闪场景下更加稳定、真实的影像表现，以及深度信息对自动对焦和空间感知能力的提升。尤其是三项技术共同打通从环境光感知、影像采集到空间理解与屏幕呈现的完整链路，生动诠释了“所见即所得”的下一代手机视觉体验。</p>
+<p>
+	<img src="https://file1.elecfans.com/web3/M00/77/AD/wKgZPGqidJyAU8dCAAgRVFklJnI442.png" alt="wKgZPGqidJyAU8dCAAgRVFklJnI442.png"/></p>
+<p>
+	<br/>
+	艾迈斯欧司朗技术专家现场演示搭载了OLED屏下传感器的原型机演示效果</p>
+<p>
+	<br/>
+	艾迈斯欧司朗直接飞行时间（dToF）传感器TMF8829可助力提升手机自动对焦与运动主体追踪表现，并支持人像景深分割、三维重构、AR测距及空间扫描等应用。</p>
+<p>
+	作为全球领先的智能手机品牌，vivo长期深耕移动影像与显示体验，在终端需求洞察、系统级技术整合和整机体验调校等方面拥有深厚积累。在此次技术方案的开发过程中，依托vivo在智能手机技术定义与用户体验打造方面的优势，艾迈斯欧司朗与vivo共同打通从环境光感知、影像采集、空间理解到屏幕呈现的完整技术链路，携手推动前沿传感技术从器件能力转化为用户可感知的终端体验。</p>
+<p>
+	此次展示的原型机不仅直观呈现了艾迈斯欧司朗影像与显示协同技术方案的应用价值，也充分体现了vivo对下一代手机视觉体验的前瞻布局与持续探索，为显示、影像与空间感知的协同升级开辟了更多可能。</p>
+<p>
+	未来，随着智能手机在影像、显示、<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>与空间计算等领域持续演进，光学传感将成为推动终端体验升级和行业技术进步的重要力量。艾迈斯欧司朗将持续发挥在光学、传感与系统集成领域的技术优势，坚定推动手机显示与影像技术创新及应用落地。同时，秉持开放合作的态度，深化与全球终端厂商、生态伙伴的合作，共同探索前沿技术、拓展应用边界，以推动行业进步和创造消费者价值为共同目标，共创下一代智能手机视觉体验的更多可能。<br/><br/>
+	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[智能反射面技术重塑无线网络的五大场景]]></title>    <link>https://www.elecfans.com/d/8305842.html</link>    <guid>https://www.elecfans.com/d/8305842.html</guid>    <pubDate>2026-09-10 17:15:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
 	技术只有落地才有价值。RIS最让我兴奋的，不是漂亮的波束赋形公式，而是它真的能解决那<span style="text-indent:2em;">些折磨<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>人多年的"硬骨头"场景。</span></p>
 <p style="text-indent:2em;">
 	一个每天都在发生的通信困局</p>
@@ -2598,398 +2842,4 @@ iarduino_APDS9930 apds;
 <h2>四、适用场景和注意事项</h2>
 <p>我们自己是用在工业<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>设备上的，官方给的应用场景还有电信设备、手持测试仪表，实测下来只要是需要LVPECL输出低抖动时钟的场景，这款都能顶。
 给大家提个踩过的小坑：LVPECL输出一定要做50Ω端接，别直接悬空接<a href="https://www.elecfans.com/soft/data/30-91/" target="_blank"><u>FPGA</u></a>引脚，不然会出现电平不准、抖动超标的问题。</p>
-<p>你们最近做高速设计都用哪款时钟源？欢迎评论区交流，需要这款1553P的完整datasheet的话我可以放评论区，也可以直接找厂商要：苏州杭晶电子，官网www.hci.com.hk，对接的<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>Tony联系方式是tony@hci.com.hk，技术支持响应还挺快的。</p>]]></description></item><item>    <title><![CDATA[高速时钟选型碎碎念：这几个藏在datasheet里的硬参数，做10G以上设计的一定要注意]]></title>    <link>https://www.elecfans.com/d/8305693.html</link>    <guid>https://www.elecfans.com/d/8305693.html</guid>    <pubDate>2026-09-10 16:30:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8305693" value="https://file1.elecfans.com/web2/M00/C1/CA/wKgZomXe0IKAHa3AAAaHHj6eKBw436.pdf"/><h1>高速<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>选型碎碎念：这几个藏在datasheet里的硬参数，做10G以上设计的一定要注意</h1>
-<p>最近给工业级10G光口项目选参考时钟源，翻到一款料的参数写得特别实诚，没有玩业内常见的“参数注水”套路，特意把核心信息摘出来，省得同行们翻几百页datasheet浪费时间。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8305693" target="_blank">1575D-122.880G33DTSTL.pdf</a></p>
-<hr/>
-<h2>核心电参数：刚好卡中高速SERDES的需求阈值</h2>
-<p>高速时钟最容易踩坑的就是厂商“标理想值、藏极限值”，这款的几个参数都是直接给了全工况下的实测值，对设计友好度拉满：</p>
-<ol>
-<li><strong>边沿速率</strong>：1.1V典型输出低电平下，上升/下降沿只有1.5ns，而且标注了测试条件是20%~80%~20% Vcc区间，不是很多厂商虚标的10%~90%区间值，这个边沿速度跑PCIe3.0、10GBASE-R的参考时钟完全够用，不用额外加边沿整形电路，省BOM也省布线空间。</li>
-<li><strong>占空比</strong>：输出交叉点实测45%~55%范围，刚好满足高速差分接口的共模噪声抑制要求，不用额外做占空比校正，我之前碰过占空比飘到40%以下的料，差分对共模干扰直接导致SERDES误码率涨了两个数量级，这个参数余量给的很足。</li>
-<li><strong>相位抖动（重点！）</strong>：<a href="https://www.hqchip.com/app/1718" target="_blank"><u>RMS</u></a>值&lt;1ps，积分范围是12kHz~20MHz，最良心的是厂家明确标注这个值已经包含了25℃常温、全工作温区、电源电压波动、输出负载变化、甚至震动冲击所有场景下的频率偏差，不是那种只标常温空载的理想值。之前踩过同类坑，某厂商标0.8ps抖动，实际带负载加-40℃温变直接飘到3ps以上，10G口直接丢包，这个参数给的实诚，做工业、车载级高速项目的可以重点考虑。</li>
-</ol>
-<hr/>
-<h2>封装&amp;量产兼容性：不用给EMS厂额外擦屁股</h2>
-<p>做批量生产最烦的就是封装规格奇葩，贴片机调半天还良率低：
-这款的编带完全符合EIA-481规范，16mm宽 embossed 载带，器件间距8mm，180mm标准盘径，每盘1k片。这个规格主流SMT贴片机的喂料器都能直接兼容，不用改参数也不用换专用载具，小批量打样和十万级量产都能无缝衔接，不会出现封装不兼容导致的贴装歪料、飞料问题。</p>
-<hr/>
-<h2>焊接提醒：别把好料焊废了</h2>
-<p>厂家附了推荐回流焊曲线，这里多提一句：这类<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>抖动的时钟器件，峰值焊接温度尽量不要超过260℃，高温回流时间严格按J-STD-020的要求控。我们之前做过验证，同款料超过260℃焊出来的样品，抖动平均涨了0.3ps，对抖动要求卡的严的项目影响不小，别因为焊接的问题浪费了器件的性能余量。</p>
-<hr/>
-<p>你们最近选型高速时钟有没有碰到过什么奇葩坑？比如参数注水、供货断货之类的，评论区聊聊，我整理下下期出个高速时钟选型避坑汇总。</p>]]></description></item><item>    <title><![CDATA[踩过GFCI设计的坑才发现：NCS37015这颗自检芯片省了我半个月调试时间]]></title>    <link>https://www.elecfans.com/d/8305694.html</link>    <guid>https://www.elecfans.com/d/8305694.html</guid>    <pubDate>2026-09-10 16:30:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8305694" value="https://file1.elecfans.com/web3/M00/77/AC/wKgZO2qiZ4aARnwvAANe6qeBijo268.pdf"/><h1>踩过G<a href="https://www.elecfans.com/tags/fci/" target="_blank"><u>FCI</u></a>设计的坑才发现：NCS37015这颗自检芯片省了我半个月调试时间</h1>
-<p>最近做户外便携插排的项目，要求过UL943的GFCI规范，还要带自检功能。最开始用分立<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>+<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>的方案搭，一会自检误报，一会电网波动就误跳闸，光调试就耗了快两周，直到换了<a href="https://www.elecfans.com/tags/安森美/" target="_blank"><u>安森美</u></a>这颗NCS37015，硬件搭完基本跑通，给大家整理点实打实用得到的设计要点。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8305694" target="_blank">NCS37015-D.PDF</a></p>
-<hr/>
-<h2>一、这颗芯片到底解决了GFCI设计的哪些痛点？</h2>
-<p>做过漏电保护产品的都知道，GFCI最麻烦的两个点：一是要符合安规的分级跳闸要求，抗噪还要好，不能一有浪涌就误跳；二是强制自检逻辑，上电要测，周期还要自动测，自己搭电路要么太复杂一致性差，要么固件写起来一堆边界条件要处理。
-NCS37015是专门针对这类场景做的集成<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a><a href="https://www.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>，核心优势直接戳痛点：</p>
-<ol>
-<li><strong>天生合规</strong>：完全符合UL943的自检GFCI要求，省了安规<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>的时候一堆解释工作</li>
-<li><strong>集成度拉满</strong>：自带12V并联稳压器、两路3.3V串联稳压器，差分故障检测、接地中性线（GN）检测、自检逻辑全集成，外围元件少了快一半</li>
-<li><strong>自检不用管</strong>：上电自动跑一次自检，后续每17分钟自动触发，不用写固件也不用额外搭检测电路</li>
-<li><strong>宽场景适配</strong>：4~12V供电，配合合适的串联阻抗可以直接适配120~480V<a href="https://m.hqchip.com/app/1703" target="_blank"><u>AC</u></a>的市电，工业级-40℃~95℃工作温度，户外、工业场景都能用，静态<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>典型才575μA，低功耗要求的产品也能hold住</li>
-</ol>
-<p>还有个我觉得特别实用的设计：它的电磁阀驱动不会在市电过零点附近触发，之前我们做的方案偶尔会出现过零点驱动电磁阀吸合力不够的问题，这颗芯片直接从硬件层面给规避了，省了好多调试的事。</p>
-<hr/>
-<h2>二、硬件设计必背的核心参数（不用翻datasheet了）</h2>
-<h3>1. 极限参数别踩坑</h3>
-<p>供电不要超过13.5V，输入输出引脚电平别超3.6V，HBM <a href="https://www.hqchip.com/app/1587" target="_blank"><u>ESD</u></a>等级2kV，常规生产运输的静电没问题，回流焊峰值温度260℃，常规无铅工艺都适配。</p>
-<h3>2. 核心功能参数直接用</h3>
-<table>
-<thead>
-<tr>
-<th>差分漏电电流范围</th>
-<th>最大跳闸时间</th>
-<th>场景说明</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>6~10mA</td>
-<td>≤125ms</td>
-<td>常规漏电保护阈值</td>
-</tr>
-<tr>
-<td>10~15mA</td>
-<td>≤95ms</td>
-<td/>
-</tr>
-<tr>
-<td>22.5~26.5mA</td>
-<td>≤40ms</td>
-<td/>
-</tr>
-<tr>
-<td>&gt;33mA</td>
-<td>≤20ms</td>
-<td>大电流快速断电</td>
-</tr>
-</tbody>
-</table>
-<ul>
-<li>接地中性线故障响应时间≤350ms，不需要这个功能可以直接关</li>
-<li><a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>自带全桥整流工作检测、欠压检测，电网波动大的区域也不会乱跳</li>
-</ul>
-<hr/>
-<h2>三、引脚设计避坑提醒（我踩过的坑你们别踩）</h2>
-<p>这颗是16脚QFN3x3的封装，几个容易搞错的引脚特意提一句：</p>
-<ol>
-<li><strong><a href="https://www.elecfans.com/tags/te/" target="_blank"><u>TE</u></a>引脚</strong>：工厂测试用的，别瞎接，要么悬空要么直接接地，我最开始没注意留了个<a href="https://www.hqchip.com/app/1535" target="_blank"><u>测试点</u></a>悬空，批量试产的时候有1%的概率上电自检报错，后来全部接地就没出现过</li>
-<li><strong>GNE引脚</strong>：内部上拉3.3V，默认开启GN检测，如果你的产品不需要接地中性线保护，直接接GND就行，不用额外处理</li>
-<li><strong>VDA引脚</strong>：是内部3.3V模拟稳压输出兼<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>参考源，一定要在引脚附近加100nF的去耦电容接地，不然参考电平飘了，跳闸阈值会差很远</li>
-<li><strong>CTS/CTO引脚</strong>：是差分电流互感器的输入输出，布线的时候尽量走差分线，远离强电回路和继电器、电磁阀这些感性器件，不然容易被干扰误触发</li>
-</ol>
-<hr/>
-<h2>四、便携GFCI设计参考要点</h2>
-<p>我这次做的是便携插排的GFCI，给大家几个可复用的设计点：</p>
-<ol>
-<li>市电输入的分压<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>选1%精度的，配合MLD引脚做欠压检测，阈值可以自己通过分压比调整</li>
-<li>漏电电流互感器的参数匹配直接用官方给的公式算：
-[I<em>{diff }=frac{0.203 × CT</em>{1} <a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>ti</u></a>mesleft(R<em>{CT 1}+R</em>{1}+2 <a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>pi</u></a> f<em>{AC} L</em>{CT 1}right)}{R<em>{8} timesleft(R</em>{CT 1}+2 pi f<em>{AC} L</em>{CT 1}right)}]
-根据你选的CT内阻、感量算R8的阻值，校准出来的跳闸电流误差基本在5%以内，不用一个个调</li>
-<li>SCR输出驱动电磁阀的时候加个100Ω左右的限流电阻，避免浪涌电流打坏芯片输出</li>
-<li><a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>布线强弱电隔离距离至少留8mm以上，CT的输入走线尽量短，别绕着强电走</li>
-</ol>
-<hr/>
-<h2>最后说下量产的小提醒</h2>
-<p>订货型号是<code>NCS37015MNTWG</code>，一盘3000颗，QFN封装的焊接钢网建议用0.12mm厚度，中间的接地焊盘别开太大，不然容易连锡。如果你们的应用场景电磁环境复杂，直接找安森美FAE要噪声滤波的参考设计，比自己瞎调快得多。</p>
-<p>你们做GFCI设计的时候有没有遇到过什么奇葩问题？比如自检不过、下雨天就误跳闸、电磁阀偶尔吸不上的？评论区聊聊，我这还有几个现成的参考设计原理图，需要的留个言就行~</p>]]></description></item><item>    <title><![CDATA[调DDR终端供电挖到宝：安森美NCP51200实测踩坑指南]]></title>    <link>https://www.elecfans.com/d/8305695.html</link>    <guid>https://www.elecfans.com/d/8305695.html</guid>    <pubDate>2026-09-10 16:30:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8305695" value="https://file1.elecfans.com/web3/M00/77/A8/wKgZPGqiZ4eATG9jAAdgOfJwJCQ585.pdf"/><h1>调<a href="https://m.hqchip.com/app/1729" target="_blank"><u>DDR</u></a>终端供电挖到宝：<a href="https://www.elecfans.com/tags/安森美/" target="_blank"><u>安森美</u></a>NCP51200实测踩坑指南</h1>
-<p>最近在给工控主板调DDR4的终端供电，之前用的分立方案占地方就算了，瞬态响应一直拉胯，<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>眼图怎么都过不了，翻了一圈料单挖到安森美这颗NCP/NCV51200，用了两周调通了，整理点干货给大家避坑。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8305695" target="_blank">NCP51200-D.PDF</a></p>
-<hr/>
-<h2>先给没接触过的朋友唠唠这颗料的定位</h2>
-<p>这是安森美专门做DDR总线终端的3A<a href="https://www.hqchip.com/app/1700" target="_blank"><u>线性稳压器</u></a>，全DDR系列通吃：从老的DDR1、DDR2到现在主流的DDR3、LPDDR3、DDR4都能支持，主打一个小体积+低外围：3x3mm的DFN封装，适合笔记本、<a href="https://m.elecfans.com/v/tag/1392/" target="_blank"><u>交换机</u></a>、车载车机这种对空间要求高的场景，还有车规版NCV前缀的型号，过了AEC-Q100<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>，PPAP资料直接找供应商要就行，做车载项目省了不少认证的事。</p>
-<hr/>
-<h2>核心参数都是实打实的<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>友好</h2>
-<p>我当时选它就是冲着几个点，确实解决了我之前的痛点：</p>
-<h3>1. 供电不用额外改轨</h3>
-<p>支持2.5V/3.3V/5V的VCC输入，PVCC范围1.1V~3.5V，老项目升级直接换，不用调整现有<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>架构，省了很多改板的功夫。</p>
-<h3>2. 集成度高，外围省一半</h3>
-<p>内置功率MOS，官方说最小只要20μF输出<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>就能稳得住，我实际用3颗10μF的X7R陶瓷电容并起来就够了，比之前分立方案少了4颗元件。另外自带远程VTTS sensing引脚，走线条阻导致的输出偏差问题直接解决，不用自己额外做校准。</p>
-<h3>3. 保护功能全，不用额外加电路</h3>
-<p>软启动、过流限制、欠压锁死、150℃过温关断（125℃自动恢复，非锁存不用手动复位）都集成了，还有PGOOD状态输出，直接连<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>做电源状态监测，不用额外搭<a href="https://m.hqchip.com/app/1737" target="_blank"><u>比较器</u></a>电路。</p>
-<hr/>
-<h2>实测踩坑的几个点，大家别再踩</h2>
-<p>我前前后后改了两版板，几个容易出错的地方给大家标出来：</p>
-<h3>✅ 输出电容别贪便宜用Y5V</h3>
-<p>官方推荐X7R/X5R陶瓷电容，我第一次贪便宜用了0805的10μF Y5V电容，三颗并起来在1.2V偏置下有效容量才不到15μF，2A负载跳变的时候瞬态飘了200多mV，换成0603 X7R 10μF三颗之后，瞬态波动直接压到80mV以内，完全满足DDR4的要求。</p>
-<h3>✅ VTTS感应线一定要单独走</h3>
-<p>第一次布局的时候偷懒，把VTTS的Sense线和VTT大电流路径走了同一段，带载2A的时候输出偏差了30mV，后来改成单独走线，直接连到输出电容的正极，精度直接稳在±10mV以内。还有PVCC的输入电容一定要紧贴引脚，最好和VTT电容同层，尽量少打过孔，过孔的ESR会严重影响瞬态响应。</p>
-<h3>✅ PGOOD别忘了上拉<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a></h3>
-<p>这颗的PGOOD是开漏输出，一定要接100k左右的上拉电阻，我一开始忘了接，一直读不到状态，还以为是芯片坏了，查了半天才发现漏了电阻，属于低级错误，大家别犯。</p>
-<h3>✅ 车载项目直接选可湿润侧翼版本</h3>
-<p>做车规应用的直接选MW/ML后缀的NCV型号，有可湿润侧翼，产线AOI直接就能检测焊接质量，不用额外打X-Ray，省了很多产线的麻烦。</p>
-<hr/>
-<h2>除了DDR还能玩点别的</h2>
-<p>我最近试了下用它给<a href="https://www.elecfans.com/soft/data/30-91/" target="_blank"><u>FPGA</u></a>的IO Bank供电，最低输出能到0.5V，支持动态调压，响应速度比我之前用的普通<a href="https://m.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>快不少，小电流场景下一颗顶两颗用，性价比很高。</p>
-<p>你们调DDR电源的时候都遇到过啥坑？有用过这颗料的也可以在评论区聊聊你的使用体验，有问题我也尽量回复。</p>]]></description></item><item>    <title><![CDATA[最近调试GFCI挖到宝：安森美NCS37021上手踩坑+设计要点整理]]></title>    <link>https://www.elecfans.com/d/8305696.html</link>    <guid>https://www.elecfans.com/d/8305696.html</guid>    <pubDate>2026-09-10 16:30:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8305696" value="https://file1.elecfans.com/web3/M00/77/AC/wKgZO2qiZ4eASVm-AAWUxsvPuoY703.pdf"/><h1>最近调试G<a href="https://www.elecfans.com/tags/fci/" target="_blank"><u>FCI</u></a>挖到宝：<a href="https://www.elecfans.com/tags/安森美/" target="_blank"><u>安森美</u></a>NCS37021上手踩坑+设计要点整理</h1>
-<p>最近做工业级GFCI插座的项目，要过UL943<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>，之前用分立+老款<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>方案，光是自检逻辑、误跳优化就调了快2个月，头都大了。翻安森美官网偶然看到新出的NCS37021，专门做带自检的GFCI<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a><a href="https://www.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>，啃完datasheet打了第一版样，目前功能测试全过，整理点干货给同做这类产品的兄弟避坑。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8305696" target="_blank">NCS37021-D.PDF</a></p>
-<hr/>
-<h2>为什么选这个IC？几个戳中痛点的特性</h2>
-<p>先给不了解的兄弟唠下这颗IC的核心优势，完全是为了简化GFCI设计做的：</p>
-<ol>
-<li><strong>UL943合规省大事</strong>：内部已经集成了完整的自检测逻辑，上电自动测，之后每1分钟自检一次，不用自己写固件跑逻辑，认证的时候省了太多验证工作。</li>
-<li><strong><a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>集成度拉满</strong>：内部带12V并联稳压器、2路3.3V <a href="https://m.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>（分别给IO和<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>内核）、1路1.8V数字内核LDO，外部只要接个串阻就能直接从120~480V <a href="https://m.hqchip.com/app/1703" target="_blank"><u>AC</u></a> mains取电，电源部分少了至少5颗器件。</li>
-<li><strong>误跳率控制太香</strong>：能智能区分普通接地故障和中性线接地故障，还有分级脱扣时间：6~15mA小电流故障≤135ms脱扣，&gt;30mA大电流故障≤20ms快速脱扣，既满足安规要求，又不会因为个浪涌就莫名其妙跳阀。</li>
-<li><strong>螺线管驱动优化</strong>：内部做了逻辑，不会在交流过零点附近给螺线管通电，之前老方案经常碰到螺线圈吸合不稳、打火花的问题，这个设计直接给解决了。</li>
-<li><strong>宽温够耐用</strong>：-40℃~95℃工作温度，工业级场景甚至户外安装的GFCI都能用。</li>
-</ol>
-<p>封装是QFN16，无铅，引脚不多，layout难度也不高。</p>
-<hr/>
-<h2>关键参数提个醒，别超额定值用</h2>
-<table>
-<thead>
-<tr>
-<th>挑几个大家设计时最容易踩坑的参数说，别凭感觉选：</th>
-<th>参数项</th>
-<th>额定值</th>
-<th>注意点</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>供电电压</td>
-<td>最大13.5V</td>
-<td>内部已经钳位到12V，外部别再额外加稳压了，多余</td>
-</tr>
-<tr>
-<td>输入引脚电压</td>
-<td>-0.3V~3.6V</td>
-<td>采样引脚别直接接强电，别省限流<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a></td>
-</tr>
-<tr>
-<td><a href="https://www.hqchip.com/app/1587" target="_blank"><u>ESD</u></a>能力</td>
-<td>HBM 2kV / CDM 500V</td>
-<td>生产的时候不用特殊防护，正常静电处理就行</td>
-</tr>
-<tr>
-<td>焊接温度</td>
-<td>260℃回流焊没问题</td>
-<td>符合常规无铅工艺要求</td>
-</tr>
-</tbody>
-</table>
-<p>静态<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>我实测只有3mA左右，待机功耗完全满足能效要求。</p>
-<hr/>
-<h2>外围<a href="https://www.elecfans.com/v/tag/167/" target="_blank"><u>电路设计</u></a>重点，照着调少走弯路</h2>
-<p>我是直接用的datasheet里的插座参考电路改的，几个关键器件的作用和选型注意点给大家标出来：</p>
-<h3>1. 电源部分</h3>
-<ul>
-<li>SUP引脚的1μF<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>C1一定要就近接IC，离引脚距离不要超过2mm，这个是供电保持电容，换容值或者放远了容易出现供电不稳复位的问题。</li>
-<li>C2A、C2B是内部3.3V和1.8V的滤波电容，都是1μF，同样就近接地，能把内核纹波压到10mV以内。</li>
-</ul>
-<h3>2. 采样部分</h3>
-<ul>
-<li>差分电流互感器选1:1000的，中性线接地互感器选1:250的，别随便变比，不然采样公式要重新算。</li>
-<li>R5是差分采样负载电阻，必须用370Ω 1%精度的，别用5%普通电阻，精度不够会导致故障电流判断不准，要么灵敏度不够要么误跳。</li>
-<li>R6是中性线接地灵敏度调节电阻，范围0~10Ω，我现在用的5Ω，灵敏度刚好符合UL要求，大家可以根据自己的产品需求调。</li>
-<li>C4是56nF抗混叠滤波，截止频率140Hz，刚好滤掉工频谐波干扰，别省。</li>
-</ul>
-<h3>3. 驱动部分</h3>
-<ul>
-<li>SCR选普通的家用<a href="https://www.hqchip.com/app/2046" target="_blank"><u>可控硅</u></a>就行，Q3推荐用datasheet给的MMBT6517LT1，我没换别的型号，目前跑了1000次脱扣测试没出问题。</li>
-<li>螺线管直接接就行，不用额外加过零检测电路，IC内部已经做了驱动优化，吸合很稳。</li>
-<li>自检失败的<a href="https://www.hqchip.com/app/1721" target="_blank"><u>LED</u></a>限流电阻R9用3.3k就行，嫌暗可以降到2k，别太小烧引脚。</li>
-</ul>
-<hr/>
-<h2>Layout避坑提示</h2>
-<p>都是我第一版打样踩过的坑：</p>
-<ol>
-<li>采样线圈的输入走线走差分，别和强电线平行，间距至少留3mm以上，不然干扰会导致采样不准。</li>
-<li>GND铺铜要够大，最好用1oz铜厚，IC下方铺铜面积至少645mm²（1平方英寸），散热够，长时间工作结温不会超140℃的最大值。</li>
-<li>强电和弱电区域的爬电距离留够8mm以上，别到时候过安规卡壳。</li>
-</ol>
-<hr/>
-<h2>最后总结</h2>
-<p>这颗IC对于做GFCI产品的朋友来说真的是降本增效神器，我算过BOM成本比之前的分立方案低了近30%，调试时间省了至少一半，所有安规要求的功能都给你集成好了，照着参考电路改基本没大问题。目前我这版已经过了功能测试，接下来跑1000小时可靠性，有新坑我再更新。</p>
-<p>有没有用过这颗IC的兄弟？你们调中性线接地灵敏度的时候碰到过啥问题？评论区聊聊~</p>]]></description></item><item>    <title><![CDATA[实测好用：安森美NCS37020 ALCI漏电保护方案踩坑笔记]]></title>    <link>https://www.elecfans.com/d/8305697.html</link>    <guid>https://www.elecfans.com/d/8305697.html</guid>    <pubDate>2026-09-10 16:30:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8305697" value="https://file1.elecfans.com/web3/M00/77/AC/wKgZO2qiZ4eAA_dNAAXP_v9SNB4793.pdf"/><h1>实测好用：<a href="https://www.elecfans.com/tags/安森美/" target="_blank"><u>安森美</u></a>NCS37020 ALCI漏电保护方案踩坑笔记</h1>
-<p>最近给客户做一款高端卷发棒的安规方案，要求过UL943B的ALCI（电器漏电保护器）<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>，还要带强制自测试功能。一开始用分立器件搭的方案，光自测试逻辑就加了十几个外围，BOM成本高不说，温漂大容易误触发，调试了快一个月都没跑通。翻安森美的物料库的时候看到了NCS37020这个集成方案，调了两周就过了预测试，整理点实用信息给有需要的同行。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8305697" target="_blank">NCS37020-D.PDF</a></p>
-<hr/>
-<h2>先讲清楚：这个芯片解决啥痛点？</h2>
-<p>UL943B新标准出来之后，所有ALCI产品都要求加周期性自测试，还要有寿命终止（EOL）指示，老的漏电保护芯片要么没有集成自测试逻辑，要么检测精度不够，很容易踩安规的坑。
-NCS37020相当于把<strong>自测试逻辑、漏电检测、<a href="https://www.hqchip.com/app/1731" target="_blank"><u>电源管理</u></a>、驱动输出</strong>全部打包在一颗14脚的<a href="https://www.hqchip.com/app/1593" target="_blank"><u>TSS</u></a>OP里，外围只需要加二三十个阻容感就能跑，完全符合UL943B要求，省了非常多调试时间。</p>
-<hr/>
-<h2>核心特性里最值得关注的几个点（不是照搬datasheet，都是实测有用的）</h2>
-<ol>
-<li><strong><a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>集成度拉满</strong>：内置12V并联稳压器+3.3V <a href="https://m.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>，不需要额外加<a href="https://m.hqchip.com/app/1703" target="_blank"><u>电源芯片</u></a>，我做的方案里直接从火线取电，省了2颗电源IC的成本和占板面积。</li>
-<li><strong>CT检测带动态失调消除</strong>：之前用分立方案的时候，CT（<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>互感器）的温漂经常导致误触发，夏天35℃以上环境测试的时候，漏电流还没到5mA就跳了，这个芯片自带动态失调抵消，我在-10℃到60℃环境下测了100小时，跳闸电流偏差都没超过0.3mA，非常稳。</li>
-<li>
-<table>
-<thead>
-<tr>
-<th><strong>分级跳闸完全符合安规要求</strong>：内置的跳闸速度分级是标准要求的，不用自己调逻辑：</th>
-<th>漏电流范围</th>
-<th>最大跳闸时间</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>6~15mA</td>
-<td>≤150ms</td>
-</tr>
-<tr>
-<td>15~30mA</td>
-<td>≤100ms</td>
-</tr>
-<tr>
-<td>30~100mA</td>
-<td>≤40ms</td>
-</tr>
-<tr>
-<td>&gt;100mA</td>
-<td>≤25ms</td>
-</tr>
-</tbody>
-</table>
-</li>
-<li><strong>自测试不用写代码</strong>：上电自动跑自测试，之后每12分钟自动测一次，要是检测到CT开路、SCR失效这些故障，直接驱动<a href="https://www.hqchip.com/app/1721" target="_blank"><u>LED</u></a>亮灯告警，不用额外加检测电路。</li>
-</ol>
-<hr/>
-<h2>引脚踩坑提醒（这几个点我踩过，别再踩）</h2>
-<p>datasheet里的引脚定义大家自己能查到，说几个容易踩坑的：</p>
-<ul>
-<li><strong><a href="https://www.elecfans.com/tags/te/" target="_blank"><u>TE</u></a>引脚（12脚）</strong>：别想着留<a href="https://www.hqchip.com/app/1535" target="_blank"><u>测试点</u></a>上拉，datasheet写了必须直接接地，我一开始留了个10k上拉测试点，结果自测试逻辑完全不运行，卡了我半天才找到问题。</li>
-<li><strong>REF引脚（6脚）</strong>：必须就近接1uF/6.3V的陶瓷滤波<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>，我一开始为了省BOM用了0.1uF的，参考电压飘了200mV，漏电检测精度差了2mA，过不了安规校准。</li>
-<li><strong>Phase引脚（8脚）</strong>：串联的1M限流<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>别换阻值，这个是用来检测工频频率校准内部<a href="https://www.hqchip.com/app/850" target="_blank"><u>振荡器</u></a>的，换了之后频率校准不准，自测试会报错。</li>
-</ul>
-<hr/>
-<h2>外围BOM调试经验</h2>
-<p>官方给的推荐BOM基本可以直接用，几个关键器件别乱换：</p>
-<ol>
-<li><strong>电流互感器</strong>：推荐用800匝的C5029−01C，不要自己乱改匝数，要是实在找不到替代，跳闸电流用官方给的公式算就行，R5一定要用1%精度的<a href="https://www.hqchip.com/app/1102" target="_blank"><u>金属膜</u></a>电阻，不然跳闸电流偏差会超过1mA。</li>
-<li><strong>SCR</strong>：必须选0.8A/400V以上的，我一开始图便宜用了0.5A的，带2000W负载测试的时候直接炸了，后面换了标准的0.8A的就没出过问题。</li>
-<li><strong><a href="https://bbs.elecfans.com/group_40" target="_blank"><u>EMC</u></a>滤波</strong>：CT引脚的两颗1k@100MHz磁珠一定要加，我一开始没加，过辐射抗扰测试的时候经常误触发，加上之后直接过了Class B。</li>
-</ol>
-<hr/>
-<h2>总结：适合啥场景用？</h2>
-<p>我自己测下来这个芯片非常适合这几类产品：</p>
-<ul>
-<li>吹风机、卷发棒、电动剃须刀这类个人护理产品</li>
-<li>非接地的便携插座、电源线漏电保护模块</li>
-<li>小功率RCCB（剩余电流断路器）
-整体BOM比分立方案少了近20个器件，占板面积小了三分之一，我送UL预测试一次就过了，非常省心。</li>
-</ul>
-<p>有没有用过这个芯片的同行？欢迎在评论区交流遇到的坑~</p>]]></description></item><item>    <title><![CDATA[从传统工控到新世代 AI：亚信 I/O 桥接技术助力智能制造升级]]></title>    <link>https://www.elecfans.com/d/8305698.html</link>    <guid>https://www.elecfans.com/d/8305698.html</guid>    <pubDate>2026-09-10 16:30:00</pubDate>    <description><![CDATA[<p>
-	一、前言</p>
-<p>
-	随着生成式 <a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>、<a href="https://www.elecfans.com/tags/机器视觉/" target="_blank"><u>机器视觉</u></a>、边缘计算、智能制造与人形<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>快速发展，新一代设备平台大量采用 PCIe、<a href="https://www.hqchip.com/app/1515" target="_blank"><u>USB</u></a>、<a href="https://www.elecfans.com/tags/ethernet/" target="_blank"><u>Ethernet</u></a> 等高速<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>，但原生 <a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>、SPI、<a href="https://www.hqchip.com/app/2004" target="_blank"><u>CAN</u></a> FD 等 I/O 数量往往不足，同时仍需兼容大量采用 <a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>-232、RS-422、<a href="https://www.elecfans.com/tags/rs-485/" target="_blank"><u>RS-485</u></a>、并口等传统接口的工业与商用设备。因此，通过 PCIe 或 USB 2.0 I/O 桥接芯片扩展串口、并口及其他周边接口，已成为连接新一代 AI 平台与既有设备的重要方式。</p>
-<p>
-	本文将介绍亚信电子 AX99100A、AX78140／AX78120 I/O 桥接<a href="https://www.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>，以及 RS-232／RS-485 UART <a href="https://www.hqchip.com/app/1809" target="_blank"><u>收发器</u></a>，并说明其在工业<a href="https://m.elecfans.com/v/tag/1247/" target="_blank"><u>电脑</u></a>、DAQ、边缘 AI、POS、商用终端及人形机器人等应用中的设计与选型重点。</p>
-<p>
-	<img src="https://file1.elecfans.com//web3/M00/77/AD/wKgZO2qia7aAIDg0AAHVtLg3nag530.jpg" alt="wKgZO2qia7aAIDg0AAHVtLg3nag530.jpg"/> （图一）亚信 PCIe &amp; USB 2.0 多功能 I/O 桥接芯片方案</p>
-<p>
-	<strong>二、从主机总线到串行接口：I/O<a href="https://www.elecfans.com/tags/桥接器/" target="_blank"><u>桥接器</u></a>与UART架构解析</strong></p>
-<p>
-	PCIe／USB 多功能 I/O 桥接器可将主机接口扩展为多组 UART、并口、SPI、Local Bus 与 GPIO，并负责数据缓冲、中断及传输管理，是连接主机与低速外设的重要控制核心。其内建 UART 负责并行与串行数据转换，并支持波特率、FIFO、流量控制及错误检测等功能。由于 UART 输出仅为 CMOS／TTL 逻辑<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>，连接 RS-232、RS-422 或 RS-485 设备时，仍需搭配相应 UART 收发器完成物理层转换。</p>
-<p>
-	<img src="https://file1.elecfans.com//web3/M00/77/AD/wKgZO2qia7aAFjxbAAFu9QceKl0442.jpg" alt="wKgZO2qia7aAFjxbAAFu9QceKl0442.jpg"/></p>
-<p>
-	（图<strong>二</strong>）从主机总线到串行接口：I/O桥接器与UART架构解析</p>
-<p>
-	 <strong>三、AX99100A：PCIe多功能I/O桥接方案</strong></p>
-<p>
-	亚信电子<strong>AX99100A</strong>是一款 PCIe 多功能 I/O 桥接控制器，可通过 PCIe x1 扩展 UART、并口、SPI Master、Local Bus 与 GPIO，并支持<strong>4S、2S+1P、2S+SPI 及 Local Bus</strong>四种工作模式。</p>
-<p>
-	其中，4S 模式适合多串口工业<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>；2S+1P 可兼容传统 LPT 外设；2S+SPI 可同时连接串行设备与 <a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>、<a href="https://www.elecfans.com/tags/dac/" target="_blank"><u>DAC</u></a>、<a href="https://www.elecfans.com/soft/data/30-91/" target="_blank"><u>FPGA</u></a>、<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a> 或 CAN FD 控制器；Local Bus 则适用于 FPGA、<a href="https://bbs.elecfans.com/zhuti_fpga_1.html" target="_blank"><u>ASIC</u></a> 及旧式总线设备升级。</p>
-<p>
-	AX99100A 每组 UART 具备独立 TX／RX FIFO，并支持最高 25 Mbps 可<a href="https://bbs.elecfans.com/group_75" target="_blank"><u>编程</u></a>波特率，适用于工业电脑、DAQ、<a href="https://m.elecfans.com/v/tag/1687/" target="_blank"><u>自动化设备</u></a>、测量仪器、POS、边缘 AI 与智能机器人等应用。</p>
-<p>
-	<img src="https://file1.elecfans.com//web3/M00/77/AD/wKgZO2qia7aASUzZAAHMZTTIarQ918.jpg" alt="wKgZO2qia7aASUzZAAHMZTTIarQ918.jpg"/></p>
-<p>
-	（图<strong>三</strong>）亚信AX99100A PCIe多功能I/O桥接解决方案</p>
-<p>
-	四、AX78140／AX78120：USB 2.0 串口与并口扩展方案</p>
-<p>
-	对于缺乏 PCIe 插槽的 Panel PC、小型 IPC、单板电脑及边缘 AI 设备，USB 2.0 是灵活且易于部署的 I/O 扩展方案。</p>
-<p>
-	亚信电子<strong>AX78140</strong>支持<strong>4S（四 UART）</strong>与<strong>2S+1P（双 UART + 并口）</strong>模式，UART 速率最高可达 6 Mbps，可用于多串口通信、DAQ、<a href="https://m.elecfans.com/v/tag/633/" target="_blank"><u>工业自动化</u></a>、测试仪器及 POS 等设备。</p>
-<p>
-	<strong>AX78120</strong>则提供<strong>1S／2S UART</strong>模式，同样支持最高 6 Mbps，并具备流量控制、自动方向控制及 EEP<a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a> 设置等功能，适合 USB 转 RS-232／RS-485、小型<a href="https://bbs.elecfans.com/group_1121" target="_blank"><u>嵌入式</u></a>设备与机器人维护接口等重视尺寸、成本与功耗的应用。</p>
-<p>
-	<img src="https://file1.elecfans.com//web3/M00/77/AD/wKgZO2qia7aAIcBRAAFWyb53iSM884.jpg" alt="wKgZO2qia7aAIcBRAAFWyb53iSM884.jpg"/></p>
-<p>
-	（图四）AX78140／AX78120 USB 2.0串口／并口桥接方案</p>
-<p>
-	五、AX99100A／AX78140／AX78120产品选型指南</p>
-<p>
-	在PCIe与USB 2.0 I/O扩展应用中，产品选型应先确认主机接口、UART数量、是否需要并口，以及是否需要SPI、Local Bus或GPIO等额外功能。若系统具备PCIe Root Port，且需要多组UART、SPI、Local Bus或GPIO，可优先考虑<b>AX99100A</b>；若产品采用USB 2.0且需要最多四组UART或串并口混合接口，可选择<b>AX78140</b>；若仅需一至两组UART，并重视尺寸、成本与功耗，<b>AX78120</b>则是更精简的方案。选型时还应同步考量<a href="https://www.elecfans.com/v/tag/527/" target="_blank"><u>操作系统</u></a>、驱动支持、板面空间、封装、工作温度、外部物理层接口与长时间运行需求，以完成整体系统架构规划。</p>
-<p>
-	<img src="https://file1.elecfans.com//web3/M00/77/AD/wKgZO2qia7eABVhSAAFgGc9fgF8351.jpg" alt="wKgZO2qia7eABVhSAAFgGc9fgF8351.jpg"/></p>
-<p>
-	（图五）AX99100A／AX78140／AX78120 I/O 桥接芯片选型指南</p>
-<p>
-	<strong>六、UART收发器：连接RS‑232、RS‑422与RS‑485</strong></p>
-<p>
-	在PCIe或USB桥接至UART后，系统需根据外设标准搭配相应收发器。亚信电子提供低功耗3V/5V RS‑232与RS‑422/485收发器，将UART逻辑信号转换为单端或差分<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>信号。</p>
-<p>
-	<strong>RS‑232收发器</strong>：适合点对点、短距离通信，常用于条码扫描器、打印机、UPS、电子秤、CNC控制器与测试仪器。AX3243E最高250 Kbps，AX3243F最高1 Mbps，具<a href="https://www.hqchip.com/app/1587" target="_blank"><u>ESD</u></a>保护与节能功能。</p>
-<p>
-	<strong>RS‑422/485收发器</strong>：采用差分传输，抗噪强、传输远，支持多节点。常见于Modbus RTU、楼宇自动化、能源管理与<a href="https://www.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>。ZT491E支持32节点，ZT491H支持256节点，速率最高10 Mbps，并具±15 kV ESD保护。</p>
-<p>
-	<strong>选型要点</strong>：需确认主控逻辑电压与系统<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>架构，并根据接口类型、速率、双工模式、Unit Lo<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>ad</u></a>、ESD/浪涌保护、工作温度、封装及低功耗需求评估。长距离或高噪环境下，还需注意终端匹配、偏置、隔离与接地设计。</p>
-<p>
-	<img src="https://file1.elecfans.com//web3/M00/77/AD/wKgZO2qia7eAMsKWAAEL5IJnw90884.jpg" alt="wKgZO2qia7eAMsKWAAEL5IJnw90884.jpg"/></p>
-<p>
-	（图六）亚信 RS 232／RS 485 UART 收发器选型指南</p>
-<p>
-	<strong>七、PCIe／USB串并口通信卡设计考量</strong></p>
-<p>
-	PCIe／USB 串并口通信卡主要用于为新型主机扩展 COM Port 与 LPT Port，以连接 <a href="https://www.elecfans.com/v/tag/323/" target="_blank"><u>PLC</u></a>、CNC、<a href="https://m.elecfans.com/v/tag/2471/" target="_blank"><u>变频器</u></a>、POS、测试仪器及其他既有设备。</p>
-<p>
-	PCIe 应用可采用<strong>AX99100A</strong>的 4S 或 2S+1P 模式；USB 2.0 多串口方案可选<strong>AX78140</strong>，若仅需 1～2 组 UART，则可采用<strong>AX78120</strong>。实际外部通信还需搭配 RS-232／RS-422／RS-485 收发器，并综合考虑接口形式、隔离、防护、驱动兼容性、多<a href="https://www.hqchip.com/app/1808" target="_blank"><u>端口</u></a>传输与长时间稳定性，构建可靠的工业串行通信方案。</p>
-<p>
-	<img src="https://file1.elecfans.com//web3/M00/77/AD/wKgZO2qia7eAGpj-AADyR6ngla8859.jpg" alt="wKgZO2qia7eAGpj-AADyR6ngla8859.jpg"/></p>
-<p>
-	（图七）亚信 PCIe／USB 串并口通信卡解决方案</p>
-<p>
-	八、PCIe／USB 數據採集卡產品設計考量 </p>
-<p>
-	PCIe／USB 数据采集卡（DAQ）广泛应用于工业测量、设备监控、能源管理、自动测试与智能制造。系统设计中，ADC、<a href="https://www.elecfans.com/tags/afe/" target="_blank"><u>AFE</u></a>、MCU 或 FPGA 负责信号采样与前处理，<strong>AX99100A、AX78140／AX78120</strong>则负责将数据与控制信号传送至 PCIe 或 USB 主机。</p>
-<p>
-	其中，PCIe DAQ 可利用<strong>AX99100A</strong>的 SPI、Local Bus 与 GPIO 连接 ADC、FPGA 及 Trigger 逻辑；USB 2.0 DAQ 则可依通道与产品形式选择<strong>AX78140 或 AX78120</strong>。同时还需重视电源、接地、隔离、<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>、输入保护，以及采样率、多通道同步、数据吞吐与长时间稳定性。</p>
-<p>
-	<img src="https://file1.elecfans.com//web3/M00/77/AD/wKgZO2qia7eAZY91AADrBjXHN_8900.jpg" alt="wKgZO2qia7eAZY91AADrBjXHN_8900.jpg"/></p>
-<p>
-	（图八）亚信 PCIe／USB 数据采集卡产品应用</p>
-<p>
-	九、工业电脑 (IPC) 与边缘 AI 设备产品设计考量 </p>
-<p>
-	工业电脑（IPC）与边缘 AI 设备除了运算性能外，也需兼顾 I/O 扩展、设备兼容性与长期稳定运行。若平台具备 PCIe，可采用<strong>AX99100A</strong>扩展 UART、并口、SPI、Local Bus 与 GPIO；若 PCIe 资源有限，则可通过 USB 2.0 搭配<strong>AX78140／AX78120</strong>扩展串行接口。</p>
-<p>
-	在边缘 AI 应用中，这些 I/O 桥接控制器可作为 AI 主机与 PLC、<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>、仪器及其他现场设备之间的连接接口，实现数据读取与控制指令传输。系统设计时还应综合考虑驱动兼容性、接口资源、隔离防护、多端口传输及长时间运行可靠性。</p>
-<p>
-	<img src="https://file1.elecfans.com//web3/M00/77/AD/wKgZO2qia7iADzE8AADuYsZghPU232.jpg" alt="wKgZO2qia7iADzE8AADuYsZghPU232.jpg"/></p>
-<p>
-	（图九）亚信 PCIe／USB 2.0 I/O 桥接方案：工业电脑与边缘 AI 设备产品应用</p>
-<p>
-	十、POS 收银机与商用终端设备产品设计考量 </p>
-<p>
-	POS 收银机与商用终端设备通常需连接条码扫描器、电子秤、打印机、客户显示器等周边，其中许多既有设备仍采用 RS-232 或并口，因此新旧接口兼容性十分重要。</p>
-<p>
-	主板内建式设计可采用<strong>AX99100A</strong>扩展多组 UART 或串并口；若采用外接 I/O Box，或不便增加 PCIe，则可通过<strong>AX78140／AX78120</strong>建立 USB 2.0 扩展方案。系统设计还需搭配适当的 UART 收发器与<a href="https://www.elecfans.com/tags/保护电路/" target="_blank"><u>保护电路</u></a>，并验证热插拔、休眠唤醒、多外设并行运行及驱动兼容性。</p>
-<p>
-	<img src="https://file1.elecfans.com//web3/M00/77/AD/wKgZO2qia7iAO7p6AADk-2uBh7s674.jpg" alt="wKgZO2qia7iAO7p6AADk-2uBh7s674.jpg"/></p>
-<p>
-	（图十）亚信 PCIe／USB I/O 桥接方案：POS 收银机与商用设备应用</p>
-<p>
-	十一、智能协作机器人产品设计考量 </p>
-<p>
-	人形机器人与服务型机器人通常采用分层控制架构，由中央 AI 平台负责视觉、感知与高阶决策，末端 MCU、<a href="https://www.hqchip.com/app/1378" target="_blank"><u>DSP</u></a> 或<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机控制</u></a>器则执行实时运动与安全控制。</p>
-<p>
-	当中央平台的 UART、SPI 或 CAN FD 资源不足时，可通过<strong>AX99100A</strong>利用 PCIe 扩展 UART、SPI 与 GPIO 等接口。以灵巧手为例，AX99100A 可通过 SPI 连接外部 CAN FD 控制器，再搭配 CAN FD 收发器建立独立<a href="https://www.elecfans.com/tongxin/" target="_blank"><u>通信网络</u></a>，连接手部 MCU、<a href="https://m.hqchip.com/app/1824" target="_blank"><u>电机驱动器</u></a>与传感节点。</p>
-<p>
-	此方案可降低中央控制板 I/O 负担与线束复杂度，并提升系统扩展性与故障隔离能力；高速闭环控制则仍由末端控制器本地执行。</p>
-<p>
-	<img src="https://file1.elecfans.com//web3/M00/77/AD/wKgZO2qia7iAMkNkAADcX2UDCe8106.jpg" alt="wKgZO2qia7iAMkNkAADcX2UDCe8106.jpg"/></p>
-<p>
-	（图十一）亚信 PCIe／USB I/O 桥接方案：智能协作机器人产品应用</p>
-<p>
-	十二、结论 </p>
-<p>
-	随着 AI、边缘计算与智能制造持续发展，新一代平台虽然拥有更强的运算能力与高速接口，但仍需兼容大量采用 RS-232、RS-485、UART 与并口的既有工业设备。</p>
-<p>
-	亚信电子<strong>AX99100A、AX78140 与 AX78120</strong>可通过 PCIe／USB 2.0 扩展 UART、并口、SPI 与 Local Bus，并搭配亚信 RS-232／RS-485 UART 收发器，形成完整的 I/O 连接方案。</p>
-<p>
-	通过这样的架构，可帮助 IPC、DAQ、POS、边缘 AI 与机器人等系统延续既有设备投资，同时提升新旧平台之间的兼容性、可靠性与扩展性。</p>
-<p>
-	审核编辑 黄宇</p>
-<p>
-	</p>]]></description></item>  </channel></rss>
+<p>你们最近做高速设计都用哪款时钟源？欢迎评论区交流，需要这款1553P的完整datasheet的话我可以放评论区，也可以直接找厂商要：苏州杭晶电子，官网www.hci.com.hk，对接的<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>Tony联系方式是tony@hci.com.hk，技术支持响应还挺快的。</p>]]></description></item>  </channel></rss>
