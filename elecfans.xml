@@ -1,4 +1,1459 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[实测拆解：星通时频65.536MHz工业级有源晶振，硬件设计踩坑指南]]></title>    <link>https://www.elecfans.com/d/8313855.html</link>    <guid>https://www.elecfans.com/d/8313855.html</guid>    <pubDate>2026-09-13 10:40:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8313855" value="https://file.elecfans.com/web2/M00/64/6A/poYBAGMHJ_SAUu9ZABFIzwZSURg356.pdf"/><h1>实测<a href="https://m.elecfans.com/v/tag/899/" target="_blank"><u>拆解</u></a>：星通时频65.536MHz工业级有源晶振，硬件设计踩坑指南</h1>
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[选型实测：2016封装宽压2MHz有源晶振，低功耗便携设计的绝佳选择]]></title>    <link>https://www.elecfans.com/d/8313759.html</link>    <guid>https://www.elecfans.com/d/8313759.html</guid>    <pubDate>2026-09-13 10:05:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8313759" value="https://file1.elecfans.com/web2/M00/C1/C1/wKgZomXes5uAUosgACUyAmLomsk927.pdf"/><h1>选型实测：2016封装宽压2MHz有源晶振，低功耗便携设计的绝佳选择</h1>
+<p>最近在做一款电池供电的手持工业测温仪，需要找个小封装、宽电压适配的低频<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>源，翻了一圈供应商的样册，挖到星通时频这款型号为<strong>SX1M2.000M10F30TNN</strong>的有源晶振，实测下来参数适配性拉满，整理下规格书核心信息给有同款需求的<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>做参考。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8313759" target="_blank">SX1M2.000M10F30TNN.pdf</a></p>
+<hr/>
+<h2>一、核心参数速览，先看能不能匹配你的需求</h2>
+<table>
+<thead>
+<tr>
+<th>先把大家选型第一时间要核对的硬参数拎出来，不用翻几十页规格书：</th>
+<th>参数项</th>
+<th>规格值</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>封装</td>
+<td>SMD2016</td>
+<td>比传统3225封装省60%以上<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>面积，紧凑型设计福音</td>
+</tr>
+<tr>
+<td>标称频率</td>
+<td>2.000MHz</td>
+<td>适配低速总线、低功耗<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>时钟需求</td>
+</tr>
+<tr>
+<td>供电电压</td>
+<td>1.62~3.63V</td>
+<td>划重点！1.8V、3.3V供电场景通用，两节<a href="https://www.elecfans.com/yuanqijian/dianchi/dianchishengchang/" target="_blank"><u>干电池</u></a>掉电到1.7V都能正常工作，不用额外做电平转换</td>
+</tr>
+<tr>
+<td>频差精度</td>
+<td>常温±10ppm / 全温±30ppm</td>
+<td>工作温度覆盖-40~85℃工业级区间，户外、工业场景都能hold住</td>
+</tr>
+<tr>
+<td>功耗</td>
+<td>最大10mA</td>
+<td>低功耗场景友好，支持使能关断，不用的时候可以断电省<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a></td>
+</tr>
+<tr>
+<td>起振时间</td>
+<td>最大5ms</td>
+<td>唤醒场景无延迟，不用等时钟稳定再跑业务逻辑</td>
+</tr>
+<tr>
+<td>年老化率</td>
+<td>±3ppm/年</td>
+<td>产品生命周期按5年算总偏移也不会超20ppm，不需要额外校准</td>
+</tr>
+</tbody>
+</table>
+<hr/>
+<h2>二、硬件设计避坑指南，都是实测出来的经验</h2>
+<p>这款晶振的外围设计非常简单，但是几个细节踩坑了也会出问题：</p>
+<h3>1. 引脚定义别搞反</h3>
+<p>仰视图的4个引脚定义一定要记牢：</p>
+<blockquote>
+<p>1脚：使能控制 → 悬空/接VDD时正常输出，接GND时关断输出，做低功耗的话这个引脚直接接MCU的IO口，休眠时关断能省几十mW的功耗
+2脚：GND → 就近接主地，不要走长走线
+3脚：时钟输出 → 接MCU的XTAL_IN，走线长度控制在5mm以内，寄生<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>不要超过10pF，避免占空比偏移
+4脚：VDD → 必须就近放一颗0.1μF的<a href="https://www.hqchip.com/app/398" target="_blank"><u>MLCC</u></a>去耦，别省这个电容，不然<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>噪声会导致频偏超标</p>
+</blockquote>
+<h3>2. 波形测试注意事项</h3>
+<p>如果调试的时候要测时钟波形，记得<a href="https://m.elecfans.com/v/tag/577/" target="_blank"><u>示波器</u></a>带宽至少开10MHz以上（规格书要求是被测频率的5倍），带宽不够的话测出来的上升沿、占空比都是错的，别上来就说晶振参数不合格。</p>
+<hr/>
+<h2>三、生产焊接不用愁，符合常规SMT工艺</h2>
+<p>很多小封装晶振焊接容易出问题，这款的工艺宽容度很高：</p>
+<ul>
+<li>无铅回流焊峰值温度260℃，最多支持3次过炉，符合常规SMT产线参数，不需要特意调炉温曲线</li>
+<li>可靠性测试拉满：1米跌落、-40~85℃温冲、96小时湿热测试后频偏都不会超过±5ppm，24小时盐雾无腐蚀，户外设备用也放心</li>
+<li>引脚浸锡率≥90%，虚焊概率比同封装竞品低很多，批量生产良率有保障</li>
+</ul>
+<hr/>
+<h2>四、哪些场景特别适合用这款？</h2>
+<p>我自己用下来，这几个场景适配度最高：</p>
+<ol>
+<li>电池供电的便携/穿戴设备：宽压适配、小封装、低功耗三个优势刚好戳中痛点</li>
+<li><a href="https://m.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>节点：<a href="https://www.hqchip.com/app/2004" target="_blank"><u>CAN</u></a>/<a href="https://www.hqchip.com/app/1809" target="_blank"><u>RS485</u></a>总线的时钟源，工业级温漂足够用</li>
+<li><a href="https://www.elecfans.com/tags/iot/" target="_blank"><u>IoT</u></a>低功耗节点：支持使能关断，休眠功耗可以压到μA级</li>
+<li>消费类电子：小家电、玩具类的时钟源，性价比够高</li>
+</ol>
+<hr/>
+<p>最后问下大家，平时选低频有源晶振都踩过什么坑？比如温漂超标、起振慢之类的，欢迎评论区聊，需要这款规格书原图的也可以留言找我要~
+（PS：这款立创商城就能搜到，样片申请很方便，不用找供应商磨半天）</p>]]></description></item><item>    <title><![CDATA[选型实记：这款2016封装24.576MHz有源晶振，刚好解决我工业网关的体积痛点]]></title>    <link>https://www.elecfans.com/d/8313761.html</link>    <guid>https://www.elecfans.com/d/8313761.html</guid>    <pubDate>2026-09-13 10:05:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8313761" value="https://file1.elecfans.com/web2/M00/C1/C1/wKgZomXetKiANASbACVFQwM5xQk288.pdf"/><h1>选型实记：这款2016封装24.576MHz有源晶振，刚好解决我工业网关的体积痛点</h1>
+<p>最近在做一款小体积工业数据采集网关，板上以太网PHY和<a href="https://www.hqchip.com/app/1537" target="_blank"><u>音频</u></a>Codec都要用到24.576MHz的<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>源，要求-40~85℃宽温工作、封装越小越好，翻遍选型表最后在立创挖着星通时频这款SX1M24.576M10F30TNN有源晶振，把规格书<a href="https://m.elecfans.com/v/tag/899/" target="_blank"><u>拆解</u></a>给大家，省得你们选型的时候漏踩坑。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8313761" target="_blank">SX1M24.576M10F30TNN.pdf</a></p>
+<hr/>
+<h2>核心参数速览，先看能不能匹配你的需求</h2>
+<table>
+<thead>
+<tr>
+<th>先把大家最关心的核心参数列出来，不用翻几十页规格书：</th>
+<th>参数项</th>
+<th>规格</th>
+<th>适用场景提示</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>封装</td>
+<td>SMD2016</td>
+<td>对体积要求高的便携/小型设备友好，比传统3225封装省一半面积</td>
+</tr>
+<tr>
+<td>标称频率</td>
+<td>24.576MHz</td>
+<td>音频Codec、<a href="https://www.hqchip.com/app/1720" target="_blank"><u>以太网</u></a>PHY、高速串口波特率生成通用频点</td>
+</tr>
+<tr>
+<td>供电电压</td>
+<td>1.62~3.63V</td>
+<td>3.3V老设计、1.8V低功耗设计通吃，不用备两个料号</td>
+</tr>
+<tr>
+<td>频差</td>
+<td>常温±10ppm，全温±30ppm</td>
+<td>工业级场景足够用，<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>时序余量够</td>
+</tr>
+<tr>
+<td>工作温度</td>
+<td>-40~85℃</td>
+<td>覆盖大部分工业、户外场景</td>
+</tr>
+<tr>
+<td>输出</td>
+<td>CMOS 15pF负载</td>
+<td>直接接<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>/PHY的IO，不用额外电平转换</td>
+</tr>
+</tbody>
+</table>
+<hr/>
+<h2><a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>参数避坑指南，这几个点别踩</h2>
+<h3>1. 供电真的省心，但去耦电容别省</h3>
+<p>宽压1.62~3.63V是真的香，我这次的设计是3.3V系统，后面如果改低功耗1.8V版本，晶振料号不用换，BOM直接少一个物料。最大消耗<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>10mA，有源晶振里这个功耗表现属于中上水平，非极致低功耗场景都能用。</p>
+<blockquote>
+<p>划重点：VDD脚一定要就近放0.1μF陶瓷去耦电容，别省这几分钱，不然<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>噪声串进去频偏直接飘出规格范围，调试的时候找问题找到头大。</p>
+</blockquote>
+<h3>2. 使能脚千万不要随便接地</h3>
+<p>1脚是使能控制：悬空/接Vdd的时候正常输出，接GND直接停振。我之前有个实习生Layout的时候习惯把空闲引脚全接地，直接踩过这个坑，调了一下午才发现是晶振没开。
+另外使能延迟最大150μs，做低功耗休眠唤醒的设计要把这个时间算进启动时序里，别系统都跑起来了时钟还没输出。</p>
+<h3>3. 输出特性够用，高速场景也扛得住</h3>
+<p>官方给的占空比45~55%，上升/下降沿最大5ns，输出高电平不低于0.9Vdd、低电平不高于0.1Vdd，我实测接100M以太网PHY的时钟输入，时序余量完全够，没有丢包的情况。起振时间最大5ms，比普通无源晶振快不少，系统启动速度能提一点。</p>
+<hr/>
+<h2>硬件设计&amp;生产注意事项</h2>
+<h3>管脚定义别搞反（仰视图！）</h3>
+<p>封装是2016，从底面看四个脚的定义：</p>
+<ol>
+<li>使能脚EN</li>
+<li>地GND</li>
+<li>时钟输出OUT</li>
+<li>电源VDD</li>
+</ol>
+<p>Layout建议输出走线尽量短，走50欧姆阻抗匹配，旁边不要走高频<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>或者电源走线，避免干扰引入频偏。</p>
+<h3>生产可靠性够硬，工业场景放心用</h3>
+<p>我特意翻了可靠性测试项，基本覆盖了工业级的所有要求：</p>
+<ul>
+<li>无铅回流焊峰值260℃可承受30秒，最多过3次炉，和常规SMT工艺参数匹配，不用单独调炉温</li>
+<li>跌落、振动、温冲、96小时湿热/高低温测试后，频偏变化都不超过±5ppm，第一年老化才±3ppm，长期使用不会飘</li>
+<li>24小时盐雾无腐蚀，户外设备用也没问题</li>
+</ul>
+<hr/>
+<h2>最后总结</h2>
+<p>这款晶振适合小体积、宽温、宽压的设计场景，工业网关、音频设备、便携测量仪器都能用，料号是<strong>SX1M24.576M10F30TNN</strong>，立创直接现货不用找代理，省了不少供应链的麻烦。
+你们最近选型有没有挖到什么好用的小体积时钟源？评论区聊聊呗。</p>]]></description></item><item>    <title><![CDATA[实测分享 | 星通时频2016封装4MHz宽压有源晶振，低功耗IoT场景的性价比选择]]></title>    <link>https://www.elecfans.com/d/8313763.html</link>    <guid>https://www.elecfans.com/d/8313763.html</guid>    <pubDate>2026-09-13 10:05:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8313763" value="https://file1.elecfans.com/web2/M00/C2/B2/wKgaomXesqeAXzWWACUz245jySQ414.pdf"/><h1>实测分享 | 星通时频2016封装4MHz宽压有源晶振，低功耗<a href="https://www.elecfans.com/tags/iot/" target="_blank"><u>IoT</u></a>场景的性价比选择</h1>
+<p>最近做低功耗门禁的方案，需要找一款小封装、宽电压的4MHz有源晶振给<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>做<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>源，刚好拿到星通时频（SC<a href="https://m.hqchip.com/app/1522" target="_blank"><u>TF</u></a>）给立创供的这款<strong>SX1M4.000M10F30TNN</strong>，扒完规格书给大家整理下关键参数，顺便踩坑提醒。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8313763" target="_blank">SX1M4.000M10F30TNN.pdf</a></p>
+<hr/>
+<h2>一、器件基础概览</h2>
+<p>首先先给没接触过的朋友提个底，这款是工业级SMD2016封装的有源石英晶振，RoHS合规，核心亮点就是宽压工作：1.62V~3.63V全覆盖，不管是用3.3V系统、2V纽扣电池供电都能正常工作，完全适配低功耗场景需求。</p>
+<p>供应商是深圳星通时频，做晶振也快10年了，之前用过他们家的3225封装系列，稳定性还可以，供货也比较稳。</p>
+<hr/>
+<h2>二、核心<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>参数（划重点，都是设计要用到的）</h2>
+<table>
+<thead>
+<tr>
+<th>我特意把大家选型最关心的参数摘出来了，不用自己翻几百页规格书：</th>
+<th>参数项</th>
+<th>指标</th>
+<th>设计提醒</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>标称频率</td>
+<td>4.000000MHz</td>
+<td>误差可以忽略</td>
+</tr>
+<tr>
+<td>常温频差（25℃）</td>
+<td>±10ppm</td>
+<td>普通消费类、工业级定时场景完全够用</td>
+</tr>
+<tr>
+<td>全温频差（-40~85℃）</td>
+<td>±30ppm</td>
+<td>工业级户外场景也能hold住</td>
+</tr>
+<tr>
+<td>工作电压</td>
+<td>1.62~3.63V</td>
+<td>低功耗的核心优势，电池快没电电压掉到2V都能正常起振</td>
+</tr>
+<tr>
+<td>工作<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a></td>
+<td>最大10mA</td>
+<td>功耗控制的不错，比同规格竞品低2mA左右</td>
+</tr>
+<tr>
+<td>输出模式</td>
+<td>CMOS</td>
+<td>匹配大部分MCU的时钟输入<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a></td>
+</tr>
+<tr>
+<td>输出负载</td>
+<td>15pF</td>
+<td>设计的时候输出端不要挂超过15pF的<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>，不然频偏会超、边沿变软</td>
+</tr>
+<tr>
+<td>起振时间</td>
+<td>最大5ms</td>
+<td>休眠唤醒后时钟稳定快，不会耽误MCU启动</td>
+</tr>
+<tr>
+<td>年老化率</td>
+<td>±3ppm/年</td>
+<td>产品生命周期5年的话总频偏也不会超过25ppm，不用考虑时钟校准问题</td>
+</tr>
+</tbody>
+</table>
+<h3>隐藏实用功能：OE使能脚</h3>
+<p>很多人会忽略这个引脚的功能：OE脚接≥70%Vdd或者悬空的时候正常输出时钟，拉到≤30%Vdd的时候直接关断时钟输出。做低功耗休眠设计的时候，不用额外加开关切时钟通路，直接用MCU GPIO控制这个脚就行，休眠电流直接再降几个mA，非常方便。</p>
+<hr/>
+<h2>三、封装引脚提醒（踩坑重灾区）</h2>
+<p>封装尺寸是2.0±0.08mm * 1.6±0.08mm，比传统3225封装小了60%，<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>紧张的穿戴、IoT设备非常友好。
+⚠️ 重点提醒：引脚是<strong>仰视图</strong>，别和顶视图搞反了，焊反直接烧件：
+1脚：OE使能
+2脚：GND
+3脚：时钟输出
+4脚：VDD供电</p>
+<hr/>
+<h2>四、量产关心的焊接&amp;可靠性参数</h2>
+<p>这款的焊接参数和普通阻容件完全匹配，不用单独调回流焊温区：</p>
+<ul>
+<li>无铅回流焊峰值温度最高260℃，最多支持3次过炉，返修也不用担心焊坏</li>
+<li>常规可靠性测试（1米跌落、10g振动、-40~85℃温冲、96小时湿热）过后，频偏都不会超过±5ppm</li>
+<li>24小时盐雾测试无腐蚀，户外工业场景也能用</li>
+</ul>
+<hr/>
+<h2>最后给大家个选型建议</h2>
+<p>如果你正在做电池供电的低功耗设备、穿戴类产品，或者PCB空间紧张，需要工业级4MHz时钟源，这款性价比很高，立创直接就能下单，不用找供应商谈样，小批量试产非常方便。</p>
+<p>最后问下大家，做设计的时候有没有踩过晶振的坑？比如频偏超标、起振慢之类的，评论区聊聊避坑经验~</p>]]></description></item><item>    <title><![CDATA[上能电气助力保加利亚布尔加斯储能电站正式投运]]></title>    <link>https://www.elecfans.com/d/8313765.html</link>    <guid>https://www.elecfans.com/d/8313765.html</guid>    <pubDate>2026-09-13 10:06:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	近日，上能<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>再添海外标杆项目，其供货的保加利亚布尔加斯储能电站正式投运。作为东欧目前已投运的最大储能电站，该项目总容量高达602MWh，一举将保加利亚全国储能总容量提升约10%，为当地大规模消纳风光绿能提供关键支撑，让电网更稳定、更灵活。</p>
+<p style="text-indent:2em;">
+	该项目由欧洲领先的项目开发及运营维护商Solarpro <a href="https://www.elecfans.com/tags/te/" target="_blank"><u>Te</u></a>chnology执行，上能电气为其供货150MW集中式储能PCS。项目并网后，将提供削峰填谷、负荷转移、频率遏制储备（FCR）及自动频率恢复储备（aFRR）等多种电网辅助服务。据测算，该电站可满足约6万户家庭的日常用电需求，为<a href="https://www.elecfans.com/v/tag/4675/" target="_blank"><u>电力系统</u></a>的安全稳定运行保驾护航。</p>
+<p style="text-indent:2em;">
+	拥抱大电芯时代，上能电气为场站配备由1725kW集中式储能PCS组成的6.9MW集中式变流升压一体机，可完美匹配全新一代6MWh电池仓，显著降低EPC成本和占地面积。此外，设备搭载先进的第二代增强混动构网技术，为高比例<a href="https://m.elecfans.com/v/tag/293/" target="_blank"><u>新能源</u></a>接入电网创造关键条件。</p>
+<p style="text-indent:2em;">
+	布尔加斯储能项目的成功投运，不仅标志着保加利亚能源转型迈出实质性一步，也为东欧地区新能源整合与电网现代化提供了可复制的示范模式。随着上能电气在欧洲高端储能市场的品牌影响力与市场拓展向纵深化加速推进，上能电气将持续深耕构网型储能解决方案，为推动全球能源向零碳未来贡献力量。</p>]]></description></item><item>    <title><![CDATA[APEC TELCA研讨会代表团到访华宝新能参观交流]]></title>    <link>https://www.elecfans.com/d/8313795.html</link>    <guid>https://www.elecfans.com/d/8313795.html</guid>    <pubDate>2026-09-13 10:09:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	APEC <a href="https://www.elecfans.com/tags/te/" target="_blank"><u>TE</u></a>LCA</p>
+<p style="text-indent:2em;">
+	“当前全球能源转型正处于关键阶段，各方应加强政策沟通与<a href="https://bbs.elecfans.com/zhuti_1183_1.html" target="_blank"><u>技术交流</u></a>，促进创新要素跨境流动，推动技术成果从实验室走向市场、惠及更多群体。”</p>
+<p style="text-indent:2em;">
+	9月2日，在深圳举行的APEC技术赋能低碳行动（TELCA）研讨会上，科技部中国科学技术交流<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>副主任许洪彬的这番致辞，不仅代表了亚太地区应对气候变化的高度共识，更向全球绿色生态企业释放了巨大的时代机遇。</p>
+<p style="text-indent:2em;">
+	APEC Telca研讨会上的“华宝声音”</p>
+<p style="text-indent:2em;">
+	家庭是能源转型的关键支点</p>
+<p style="text-indent:2em;">
+	作为受邀出席的绿色生态企业代表，华宝新能光伏瓦代表在会上发表了题为 Technology Empowering Low-Carbon Living <a href="https://www.hqchip.com/app/1703" target="_blank"><u>Ac</u></a><a href="https://www.elecfans.com/v/tag/1004/" target="_blank"><u>ros</u></a>s APEC 的主旨演讲，给出了属于家庭的“中国方案”。</p>
+<p style="text-indent:2em;">
+	站在全球能源转型的关键节点，会议上，华宝新能抛出了独特的破局思路：</p>
+<p style="text-indent:2em;">
+	打破传统视角：跳出大型基建（工厂、交通）的局限，重新定义家庭为能源转型的核心战场。</p>
+<p style="text-indent:2em;">
+	重塑家庭角色：借助<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>与<a href="https://bbs.elecfans.com/group_57" target="_blank"><u>物联网</u></a>技术，推动家庭从单一电力“消费者”向集发、储、用一体的“产消者”转型。</p>
+<p style="text-indent:2em;">
+	这场演讲不仅分享了全场景家庭绿电的实践，更为亚太地区的低碳发展提供了可落地的互鉴经验。</p>
+<p style="text-indent:2em;">
+	华宝新能的具体行动 / 方案</p>
+<p style="text-indent:2em;">
+	以“全场景家庭绿电”产品矩阵提供低碳实践样板</p>
+<p style="text-indent:2em;">
+	从便携光储到阳台光储，再到建筑光伏一体化（BIPV），华宝新能打破了传统能源的边界，致力于将抽象的低碳技术转化为看得见、摸得着、可负担的生活场景，为亚太地区提供了一套可复制、可推广的“中国方案”。</p>
+<p style="text-indent:2em;">
+	以“三位一体全球渠道”推动技术成果普惠</p>
+<p style="text-indent:2em;">
+	响应APEC“促进创新要素跨境流动”的号召，华宝新能依托“独立站+第三方平台+线下零售”的全球化渠道体系，配合海外仓与本地化服务，打破了地域壁垒。这不仅让清洁能源真正惠及全球超700万个家庭，也为亚太乃至全球发展中经济体获取优质绿电技术提供了高效、便捷的通路。</p>
+<p style="text-indent:2em;">
+	以“开放共赢的生态”深化国际合作</p>
+<p style="text-indent:2em;">
+	华宝新能深知，绿色低碳转型绝非一家企业的单打独斗。我们期待以此次APEC TELCA研讨会为契机，进一步开放技术平台与应用场景，愿做那个“搭桥者”，让绿色能源的福祉跨越国界，惠及更多群体。</p>
+<p style="text-indent:2em;">
+	走进展厅：一场“低碳生活”的沉浸体验</p>
+<p style="text-indent:2em;">
+	9月4日，APEC TELCA代表团循着演讲中的创新足迹，实地打卡了华宝新能总部。</p>
+<p style="text-indent:2em;">
+	01被颜值折服的美学曲面光伏瓦</p>
+<p style="text-indent:2em;">
+	有嘉宾对美学曲面光伏瓦赞不绝口，直呼“太美了”！一位来自加拿大的嘉宾在体验后表示，这种产品不仅极具科技感，更难得的是能完美适配亚洲、欧洲、美洲等不同国家的建筑风格，真正实现了光伏与建筑的和谐共生。</p>
+<p style="text-indent:2em;">
+	他毫不掩饰地表达了期待，希望华宝新能的美学曲面光伏瓦能早日进入加拿大市场，为当地的家庭建筑带来这种兼具美学与环保的“屋顶新选择”。</p>
+<p style="text-indent:2em;">
+	02当场“种草”的庭院阳台光储</p>
+<p style="text-indent:2em;">
+	几位来自东南亚的嘉宾在体验了消费级庭院阳台光储系统后当场“种草”。</p>
+<p style="text-indent:2em;">
+	当他们查阅所在国家的官网，发现暂无该品类时，甚至急切地询问：“能不能直接从中国买好，再发货到我们国家？”这份迫切的背后，正是当地居民对轻量化、便捷化低碳生活方式的强烈向往。</p>
+<p style="text-indent:2em;">
+	03渴望引入的“中国方案”</p>
+<p style="text-indent:2em;">
+	多位嘉宾直言，华宝新能的消费级光储产品极具吸引力，希望能成为代理商，将好产品引入自己的国家，让清洁能源惠及更多群体。</p>
+<p style="text-indent:2em;">
+	面对面采访：消费级光储的“下一步”在哪？</p>
+<p style="text-indent:2em;">
+	Q便携储能赛道已经非常拥挤，华宝新能找到的“下一步”是什么？</p>
+<p style="text-indent:2em;">
+	Jackery电小二，目前是全球销量和销售额第一的便携光储品牌，“第一”只是阶段性结果，拥挤是因为大家在卷参数、卷价格。</p>
+<p style="text-indent:2em;">
+	我们的判断是：消费级储能的下一个十年，不在“更大容量的户外<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>”，而在从‘便携备电’走向‘家庭分布式自主能源网络’。</p>
+<p style="text-indent:2em;">
+	所以，华宝新能的下一步，是把品牌从“全球便携光储第一”升级为“全球消费级光储生态引领者”：以便携储能为基本盘，横向扩到庭院阳台光储、屋顶光伏瓦，纵向叠加AI能源管理（Jackery Ark AI EMS），让硬件变成可感知、可调度、可陪伴家庭的能源系统。</p>
+<p style="text-indent:2em;">
+	Q从户外电源到庭院阳台光伏，是响应政策还是用户需求？</p>
+<p style="text-indent:2em;">
+	本质是用户需求先动，政策只是加速器。停电备电、电价高想自发自用、租房/公寓也想低成本用绿电——这是全球家庭能源焦虑的共性。</p>
+<p style="text-indent:2em;">
+	欧洲德法荷的“即插即用”阳台政策、日本防灾备电、美国电价波动，只是把这批需求合法化、规模化了。我们很幸运处在一个用户需求大、政府政策支持、我们也有能力提供优质解决方案的赛道上。</p>
+<p style="text-indent:2em;">
+	Q在海外建立自主品牌独立站，你们的路径和别人有什么本质不同？</p>
+<p style="text-indent:2em;">
+	Jackery 2012 年在加州就同步起独立站，不是先铺平台再补官网，而是“品牌官网+第三方+线下零售”三线同构。官网是我们的战略核心，独立站营收占比超30%。只有这样，才能真正把品牌做进海外用户心里。</p>
+<p style="text-indent:2em;">
+	双向奔赴：一次参访，多重赋能</p>
+<p style="text-indent:2em;">
+	从APEC国际舞台的聚光灯下，到华宝新能总部的展厅里，改变的是场景，不变的是对绿色低碳未来的共同追求。</p>
+<p style="text-indent:2em;">
+	未来，华宝新能将继续携手全球伙伴，共同探索更多低碳生活的可能性，让绿色能源真正无处不在！</p>]]></description></item><item>    <title><![CDATA[踩了N次晶振选型坑后，我整理了这份2016封装24MHz有源晶振设计参考]]></title>    <link>https://www.elecfans.com/d/8313776.html</link>    <guid>https://www.elecfans.com/d/8313776.html</guid>    <pubDate>2026-09-13 10:10:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8313776" value="https://file1.elecfans.com/web2/M00/C1/C0/wKgZomXestKAcVbeACVDcHMooHo535.pdf"/><h1>踩了N次晶振选型坑后，我整理了这份2016封装24MHz有源晶振设计参考</h1>
+<p>最近在做一款低功耗<a href="https://www.elecfans.com/tags/iot/" target="_blank"><u>IoT</u></a>网关的改版，要把原有的3225封装24MHz有源晶振换成更小尺寸的，刚好拿到星通时频（SC<a href="https://m.hqchip.com/app/1522" target="_blank"><u>TF</u></a>）这款型号为SX1M24.000M10F30TNN的2016封装晶振规格书，<a href="https://m.elecfans.com/v/tag/899/" target="_blank"><u>拆解</u></a>下参数和设计注意点，给有同样选型需求的同行做个参考。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8313776" target="_blank">SX1M24.000M10F30TNN.pdf</a></p>
+<hr/>
+<h2>一、为什么选这款晶振？核心选型逻辑说下</h2>
+<p>现在<a href="https://www.elecfans.com/soft/data/39-96/" target="_blank"><u>消费电子</u></a>、工业IoT设备都在往小型化走，2016封装的面积比传统3225小了近60%，对于<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>空间紧张的设计非常友好。我当时选型的核心要求刚好和这款参数匹配上：</p>
+<ol>
+<li>宽电压输入：1.62V~3.63V，直接适配1.8V/3.3V的低功耗主控，不用额外做电平转换</li>
+<li>工业级可靠性要求：温度范围、抗冲击特性符合工业场景需求</li>
+<li>现货供应：立创商城可以直接买到，小批量试产不用等交期，供应商星通时频也是国内做晶振的老厂，RoHS合规，供应链比较稳。</li>
+</ol>
+<hr/>
+<h2>二、核心参数拆解：这些是我选型必卡的指标</h2>
+<h3>1. 基础<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>参数</h3>
+<table>
+<thead>
+<tr>
+<th>参数项</th>
+<th>规格</th>
+<th>设计参考</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>标称频率</td>
+<td>24.000MHz</td>
+<td>给<a href="https://www.elecfans.com/tags/蓝牙/" target="_blank"><u>蓝牙</u></a>/<a href="https://www.elecfans.com/tags/wi-fi/" target="_blank"><u>Wi-Fi</u></a> <a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>、<a href="https://www.hqchip.com/app/1720" target="_blank"><u>以太网</u></a>PHY做<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>都刚好适配</td>
+</tr>
+<tr>
+<td>占空比</td>
+<td>45%~55%</td>
+<td>这个参数很多人容易忽略，占空比偏移过大的话会导致主控时钟边沿采样出错，这款的范围完全符合LVCMOS电平要求</td>
+</tr>
+<tr>
+<td>输出低电平</td>
+<td>≤0.1Vdd</td>
+<td>3.3V供电下低电平最高只有0.33V，抗干扰能力足够</td>
+</tr>
+<tr>
+<td>年老化率</td>
+<td>±3ppm</td>
+<td>按这个参数算，工业场景下用5年累计偏移也不会超过15ppm，完全满足<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>类设备的时钟精度要求</td>
+</tr>
+<tr>
+<td>使能逻辑</td>
+<td>OE接高/浮空正常工作，接GND关闭输出</td>
+<td>低功耗场景可以直接用GPIO控制这个脚关断时钟， idle状态下能省几十uA的<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a></td>
+</tr>
+</tbody>
+</table>
+<h3>2. 引脚定义（划重点！别踩坑）</h3>
+<table>
+<thead>
+<tr>
+<th>2016封装的有源晶振各家引脚定义没有统一标准，我之前就踩过想当然按通用引脚画PCB，打样回来不工作的坑，这款的引脚定义特意给大家列出来：</th>
+<th>引脚号</th>
+<th>功能</th>
+<th>设计提醒</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>OE使能</td>
+<td>不用关断功能的话建议直接接VDD，比浮空更抗干扰</td>
+</tr>
+<tr>
+<td>2</td>
+<td>GND</td>
+<td>就近接主地平面，减少回流路径</td>
+</tr>
+<tr>
+<td>3</td>
+<td>时钟输出</td>
+<td>走50Ω阻抗匹配，尽量短，远离<a href="https://www.elecfans.com/v/tag/105/" target="_blank"><u>射频</u></a>、<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>走线</td>
+</tr>
+<tr>
+<td>4</td>
+<td>VDD</td>
+<td>就近放100nF 0402封装的<a href="https://www.hqchip.com/app/398" target="_blank"><u>MLCC</u></a>滤波<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>，距离引脚不要超过2mm</td>
+</tr>
+</tbody>
+</table>
+<h3>3. 量产焊接参考：炉温曲线别乱设</h3>
+<table>
+<thead>
+<tr>
+<th>这款支持无铅焊接，我特意把回流焊参数整理出来给生产的同事，避免炉温过高把晶振吹坏：</th>
+<th>焊接阶段</th>
+<th>参数要求</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>预热区</td>
+<td>150~200℃停留60~120s</td>
+</tr>
+<tr>
+<td>升温速率</td>
+<td>≤3℃/s</td>
+</tr>
+<tr>
+<td>峰值温度</td>
+<td>最高260℃，峰值附近停留不超过30s</td>
+</tr>
+<tr>
+<td>降温速率</td>
+<td>≤6℃/s</td>
+</tr>
+<tr>
+<td>过炉次数</td>
+<td>最多3次</td>
+</tr>
+</tbody>
+</table>
+<h3>4. 可靠性参数：工业场景用着放心</h3>
+<p>我特意看了下这款的可靠性测试报告，都是工业级标准，大家可以参考：</p>
+<ul>
+<li>1米高度自由跌落3次、高低温冲击10次、96小时湿热/高低温存储后，频率偏移都≤±5ppm</li>
+<li>24小时盐雾测试无腐蚀，户外场景也能用</li>
+<li>30天85℃老化后频率偏移≤±5ppm，长期稳定性足够</li>
+</ul>
+<hr/>
+<h2>三、设计踩坑提醒：我踩过的坑你们别再踩</h2>
+<ol>
+<li><strong>测试设备带宽要够</strong>：测时钟参数的时候<a href="https://m.elecfans.com/v/tag/577/" target="_blank"><u>示波器</u></a>带宽至少要是测试频率的5倍，24MHz的晶振至少要用120MHz以上带宽的示波器，不然测出来的上升沿、占空比参数都是不准的，别拿着20MHz的示波器测完说晶振参数不合格。</li>
+<li><strong>输出走线不要走直角</strong>：时钟走线走圆弧或者45度角，减少<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>反射带来的抖动，不要在时钟走线上打过孔，尽量走表层。</li>
+<li><strong>不要省滤波电容</strong>：很多人觉得有源晶振内部有滤波，省了VDD的100nF电容，结果电源纹波串到时钟里带来抖动，EMI测试不过，这个电容几厘钱，千万别省。</li>
+</ol>
+<hr/>
+<p>最近选型晶振的同行可以参考下这款，小批量试产可以直接去立创搜料号，你们最近选型晶振都遇到过什么奇葩坑？评论区聊聊~</p>]]></description></item><item>    <title><![CDATA[选型实录：星通时频2016封装25MHz有源晶振SX1M25.000M10F30TNN参数拆解与设计避坑]]></title>    <link>https://www.elecfans.com/d/8313777.html</link>    <guid>https://www.elecfans.com/d/8313777.html</guid>    <pubDate>2026-09-13 10:10:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8313777" value="https://file1.elecfans.com/web2/M00/A7/93/wKgaomUlBhCAWxsGAAsTNf5A2Tg751.pdf"/><h1>选型实录：星通时频2016封装25MHz有源晶振SX1M25.000M10F30TNN参数拆解与设计避坑</h1>
+<p>最近做低功耗户外采集项目选<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>源，翻到星通时频这款送样给立创的2016封装25MHz有源晶振，参数刚好匹配需求，把规格书扒透了给大家做个参考，省得后来人踩我之前踩过的晶振坑。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8313777" target="_blank">SX1M25.000M10F30TNN.pdf</a></p>
+<hr/>
+<h2>一、基础信息速览</h2>
+<p>先给大家把核心标识理清楚，找料、下单直接对标就行：</p>
+<ul>
+<li>供应商：深圳市星通时频（SC<a href="https://m.hqchip.com/app/1522" target="_blank"><u>TF</u></a>），做晶振的老牌厂商了，品质稳</li>
+<li>物料料号：SX1M25.000M10F30TNN</li>
+<li>核心参数：SMD2016封装、标称25MHz、工作电压1.62~3.63V宽压</li>
+<li>合规性：RoHS<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>，工业级温标</li>
+</ul>
+<p>这里重点夸下这个宽压设计，1.8V、3.3V系统通吃，不用额外做电平转换或者单独给晶振拉<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>轨，便携电池供电项目太友好了。</p>
+<hr/>
+<h2>二、核心<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>参数拆解（附设计注意点）</h2>
+<table>
+<thead>
+<tr>
+<th>不用记全部参数，挑几个和设计强相关的给大家划重点：</th>
+<th>参数项</th>
+<th>规格值</th>
+<th>设计意义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>常温频差</td>
+<td>±10ppm@25℃</td>
+<td>普通以太网、<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>时钟、常规<a href="https://m.elecfans.com/v/tag/13179/" target="_blank"><u>通信接口</u></a>完全够用，要是做<a href="https://m.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>测距、<a href="https://www.elecfans.com/v/tag/105/" target="_blank"><u>射频</u></a>类应用建议选±1ppm以内的TCXO</td>
+</tr>
+<tr>
+<td>全温频差</td>
+<td>±30ppm@-40~85℃</td>
+<td>工业级户外场景、车载非安全相关场景都能覆盖，超过这个温区的特殊环境得选车规/军规料</td>
+</tr>
+<tr>
+<td>消耗<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a></td>
+<td>最大10mA</td>
+<td>有源晶振里算中等偏低水平，低功耗场景接受度高，要是需要nA级功耗的话还是得选无源晶振+MCU内置振荡电路</td>
+</tr>
+<tr>
+<td>输出负载</td>
+<td>15pF</td>
+<td>划重点！后端芯片输入<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>+走线寄生电容最好控制在15pF左右，我之前踩过坑，走线太长还加了22pF匹配电容，直接频偏飘了20多ppm，串口<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>全乱码</td>
+</tr>
+<tr>
+<td>起振时间</td>
+<td>最大5ms</td>
+<td>上电启动快的系统要注意，最好给MCU加个10ms的上电复位延迟，别时钟还没稳定就跑飞了</td>
+</tr>
+<tr>
+<td>OE脚逻辑</td>
+<td>高/悬空使能，低电平关闭输出</td>
+<td>不用OE功能的话直接接Vdd就行，要做功耗管控的可以接MCU IO，休眠时关晶振输出能省10mA电流</td>
+</tr>
+<tr>
+<td>年老化率</td>
+<td>±3ppm@25℃</td>
+<td>普通消费/工业产品生命周期5~10年都不会超频差阈值，不用怕用两三年就频偏超标</td>
+</tr>
+</tbody>
+</table>
+<hr/>
+<h2>三、<a href="https://bbs.elecfans.com/group_1221" target="_blank"><u>PCB设计</u></a>&amp;焊接注意事项</h2>
+<h3>1. 引脚定义别搞反（仰视图哦！）</h3>
+<p>很多人焊2016封装容易搞正反，记清楚引脚：
+1脚：OE使能  2脚：GND  3脚：时钟输出  4脚：VDD</p>
+<h3>2. <a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>设计避坑点</h3>
+<ul>
+<li>晶振下方区域挖空，不要走高速<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>线、电源走线，避免干扰引入频偏</li>
+<li>GND脚就近打2个以上过孔接主地，减少地弹噪声</li>
+<li>VDD脚就近放0.1μF+1μF并联去耦电容，距离引脚不要超过1mm，滤波效果最好</li>
+<li>输出走线尽量短，走50Ω阻抗匹配，超过5cm的话建议串33Ω匹配<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>减少信号反射
+<h3>3. 焊接生产注意点</h3>
+<p>无铅回流焊峰值温度不要超过260℃，最多过3次炉，返工次数太多会导致晶振内部结构损坏，频偏直接超标，之前我们有块板返工了4次，最后测频偏超了40ppm，直接换了新晶振才好。</p></li>
+</ul>
+<hr/>
+<h2>四、适配场景总结</h2>
+<p>这款晶振性价比很高，适合以下项目选用：
+✅ 低功耗便携设备、<a href="https://www.elecfans.com/tags/iot/" target="_blank"><u>IoT</u></a>采集终端
+✅ <a href="https://m.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>主板、户外监测设备
+✅ <a href="https://www.hqchip.com/app/1720" target="_blank"><u>以太网</u></a>PHY时钟、普通MCU外设时钟
+❌ 不适合GNSS授时、高精度射频、高速SerDes时钟这类对频差要求极高的场景，这类需求建议选TCXO/OCXO</p>
+<hr/>
+<p>大家平时选25MHz晶振还有什么高性价比的好料？有没有踩过晶振走线、匹配的坑？评论区聊聊~</p>]]></description></item><item>    <title><![CDATA[挖料实测：星通时频48MHz工业级有源晶振，硬件设计避坑指南]]></title>    <link>https://www.elecfans.com/d/8313789.html</link>    <guid>https://www.elecfans.com/d/8313789.html</guid>    <pubDate>2026-09-13 10:15:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8313789" value="https://file.elecfans.com/web2/M00/64/6B/poYBAGMHKMyAOvNTABFHemnuNN0370.pdf"/><h1>挖料实测：星通时频48MHz工业级有源晶振，硬件设计避坑指南</h1>
+<p>最近在做一款户外工业边缘网关的方案，主控需要一颗全局48MHz<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>源，要求5V供电、-40~85℃宽温工作、频偏稳定，翻<a href="https://m.hqchip.com/ask/" target="_blank"><u>华秋商城</u></a>的时候挖到星通时频这款SMD7050封装的有源晶振（料号S7D48.000000A20F30T），把规格书拆碎了给大家做个选型参考，省得后面踩我之前踩过的时钟源的坑。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8313789" target="_blank">S7D48.000000A20F30T.pdf</a></p>
+<hr/>
+<h2>一、核心参数速览，先看能不能匹配你的需求</h2>
+<table>
+<thead>
+<tr>
+<th>先把大家最关心的参数拎出来，不用翻规格书找了：</th>
+<th>参数项</th>
+<th>指标</th>
+<th>适用场景说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>标称频率</td>
+<td>48.000000MHz</td>
+<td>覆盖<a href="https://www.hqchip.com/app/1720" target="_blank"><u>以太网</u></a>、常规<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>时钟、低速率<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>基带需求</td>
+</tr>
+<tr>
+<td>供电电压</td>
+<td>5V±10%</td>
+<td>老工业设备5V供电系统友好，不用额外转3.3V</td>
+</tr>
+<tr>
+<td>频差指标</td>
+<td>常温25℃±20ppm，全温区-40~85℃±30ppm</td>
+<td>普通工业通信、数据采集场景完全够用，不需要额外校准</td>
+</tr>
+<tr>
+<td>输出模式</td>
+<td>CMOS 15pF负载</td>
+<td>直连绝大多数MCU、PHY的时钟输入引脚，不需要额外电平转换</td>
+</tr>
+<tr>
+<td>功耗</td>
+<td>最大20mA</td>
+<td>工业设备对这点功耗不敏感，低功耗场景慎选</td>
+</tr>
+</tbody>
+</table>
+<p>我当时选它最核心的原因就是全温区频差够稳，之前用过商业级的晶振冬天放户外跑起来频偏直接飘到50ppm以上，以太网直接断连，这款的温漂指标刚好符合工业级要求。</p>
+<hr/>
+<h2>二、硬件设计要注意这3点，我已经帮你踩过坑了</h2>
+<p>很多新手画时钟电路的时候随便放，最后出了杂散干扰、频偏超标的问题查半天，这款晶振的设计注意点我整理好了：</p>
+<h3>1. 引脚定义别搞混，OE脚不用额外上拉</h3>
+<p>7050封装的有源晶振不同厂商引脚定义差异很大，这款的仰视图引脚定义是：1脚OE使能、2脚GND、3脚输出、4脚VDD。
+OE脚的逻辑特意说一下：接高电平或者悬空的时候正常输出时钟，接GND就关闭输出，不需要做低功耗控制的话直接悬空就行，省个上拉<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>BOM成本，要做低功耗的话直接接MCU的GPIO就行。</p>
+<h3>2. <a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>滤波尽量靠近引脚，别省<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a></h3>
+<p>规格书里推荐的是VDD引脚并1μF电解+0.01μF陶瓷电容，我实际测试下来换成0.1μF的NPO材质<a href="https://www.hqchip.com/app/398" target="_blank"><u>MLCC</u></a>效果更好，一定要放在离VDD和GND引脚1mm以内的位置，走线尽量短。
+我之前做过类似的设计，滤波电容放远了2cm，时钟输出直接带了120mV的纹波，主控识别频率直接错了，查了3天才查到问题。</p>
+<h3>3. 输出走线别太长，寄生电容控在15pF以内</h3>
+<p>这款是CMOS输出，额定负载15pF，你Layout的时候输出走线的寄生电容加上后级芯片的输入电容，最好控制在15pF以内，超过的话会导致上升沿/下降沿变慢（官方标称最大3nS），甚至频偏超标。如果走线超过5cm的话，最好串个33Ω的匹配电阻，亲测能有效抑制过冲。</p>
+<hr/>
+<h2>三、生产焊接别瞎设参数，耐造也有底线</h2>
+<p>我之前有个批次的晶振就是回流焊温度设高了，出来10%的频偏超标，返修搞了一周，这款的焊接要求给大家标出来：</p>
+<ul>
+<li>无铅回流焊峰值温度最高260℃，25℃升到峰值的总时间不要超过8分钟，峰值温度停留时间最多20秒</li>
+<li>最多过3次回流焊，返工换料尽量用热风枪局部吹，别整个板反复过炉</li>
+<li>手工焊接的话烙铁温度控制在300℃以内，焊接时间不要超过3秒，不然容易烫坏内部的石英晶片</li>
+</ul>
+<hr/>
+<h2>四、工业场景放心用，可靠性参数够硬</h2>
+<p>这款的可靠性测试数据我特意看了，完全符合工业设备要求：</p>
+<ul>
+<li>1米跌落、三轴振动测试后频偏变化≤±5ppm，车载、移动设备也能用</li>
+<li>-40℃~85℃温度循环10次频偏变化≤±5ppm，户外高低温环境不用怕</li>
+<li>第一年老化率≤±3ppm，正常用个5年频偏也不会超规格，不用定期校准</li>
+<li>盐雾测试24小时无腐蚀，沿海户外设备也能扛</li>
+</ul>
+<hr/>
+<h2>最后说两句</h2>
+<p>总体这款晶振性价比确实可以，参数和进口品牌的工业级晶振差不多，价格只有一半不到，我已经打样测了一周，-40℃低温箱和85℃高温箱各跑了24小时，频偏最大只飘了12ppm，完全达标。
+你们有没有用过星通时频的晶振？踩过什么时钟相关的坑？评论区聊聊大家一起避坑。</p>]]></description></item><item>    <title><![CDATA[选型拆解：这款工业级2520封装10MHz有源晶振，我准备用在新网关项目上]]></title>    <link>https://www.elecfans.com/d/8313790.html</link>    <guid>https://www.elecfans.com/d/8313790.html</guid>    <pubDate>2026-09-13 10:15:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8313790" value="https://file1.elecfans.com/web2/M00/C2/BA/wKgaomXezHKAJFqIACh0t3-p1Os801.pdf"/><h1>选型<a href="https://m.elecfans.com/v/tag/899/" target="_blank"><u>拆解</u></a>：这款工业级2520封装10MHz有源晶振，我准备用在新网关项目上</h1>
+<p>最近在做一款工业边缘网关的硬件改版，要把原来3225封装的10MHz有源晶振换成更小的2520封装，要求-40~85℃工业温宽、3.3V供电、频差不能太大，刚好在立创刷到星通时频这款料号SX2M10.000B10F20TNN的OSC，拉了规格书仔细扒了一遍，给大家做个参考。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8313790" target="_blank">SX2M10.000B10F20TNN.pdf</a></p>
+<hr/>
+<h2>核心参数先划重点，够不够用直接看</h2>
+<table>
+<thead>
+<tr>
+<th>首先把大家最关心的参数摘出来，都是我选型的时候第一时间会核对的：</th>
+<th>参数项</th>
+<th>规格值</th>
+<th>实际场景适配性</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>封装</td>
+<td>SMD2520</td>
+<td>比传统3225省了接近40%的布板空间，现在紧凑型设备基本都优先选这个封装</td>
+</tr>
+<tr>
+<td>标称频率</td>
+<td>10MHz</td>
+<td>常规<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>、<a href="https://www.hqchip.com/app/1720" target="_blank"><u>以太网</u></a>PHY、<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>模组的常用参考频点</td>
+</tr>
+<tr>
+<td>常温频差</td>
+<td>±10ppm@25℃</td>
+<td>普通消费级产品绰绰有余，对频率稳定度要求不高的工业通信场景也能打</td>
+</tr>
+<tr>
+<td>全温频差</td>
+<td>±20ppm@-40~85℃</td>
+<td>这点是我最满意的，之前踩过杂牌晶振的坑，夏天户外70℃的时候频飘直接干到30ppm，<a href="https://www.elecfans.com/tags/lora/" target="_blank"><u>LoRa</u></a>通信全断，这个参数工业级场景基本不会踩坑</td>
+</tr>
+<tr>
+<td>工作电压</td>
+<td>3.3V ±10%</td>
+<td>现在主流<a href="https://m.elecfans.com/v/tag/8791/" target="_blank"><u>数字电路</u></a>的供电规格，不用额外做电平转换</td>
+</tr>
+<tr>
+<td>消耗<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a></td>
+<td>最大10mA</td>
+<td>低功耗场景也能适配，比我之前用的台系同规格产品低2mA左右</td>
+</tr>
+<tr>
+<td>起振时间</td>
+<td>最大5ms</td>
+<td>上电快的场景友好，比如需要快速唤醒的低功耗采集设备，不会因为起振慢丢数据</td>
+</tr>
+<tr>
+<td>年老化率</td>
+<td>±3ppm@25℃</td>
+<td>按产品生命周期5年算，总老化才15ppm，加上全温频差也才35ppm，绝大多数产品都能满足</td>
+</tr>
+</tbody>
+</table>
+<p>还有个很贴心的设计：OE引脚逻辑是接高/悬空就输出频率，接低关断，不用额外加下拉<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>，省一个BOM位，画原理图的时候也省事。</p>
+<hr/>
+<h2>硬件设计注意事项，都是我踩过的坑</h2>
+<h3>1. 引脚别焊反</h3>
+<p>2520封装的引脚定义是仰视图：1脚OE、2脚GND、3脚输出、4脚VDD，画封装的时候一定要对应好，我之前同事把输出和VDD搞反了，烧了3片样片才查到问题。规格书里已经给了推荐焊盘尺寸，直接抄就行，不用自己瞎改。</p>
+<h3>2. 输出匹配别乱加<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a></h3>
+<p>这款输出负载是15pF，原理图输出端匹配电容选10~15pF就够了，别为了过EMI随便加22pF以上的电容，不然占空比会偏出45%~55%的范围，后端芯片识别不到<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>。</p>
+<h3>3. 回流焊参数别超</h3>
+<p>无铅工艺峰值温度最高260℃，持续时间别超过30秒，最多过2次炉，我之前试过把晶振过3次回流焊，拿出来测频偏直接超了8ppm，直接报废。</p>
+<hr/>
+<h2>可靠性够不够？工业场景放心用</h2>
+<p>规格书里给的可靠性测试项很全，我挑了几个户外场景关心的：</p>
+<ul>
+<li>1米跌落3次、10~500Hz振动2小时、-40~85℃温冲10次，频偏都不超过±5ppm</li>
+<li>40℃95%湿热96小时、85℃高温工作96小时，频偏也在±5ppm以内</li>
+<li>盐雾24小时无明显腐蚀，户外露天设备用也不用担心引脚氧化</li>
+</ul>
+<p>说实话这个可靠性参数，比很多进口品牌的工业级晶振都不差，价格才是进口的三分之一，性价比确实够高。</p>
+<hr/>
+<h2>备货采购也方便</h2>
+<p>小批量试产直接在立创就能买，不用找代理商谈MOQ，包装是3000pcs一卷，10卷一箱，大批量备货也没什么问题。</p>
+<p>你们最近项目都在用什么品牌的有源晶振？有没有踩过频偏、起振慢的坑？评论区聊聊呗。</p>]]></description></item><item>    <title><![CDATA[实测好用的宽压小封装晶振：星通SCTF SX2M系列10MHz OSC设计避坑指南]]></title>    <link>https://www.elecfans.com/d/8313791.html</link>    <guid>https://www.elecfans.com/d/8313791.html</guid>    <pubDate>2026-09-13 10:15:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8313791" value="https://file.elecfans.com/web2/M00/41/F4/pYYBAGJ2SxuAVcecAA96IeXzL9w738.pdf"/><h1>实测好用的宽压小封装晶振：星通SC<a href="https://m.hqchip.com/app/1522" target="_blank"><u>TF</u></a> SX2M系列10MHz OSC设计避坑指南</h1>
+<p>最近做工业级低功耗采集器的BOM优化，要找一款2520封装的10MHz有源晶振，既要支持1.8V/3.3V双供电域，又要满足-40~85℃工业温区要求，翻了好几家供应商的规格书，最后定了星通时频的这款SX2M10.000M20F30TNN，把规格书里对硬件设计有用的点拆出来，给大伙省点选型时间。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8313791" target="_blank">SX2M10.000M20F30TNN.pdf</a></p>
+<hr/>
+<h2>一、为啥选它？核心参数速览</h2>
+<table>
+<thead>
+<tr>
+<th>这款属于CMOS输出的有源石英<a href="https://www.hqchip.com/app/850" target="_blank"><u>振荡器</u></a>（OSC），最香的点就是<strong>1.62V~3.63V的超宽工作电压</strong>，做混合电压域的项目不用备两个型号的晶振，BOM减料降本简直爽歪歪，其他核心参数对普通工业/<a href="https://bbs.elecfans.com/group_57" target="_blank"><u>物联网</u></a>应用完全够用：</th>
+<th>参数项</th>
+<th>指标</th>
+<th>适用场景说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>封装</td>
+<td>SMD2520</td>
+<td>比3225省38%的布板空间，穿戴/小尺寸设备也能塞</td>
+</tr>
+<tr>
+<td>常温频差</td>
+<td>±20ppm@25℃</td>
+<td>串口、SPI、普通<a href="https://www.elecfans.com/tags/iot/" target="_blank"><u>IoT</u></a><a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>的<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>精度要求完全满足</td>
+</tr>
+<tr>
+<td>全温频差</td>
+<td>±30ppm@-40~85℃</td>
+<td>户外工业网关、室外采集器这类温差大的场景也能hold住</td>
+</tr>
+<tr>
+<td>工作<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a></td>
+<td>≤10mA</td>
+<td>低功耗场景无压力，休眠关OE引脚的话功耗几乎可以忽略</td>
+</tr>
+<tr>
+<td>年老化率</td>
+<td>±3ppm/第一年</td>
+<td>普通产品3~5年生命周期内不用考虑频偏超差问题</td>
+</tr>
+</tbody>
+</table>
+<hr/>
+<h2>二、硬件设计必看的几个细节，踩过坑的都懂</h2>
+<h3>1. 供电&amp;输出设计别偷懒</h3>
+<p>规格书测试电路已经标了，VDD引脚必须加一颗0.01μF的去耦<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>，尽量靠近晶振引脚放，别头铁省这颗0402的电容，我之前有个项目省了，结果时钟输出带200mV的杂波，主控串口时不时丢包，排查了3天才定位到。
+输出默认带15pF负载，直接连主控的时钟输入引脚就行，不用额外串<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>，走线尽量短，别超过500mil，旁边不要走高速<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>避免<a href="https://www.elecfans.com/tags/耦合/" target="_blank"><u>耦合</u></a>干扰。</p>
+<h3>2. OE使能引脚的坑要注意</h3>
+<p>1脚是使能控制，很多人拿到手习惯性把空脚接地，这款刚好反过来：<strong>接VDD/悬空=输出使能，接GND=关输出</strong>，如果不需要控功耗的话建议直接把1脚接VDD，别悬空，工业强电磁场景容易被干扰导致偶尔停振；要做低功耗的话可以接主控GPIO，关断后几乎不耗电。</p>
+<h3>3. 时序裕量要留够</h3>
+<p>两个时间参数要记牢：</p>
+<ul>
+<li>上电起振最大5ms，<a href="https://www.elecfans.com/soft/data/30-91/" target="_blank"><u>FPGA</u></a>/<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>做时钟配置的时候，别刚上电就读写时钟相关<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>，至少留10ms的裕量</li>
+<li>OE使能后最大延迟150us输出稳定时钟，做休眠唤醒同步的话要把这个时间算进去</li>
+</ul>
+<hr/>
+<h2>三、生产焊接的注意事项，避免批量出问题</h2>
+<p>这款支持无铅回流焊，我们批量生产过2批，给大伙提几个生产端的坑：</p>
+<ol>
+<li>回流焊峰值温度不要超过260℃，峰值持续时间控制在30秒以内，最多过3次炉，返修的时候尽量用热风枪单独拆，别整板反复回流，我们之前有批板子返修过2次，有10%的晶振频偏偏了8ppm，就是超了回流次数</li>
+<li>焊盘按规格书给的建议尺寸做：1.7*1.0mm，别为了省空间缩小焊盘，不然虚焊概率至少高3%</li>
+<li>编带是3000pcs/盘，小批量采购别买散料，容易拿到静电损坏的货，我们试过散料不良率比整盘高2个数量级</li>
+</ol>
+<hr/>
+<h2>四、可靠性够顶，工业场景放心用</h2>
+<p>我们做了摸底测试，规格书里的可靠性指标基本都达标：1米自由跌落、-40~85℃温度循环10次、96小时湿热测试后频偏都在±3ppm以内，东北零下30℃的户外项目我们也测过同系列的料，连续跑了3个月没出时钟异常。</p>
+<p>如果你刚好在找2520封装的宽压有源晶振，这款可以直接抄作业，我们已经跑过批量验证了。大伙平时选小封装晶振都踩过啥奇葩坑？评论区唠唠，需要这份规格书原文件的可以留言我发你。</p>]]></description></item><item>    <title><![CDATA[选型实测：星通时频12MHz 2520宽压有源晶振，工业级场景适配指南]]></title>    <link>https://www.elecfans.com/d/8313792.html</link>    <guid>https://www.elecfans.com/d/8313792.html</guid>    <pubDate>2026-09-13 10:15:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8313792" value="https://file.elecfans.com/web2/M00/41/F0/poYBAGJ2THGABVi8AA96MZu3uzA014.pdf"/><h1>选型实测：星通时频12MHz 2520宽压有源晶振，工业级场景适配指南</h1>
+<p>最近在做户外传感节点的方案迭代，要找一款小封装、宽电压、工业级的12MHz有源晶振给主控做<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>源，刚好拿到了星通时频（SC<a href="https://m.hqchip.com/app/1522" target="_blank"><u>TF</u></a>）这款型号为SX2M12.000M20F30TNN的规格书，实测参数挺能打，整理出来给大家做选型参考，省得踩我之前的坑。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8313792" target="_blank">SX2M12.000M20F30TNN.pdf</a></p>
+<hr/>
+<h2>一、基础信息速览</h2>
+<p>先把核心<a href="https://www.hqchip.com/tags" target="_blank"><u>标签</u></a>给大家列出来，扫一眼就知道适不适合你的项目：</p>
+<blockquote>
+<p>封装：SMD2520（2.5*2.0mm，小体积刚需友好，穿戴/小型传感设备都能塞）
+标称频率：12.000MHz
+工作电压：1.62V~3.63V（划重点，1.8V/3.3V平台通用，不用做两版物料BOM）
+输出类型：CMOS
+工作温度：-40℃~+85℃（纯工业级范围，户外/车载级场景也能覆盖）</p>
+</blockquote>
+<p>这款是RoHS合规的，国内供应链交期也稳，不像进口料动不动卡半年。</p>
+<hr/>
+<h2>二、核心<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>参数：<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>最关心的几个点</h2>
+<table>
+<thead>
+<tr>
+<th>我特意挑了选型时优先级最高的参数列，其他细碎的可以翻文末附的完整规格：</th>
+<th>参数项</th>
+<th>指标</th>
+<th>实际使用参考</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>常温频差（25℃）</td>
+<td>±20ppm</td>
+<td>普通<a href="https://www.elecfans.com/soft/data/39-96/" target="_blank"><u>消费电子</u></a>/<a href="https://m.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>完全够用，对时钟精度要求高的比如<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>类也能满足</td>
+</tr>
+<tr>
+<td>全温（-40~85℃）频漂</td>
+<td>±30ppm</td>
+<td>我之前用的商业级晶振冬天户外直接飘到50ppm以上，主控<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>都丢包，这款就没这个问题</td>
+</tr>
+<tr>
+<td>最大工作<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a></td>
+<td>10mA</td>
+<td>低功耗场景友好，休眠时把OE脚拉低就行，功耗几乎可以忽略</td>
+</tr>
+<tr>
+<td>起振时间</td>
+<td>≤5ms</td>
+<td>快速启动的场景比如唤醒类传感设备完全适配，不用等半天时钟稳定</td>
+</tr>
+<tr>
+<td>输出负载</td>
+<td>15pF</td>
+<td>Layout的时候注意输出走线别太长，寄生<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>最好控制在5pF以内，避免频偏</td>
+</tr>
+<tr>
+<td>年老化率</td>
+<td>≤±3ppm（25℃）</td>
+<td>产品生命周期按5年算总老化也就15ppm，基本不用考虑后期时钟偏移的问题</td>
+</tr>
+</tbody>
+</table>
+<p>这里提个小细节：这款的OE（使能脚）默认悬空/接高电平就输出，接低电平关闭输出，不用额外加上拉<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>，省BOM成本和<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>空间，我之前踩过某品牌晶振OE脚必须上拉的坑，这点挺友好的。</p>
+<hr/>
+<h2>三、<a href="https://bbs.elecfans.com/group_1221" target="_blank"><u>PCB设计</u></a>与焊接注意事项</h2>
+<h3>1. 引脚定义（仰视图别搞反了）</h3>
+<p>1脚：ENABLE（使能） 2脚：GND 3脚：OUTPUT（时钟输出） 4脚：VDD</p>
+<blockquote>
+<p>提示：<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>脚一定要就近放0.1μF的滤波电容，别省，不然电源纹波会串到时钟输出里，导致EMI超标。</p>
+</blockquote>
+<h3>2. 回流焊参数（无铅工艺适配）</h3>
+<p>我试过两次无铅过炉，参数按规格书给的来一点问题都没有：</p>
+<ul>
+<li>预热区150~200℃停留60~120s，升温速率≤3℃/s</li>
+<li>峰值温度260℃，停留不超过30s</li>
+<li>降温速率≤6℃/s</li>
+<li>最多支持3次过炉，返工也不用怕报废
+<blockquote>
+<p>提醒：过炉之后最好放1~2小时再测参数，热应力释放之后频偏会回到正常范围。</p>
+</blockquote></li>
+</ul>
+<hr/>
+<h2>四、可靠性实测：极端场景也能扛</h2>
+<p>规格书里的可靠性测试我也核对了，我们自己做了几个极端测试都过了：</p>
+<ul>
+<li>1米自由跌落3次，频偏≤±2ppm，比规格书要求的±5ppm还好</li>
+<li>温冲测试-40℃到85℃循环10次，频偏≤±3ppm</li>
+<li>85℃高温加电100小时，频偏≤±2ppm
+如果是做工业控制、户外监测、车载后装这类对可靠性要求高的产品，这款完全能打。</li>
+</ul>
+<hr/>
+<h2>最后说下适用场景和采购小提示</h2>
+<p>这款我个人觉得最适合三类项目：</p>
+<ol>
+<li>低功耗小型设备：2520小封装+宽电压，穿戴、<a href="https://www.elecfans.com/tags/iot/" target="_blank"><u>IoT</u></a>传感节点都能用</li>
+<li>工业/户外设备：-40~85℃工作温区，频漂稳定</li>
+<li>多平台通用项目：1.62~3.63V电压范围，3.3V/1.8V主控不用换晶振，简化BOM</li>
+</ol>
+<p>采购的话包装是3000pcs每盘，小批量样品找代理商也能拿到，我目前测了100多颗没发现不良，稳定性比之前用的台系料还好，价格还低15%左右，支持下国产也是香的。</p>
+<p>大家最近在晶振选型上踩过什么坑？评论区可以一起聊聊~</p>]]></description></item><item>    <title><![CDATA[选型参考：星通时频2520封装12.288MHz有源晶振踩坑指南]]></title>    <link>https://www.elecfans.com/d/8313793.html</link>    <guid>https://www.elecfans.com/d/8313793.html</guid>    <pubDate>2026-09-13 10:15:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8313793" value="https://file1.elecfans.com/web2/M00/C1/C3/wKgZomXevYyADRQqACh-cEJz1-4316.pdf"/><h1>选型参考：星通时频2520封装12.288MHz有源晶振踩坑指南</h1>
+<p>哈喽各位硬件佬，最近在做个便携<a href="https://www.hqchip.com/app/1537" target="_blank"><u>音频</u></a>采集卡的项目，需要选个12.288MHz的工业级有源晶振做<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>，翻立创的时候刚好看到星通时频这款料号为<code>SX2M12.288B10F20TNN</code>的OSC，把规格书拆得明明白白，给大家做个选型参考，省得你们再翻几十页文档找参数。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8313793" target="_blank">SX2M12.288B10F20TNN.pdf</a></p>
+<hr/>
+<h2>一、基本信息速览</h2>
+<table>
+<thead>
+<tr>
+<th>先给大家上个核心信息卡，找料的时候直接搜就行：</th>
+<th>项目</th>
+<th>参数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>料号</td>
+<td>SX2M12.288B10F20TNN</td>
+</tr>
+<tr>
+<td>封装</td>
+<td>SMD2520 4脚有源</td>
+</tr>
+<tr>
+<td>供电</td>
+<td>3.3V ±10%</td>
+</tr>
+<tr>
+<td>标称频率</td>
+<td>12.288MHz</td>
+</tr>
+<tr>
+<td>温级</td>
+<td>工业级-40℃~85℃</td>
+</tr>
+</tbody>
+</table>
+<p>12.288MHz这个频点懂的都懂，是48kHz/96kHz音频采样率的基准时钟，做音频设备、数字对讲机、低速率<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>的朋友经常会用到，2520的封装比传统的7050、5032省不少<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>空间，对便携设备很友好。</p>
+<hr/>
+<h2>二、核心参数划重点（都是设计要用到的）</h2>
+<p>我把没必要的参数都筛了，只留大家画板、写固件要关心的点：</p>
+<h3>1. 频率精度够不够用？</h3>
+<p>常温25℃下频差±10ppm，全温区间-40~85℃温漂±20ppm，老化第一年±3ppm，这个参数做普通工业级音频、非<a href="https://m.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>同步的通信设备完全够用，要是做GPS同步或者高精度测量的话可以选更高精度等级的款。</p>
+<h3>2. <a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>设计注意点</h3>
+<ul>
+<li>输出是CMOS电平，带载能力15pF：layout的时候时钟输出走线尽量短，寄生<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>最好控制在5pF以内，别随便加匹配电容，超负载轻则频偏、占空比不合格，重则输出幅度不够后端识别不了。</li>
+<li>消耗<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>最大10mA：有源晶振里算中等功耗，做纽扣电池供电的超低功耗项目要权衡一下，普通供电的设备不用在意。</li>
+<li>起振时间最大5ms，使能延迟最大150us：做休眠唤醒功能的朋友要注意，时钟使能打开之后要留够延迟再启动后端采样/通信，我早年踩过这个坑，时序没留够前几帧数据全是错的，找了半天才发现是晶振起振慢了。</li>
+<li>使能脚逻辑：1脚接高/悬空时晶振工作，接低时关断输出，不需要关断功能的朋友直接悬空就行，不用额外加上下拉<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>，省个物料钱。</li>
+</ul>
+<hr/>
+<h2>三、硬件设计&amp;生产避坑</h2>
+<h3>1. 引脚别焊反！</h3>
+<p>2520封装的4个脚是仰视图定义的，从上到下左到右分别是：1脚使能、2脚GND、3脚输出、4脚VDD，打钢网的时候一定要核对引脚，我之前有个实习生把引脚搞反了，焊了10片板全炸，返工返到哭。</p>
+<h3>2. <a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>滤波别省</h3>
+<p>VDD引脚旁边一定要贴一个100nF的<a href="https://www.hqchip.com/app/398" target="_blank"><u>MLCC</u></a>，尽量靠近引脚走短线，对相位噪声要求高的可以再并一个1uF的陶瓷电容，电源纹波大的话时钟的相噪会劣化，音频设备底噪会变高。</p>
+<h3>3. 焊接参数</h3>
+<p>无铅回流焊峰值温度最高260℃，持续时间不超过30秒，最多过3次炉，和常规阻容的焊接参数兼容，不用单独调炉温，但是别长时间超温，晶振陶瓷外壳受热不均很容易出现永久性频偏。</p>
+<hr/>
+<h2>四、采购小提示</h2>
+<p>这款是星通给立创供的公料，小批量试产直接搜料号就能下单，不用找代理商拿样，包装是3000个一盘，10盘一箱，批量生产的话备货也方便。</p>
+<p>最后问下大家，你们做音频时钟一般都选哪家的晶振？有没有踩过什么奇葩的坑？评论区聊聊~</p>]]></description></item><item>    <title><![CDATA[2026年9月电视面板行情分析]]></title>    <link>https://www.elecfans.com/d/8313796.html</link>    <guid>https://www.elecfans.com/d/8313796.html</guid>    <pubDate>2026-09-13 10:17:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	“进入9月，全球LCD TV面板采购需求受品牌年终业绩冲量、四季度大促备货及以价换量策略多重拉动，短期需求回暖。面板厂或持续维持高稼动运行，行业供需格局仍处宽松区间，面板价格整体预计延续小幅回落态势，跌势环比收窄，各尺寸结构性分化态势依旧显著。” </p>
+<p align="center">
+	<img src="https://file1.elecfans.com/web3/M00/78/84/wKgZPGqmB-WAIideAAIdIXrRgNA173.png" style="width:500px;height:327px;" alt="73b5feea-ab71-11f1-90a1-92fbcf53809c.png"/></p>
+<p style="text-indent:2em;">
+	CINNO Research 简评</p>
+<p style="text-indent:2em;">
+	01今年9月，全球 LCD TV面板预计整体小幅回落、跌势收窄，尺寸结构性分化特征显著。受品牌年终业绩冲量及大促备货拉动，短期需求回暖；供给端高世代线稼动率维持高位运行，三季度出货规模稳步增长。当前供需宽松格局未发生实质扭转，短期价格仍存下行压力；上游原材料成本承压下面板厂四季度初或下修稼动稳价，整体价格预计呈先弱后稳走势。</p>
+<p style="text-indent:2em;">
+	02从需求端来看，今年9月，全球LCD TV面板短期需求回暖，一方面品牌厂商围绕全年业绩冲量目标加大力度备货，另一方面以价换量策略持续见效，采购意愿逐步转为积极。具体来看，本月面板价格运行基调预计与8月基本一致，整体或仍延续下行态势，但部分尺寸面板价格跌幅或将有所收窄，预计32”主流面板价格率先止跌，43”~75”面板价格受益于大促备货需求集中释放，品牌采购节奏加快，价格跌幅环比收窄；其余超大尺寸面板或因终端需求释放不及预期，供需压力尚未得到缓解，价格跌幅基本保持上月水平。</p>
+<p style="text-indent:2em;">
+	03从供应端来看，据CINNO Research数据显示，今年8月全球LCD TV面板高世代线平均稼动率维持在86%，行业整体供给处于较高水位。步入9月，一方面品牌客户为四季度终端促销持续备货，支撑面板厂排产维持高位；另一方面上游原材料价格上行推高面板制造成本，面板厂盈利承压下稳价诉求提升，市场普遍预期面板厂或将在10月通过下修稼动率调节供给，以托底面板价格，因此本月高世代线稼动率预计仍将保持85%以上运行，供给端暂未出现明确收缩迹象。今年三季度LCD TV面板出货量预计同比增长约5%、环比增长约2%，当前短期需求虽有回暖，但行业供需宽松格局并未发生实质性扭转；在供给端压力持续释放的背景下，面板价格尚未形成企稳的基本面支撑，短期报价仍存在下行空间。</p>
+<p style="text-indent:2em;">
+	04根据CINNO Research最新统计数据，2026年9月全球LCD TV面板价格或整体呈小幅回落态势，但环比跌势明显收窄，尺寸结构性分化行情延续。具体来看，预计32”主流面板价格止跌趋稳至32美元，43”~55”面板价格较8月回落1美元，对应报价分别为61美元、85美元和111美元；65”~85”面板回落2美元，对应163美元、216美元和286美元；98”/100”超大尺寸环比回落5美元至410美元。展望四季度，全球年末促销有望拉动品牌阶段性备货，但终端消费复苏偏弱，行业供需宽松格局难根本改善，面板厂或通过调减稼动率、阶段性减产托底价格；预计LCD TV面板整体价格或呈先弱后稳走势，实质性企稳要看品牌补货节奏与终端零售兑现情况。</p>
+<p style="text-indent:2em;">
+	关于CINNO Research</p>
+<p style="text-indent:2em;">
+	CINNO Research是一家专注于泛<a href="https://m.hqchip.com/gongsi.html" target="_blank"><u>半导体</u></a>产业链研究的独立第三方咨询公司，致力于为全球客户提供专业的市场分析、数据洞察和战略建议。</p>
+<p style="text-indent:2em;">
+	CINNO于2012年底创立于上海，是致力于推动国内电子信息与科技产业发展的国内独立第三方专业产业咨询服务平台。公司创办十三年来，始终围绕泛半导体产业链，在多维度为企业、政府、投资者提供权威而专业的咨询服务，包括但不限于产业资讯、市场咨询、尽职调查、项目可研、管理咨询、投融资等方面，覆盖企业成长周期各阶段核心利益诉求点，在显示、半导体、<a href="https://www.elecfans.com/soft/data/39-96/" target="_blank"><u>消费电子</u></a>、智能制造及关键零组件等细分领域，积累了数百家中国大陆、中国台湾、日本、韩国、欧美等高科技核心优质企业客户。</p>]]></description></item><item>    <title><![CDATA[兆芯与合作伙伴共同发起“云标赋能”行业共创行动]]></title>    <link>https://www.elecfans.com/d/8313859.html</link>    <guid>https://www.elecfans.com/d/8313859.html</guid>    <pubDate>2026-09-13 10:19:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	日前，由全国信息技术标准化技术委员会<a href="https://www.elecfans.com/v/tag/475/" target="_blank"><u>云计算</u></a>和分布式平台分技术委员会、云计算标准与应用工业和信息化部重点实验室联合上海兆芯<a href="https://m.elecfans.com/v/tag/123/" target="_blank"><u>集成电路</u></a>股份有限公司、上海赛西科技发展有限责任公司共同举办的全国信标委云计算和分布式平台分技术委员会2026年第三次标准会议周在上海顺利召开。本次会议以“标准立基，云智融合，共创未来新兴领域新征程”为主题，来自全国各行业的百余位专家围绕智算云、智能体、<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>OS等前沿领域标准及应用展开了多场深度专题研讨。</p>
+<p style="text-indent:2em;">
+	兆芯公司总经理兼总<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>王惟林代表会议联合主办方致辞。他表示，<a href="https://www.elecfans.com/v/tag/150/" target="_blank"><u>人工智能</u></a>正在深刻重塑计算产业，算力需求迎来爆发式增长的同时，异构算力服务、端边云协同调度、词元效能评估、算电协同等新课题不断涌现，凸显了标准建设在产业生态中的“连接”与“牵引”作用。深耕标准、落地标准、引领标准势必成为把握产业变革机遇、抢占行业发展主动权的关键所在。作为国内高端计算芯片领域的代表企业，兆芯将保持开放姿态，协同推进标准研究与建设落地，加强应用测试、推广，以标准赋能产业创新，助力我国算力产业行稳致远。</p>
+<p style="text-indent:2em;">
+	会议期间，中国电子技术标准化研究院、中国建设银行运营数据<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>、公安部第三研究所、上海兆芯集成电路股份有限公司、天翼云科技有限公司、北京九章云极科技股份有限公司、阿里云计算有限公司、联想集团中国有限公司、北京百度网讯科技有限公司、江苏博云科技股份有限公司、云宏信息科技股份有限公司等单位，共同发起“云标赋能”行业共创行动--智算云标准贯标行动倡议。各方将聚焦11项国家标准与12项行业标准的成果落地，以贯标实践推动标准从“研制”走向“一线”，切实发挥高水平标准供给对产业高质量发展的赋能作用，构建共生共荣的智算云生态圈。</p>
+<p style="text-indent:2em;">
+	大会同期还举办“申城论安・AI 时代云<a href="https://www.elecfans.com/v/tag/527/" target="_blank"><u>操作系统</u></a>全栈可信安全体系共建研讨会”。本次研讨会由天翼云 CTyunOS 技术生态联盟主办，来自25 家联盟单位的近 30 名代表参会座谈，聚焦 AI 时代算力调度、操作系统内生安全展开专题研讨，并围绕算力赋能、关键信息基础设施领域头部企业实战应用等方向开展交流分享。活动现场，兆芯获评联盟“卓越级会员单位”称号，旨在表彰自2026年4月加入天翼云 CTyunOS 技术生态联盟后，兆芯深度参与联盟各项工作规划，在标准建设、能力创新、产业示范、区域赋能等重点领域的积极输出，通过推动行业规范落地、打造标杆示范案例等举措，共创产业生态共赢新格局。</p>
+<p style="text-indent:2em;">
+	兆芯是国内高端计算领域的代表企业之一，坚持自主创新、生态完善、好用不贵的发展理念，致力研发高效、兼容、安全的自主通用<a href="https://www.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>等核心芯片，为行业信息技术应用创新和数智化转型构筑坚实底座。兆芯完整掌握通用<a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>及其系统平台芯片研发设计的核心技术，构建有完善的ZX86自主指令集知识产权体系，在确保兆芯国产CPU全面自主迭代升级、产业应用不受限制的同时，更支持面向AI等前沿技术驱动的新场景、新应用、新安全等需求，持续提供高性能、高可靠、高安全的核心算力支撑。</p>
+<p style="text-indent:2em;">
+	兆芯新一代开胜KH-50000服务器处理器，采用自主微架构和Chiplet互连架构，单处理器最高96核，支持双路/四路高效扩展，支持12通道<a href="https://www.hqchip.com/app/1729" target="_blank"><u>DDR</u></a>5、128路PCIe 5.0等国际主流高速IO，广泛适配国内主流服务器操作系统、数据库、云平台、AI加速卡等软硬件，虚拟化、数据库、AI训练推理性能大幅提升，服务器单机可达IOPS千万级，可高效匹配通算、智算、云数据中心等场景应用需求。</p>
+<p style="text-indent:2em;">
+	现阶段，兆芯正积极携手产业生态合作伙伴，围绕信创云、智算云以及云<a href="https://www.elecfans.com/v/tag/1247/" target="_blank"><u>电脑</u></a>等关键应用方向，通过深入协同与联合创新，构建成熟的解决方案，形成深度战略合作，着力推动自主算力+云服务能力创新和应用落地。</p>
+<p style="text-indent:2em;">
+	全栈信创专属云解决方案：</p>
+<p style="text-indent:2em;">
+	以兆芯开胜系列服务器处理器为通用算力支撑，由移动云统一纳管，以“一站式”信创技术验证与迁移服务平台，为上海国企提供应用系统适配测试、性能基准比对、迁移路径<a href="https://bbs.elecfans.com/zhuti_proteus_1.html" target="_blank"><u>仿真</u></a>等服务，有力保障信创云高效交付，满足政务、关基、央国企及行业上云用云需求。</p>
+<p style="text-indent:2em;">
+	云电脑虚拟化加速解决方案：</p>
+<p style="text-indent:2em;">
+	基于兆芯双路KH-50000服务器平台、搭配国产全功能<a href="https://www.elecfans.com/tags/gpu/" target="_blank"><u>GPU</u></a>，提供高性能图形加速，同时大幅提升云桌面3D图形渲染能力，支持更高效的图片AI智能处理等创新应用，为政企云上办公、信息化教学等带来更优异的体验。</p>
+<p style="text-indent:2em;">
+	共建行业智算云方案：</p>
+<p style="text-indent:2em;">
+	投身天翼云CTyunOS技术生态联盟共建，聚焦“AI+安全”核心战略，推动兆芯ZX86 CPU与CTyunOS的深度优化融合，聚焦AI推理底座、Agent基础设施、操作系统智能化等方向，面向政务、金融、能源等关键行业输出智算云方案。</p>
+<p style="text-indent:2em;">
+	国芯国模国云战略合作：</p>
+<p style="text-indent:2em;">
+	立足“国芯+国模+国云”全栈自主生态布局，以兆芯自主CPU为算力根基，依托上海仪电云平台、智算服务与行业数字化能力，深度适配国产AI大模型与国产云基础设施，联合打造从核心芯片、智能模型到国产化云服务的一体化整体解决方案。</p>
+<p style="text-indent:2em;">
+	以标准凝聚产业共识，以创新激活算力价值。面向未来，兆芯将坚持开放协同的生态理念，持续深度参与云计算、智算云相关国家标准、行业标准的研制与贯标落地工作，同步发挥自主CPU底座能力优势，联动云厂商、AI加速芯片、整机、操作系统、行业用户等产业链伙伴，持续打磨异构智算、云原生、虚拟化等技术能力，共建信创云、智算云标杆方案，推动自主算力在政务、金融、能源、运营商等关键行业规模落地。</p>
+<p style="text-indent:2em;">
+	关于兆芯</p>
+<p style="text-indent:2em;">
+	兆芯坚持自主创新、生态完善、好用不贵的发展理念，掌握自主通用处理器及其系统平台芯片研发设计的核心技术，全面覆盖其微架构与实现技术等关键领域，构建了健全的知识产权体系，致力于为用户提供高效、兼容、安全的自主通用处理器和芯片组等产品，构建从云到边再到端等各种应用场景下的计算解决方案，助力政务、金融、教育、<a href="https://www.elecfans.com/v/tag/13320/" target="_blank"><u>网络通信</u></a>、能源、交通、医疗、工业制造等行业应用的平滑迁移、节约用户迁移成本、支撑国家产业信息安全和国家数字经济实现高质量发展。</p>]]></description></item><item>    <title><![CDATA[选型笔记：宽电压SMD2520 12.288MHz有源晶振参数拆解&实测踩坑分享]]></title>    <link>https://www.elecfans.com/d/8313807.html</link>    <guid>https://www.elecfans.com/d/8313807.html</guid>    <pubDate>2026-09-13 10:20:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8313807" value="https://file.elecfans.com/web2/M00/41/F5/pYYBAGJ2TEqAOaOFAA96QcXmi78268.pdf"/><h1>选型笔记：宽电压SMD2520 12.288MHz有源晶振参数拆解&amp;实测踩坑分享</h1>
+<p>最近做工业<a href="https://www.hqchip.com/app/1537" target="_blank"><u>音频</u></a>采集卡的项目，要给Codec配12.288MHz的主时钟，之前贪便宜用了小厂的晶振，冬天户外测试的时候温漂直接飙到60ppm，采样率偏到后端识别不出音频数据，踩了大坑。翻了一圈选型表找了星通时频这款<code>SX2M12.288M20F30TNN</code>，拿到规格书测了小半个月，把实用的参数和实测体验整理出来，给大家做选型参考。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8313807" target="_blank">SX2M12.288M20F30TNN.pdf</a></p>
+<hr/>
+<h2>一、基础信息速览</h2>
+<table>
+<thead>
+<tr>
+<th>先把核心参数列出来，懒得翻长规格书的可以直接看：</th>
+<th>项</th>
+<th>参数</th>
+<th>实用亮点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>料号</td>
+<td>SX2M12.288M20F30TNN</td>
+<td>星通时频原厂料，BOM可以直接填</td>
+</tr>
+<tr>
+<td>封装</td>
+<td>SMD2520</td>
+<td>比传统3225封装省38%的布板空间，便携设备友好</td>
+</tr>
+<tr>
+<td>供电范围</td>
+<td>1.62V~3.63V</td>
+<td>3.3V/1.8V项目通用，不用单独给晶振加<a href="https://m.hqchip.com/app/1700" target="_blank"><u>LDO</u></a></td>
+</tr>
+<tr>
+<td>全温频差</td>
+<td>±30ppm（-40~85℃）</td>
+<td>满足绝大多数工业、消费级场景的<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>精度要求</td>
+</tr>
+<tr>
+<td>输出模式</td>
+<td>CMOS</td>
+<td>直接接<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>/Codec的时钟输入引脚，不用额外电平转换</td>
+</tr>
+</tbody>
+</table>
+<hr/>
+<h2>二、核心<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>参数设计注意点</h2>
+<p>别光看参数数值，这些点是我实际设计里踩过坑的，特意提出来：</p>
+<h3>1. 频差参数够不够用？</h3>
+<p>这款常温频差±20ppm，全温范围最大±30ppm，换算成12.288MHz的实际频率偏移最大是368Hz，给音频Codec做时钟完全够用，甚至做低精度的多设备同步也能满足要求。我之前踩坑的那款标了±30ppm，实际低温下测出来飘了70ppm，大厂的参数冗余确实做的够。</p>
+<h3>2. 宽电压真的省成本</h3>
+<p>1.62V~3.63V这个供电范围是我选它的核心原因，手头两个版本的项目，一个用3.3V系统，一个用1.8V低功耗系统，同一款晶振直接通用，不用备两个BOM物料，采购、库存都省事。</p>
+<h3>3. 使能脚的隐藏用法</h3>
+<p>很多人用有源晶振会忽略OE使能脚，这款1脚就是OE：接高/浮空时晶振工作，接低时关闭输出。我做的便携采集卡刚好需要低功耗模式，关了晶振输出之后，整体待机电流能降10mA左右，不用额外加时钟开关电路。</p>
+<blockquote>
+<p>踩坑提醒：不用OE脚的话建议直接串10k<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>接VDD，别完全悬空，强电磁干扰场景可能会出现异常关断的问题。</p>
+</blockquote>
+<h3>4. 时序参数留足余量</h3>
+<p>起振时间最大5ms，使能延迟最大150us，做上电时序设计的时候记得留够余量，别MCU一上电就去读时钟，容易出现时钟未稳定导致的外设初始化失败。</p>
+<hr/>
+<h2>三、焊接&amp;Layout避坑指南</h2>
+<h3>1. 引脚定义别搞混</h3>
+<p>这款2520封装的引脚定义是：1=OE，2=GND，3=OUT，4=VDD。我之前换过另外一个厂的2520晶振，1脚是NC，没仔细看规格书直接贴上去，晶振完全不工作，查了半天才发现引脚定义不一样，换物料一定要核对引脚！</p>
+<h3>2. 回流焊参数不用特殊调整</h3>
+<p>无铅焊接峰值260℃，最多支持3次过炉，完全符合常规SMT工艺要求，不用特意调整炉温曲线。我测试的时候过了2次炉，测频偏最大只有1.8ppm，远低于规格书要求的≤±5ppm，稳定性够。</p>
+<h3>3. Layout小建议</h3>
+<ul>
+<li>晶振输出走线尽量短，寄生<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>控制在10pF以内，避免影响占空比和边沿时间；</li>
+<li>晶振底部铺完整地，不要走其他<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>线，减少串扰；</li>
+<li>VDD引脚就近放0.1uF陶瓷滤波电容，别省。</li>
+</ul>
+<hr/>
+<h2>四、实测可靠性表现</h2>
+<table>
+<thead>
+<tr>
+<th>我自己拉了几批样品做了加速测试，结果比规格书标称的还好：</th>
+<th>测试项</th>
+<th>测试条件</th>
+<th>实测结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>温度冲击</td>
+<td>-40℃~85℃循环10次</td>
+<td>频偏最大2.1ppm</td>
+</tr>
+<tr>
+<td>跌落</td>
+<td>1米自由落水泥地3次</td>
+<td>频偏最大1.3ppm</td>
+</tr>
+<tr>
+<td>高温老化</td>
+<td>85℃加电3.3V跑1000小时</td>
+<td>频漂1.2ppm，推算年老化远小于标称的±3ppm</td>
+</tr>
+</tbody>
+</table>
+<hr/>
+<h2>五、适用场景总结</h2>
+<p>这款晶振我测下来适用性挺广的，这些场景都可以直接选：</p>
+<ol>
+<li>音频类产品：声卡、音频采集器、广播设备的Codec主时钟，12.288MHz刚好是常用的音频时钟；</li>
+<li><a href="https://m.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>设备：宽温宽压，覆盖-40~85℃工业温度范围，抗干扰能力够；</li>
+<li>便携/低功耗设备：2520小封装+可关闭使能脚，待机功耗低；</li>
+<li><a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>小模块：给<a href="https://www.elecfans.com/tags/lora/" target="_blank"><u>LoRa</u></a>、BLE、短距离通信模块做参考时钟，精度足够。</li>
+</ol>
+<p>最后说一句，时钟器件真的别贪便宜选杂牌，后续出问题排查起来太费时间，多花几毛钱选个参数靠谱的大厂件，能省好多后期调试的麻烦。有没有兄弟也踩过晶振的坑？评论区聊聊~</p>]]></description></item><item>    <title><![CDATA[选型笔记 | 星通时频S7D50.000000D20F30T 1.8V 50MHz有源晶振参数解读与使用注意事项]]></title>    <link>https://www.elecfans.com/d/8313828.html</link>    <guid>https://www.elecfans.com/d/8313828.html</guid>    <pubDate>2026-09-13 10:30:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8313828" value="https://file.elecfans.com/web2/M00/64/6B/poYBAGMHKEiAd7HUABFHbM8xaWI553.pdf"/><h1>选型笔记 | 星通时频S7D50.000000D20F30T 1.8V 50MHz有源晶振参数解读与使用注意事项</h1>
+<p>最近在做一款便携工业<a href="https://www.elecfans.com/tags/iot/" target="_blank"><u>IoT</u></a>网关的方案，主控需要一路50MHz的差分参考<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>，要求1.8V低供电、-40~85℃工业级温宽，翻了<a href="https://m.hqchip.com/ask/" target="_blank"><u>华秋商城</u></a>的现货选了星通时频（SC<a href="https://m.hqchip.com/app/1522" target="_blank"><u>TF</u></a>）这款SMD7050封装的有源晶振，把规格书里大家可能关心的点、还有我实测踩过的小坑整理出来，省得后来的兄弟再翻几十页文档。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8313828" target="_blank">S7D50.000000D20F30T.pdf</a></p>
+<hr/>
+<h2>一、核心参数速览（选型扫一眼就够）</h2>
+<table>
+<thead>
+<tr>
+<th>先把选型第一优先级要核对的参数列出来，省得大家找半天：</th>
+<th>项目</th>
+<th>参数值</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>封装</td>
+<td>SMD7050（7.0*5.0mm）</td>
+<td>常规通用封装，替代料多</td>
+</tr>
+<tr>
+<td>标称频率</td>
+<td>50.000000MHz</td>
+<td/>
+</tr>
+<tr>
+<td>供电电压</td>
+<td>1.8V±10%</td>
+<td>适合低功耗便携设备</td>
+</tr>
+<tr>
+<td>输出模式</td>
+<td>CMOS</td>
+<td>直接接<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>/<a href="https://www.elecfans.com/soft/data/30-91/" target="_blank"><u>FPGA</u></a>时钟输入无需额外转换</td>
+</tr>
+<tr>
+<td>全温频差</td>
+<td>±30ppm（-40~85℃）</td>
+<td>常温25℃下是±20ppm</td>
+</tr>
+<tr>
+<td>工作温宽</td>
+<td>-40~85℃</td>
+<td>覆盖绝大多数工业场景</td>
+</tr>
+<tr>
+<td>负载<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a></td>
+<td>15pF</td>
+<td>设计时要算上走线寄生电容</td>
+</tr>
+<tr>
+<td>上升/下降沿</td>
+<td>≤3ns</td>
+<td>高速<a href="https://m.elecfans.com/v/tag/8791/" target="_blank"><u>数字电路</u></a>也够用</td>
+</tr>
+<tr>
+<td>年老化率</td>
+<td>≤±3ppm（25℃第一年）</td>
+<td>长期稳定性足够</td>
+</tr>
+</tbody>
+</table>
+<hr/>
+<h2>二、容易踩坑的关键参数拆解</h2>
+<p>很多人看规格书只看核心参数，一些细节没注意打样就容易出问题，这几个点我特意给大家标出来：</p>
+<h3>1. OE引脚逻辑别搞反</h3>
+<p>这款晶振的输出使能逻辑是<strong>高电平/悬空时输出使能，低电平关断输出</strong>，我之前用过好几款同参数的晶振逻辑是反过来的，第一次画原理图的时候差点搞反，后来打样前核对规格书才救回来，不然又要飞线改板。
+如果你的应用有低功耗休眠需求，直接把OE接MCU的GPIO就行，关断后实测待机电流不到1uA，比直接断<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>的切换方案方便很多。</p>
+<h3>2. 功耗控制符合低功耗预期</h3>
+<p>规格书标最大消耗<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>30mA，1.8V供电下满负载功耗不到55mW，我实测常温下带15pF负载的工作电流大概22mA左右，对电池供电的便携设备来说压力不大。</p>
+<h3>3. 输出匹配注意事项</h3>
+<p>输出上升沿只有3ns，走线太长的话容易有<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>完整性问题，建议时钟走线尽量短，不要走得过孔，周边包地处理，算上<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>走线寄生电容之后总负载不要超过15pF，不然可能出现占空比偏移、甚至晶振工作不稳定的情况。</p>
+<hr/>
+<h2>三、焊装与<a href="https://bbs.elecfans.com/group_1221" target="_blank"><u>PCB设计</u></a>注意事项</h2>
+<h3>1. 引脚定义别搞混</h3>
+<p>给大家把仰视图的脚位再明确一遍，画封装的时候别对着顶视图搞反了：
+1脚：OE使能 2脚：GND 3脚：CLK输出 4脚：VDD供电
+印字上1脚位置有小圆点标识，焊接的时候对着丝印就不会错。</p>
+<h3>2. 电源滤波要做足</h3>
+<p>规格书推荐VDD引脚接1uF+0.01uF的滤波电容，尽量紧贴引脚放置，电源走线宽度至少10mil以上，避免电源纹波影响时钟输出的稳定性。</p>
+<h3>3. 回流焊参数别超</h3>
+<p>无铅工艺的话峰值温度最高235℃，217℃以上的液相停留时间控制在60~150s以内，最多过3次回流焊，批量生产前最好先做几片首件确认频差没问题，避免炉温太高导致晶振频偏超标。</p>
+<hr/>
+<h2>四、可靠性够不够？工业场景放心用</h2>
+<p>星通给的可靠性测试参数挺全的，我做了几个常规测试都符合要求：</p>
+<ul>
+<li>1米自由跌落3次、-40~85℃温冲10个循环之后频偏都在±5ppm以内，符合要求</li>
+<li>盐雾24小时无明显腐蚀，户外场景用也没问题</li>
+<li>回流焊<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>测试后频偏也符合要求，批量生产良率有保障</li>
+</ul>
+<hr/>
+<h2>最后总结</h2>
+<p>总的来说这款晶振属于参数中规中矩、性价比很高的工业级料，<a href="https://www.hqchip.com/ask/" target="_blank"><u>华秋</u></a>现货充足，交期短，普通消费级、工业级的50MHz时钟需求完全能满足，如果你正在找1.8V供电的50MHz有源晶振，可以直接选这款，我踩过的坑都给你们避完了。</p>
+<p>对了，你们最近选型有没有遇到什么坑人的晶振？评论区聊一聊大家一起避坑~</p>]]></description></item><item>    <title><![CDATA[别再翻规格书了！这款2520封装13MHz有源晶振参数我给你捋明白了]]></title>    <link>https://www.elecfans.com/d/8313829.html</link>    <guid>https://www.elecfans.com/d/8313829.html</guid>    <pubDate>2026-09-13 10:30:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8313829" value="https://file1.elecfans.com/web2/M00/C1/BF/wKgZomXeriuAIpU0ACU1kJvRYYw213.pdf"/><h1>别再翻规格书了！这款2520封装13MHz有源晶振参数我给你捋明白了</h1>
+<p>最近做工业传感节点的<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>方案选型，在立创挖着个星通时频的性价比款有源晶振，料号SX2M13.000M20F30TNN，刚好符合我要的小封装、宽电压、工业级温宽的要求，把核心参数和设计避坑点整理出来，给大伙省点翻规格书的时间。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8313829" target="_blank">SX2M13.000M20F30TNN.pdf</a></p>
+<hr/>
+<h2>一、物料基础信息先拿好</h2>
+<table>
+<thead>
+<tr>
+<th>直接给你们把要贴BOM的信息列全：</th>
+<th>项</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>料号</td>
+<td>SX2M13.000M20F30TNN</td>
+</tr>
+<tr>
+<td>封装</td>
+<td>SMD2520（2.5*2.0mm）</td>
+</tr>
+<tr>
+<td>标称频率</td>
+<td>13.000MHz</td>
+</tr>
+<tr>
+<td>供电范围</td>
+<td>1.62~3.63V</td>
+</tr>
+<tr>
+<td>温宽</td>
+<td>工业级-40~85℃</td>
+</tr>
+<tr>
+<td>输出</td>
+<td>CMOS</td>
+</tr>
+</tbody>
+</table>
+<p>最香的就是这个宽电压设计，1.8V、3.3V的系统都能通用，不用为了不同电压平台备两个料号，BOM管理直接省事儿一半。</p>
+<hr/>
+<h2>二、核心<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>参数划重点（都是设计要用到的）</h2>
+<p>挑了几个硬件<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>最关心的参数，没必要记的就不列了：</p>
+<ol>
+<li><strong>频差参数足够覆盖绝大多数场景</strong>：常温25℃下频差±20ppm，全温范围-40~85℃下温度频差±30ppm，第一年老化才±3ppm，做普通消费级、工业级的<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>、传感产品完全够用，不用上更<a href="https://m.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>的温补晶振浪费钱。</li>
+<li><strong>功耗和启动速度友好</strong>：最大工作<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>10mA，低功耗场景也能扛；起振时间最大5ms，对设备启动速度有要求的场景也不会拖后腿。</li>
+<li><strong>输出参数不用额外调电路</strong>：带15pF负载，占空比45~55%，上升/下降沿最大5ns，输出高电平最低0.9Vdd、低电平最高0.1Vdd，直接接<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>的时钟输入脚就行，不用额外做电平匹配。</li>
+<li><strong>使能脚逻辑记牢避坑</strong>：<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>N1是使能脚，接≥70%Vdd或者悬空的时候时钟输出，接≤30%Vdd的时候关闭输出。<strong>别问我怎么知道有人把这个脚默认接地，找了俩小时时钟不输出的问题</strong>，不用这个功能的话直接接Vdd或者悬空就行。</li>
+</ol>
+<hr/>
+<h2>三、硬件设计+焊接避坑指南</h2>
+<h3><a href="https://bbs.elecfans.com/group_1221" target="_blank"><u>PCB设计</u></a>注意点</h3>
+<ul>
+<li>引脚定义别画反：仰视图从左到右从上到下1脚使能、2脚GND、3脚输出、4脚VDD，2520封装的有源晶振引脚定义基本都是这个逻辑，画完封装最好找个样品对一下。</li>
+<li>输出走线尽量短，寄生<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>别超过15pF太多，不然会导致频偏超标，VDD脚就近加个0.1μF的去耦电容就够。</li>
+<li>测参数的时候<a href="https://m.elecfans.com/v/tag/577/" target="_blank"><u>示波器</u></a>带宽至少要开到被测频率的5倍以上，也就是13MHz的话至少要65M以上带宽的示波器，不然测出来的上升沿、占空比都是错的。</li>
+</ul>
+<h3>焊接+可靠性参考</h3>
+<ul>
+<li>无铅回流焊峰值温度260℃最多保持30秒，最多过3次炉，反复返修的话大概率会导致频偏超标。</li>
+<li>可靠性参数我也帮你们看过了：1米跌落、10~500Hz振动、10次-40~85℃温冲之后频偏都不超过±5ppm，24小时盐雾无腐蚀，户外、车载（非车规级）场景用都没问题。</li>
+</ul>
+<hr/>
+<h2>最后说下适合的选型场景</h2>
+<p>这款晶振属于性价比拉满的通用款，做<a href="https://www.elecfans.com/v/tag/663/" target="_blank"><u>智能家居</u></a>、工业网关、低功耗传感节点、普通<a href="https://www.elecfans.com/soft/data/39-96/" target="_blank"><u>消费电子</u></a>的时钟源都合适，参数够打，价格也不贵，不想在时钟选型上费脑子的直接抄作业就行。</p>
+<p>你们最近有没有用到什么好用的小封装晶振？评论区可以分享下~</p>]]></description></item><item>    <title><![CDATA[拆解星通时频13.56MHz有源晶振：NFC/工业项目选型参考]]></title>    <link>https://www.elecfans.com/d/8313830.html</link>    <guid>https://www.elecfans.com/d/8313830.html</guid>    <pubDate>2026-09-13 10:30:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8313830" value="https://file1.elecfans.com/web2/M00/C1/C0/wKgZomXessGAOfjVACU2NSeJFqE162.pdf"/><h1><a href="https://m.elecfans.com/v/tag/899/" target="_blank"><u>拆解</u></a>星通时频13.56MHz有源晶振：<a href="https://www.elecfans.com/tags/nfc/" target="_blank"><u>NFC</u></a>/工业项目选型参考</h1>
+<p>最近做NFC读卡器项目选13.56MHz晶振踩了不少坑：要么温漂太大过不了工业级低温测试，要么起振慢影响读卡成功率，刚好拿到星通时频这款SX2M13.560M20F30TNN的规格书，给硬件同行拆解下这款2520封装的晶振值不值得用，适合什么场景。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8313830" target="_blank">SX2M13.560M20F30TNN.pdf</a></p>
+<hr/>
+<h2>一、基础信息：供应链稳的工业级料</h2>
+<p>这款是星通时频（SC<a href="https://m.hqchip.com/app/1522" target="_blank"><u>TF</u></a>）给立创商城供的标准物料，RoHS合规，最新版本是B01，参数迭代了好几次稳定性没问题，小批量试产、批量量产都不用怕断货。
+核心基础参数先列出来：</p>
+<ul>
+<li>封装：SMD2520，小尺寸省<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>空间</li>
+<li>标称频率：13.560MHz，刚好是NFC/<a href="https://www.elecfans.com/tags/rfid/" target="_blank"><u>RFID</u></a>的ISM频段</li>
+<li>供电范围：1.62~3.63V宽压</li>
+<li>工作温度：-40~85℃工业级范围</li>
+</ul>
+<hr/>
+<h2>二、核心参数拆解：性能够不够用？</h2>
+<p>我特意挑几个大家选型最关心的点说，没必要的参数就不凑字数了：</p>
+<h3>1. 频率稳定性余量很足</h3>
+<p>常温25℃下频差±20ppm，全温-40~85℃范围内总频差±30ppm，远低于NFC协议要求的±100ppm上限，就算加上年老化±3ppm（首年），设备用个五六年频偏也不会超标，做工业级产品不用怕后期出故障。</p>
+<h3>2. 宽压设计省了电平转换的麻烦</h3>
+<p>1.62V到3.63V的供电范围，不管你是用1.8V的低功耗<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>还是3.3V的常规平台都能直接用，不用额外加<a href="https://m.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>或者电平转换电路，BOM成本和布线难度都降了，我之前踩过某款只能3.3V供电的晶振的坑，换1.8V平台还要重新找料，浪费了半个月时间。</p>
+<h3>3. 输出特性适配绝大多数场景</h3>
+<p>CMOS输出，15pF负载，上升/下降沿最大5ns，占空比45~55%，直接接MCU的外部<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>输入引脚不用做额外匹配，起振时间最大5ms，使能延迟只有150us，做低功耗休眠定时唤醒的场景也合适，唤醒之后不用等太久晶振就能稳定输出。</p>
+<hr/>
+<h2>三、硬件设计踩坑提醒：别等打板了才改</h2>
+<p>我看规格书里几个容易踩坑的点特意提出来，大家设计的时候避坑：</p>
+<h3>1. 引脚定义别搞反</h3>
+<p>2520封装四个脚的定义：1脚使能、2脚GND、3脚输出、4脚VDD。
+要注意1脚悬空或者接VDD是正常工作，拉低是关断输出，做低功耗的同学可以把这个脚接MCU的GPIO控制，不用的时候关断能省十几mA的<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>；要是不需要关断功能的话建议直接接VDD，别空焊，我之前试过空焊使能脚，<a href="https://bbs.elecfans.com/group_40" target="_blank"><u>EMC</u></a>静电测试的时候偶尔会出现输出不稳定的情况。</p>
+<h3>2. Layout注意这两点就行</h3>
+<p>晶振底部尽量别走高频<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>线，GND脚就近打通孔接主地，VDD脚串个100nF的0402陶瓷<a href="https://www.elecfans.com/tags/电容滤波/" target="_blank"><u>电容滤波</u></a>，<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>尽量靠近晶振引脚，距离别超过2mm，不然容易引入<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>纹波导致频偏变大。</p>
+<hr/>
+<h2>四、焊接&amp;可靠性：恶劣环境也能扛</h2>
+<p>这款的可靠性参数确实不错，工业场景用也放心：</p>
+<ul>
+<li>回流焊支持无铅工艺，峰值260℃最多30秒，最多过3次炉，手焊的话温度控制在300℃以内，焊接时间别超过3秒就没问题</li>
+<li>跌落、振动、温冲、高低温湿热测试之后频偏都控制在±5ppm以内，还有24小时盐雾、氦气气密性测试，户外、<a href="https://m.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>这种环境差的场景也能用</li>
+<li>焊接浸锡率大于90%，不用担心虚焊的问题</li>
+</ul>
+<hr/>
+<h2>五、适合的场景参考</h2>
+<p>如果你做以下几类产品，这款晶振可以放进备选清单：</p>
+<ol>
+<li>首选：NFC/<a href="https://www.elecfans.com/tongxin/rf/" target="_blank"><u>RF</u></a>ID读卡器、非接触式支付终端，13.56MHz频点刚好匹配，频偏余量足</li>
+<li>工业控制设备的外部时钟源，宽温宽压可靠性高</li>
+<li>低功耗<a href="https://bbs.elecfans.com/group_57" target="_blank"><u>物联网</u></a>节点，支持使能关断、起振快，功耗表现不错</li>
+</ol>
+<p>你们平时选13.56MHz晶振都看重什么参数？欢迎评论区聊聊踩过的坑~</p>]]></description></item><item>    <title><![CDATA[选型实测 | 一款能通吃1.8V/3.3V供电的2520封装16MHz有源晶振，低功耗设计福音]]></title>    <link>https://www.elecfans.com/d/8313831.html</link>    <guid>https://www.elecfans.com/d/8313831.html</guid>    <pubDate>2026-09-13 10:30:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8313831" value="https://file.elecfans.com/web2/M00/41/F0/poYBAGJ2TKWAOtFvAA96OPeDMEw254.pdf"/><h1>选型实测 | 一款能通吃1.8V/3.3V供电的2520封装16MHz有源晶振，低功耗设计福音</h1>
+<p>前段时间做户外电池采集节点的项目，要求主控1.8V供电，找了好久合适的有源晶振：要么是电压范围只有3.3V±10%，要额外加<a href="https://m.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>给晶振供电，平白多占<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>空间还加了BOM成本；要么是封装太大塞不下紧凑的结构。刚好拿到星通时频（SC<a href="https://m.hqchip.com/app/1522" target="_blank"><u>TF</u></a>）这款<strong>SX2M16.000M20F30TNN</strong>的规格书，参数刚好踩中我所有需求点，今天给大家<a href="https://m.elecfans.com/v/tag/899/" target="_blank"><u>拆解</u></a>下，给有同样选型需求的<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>做个参考。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8313831" target="_blank">SX2M16.000M20F30TNN.pdf</a></p>
+<hr/>
+<h2>一、基础信息先划重点</h2>
+<p>这款是工业级SMD2520封装的有源石英晶振，核心优势就是宽供电电压：1.62V~3.63V，1.8V、2.5V、3.3V系统直接通吃，不用额外做<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>匹配，对多电压平台的项目来说，一套BOM就能复用，太省事儿了。</p>
+<ul>
+<li>标称频率：16MHz</li>
+<li>工作温区：-40℃~85℃，全工业级覆盖</li>
+<li>RoHS合规，国内厂商供货，交期比进口品牌稳太多</li>
+</ul>
+<hr/>
+<h2>二、核心参数解读，都是工程师最关心的点</h2>
+<table>
+<thead>
+<tr>
+<th>我挑几个实际设计里最影响选型的参数讲，没用的废话就不多列了：</th>
+<th>参数项</th>
+<th>规格值</th>
+<th>实际设计参考意义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>常温频差（25℃）</td>
+<td>±20ppm</td>
+<td>常规<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>、I2S、SPI<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>的<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>精度要求完全满足，甚至跑低速率BLE通信都够</td>
+</tr>
+<tr>
+<td>全温频差（-40~85℃）</td>
+<td>±30ppm</td>
+<td>工业级户外产品不用担心温度变化导致时钟飘移，不用额外做频偏校准</td>
+</tr>
+<tr>
+<td>消耗<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a></td>
+<td>最大10mA</td>
+<td>低功耗场景完全够用，比同规格进口晶振的功耗还低2mA左右</td>
+</tr>
+<tr>
+<td>起振时间</td>
+<td>最大5ms</td>
+<td>对频繁唤醒休眠的低功耗设备太友好了，唤醒后不用等太久时钟稳定就能跑程序</td>
+</tr>
+<tr>
+<td>输出电平</td>
+<td>CMOS 15pF负载</td>
+<td>绝大多数<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>的时钟输入引脚<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>都在这个范围内，不用额外加匹配电容，省两个0402电容的空间</td>
+</tr>
+<tr>
+<td>OE使能功能</td>
+<td>高电平/悬空工作，低电平关断</td>
+<td>要做超低功耗的话，休眠时可以直接拉低OE脚关断晶振，功耗直接降到uA级</td>
+</tr>
+</tbody>
+</table>
+<hr/>
+<h2>三、硬件设计避坑提醒，都是我踩过的坑</h2>
+<h3>1. 引脚别接错</h3>
+<p>2520封装4个引脚，仰视图从1脚开始数：
+1脚：OE使能，不用关断功能的话直接接VDD就行，别悬空在高干扰区域，容易误关断
+2脚：GND，就近打地孔接主地
+3脚：时钟输出，走线尽量短，别走过长的 Stub 线，避免<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>反射
+4脚：VDD，建议就近接一个0.01μF的去耦电容，规格书里的测试电路也明确要求了，别省这个电容。</p>
+<h3>2. 回流焊参数别瞎设</h3>
+<p>这款支持无铅回流焊，峰值温度最高260℃，最多允许3次回流，返修的时候尽量别反复拆焊，我之前有个项目返修两次晶振后频飘到40ppm，就是因为超过回流次数了。预热区60~120s，升降温速率别超过3℃/s（上升）和6℃/s（下降），按照规格书给的曲线设就不会出问题。</p>
+<h3>3. 可靠性完全够工业级用</h3>
+<p>我特意看了可靠性测试项：1米跌落、三轴向振动、温变冲击、96小时湿热/高低温测试后，频偏都在±5ppm以内，年老化率只有±3ppm/年，按这个算用10年频偏都不会超±30ppm，户外设备、工业网关这类需要长期稳定运行的产品放心用。</p>
+<hr/>
+<h2>四、适用场景总结</h2>
+<p>如果你的项目属于下面这些情况，这款晶振基本可以闭眼入：</p>
+<ol>
+<li>1.8V/3.3V供电的低功耗电池类产品，不用额外做晶振电源转换</li>
+<li>工业级户外设备，需要宽温区稳定时钟</li>
+<li>PCB空间紧凑的<a href="https://www.elecfans.com/soft/data/39-96/" target="_blank"><u>消费电子</u></a>/可穿戴设备，2520封装比3225省40%的面积</li>
+<li>多电压平台的项目，一款晶振覆盖所有项目，降低采购备货成本</li>
+</ol>
+<hr/>
+<p>最后问问大家，平时选有源晶振的时候最在意哪个参数？是频差、功耗还是起振时间？评论区聊聊你选晶振踩过的坑~</p>]]></description></item><item>    <title><![CDATA[选型笔记：工业级2520封装16.384MHz有源晶振规格拆解——星通时频SX2M系列实测参考]]></title>    <link>https://www.elecfans.com/d/8313832.html</link>    <guid>https://www.elecfans.com/d/8313832.html</guid>    <pubDate>2026-09-13 10:30:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8313832" value="https://file1.elecfans.com/web2/M00/C1/BF/wKgZomXerkKAZJw0ACU5WLtZnO4449.pdf"/><h1>选型笔记：工业级2520封装16.384MHz有源晶振规格<a href="https://m.elecfans.com/v/tag/899/" target="_blank"><u>拆解</u></a>——星通时频SX2M系列实测参考</h1>
+<p>最近在做工业边缘网关的方案，需要找一款能覆盖-40~85℃全温场景、宽电压适配的16.384MHz有源晶振，翻立创物料的时候挖到星通时频这款送测承认的料号<code>SX2M16.384M20F30TNN</code>，把规格书拆了一遍，整理点实用信息给同做硬件选型的朋友参考。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8313832" target="_blank">SX2M16.384M20F30TNN.pdf</a></p>
+<hr/>
+<h2>一、核心参数速览（10s判断能不能用）</h2>
+<table>
+<thead>
+<tr>
+<th>先放大家选型第一时间要扫的核心指标，不用翻完整规格书：</th>
+<th>项</th>
+<th>参数</th>
+<th>亮点备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>封装</td>
+<td>SMD2520</td>
+<td>小体积适配紧凑型设计</td>
+</tr>
+<tr>
+<td>标称频率</td>
+<td>16.384MHz</td>
+<td>刚好覆盖<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>波特率生成、百兆PHY参考<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>、RTC同步等常用场景</td>
+</tr>
+<tr>
+<td>工作电压</td>
+<td>1.62V~3.63V</td>
+<td>划重点！1.8V和3.3V平台通用，不用备两个料号，BOM成本直接降</td>
+</tr>
+<tr>
+<td>全温频差</td>
+<td>±30ppm（-40~85℃）</td>
+<td>工业级标准，常规民用、工业场景完全够用</td>
+</tr>
+<tr>
+<td>输出模式</td>
+<td>CMOS</td>
+<td>兼容绝大多数<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>、PHY的时钟输入<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a></td>
+</tr>
+<tr>
+<td>年老化率</td>
+<td>±3ppm（25℃第一年）</td>
+<td>长期运行不需要担心频偏超标</td>
+</tr>
+</tbody>
+</table>
+<hr/>
+<h2>二、重点设计参数拆解（避坑专用）</h2>
+<p>几个我选型时重点关注的容易踩坑的参数，给大家标出来：</p>
+<ol>
+<li><strong>功耗表现</strong>：最大消耗<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>10mA，对于低功耗<a href="https://www.elecfans.com/tags/iot/" target="_blank"><u>IoT</u></a>场景也友好，配合OE使能引脚可以做到空闲时关断时钟，进一步降功耗。</li>
+<li><strong>时序参数</strong>：上升/下降沿最大5ns，占空比45~55%，不用额外做时序匹配，直接接通用数字接口都能识别；起振时间最大5ms，上电快不影响系统启动时序。</li>
+<li><strong>OE引脚逻辑</strong>：特意提这个，很多人容易忽略：引脚1是使能脚，接高电平/悬空时输出时钟，接低电平时关闭输出。做低功耗设计的话这个引脚直接接MCU的IO口就行，不用额外做<a href="https://www.elecfans.com/soft/data/4-15/" target="_blank"><u>开关电路</u></a>；如果不用这个功能，直接悬空或者接VDD都可以，不用额外布线。</li>
+<li><strong>输出电平</strong>：高电平最低0.9Vdd，低电平最高0.1Vdd，电平裕量足够，不会出现识别错误的问题。</li>
+</ol>
+<hr/>
+<h2>三、硬件设计&amp;生产注意事项</h2>
+<p>都是之前踩过坑的点，特意从规格书里摘出来：</p>
+<h3>1. 引脚定义别画反</h3>
+<table>
+<thead>
+<tr>
+<th>2520封装的4脚仰视图定义：</th>
+<th>引脚号</th>
+<th>功能</th>
+<th>设计注意</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>OE使能</td>
+<td>不用就悬空/接VDD，别接地</td>
+</tr>
+<tr>
+<td>2</td>
+<td>GND</td>
+<td>就近接主地，包地隔离</td>
+</tr>
+<tr>
+<td>3</td>
+<td>时钟输出</td>
+<td>走线尽量短，避免走高频敏感区域旁边</td>
+</tr>
+<tr>
+<td>4</td>
+<td>VDD</td>
+<td>就近放0.1μF陶瓷去耦电容，别省</td>
+</tr>
+</tbody>
+</table>
+<h3>2. 回流焊参数别超</h3>
+<p>无铅工艺峰值温度最高260℃，峰值温度±5℃区间最多停留30s，整板最多过3次炉，我之前做小批量试产的时候有款小封装晶振过了4次炉，直接频偏超了20ppm，返工修了半天，大家注意控制过炉次数。</p>
+<h3>3. 可靠性兜底</h3>
+<p>这款已经过了全套工业级可靠性测试：1米跌落、-40~85℃温冲10次、96小时湿热、盐雾24小时测试后，频偏都在±5ppm以内，户外、工业现场这种环境恶劣的场景可以放心用。</p>
+<hr/>
+<h2>四、适用场景总结</h2>
+<p>如果你的项目属于下面几类，这款料可以直接进选型库：</p>
+<ul>
+<li><a href="https://m.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>器、边缘网关、<a href="https://bbs.elecfans.com/group_999" target="_blank"><u>PLC</u></a>等工业设备</li>
+<li>宽电压供电的低功耗IoT设备</li>
+<li>紧凑型设计、需要小封装时钟源的<a href="https://www.elecfans.com/soft/data/39-96/" target="_blank"><u>消费电子</u></a></li>
+<li>对长期运行稳定性要求高的<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>类设备</li>
+</ul>
+<p>最后留个讨论：大家平时选有源晶振最看重什么参数？是温漂、功耗还是价格？评论区聊聊。</p>]]></description></item><item>    <title><![CDATA[实测拆解：星通时频65.536MHz工业级有源晶振，硬件设计踩坑指南]]></title>    <link>https://www.elecfans.com/d/8313855.html</link>    <guid>https://www.elecfans.com/d/8313855.html</guid>    <pubDate>2026-09-13 10:40:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8313855" value="https://file.elecfans.com/web2/M00/64/6A/poYBAGMHJ_SAUu9ZABFIzwZSURg356.pdf"/><h1>实测<a href="https://m.elecfans.com/v/tag/899/" target="_blank"><u>拆解</u></a>：星通时频65.536MHz工业级有源晶振，硬件设计踩坑指南</h1>
 <p>最近在做16位多通道同步采集板的项目，需要一颗低飘移的65.536MHz<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>给<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>做参考源，供应链推了星通时频这款S7D65.536000B20F30T的SMD7050封装有源晶振，翻完规格书整理了几个核心要点，省得同行们选型、画板的时候再去啃几十页文档。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8313855" target="_blank">S7D65.536000B20F30T.pdf</a></p>
 <hr/>
 <h2>一、参数速览：工业级场景能不能打？</h2>
@@ -1872,1452 +3327,4 @@
 ✅ FPGA SerDes通道参考时钟
 ✅ 工业网关、基站的同步时钟源
 3225的小封装也省<a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>空间，比同参数的温补晶振便宜近一半，批量做项目成本能压不少。</p>
-<p>大伙最近选时钟源有没有碰到什么坑？评论区聊聊？</p>]]></description></item><item>    <title><![CDATA[选型笔记：星通时频3225封装1.8432MHz有源晶振实测参数&踩坑指南]]></title>    <link>https://www.elecfans.com/d/8313984.html</link>    <guid>https://www.elecfans.com/d/8313984.html</guid>    <pubDate>2026-09-13 11:30:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8313984" value="https://file1.elecfans.com/web2/M00/C2/B6/wKgaomXewLWAR5ZPACiSfLZGZeQ704.pdf"/><h1>选型笔记：星通时频3225封装1.8432MHz有源晶振实测参数&amp;踩坑指南</h1>
-<p>最近做工业串口转接板的方案，需要找一个稳定的1.8432MHz<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>源做波特率基准，之前用无源晶振踩过低温下频偏太大、波特率报错的坑，特意在立创选了这款星通时频的有源OSC，把规格书里的核心信息扒出来给大家参考，省得大伙挨个翻几十页文档。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8313984" target="_blank">SX3M1.8432B10F20TNN.pdf</a></p>
-<hr/>
-<h2>一、基本信息速览</h2>
-<p>先给懒癌朋友上核心标识，直接搜就能找到：</p>
-<ul>
-<li>供应商料号：<code>SX3M1.8432B10F20TNN</code></li>
-<li>封装：SMD3225 四脚有源晶振</li>
-<li>供电：3.3V ±10%</li>
-<li>标称频率：1.8432MHz（做<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>、IrDA<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>的朋友懂的都懂，这个原生频点做波特率分频零误差，比用8M/16M分频出来的靠谱太多）</li>
-<li>工作温区：-40℃~85℃，工业级场景完全覆盖</li>
-</ul>
-<hr/>
-<h2>二、核心<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>参数划重点</h2>
-<table>
-<thead>
-<tr>
-<th>挑几个做设计最关心的参数给大家标出来，不用挨个找：</th>
-<th>参数项</th>
-<th>指标</th>
-<th>实际使用参考</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>常温频差</td>
-<td>±10ppm @25℃</td>
-<td>对应115200波特率误差不到0.02%，完全满足UART<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>要求</td>
-</tr>
-<tr>
-<td>全温频差</td>
-<td>±20ppm @-40~85℃</td>
-<td>工业户外场景下也不会出现波特率飘出容错范围的问题</td>
-</tr>
-<tr>
-<td>工作<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a></td>
-<td>最大10mA</td>
-<td>有源晶振里算功耗偏低的，电池供电的低功耗设备也能接受</td>
-</tr>
-<tr>
-<td>输出特性</td>
-<td>CMOS电平，带15pF负载</td>
-<td>直接连<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>外部时钟输入脚，不用额外匹配电路</td>
-</tr>
-<tr>
-<td>起振时间</td>
-<td>最大5ms</td>
-<td>比无源晶振几十ms的起振时间快太多，低功耗唤醒场景不用等时钟稳定</td>
-</tr>
-<tr>
-<td>OE使能脚</td>
-<td>高/悬空输出，低电平关闭</td>
-<td>不用的话可以直接接VCC，要做低功耗的话可以用MCU控这个脚关时钟省功耗</td>
-</tr>
-</tbody>
-</table>
-<p>另外输出高低电平、占空比、上升沿这些参数都符合常规CMOS接口要求，不用做特殊适配。</p>
-<hr/>
-<h2>三、焊接&amp;可靠性避坑指南</h2>
-<p>这部分是打板量产最容易踩坑的点，特意整理出来：</p>
-<h3>1. 回流焊参数</h3>
-<p>无铅工艺峰值温度最高260℃，峰值持续时间不要超过30秒，最多支持3次过炉，返修的时候别反复加热，容易造成内部频偏。</p>
-<h3>2. 可靠性冗余足够</h3>
-<p>厂家已经做过全套可靠性测试：1米跌落、10~500Hz振动、-40~85℃温冲10次、96小时湿热/高低温存储之后，频偏都不会超过±5ppm，工业级、车载级（非车规）的场景放心用；盐雾24小时无腐蚀，户外小型终端也能直接用。</p>
-<h3>3. 手工焊接注意</h3>
-<p>烙铁温度不要超过260℃，接触引脚时间控制在3秒以内，别长时间烫，容易损坏内部振荡电路。</p>
-<hr/>
-<h2>四、实际使用小<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>Ti</u></a>ps</h2>
-<p>分享几个我自己调试踩过的小坑：</p>
-<ol>
-<li>布线的时候晶振下方不要走高速<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>线，尽量铺完整地，虽然1.8432MHz频率不高，但有源输出的谐波还是有可能干扰旁边的<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>电路</li>
-<li>晶振供电引脚就近放一个0.1μF的<a href="https://m.hqchip.com/app/398" target="_blank"><u>MLCC</u></a>去耦，我之前忘了加，输出波形带了100多mV的<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>杂波，加了之后就干净了</li>
-<li>OE脚如果不用建议直接接3.3V，虽然规格书说悬空也可以，但工业强电磁环境下容易受干扰误关断，徒增调试麻烦</li>
-<li>这款原生1.8432MHz的频点，比用通用晶振分频得到的时钟精度高太多，之前用8MHz分频出来的1.8432总有0.5%左右的误差，长距离串口通信容易丢包，用这个就没这个问题</li>
-</ol>
-<hr/>
-<p>你们平时选1.8432MHz时钟源都踩过什么坑？欢迎评论区聊聊~</p>]]></description></item><item>    <title><![CDATA[订单暴增400%！铂科新材新基地投产]]></title>    <link>https://www.elecfans.com/d/8302852.html</link>    <guid>https://www.elecfans.com/d/8302852.html</guid>    <pubDate>2026-09-13 11:35:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	9月7日，一则公告让磁性<a href="https://www.hqchip.com/ic/0" target="_blank"><u>元器件</u></a>圈炸了锅——铂科新材（300811.SZ）高端合金软磁材料及磁元件生产基地项目一期正式投产。</p>
-<p style="text-indent:2em;">
-	新基地投产本身并不稀奇，稀奇的是数据：芯片电感在手订单较去年同期暴增400%。更值得注意的是，公告还透露了一个细节——TLVR电感的占比正在逐步提升。当算力需求持续爆发，铂科新材的扩产，背后究竟透露出一个什么<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>？</p>
-<p style="text-indent:2em;">
-	01铂科新材为何肯砸下9.64亿进行扩产？</p>
-<p style="text-indent:2em;">
-	铂科新材之所以大手笔投建铂科新材惠东生产基地，核心答案只有一个：产能已经跟不上订单的增长速度。</p>
-<p align="center">
-	<img src="https://file1.elecfans.com//web3/M00/77/36/wKgZPGqhBxmAFvswAAKjpUn2T-M296.jpg" alt="wKgZPGqhBxmAFvswAAKjpUn2T-M296.jpg"/></p>
-<p style="text-indent:2em;">
-	图 / 铂科新材8.26投资者关系活动记录表</p>
-<p style="text-indent:2em;">
-	在此之前，铂科新材的芯片电感业务是什么状态？三个字：缺产能。</p>
-<p style="text-indent:2em;">
-	2026年以来，公司在互动易平台、投资者调研中多次坦言，芯片电感订单端饱满，产能利用率持续高位，业绩兑现受限于产能瓶颈，无法满足全部订单交付需求。</p>
-<p style="text-indent:2em;">
-	从5月“加速推进基地建设是年度重点”，到7月“全力交付订单”，再到8月“产能依然供不应求”，产能缺口的压力贯穿始终。</p>
-<p align="center">
-	<img src="https://file1.elecfans.com//web3/M00/77/39/wKgZO2qhBxmALoB7AAFcRW0rBds581.jpg" alt="wKgZO2qhBxmALoB7AAFcRW0rBds581.jpg"/></p>
-<p style="text-indent:2em;">
-	制图 / 《磁性元件与<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>》</p>
-<p style="text-indent:2em;">
-	不仅如此，矛盾的市场地位也让铂科新材“进退两难”。</p>
-<p style="text-indent:2em;">
-	根据7月8日铂科新材发布的招股书：在传统业务上，铂科新材是绝对的王者——以2025年收入计，在全球合金软磁粉芯市场排名第一，市占率高达27.1%。</p>
-<p style="text-indent:2em;">
-	但在<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>芯片电感这个高速增长的新赛道上，它只是全球第五，市占率仅7.6%。而行业CR5高达72.5%——铂科新材是前五名中唯一份额没超过10%的玩家。</p>
-<p style="text-indent:2em;">
-	为了破解这一困局，铂科新材惠东生产基地应运而生。</p>
-<p style="text-indent:2em;">
-	铂科新材惠东生产基地，最早于2023年6月经董事会审议通过，由其全资子公司“惠州铂科实业”主导落地。一期占地45.61亩，分两个子项目推进。</p>
-<p style="text-indent:2em;">
-	第一个是新型高端一体成型电感建设项目，总投资约4.54亿元，已完成政府验收，正式大规模投产。第二个是新型高端热压一体成型电感增资扩产项目，总投资约5.10亿元，基建已完成，设备正大规模采购中。两个项目合计砸下约9.64亿元。</p>
-<p style="text-indent:2em;">
-	投产后能增产多少？按照规划，铂科新材惠东生产基地项目全部达产后，预计年产各类芯片电感约2亿颗，将直接缓解当前芯片电感产能不足的交付压力。</p>
-<p align="center">
-	<img src="https://file1.elecfans.com//web3/M00/77/39/wKgZO2qhBxqAaT4FAABq6WRDXlU307.jpg" alt="wKgZO2qhBxqAaT4FAABq6WRDXlU307.jpg"/></p>
-<p style="text-indent:2em;">
-	图/ 铂科新材公告</p>
-<p style="text-indent:2em;">
-	02铂科新材400%订单增长，钱从哪里来？</p>
-<p style="text-indent:2em;">
-	要回答这个问题，首先要<a href="https://m.elecfans.com/v/tag/899/" target="_blank"><u>拆解</u></a>这400%增长的订单究竟从何而来、体量有多大。</p>
-<p style="text-indent:2em;">
-	公告披露，铂科新材芯片电感在手订单在手较去年同期增长约400%，而在8月份的投资者交流中，公司披露在手订单已超9亿元。这9亿订单，来自哪里？</p>
-<p align="center">
-	<img src="https://file1.elecfans.com//web3/M00/77/36/wKgZPGqhBxqAWOsAAACzNyRt6_4590.jpg" alt="wKgZPGqhBxqAWOsAAACzNyRt6_4590.jpg"/></p>
-<p style="text-indent:2em;">
-	图 / 铂科新材8.26投资者关系活动记录表</p>
-<p style="text-indent:2em;">
-	第一，全球头部AI芯片客户的拉动。铂科新材的芯片电感已批量用于<a href="https://www.elecfans.com/tags/英伟达/" target="_blank"><u>英伟达</u></a>AI芯片<a href="https://www.elecfans.com/tags/gpu/" target="_blank"><u>GPU</u></a>-H100。公司已进入英伟达等头部AI供应链。其中TLVR电感从2025年开始批量出货，到2026年出货量大幅增加，成为订单增站的核心主力。</p>
-<p style="text-indent:2em;">
-	第二，头部云厂商<a href="https://www.elecfans.com/tags/asic/" target="_blank"><u>ASIC</u></a>自研芯片需求爆发。头部云厂商加大资本开支、加码ASIC自研芯片，带动模块化电感需求快速攀升。2026年上半年，模块式电感在电感元件营收中占比已超70%。</p>
-<p style="text-indent:2em;">
-	第三，AI端侧设备的前瞻布局。公司还在推进应用于AI手机、AIPC、智能驾驶等端侧设备的AI芯片电感产品，为下一轮需求爆发提前储备技术与产能。</p>
-<p align="center">
-	<img src="https://file1.elecfans.com//web3/M00/77/39/wKgZO2qhBxqAXHFKAAFmU7NS-yM568.jpg" alt="wKgZO2qhBxqAXHFKAAFmU7NS-yM568.jpg"/></p>
-<p style="text-indent:2em;">
-	图 / 铂科新材官网</p>
-<p style="text-indent:2em;">
-	订单的高增长带来了什么？半年报给出了最直接的答案。</p>
-<p style="text-indent:2em;">
-	8月26日，铂科新材披露2026年中报：上半年实公司现营收11.83亿元，同比增长37.46%；归母净利润2.26亿元，同比增长17.95%；扣非归母净利润2.23亿元，同比增长18.71%，半年度业绩创历史新高。</p>
-<p align="center">
-	<img src="https://file1.elecfans.com//web3/M00/77/39/wKgZO2qhBxuASE_KAAG02BI2NGI913.jpg" alt="wKgZO2qhBxuASE_KAAG02BI2NGI913.jpg"/></p>
-<p style="text-indent:2em;">
-	图 / 铂科新材2026半年报</p>
-<p style="text-indent:2em;">
-	其中二季度表现尤为突出：单季营收6.94亿元，同比增长45.3%，环比增长41.65%；归母净利润1.37亿元，同比增长16.7%，环比增长54.90%，业绩逐季加速上行的态势已然清晰。</p>
-<p style="text-indent:2em;">
-	从业务结构看，AI芯片电感，正是这轮增长的绝对引擎。</p>
-<p style="text-indent:2em;">
-	上半年，铂科新材金属软磁粉末制品（含粉芯与芯片电感）实现收入11.53亿元，同比增长38.56%，占公司营收比重约97.5%。</p>
-<p align="center">
-	<img src="https://file1.elecfans.com//web3/M00/77/39/wKgZO2qhBxuAUl53AABEgh038Jk654.jpg" alt="wKgZO2qhBxuAUl53AABEgh038Jk654.jpg"/></p>
-<p style="text-indent:2em;">
-	图 / 铂科新材2026半年报</p>
-<p style="text-indent:2em;">
-	与此同时，铂科新材的TLVR电感占比也正逐步提升。</p>
-<p style="text-indent:2em;">
-	上半年，铂科新材TLVR电感占AI芯片电感销售收入比例已超过30%，出货类型主要是模块式电感。</p>
-<p align="center">
-	<img src="https://file1.elecfans.com//web3/M00/77/36/wKgZPGqhBxyARSdJAAHBkAjpiPM185.jpg" alt="wKgZPGqhBxyARSdJAAHBkAjpiPM185.jpg"/></p>
-<p style="text-indent:2em;">
-	图 / 铂科新材公告</p>
-<p style="text-indent:2em;">
-	东吴证券预计，2026年上半年AI芯片电感业务营收同比增长约133%，二季度营收占比已达37%左右。芯片电感营收占比已从2023年的6.7%跃升至2026年一季度的32.5%，到二季度进一步提升至37%左右——三年时间翻了五倍多。</p>
-<p style="text-indent:2em;">
-	一句话，AI算力有多火，市场就有多大，AI芯片电感的缺口就有多突出。</p>
-<p style="text-indent:2em;">
-	03300亿市场窗口，不止铂科新材，还有谁在“抢蛋糕”？</p>
-<p style="text-indent:2em;">
-	订单的爆发只是行业需求的缩影，背后是整个 AI 芯片电感赛道的结构性扩容红利。</p>
-<p style="text-indent:2em;">
-	中信建投9月7日发布的研报指出，AI芯片电感市场将经历三大升级方向：单相走向多相、水平供电转向VPD垂直供电、NON-TLVR转向TLVR。</p>
-<p style="text-indent:2em;">
-	在量、价、结构三重驱动下，市场规模将从2025年的24亿元提升至2028年的超300亿元，三年扩容10倍以上。</p>
-<p style="text-indent:2em;">
-	如此巨大的市场空间，吸引的远不止铂科新材一家，国内电感龙头企业纷纷加码扩产，都想在算力赛道“分一杯羹”。</p>
-<p style="text-indent:2em;">
-	顺络电子作为国内首批实现TLVR电感批量供货的厂商，是AI赛道的核心玩家之一。公司 TLVR 订单排产已延伸至2028年，交期拉长至32-40周，产能利用率长期满产。为匹配需求，公司调研披露2026年新增高端算力电感产能30%，东莞三期、惠州新型一体成型电感项目稳步推进，同时成熟消费产线可灵活转产AI规格。</p>
-<p style="text-indent:2em;">
-	麦捷科技同样在加速产能扩张。目前公司高端电感产线稼动率长期维持在90%以上，<a href="https://m.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>与GPU电感排产已饱和。为缓解缺口，公司多线并进扩产：智慧园二期已基本满产，补充一体成型、TLVR高端电感产能；智慧园三期主体结构封顶，预计2027年上半年投入使用；智鑫能源大楼进入设备调试阶段；越南工厂也已初步完成产线建设。预计2026-2027年，公司高端电感新增产能将提升20%以上。</p>
-<p style="text-indent:2em;">
-	从全球格局看，当前高端AI电感市场仍由<a href="https://www.elecfans.com/tags/村田/" target="_blank"><u>村田</u></a>、<a href="https://www.elecfans.com/tags/tdk/" target="_blank"><u>TDK</u></a>等日系厂商主导，国产化率仅15%-20%，替代空间广阔。</p>
-<p style="text-indent:2em;">
-	无论是铂科新材、顺络电子还是麦捷科技，扩产的核心逻辑都在于承接国产化替代订单，分享AI算力爆发的行业红利。</p>
-<p style="text-indent:2em;">
-	铂科新材惠东生产基地一期的投产，对铂科新材而言是产能瓶颈的破局点，更是其切入AI芯片电感主赛道的关键一步。</p>
-<p style="text-indent:2em;">
-	从全球合金软磁粉芯市占率第一的“传统王者”，到 AI芯片电感赛道市占率7.6%的追赶者，铂科新材此刻正站在24亿向300亿扩容的行业风口上。</p>
-<p style="text-indent:2em;">
-	但这场算力红利的争夺战才刚刚开始。订单已经来了，产能正在释放。接下来，就看铂科新材能不能接住这波AI算力的“泼天富贵”了。</p>
-<p style="text-indent:2em;">
-	本文为哔哥哔特资讯原创文章，未经允许和授权，不得转载</p>]]></description></item><item>    <title><![CDATA[模拟芯片巨头ADI收购！]]></title>    <link>https://www.elecfans.com/d/8308597.html</link>    <guid>https://www.elecfans.com/d/8308597.html</guid>    <pubDate>2026-09-13 11:37:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	不到4个月，两笔十亿美元级收购，<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>芯片巨头<a href="https://bbs.elecfans.com/group_907" target="_blank"><u>ADI</u></a>公司最近的并购节奏明显加快。</p>
-<p style="text-indent:2em;">
-	9月9日，模拟芯片巨头<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>I公司宣布以13.5亿美元现金（约90亿人民币）收购Alif Semiconductor。</p>
-<p style="text-indent:2em;">
-	而就在今年5月，模拟芯片巨头ADI公司刚刚以15亿美元拿下主业聚焦于集成电压调节器和硅电容的Empower Semiconductor。</p>
-<p align="center">
-	<img src="https://file1.elecfans.com//web3/M00/78/0F/wKgZO2qjsP-AYpKMAAFF7dloGs4101.jpg" alt="wKgZO2qjsP-AYpKMAAFF7dloGs4101.jpg"/></p>
-<p style="text-indent:2em;">
-	图/ADI官网截图</p>
-<p style="text-indent:2em;">
-	Empower Semiconductor与ADI原有的<a href="https://m.hqchip.com/app/1731" target="_blank"><u>电源管理</u></a>芯片业务高度相关，收购逻辑并不难理解。</p>
-<p style="text-indent:2em;">
-	但成立于2019年的Alif主攻的却是<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a> <a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>芯片和边缘智能芯片。</p>
-<p style="text-indent:2em;">
-	一家长期深耕模拟、数据转换和<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>管理的芯片巨头，为什么愿意拿出13.5亿美元收购一家MCU芯片公司?</p>
-<p style="text-indent:2em;">
-	01近30亿美元</p>
-<p style="text-indent:2em;">
-	ADI到底买了什么?</p>
-<p style="text-indent:2em;">
-	Empower和Alif，两家公司所处的芯片业务环节并不相同，但放到AI产业链中看，模拟芯片巨头ADI公司的收购方向其实很清楚。</p>
-<p align="center">
-	<img src="https://file1.elecfans.com//web3/M00/78/0B/wKgZPGqjsQCAWxg9AAPDplrTpKg682.jpg" alt="wKgZPGqjsQCAWxg9AAPDplrTpKg682.jpg"/></p>
-<p style="text-indent:2em;">
-	图/《<a href="https://www.hqchip.com/gongsi.html" target="_blank"><u>半导体</u></a>器件应用网》制图</p>
-<p style="text-indent:2em;">
-	两笔收购，Empower解决的是AI如何更高效地获得电力，Alif解决的是AI如何进一步进入现实世界。</p>
-<p style="text-indent:2em;">
-	模拟芯片巨头ADI公司正在借这两笔并购，把自己的能力边界从传统模拟芯片和混合<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>芯片，进一步推向Physical AI时代的系统级平台。这也是这笔13.5亿美元交易更值得关注的地方。</p>
-<p style="text-indent:2em;">
-	模拟芯片巨头ADI公司为什么不从零开始做AI MCU，而是选择直接买下一家公司?</p>
-<p style="text-indent:2em;">
-	0213.5亿美元</p>
-<p style="text-indent:2em;">
-	ADI买的是“时间”</p>
-<p style="text-indent:2em;">
-	放眼<a href="https://bbs.elecfans.com/group_729" target="_blank"><u>NXP</u></a>、ST和<a href="https://www.elecfans.com/tags/英飞凌/" target="_blank"><u>英飞凌</u></a>等全球一线MCU芯片厂商，向AI MCU芯片演进已经成为一条越来越清晰的产品路线。</p>
-<p align="center">
-	<img src="https://file1.elecfans.com//web3/M00/78/0F/wKgZO2qjsQGAGiOFAAbcOEheqmk013.jpg" alt="wKgZO2qjsQGAGiOFAAbcOEheqmk013.jpg"/></p>
-<p style="text-indent:2em;">
-	图/《半导体器件应用网》制图</p>
-<p style="text-indent:2em;">
-	MCU芯片正在从单纯的“<a href="https://www.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>”，向“控制+感知+AI推理”的边缘计算平台演进。这意味着，留给后来者的时间并不宽裕。</p>
-<p style="text-indent:2em;">
-	对于模拟芯片巨头ADI公司来说，如果选择从零搭建AI MCU芯片产品线，不仅要补<a href="https://m.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>/NPU平台，还要重新建设软件工具链、模型部署生态，并经历客户验证和规模量产。</p>
-<p style="text-indent:2em;">
-	即便技术路线明确，把这些环节真正跑通，仍可能需要数年时间。而Alif已经跨过了其中相当一部分门槛。</p>
-<p style="text-indent:2em;">
-	根据模拟芯片巨头ADI公司披露，Alif芯片已经进入量产，并在头部消费和工业客户中获得design win。</p>
-<p style="text-indent:2em;">
-	Alif此前也表示，第一代Ensemble E1、E3、E5、E7自2021年发布后已经实现规模出货。</p>
-<p style="text-indent:2em;">
-	与此同时，Alif的软件生态也在逐步完善。今年8月，公司获得<a href="https://www.hqchip.com/app/1378" target="_blank"><u>Arm</u></a> <a href="https://www.elecfans.com/tags/keil/" target="_blank"><u>Keil</u></a> MDK授权，为Ensemble和Balletto系列提供成熟的软件开发、调试和优化工具，合作伙伴也已覆盖<a href="https://www.elecfans.com/v/tag/3744/" target="_blank"><u>计算机视觉</u></a>、语音AI、模型部署等多个环节。</p>
-<p align="center">
-	<img src="https://file1.elecfans.com//web3/M00/78/0B/wKgZPGqjsQGAdaWAAACkCATAtVA156.jpg" alt="wKgZPGqjsQGAdaWAAACkCATAtVA156.jpg"/></p>
-<p style="text-indent:2em;">
-	图/Alif官网截图</p>
-<p style="text-indent:2em;">
-	换句话说，模拟芯片巨头ADI公司拿到的并不是几颗带NPU的MCU，而是一套已经完成产品开发、进入量产、拥有客户基础，并开始形成软件生态的AI MCU平台。</p>
-<p style="text-indent:2em;">
-	所以，模拟芯片巨头ADI公司花出去的13.5亿美元，本质上也是在买时间。</p>
-<p style="text-indent:2em;">
-	它不需要再用数年时间从零搭建一条AI MCU产品线，而是直接获得Alif已经积累起来的产品、团队、客户和生态，加速进入边缘AI和Physical AI市场。</p>
-<p style="text-indent:2em;">
-	对于一家原本更擅长模拟、数据转换和电源管理的芯片公司来说，这可能比自己慢慢补课更划算。</p>
-<p style="text-indent:2em;">
-	而当一线MCU厂商已经集体向AI能力靠拢，ADI显然也不愿意错过这一轮窗口。</p>
-<p style="text-indent:2em;">
-	03ADI正在撕掉“纯模拟”<a href="https://m.hqchip.com/tags" target="_blank"><u>标签</u></a></p>
-<p style="text-indent:2em;">
-	把Empower和Alif放在一起看，模拟芯片巨头ADI公司这轮并购的方向会更清楚。</p>
-<p style="text-indent:2em;">
-	过去提到模拟芯片巨头ADI公司，最具代表性的仍是数据转换器、<a href="https://www.elecfans.com/tags/放大器/" target="_blank"><u>放大器</u></a>、<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>、电源管理等高性能模拟和混合信号产品。</p>
-<p style="text-indent:2em;">
-	2025财年，模拟芯片巨头ADI公司实现营收约110.2亿美元。虽然并未单独披露模拟业务收入，但其年报明确将模拟和混合信号技术称为过去六十年的业务基础。</p>
-<p style="text-indent:2em;">
-	相比之下，其老对手<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>TI</u></a>早已形成“模拟+<a href="https://www.elecfans.com/soft/data/21-22/" target="_blank"><u>嵌入式</u></a>处理”两条主要业务线。2025年，TI模拟业务收入约140亿美元，占公司营收约79%;嵌入式处理业务收入则达到约27亿美元，覆盖MCU和<a href="https://www.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>。</p>
-<p style="text-indent:2em;">
-	模拟芯片巨头ADI公司也在明显向这个方向延伸。其2025年年报已经将“软件、数字平台和<a href="https://www.elecfans.com/v/tag/150/" target="_blank"><u>人工智能</u></a>”单独列出，并明确提出，要在原有模拟、混合信号、电源等优势之外，持续加强软件、数字和AI能力。</p>
-<p style="text-indent:2em;">
-	Alif补上的，正是其中关键的一块——MCU、NPU和边缘AI计算。</p>
-<p style="text-indent:2em;">
-	这种能力为什么重要，和Physical AI的落地方式直接相关。</p>
-<p style="text-indent:2em;">
-	以<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>为例，视觉、触觉、位置等多路传感器信号，需要先由传感器、模拟前端和<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>完成采集，再交给MCU/NPU进行本地推理、传感器融合和实时控制。</p>
-<p style="text-indent:2em;">
-	工业设备也是类似逻辑。振动、声音、温度等信号经过模拟器件采集后，还需要在本地完成异常识别、预测性维护和控制决策。</p>
-<p style="text-indent:2em;">
-	而在医疗终端和可穿戴设备中，低功耗和隐私要求更高，低噪声模拟前端、低功耗MCU/NPU和电源管理芯片往往需要协同工作。</p>
-<p style="text-indent:2em;">
-	这些场景的共同点是，Physical AI不是依靠某一颗芯片完成，而是需要传感器、模拟信号链、MCU/NPU、电源和连接等器件协同。这也正是Alif对ADI的价值所在。</p>
-<p style="text-indent:2em;">
-	ADI原本擅长传感、模拟信号链、数据转换和电源管理，Alif则补上MCU、NPU和本地AI计算。</p>
-<p style="text-indent:2em;">
-	ADI在此次收购中也明确提出了“Physical <a href="https://www.elecfans.com/tags/intel/" target="_blank"><u>Intel</u></a>ligence”这一概念，即让系统能够在物理世界的约束下，本地实时完成“感知、推理和行动”。</p>
-<p align="center">
-	<img src="https://file1.elecfans.com//web3/M00/78/0B/wKgZPGqjsQKAXzODAAFpEq8SqlE103.jpg" alt="wKgZPGqjsQKAXzODAAFpEq8SqlE103.jpg"/></p>
-<p style="text-indent:2em;">
-	图/ADI官网截图</p>
-<p style="text-indent:2em;">
-	Alif的AI处理能力加入后，模拟芯片巨头ADI公司的能力边界由感知与信号处理，进一步向本地推理与控制延伸。</p>
-<p style="text-indent:2em;">
-	模拟芯片巨头ADI公司收购Alif释放了一个明确信号：MCU的竞争，正在从主频、Flash、外设和价格，延伸到NPU、软件生态、模型部署和系统整合能力。</p>
-<p style="text-indent:2em;">
-	对国产MCU而言，国产替代的命题也在变化。过去更多解决“有没有、能不能替”，下一阶段则要回答：能否在高性能、AI计算和软硬件生态上建立自己的差异化。</p>
-<p style="text-indent:2em;">
-	当NXP通过收购Kinara补强边缘AI，模拟芯片巨头ADI公司又以13.5亿美元收购Alif，AI MCU的竞争已经不只是单颗芯片之争，而是产品、生态和资本的综合较量。对国产MCU厂商来说，下一步真正要争的，不只是替代份额，而是下一轮技术升级中的位置。</p>
-<p style="text-indent:2em;">
-	本文为哔哥哔特资讯原创文章，未经允许和授权，不得转载</p>]]></description></item><item>    <title><![CDATA[村田又一次盯上了新能源电感]]></title>    <link>https://www.elecfans.com/d/8308600.html</link>    <guid>https://www.elecfans.com/d/8308600.html</guid>    <pubDate>2026-09-13 11:38:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	磁性<a href="https://www.hqchip.com/ic/0" target="_blank"><u>元器件</u></a>行业迎来重构</p>
-<p style="text-indent:2em;">
-	9月7日，全球被动元件龙头企业<a href="https://www.elecfans.com/tags/村田/" target="_blank"><u>村田</u></a>正式宣布扩充车规级金属<a href="https://www.hqchip.com/app/1116" target="_blank"><u>功率电感</u></a>DFE2MCPH_JL系列，一次新增9个电感值，并已开始量产。</p>
-<p style="text-indent:2em;">
-	新增产品覆盖0.10—4.7μH，加上原有的0.33μH和0.47μH，该系列已经形成11个规格。所有产品均采用2.0×1.6mm封装，耐压40V，符合AEC-Q200要求，主要用于<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>AS（高级辅助驾驶系统）、车载信息娱乐及其他<a href="https://bbs.elecfans.com/group_78" target="_blank"><u>汽车电子</u></a>设备的<a href="https://www.elecfans.com/soft/data/4-5/" target="_blank"><u>电源电路</u></a>。</p>
-<p style="text-indent:2em;">
-	这并不是村田第一次推出该系列。2024年1月，DFE2MCPH_JL系列首次发布时只有两个规格，村田当时便提出，未来将把电感值扩展至0.1—4.7μH。</p>
-<p style="text-indent:2em;">
-	两年多后，产品规划正式落地。与其说这是一次普通的产品上新，不如说村田正将单点产品扩充为完整的车规平台，覆盖更多电压、<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>和开关频率组合，争取进入更多车载<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>电路。</p>
-<p style="text-indent:2em;">
-	那么，村田为何此时补齐产品线？汽车市场还能带给磁性元器件行业多少增量？</p>
-<p style="text-indent:2em;">
-	01村田布局<a href="https://www.elecfans.com/v/tag/293/" target="_blank"><u>新能源</u></a></p>
-<p style="text-indent:2em;">
-	走到了哪一步？</p>
-<p style="text-indent:2em;">
-	首先需要明确，DFE2MCPH_JL系列并非新能源汽车专用产品。</p>
-<p style="text-indent:2em;">
-	ADAS和车载信息娱乐系统同时存在于燃油车和新能源汽车中，因此，这款产品首先属于汽车电子业务。不过，新能源汽车的电动化、智能化程度普遍更高，车内电源转换、辅助驾驶、智能座舱和热管理系统更加复杂，也是车载磁性元器件需求增长的重要来源。</p>
-<p style="text-indent:2em;">
-	<img src="https://file1.elecfans.com//web3/M00/78/0B/wKgZPGqjsVSAD6kxAAGRW-kGCmk278.jpg" alt="wKgZPGqjsVSAD6kxAAGRW-kGCmk278.jpg"/></p>
-<p style="text-indent:2em;">
-	参数图 / 村田</p>
-<p style="text-indent:2em;">
-	从公开产品记录看，村田对汽车电子的布局早已开始。</p>
-<p style="text-indent:2em;">
-	至少在2018年，村田就已经推出面向ADAS、车载信息娱乐、动力系统和车载网络的功率电感。</p>
-<p style="text-indent:2em;">
-	2024年推出DFE2MCPH_JL系列，则进一步将金属功率电感做到了2.0×1.6mm的小型尺寸。</p>
-<p style="text-indent:2em;">
-	从经营表现来看，汽车及移动出行业务已经成为村田的重要收入来源。</p>
-<p style="text-indent:2em;">
-	2026年4—6月，村田实现营收5022亿日元，同比增长20.7%；营业利润984亿日元，同比增长59.8%。其中，Mobility业务收入1315.54亿日元，同比增长16.1%；电感及EMI<a href="https://www.elecfans.com/tags/滤波器/" target="_blank"><u>滤波器</u></a>收入642.54亿日元，同比增长22.4%。</p>
-<p style="text-indent:2em;">
-	村田同时明确表示，汽车用电感收入实现增长。</p>
-<p style="text-indent:2em;">
-	02新能源汽车市场如今怎么样？</p>
-<p style="text-indent:2em;">
-	答案是仍在增长，但增长逻辑正在改变。</p>
-<p style="text-indent:2em;">
-	据中国汽车工业协会数据，2026年上半年，我国新能源汽车产销分别达到743.8万辆和744.6万辆，同比分别增长6.7%和7.3%，新能源汽车销量占汽车总销量的49.6%。7月，新能源汽车销量达到156.1万辆，同比增长23.7%。</p>
-<p style="text-indent:2em;">
-	放眼全球，国际能源署预计，2026年全球电动汽车销量将达到约2300万辆，占汽车总销量的28%；中国电动汽车销量占比可能接近60%，但增速将低于前几年。</p>
-<p style="text-indent:2em;">
-	这意味着新能源汽车已经从依靠低渗透率快速普及，逐步转向高渗透率下的结构增长。对于磁性元器件行业而言，单纯依靠新能源汽车销量翻倍获得订单的阶段正在过去，更多机会将来自单车电子配置升级。</p>
-<p style="text-indent:2em;">
-	一辆新能源汽车涉及的磁性元器件远不止驱动系统中的大功率电感和变压器。</p>
-<p style="text-indent:2em;">
-	图/ 铭普光磁</p>
-<p style="text-indent:2em;">
-	在车辆本体中，OBC、车载<a href="https://www.elecfans.com/tags/dc/dc/" target="_blank"><u>DC/DC</u></a><a href="https://m.hqchip.com/app/1718" target="_blank"><u>转换器</u></a>、辅助电源、电驱系统及各类低压电子设备需要使用电感、变压器；</p>
-<p style="text-indent:2em;">
-	在车外配套环节，<a href="https://www.elecfans.com/tags/充电桩/" target="_blank"><u>充电桩</u></a>同样会带来功率电感、变压器及滤波磁件需求；</p>
-<p style="text-indent:2em;">
-	在智能化环节，ADAS<a href="https://www.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>、摄像头、雷达、车载娱乐、显示和<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>模块同样需要大量低压<a href="https://m.hqchip.com/app/1703" target="_blank"><u>DC</u></a>/DC电路。</p>
-<p style="text-indent:2em;">
-	村田此次瞄准的正是后者。</p>
-<p style="text-indent:2em;">
-	车载12V电源通常需要先转换为5V或3.3V，再为<a href="https://www.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>、存储器、<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>等负载提供更低电压。不同电源轨的电压、电流、开关频率、纹波和瞬态响应要求不同，因此难以用一种电感值覆盖。</p>
-<p style="text-indent:2em;">
-	从2个规格扩展至11个规格，反映的不是汽车电源简单地需要“更多电感”，而是客户对电感性能组合的要求正在分化。</p>
-<p style="text-indent:2em;">
-	03新能源磁企</p>
-<p style="text-indent:2em;">
-	有订单就能赚钱吗？</p>
-<p style="text-indent:2em;">
-	2026年已经过半，从国内磁性元器件企业的半年报看，新能源相关业务仍在贡献需求，但不同磁性元器件企业的收入和盈利表现已经分化。</p>
-<p style="text-indent:2em;">
-	<img src="https://file1.elecfans.com//web3/M00/78/0B/wKgZPGqjsVaAX7VgAALuViAWkYI111.jpg" alt="wKgZPGqjsVaAX7VgAALuViAWkYI111.jpg"/></p>
-<p style="text-indent:2em;">
-	图/ 《磁性元件与电源》</p>
-<p style="text-indent:2em;">
-	顺络电子上半年营收38.59亿元，同比增长19.67%。其中，汽车电子业务收入增长超过30%，储能业务也实现明显提升；但公司归母净利润下降7.98%。公司表示，金属类原材料价格持续上涨，对利润造成了压力。</p>
-<p style="text-indent:2em;">
-	可立克上半年公司营收增长5.33%，磁性元件收入增长5.97%，但归母净利润下降52.37%。其磁性元件毛利率降至9.93%，同比下降2.24个百分点。</p>
-<p style="text-indent:2em;">
-	可立克磁性元器件主要面向新能源汽车电子、光伏储能和充电桩等市场，但公司没有单独披露各应用市场的收入贡献。</p>
-<p style="text-indent:2em;">
-	也有企业实现了收入与盈利同步改善。</p>
-<p style="text-indent:2em;">
-	京泉华上半年磁性元器件收入7.71亿元，同比增长26.46%，毛利率提升至18.10%。</p>
-<p style="text-indent:2em;">
-	铂科新材营收增长37.46%，净利润增长17.95%，金属软磁粉芯受益于储能、数据<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>等市场需求。</p>
-<p style="text-indent:2em;">
-	不过，两家企业的增长都不只来自新能源，<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>服务器电源、芯片电感和海外业务也在贡献增量。</p>
-<p style="text-indent:2em;">
-	横店东磁上半年磁材器件收入29.85亿元，同比增长25.93%，出货量增长10.66%。其中，高性能车规磁瓦把握了新能源汽车需求，软磁业务的增长则更多受到AI服务器和数据中心市场带动。</p>
-<p style="text-indent:2em;">
-	财报共同说明，新能源仍是磁性元器件行业的重要基本盘，但“进入新能源市场”已经不足以保证盈利。</p>
-<p style="text-indent:2em;">
-	产品是否具备技术壁垒、能否进入核心客户平台、原材料涨价能否传导，以及海外和高附加值业务占比，正在决定订单最终能够留下多少利润。</p>
-<p style="text-indent:2em;">
-	04磁性元器件行业下一轮增长</p>
-<p style="text-indent:2em;">
-	从“多卖车”转向“单车升级”</p>
-<p style="text-indent:2em;">
-	未来，新能源汽车带给磁性元器件行业的增量主要来自两个方面。</p>
-<p style="text-indent:2em;">
-	第一个仍然是新能源汽车数量增长。</p>
-<p style="text-indent:2em;">
-	全球新能源汽车销量和渗透率还在提升，中国新能源汽车也在加快出口。整车数量增加，将继续带动OBC、DC/DC、车载电源、充电系统及各类汽车电子磁性元器件需求。</p>
-<p style="text-indent:2em;">
-	第二个则是单车磁性元器件用量和价值量提升。</p>
-<p style="text-indent:2em;">
-	随着ADAS、智能座舱、域控制器、车载通信和热管理配置增加，新能源汽车内部的电源轨数量、功率等级和可靠性要求都在提高。即使汽车销量增速放缓，单车电子化程度提升仍可能为磁性元器件带来结构性增长。</p>
-<p style="text-indent:2em;">
-	汽车电子<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>架构正由分散ECU向域控制、中央计算和区域控制演进，部分独立控制器会被整合，分立器件数量可能减少。与此同时，集中式控制器的计算功率和电流密度提高，又会增加对高性能功率电感、多相供电和低损耗磁性材料的需求。</p>
-<p style="text-indent:2em;">
-	因此，未来更值得关注的不是新能源汽车究竟多用了几颗电感，而是磁性元器件的性能、规格复杂度和单颗价值是否提升。</p>
-<p style="text-indent:2em;">
-	对国内磁性元器件企业而言，新能源汽车市场仍有机会，但磁性元器件行业红利正在从数量扩张转向技术升级。</p>
-<p style="text-indent:2em;">
-	下一阶段真正能够留下利润的，可能不再是产能最大、价格最低的磁性元器件行业供应商，而是能够提前参与客户设计，并在材料、结构、工艺和车规质量体系上形成完整能力的企业。</p>
-<p style="text-indent:2em;">
-	本文为哔哥哔特资讯原创文章，未经允许和授权，不得转载</p>]]></description></item><item>    <title><![CDATA[第12届学术年会邀您共话磁性元件新未来]]></title>    <link>https://www.elecfans.com/d/8308611.html</link>    <guid>https://www.elecfans.com/d/8308611.html</guid>    <pubDate>2026-09-13 11:39:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	金秋九月，教师节如约而至。我们满怀敬意，向在科研与教育一线默默耕耘的专家学者致以崇高礼赞——正是这群孜孜不倦的引路人，中国功率变换器磁性元件行业才得以在技术浪潮中不断突破、行稳致远。在这个特别的日子里，我们带来一则行业好消息：阔别两载，第十二届中国功率变换器磁性元件联合学术年会重磅归来!</p>
-<p style="text-indent:2em;">
-	第十二届磁元件学术年会定于2026年10月16日至18日，在贵州安顺百灵希尔顿逸林酒店盛大召开，由中国<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>学会磁技术专业委员会主办、广东省磁性<a href="https://www.hqchip.com/ic/0" target="_blank"><u>元器件</u></a>行业协会协办。</p>
-<p style="text-indent:2em;">
-	目前，参会报名通道已正式开放，早鸟缴费优惠将于9月30日截止，建议各位行业同仁尽早完成注册，锁定优惠席位。</p>
-<p style="text-indent:2em;">
-	一、学术引领：历届磁元件学术年会的智慧积淀</p>
-<p style="text-indent:2em;">
-	自创办以来，磁元件学术年会始终是行业内最具影响力的学术交流平台之一。专委会秉持中国电源学会宗旨，通过学术年会、技术讲座、高峰<a href="https://www.elecfans.com/article/bbs/" target="_blank"><u>论坛</u></a>等形式，持续推动<a href="https://bbs.elecfans.com/group_934" target="_blank"><u>电力电子</u></a>磁性元件技术的普及、推广与应用。</p>
-<p style="text-indent:2em;">
-	回顾往届，每一届年会都是一次学术思想的盛宴。从“电力电子磁技术发展与思考”到“大数据及<a href="https://www.elecfans.com/v/tag/293/" target="_blank"><u>新能源</u></a>背景下的技术挑战”，从“新型集成磁技术”到“产业‘内卷化’下的机遇与应对”。</p>
-<p style="text-indent:2em;">
-	磁元件学术年会作为磁元件行业的“思想高地”，具有其不可替代价值：它不仅是成果展示的舞台，更是技术人员深度交流与思想碰撞的平台。</p>
-<p style="text-indent:2em;">
-	二、产业转化：磁元件学术年会——从实验室到生产线的桥梁</p>
-<p style="text-indent:2em;">
-	学术的核心价值，最终要落地于产业。</p>
-<p style="text-indent:2em;">
-	作为大会主办方，磁专委始终积极连接铁芯材料、磁性元件和功率变换器整机等上下游企业，密切产、学、研合作。年会不仅是学术论文的发表平台，更是产业界捕捉技术趋势、寻找解决方案的重要窗口。</p>
-<p style="text-indent:2em;">
-	近年来，磁性元件在光伏、储能、风电、<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>服务器电源、新能源汽车、<a href="https://www.elecfans.com/tags/充电桩/" target="_blank"><u>充电桩</u></a>、SST固态变压器、AI直流电源等热门领域中的重要性日益突出。</p>
-<p style="text-indent:2em;">
-	历届年会上发布的前沿研究成果，都在随后的一年中逐步转化为产业实践——从磁芯材料评价指标探讨到电动汽车电感<a href="https://bbs.elecfans.com/zhuti_proteus_1.html" target="_blank"><u>仿真</u></a>设计，从金属软磁粉芯技术挑战到MHz高频低损耗铁氧体研究进展，这些报告无一不指向产业真实需求。</p>
-<p style="text-indent:2em;">
-	学术引领产业、产业反哺学术的良性循环，正是这一平台历经十余年而愈发蓬勃的生命力所在。</p>
-<p style="text-indent:2em;">
-	三、新一届学术年会，新一轮学术征程</p>
-<p style="text-indent:2em;">
-	2026年，第十二届磁元件学术年会将以“学术为桥、产业为基”为理念，汇聚磁性元件行业智慧，破解技术瓶颈、挖掘增长新机、搭建协同生态。</p>
-<p style="text-indent:2em;">
-	第十二届磁元件学术年会将设置20余场大会报告、30余场分会报告及工业报告，围绕前沿新技术、落地新方案、场景新应用与产业新实践展开深度探讨。</p>
-<p style="text-indent:2em;">
-	大会汇聚了来自南京航空航天大学、福州大学、杭州电子科技大学、西安交通大学、浙江大学、浙江工业大学等高校的<a href="https://www.hqchip.com/gongsi.html" target="_blank"><u>知名</u></a>学者，以及台达电子、可立克科技、铭普光磁、大忠电子等企业的技术专家。</p>
-<p style="text-indent:2em;">
-	为充分征集优质学术成果，论文投稿截止时间已顺延至2026年9月20日。诚挚欢迎国内外深耕磁性元件相关领域的专家、学者、技术人员和研究生积极参与、踊跃投稿。</p>
-<p style="text-indent:2em;">
-	四、磁元件学术年会：与行业同行，与时代共振</p>
-<p style="text-indent:2em;">
-	教师节的意义，不仅在于感恩，更在于传承。正如一代代学者将毕生所学倾囊相授，中国功率变换器磁性元件联合学术年会也在持续传承着行业的智慧火种。</p>
-<p style="text-indent:2em;">
-	从最初的小范围学术交流，到如今汇聚数百位产业链精英的行业盛会;从纯粹的学术论文发表，到产学研深度融合的协同创新平台——这一路走来，年会的价值早已超越会议本身：它是行业发展的“风向标”，是技术创新的“策源地”，更是产学研协同的“连心桥”。</p>
-<p style="text-indent:2em;">
-	2026年10月，贵州安顺，我们期待与您相约。无论您是深耕学术的科研工作者，还是奋战一线的产业技术专家，抑或是孜孜求索的青年学子——这里都有属于您的位置，都有值得您倾听的声音。让我们以学术之名，共赴这场属于磁性元件行业的第十二届磁元件学术年会秋日之约!</p>
-<p style="text-indent:2em;">
-	本文为哔哥哔特资讯原创文章，未经允许和授权，不得转载</p>]]></description></item><item>    <title><![CDATA[拆了份星通时频的18.432MHz晶振规格书，工业/低功耗项目直接抄作业]]></title>    <link>https://www.elecfans.com/d/8314005.html</link>    <guid>https://www.elecfans.com/d/8314005.html</guid>    <pubDate>2026-09-13 11:40:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8314005" value="https://file1.elecfans.com/web2/M00/C1/C0/wKgZomXesBSAZ6LmACU5AaXBq78989.pdf"/><h1>拆了份星通时频的18.432MHz晶振规格书，工业/低功耗项目直接抄作业</h1>
-<p>最近在做一款低功耗工业采集终端，需要找一颗18.432MHz的有源晶振，既要支持1.8V电池供电，又要扛住-40℃的户外温区，翻立创物料库的时候挖到了星通时频这款SMD2520封装的型号，把规格书<a href="https://m.elecfans.com/v/tag/899/" target="_blank"><u>拆解</u></a>一下给有需要的同行参考，省得你们自己翻几十页文档了。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8314005" target="_blank">SX2M18.432M20F30TNN.pdf</a></p>
-<hr/>
-<h2>先上基本信息，找料号的直接抄</h2>
-<table>
-<thead>
-<tr>
-<th>项目</th>
-<th>参数</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>完整料号</td>
-<td>SX2M18.432M20F30TNN</td>
-</tr>
-<tr>
-<td>厂家</td>
-<td>深圳市星通时频（SC<a href="https://m.hqchip.com/app/1522" target="_blank"><u>TF</u></a>）</td>
-</tr>
-<tr>
-<td>封装</td>
-<td>SMD2520（2.5*2.0mm）</td>
-</tr>
-<tr>
-<td>标称频率</td>
-<td>18.432MHz</td>
-</tr>
-<tr>
-<td>合规性</td>
-<td>RoHS<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a></td>
-</tr>
-<tr>
-<td>供货渠道</td>
-<td>立创商城可直接拍</td>
-</tr>
-</tbody>
-</table>
-<hr/>
-<h2>核心<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>参数拆解，重点关注这几个亮点</h2>
-<p>我当时选中这款，最核心的就是几个参数刚好踩中了我项目的需求：</p>
-<h3>1. 宽供电范围真的省成本</h3>
-<p>支持1.62V~3.63V供电，直接通吃1.8V、2.5V、3.3V三个常用<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>轨，不用单独给晶振加<a href="https://m.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>稳压，BOM直接省一颗料，<a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>也少走一根电源走线，对我这种电池供电的低功耗项目太友好了。</p>
-<h3>2. 频差参数够工业级用</h3>
-<ul>
-<li>25℃常温下频差±20ppm</li>
-<li>-40℃~85℃全工业温区频差±30ppm</li>
-<li>首年老化率只有±3ppm
-做<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a><a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>、<a href="https://www.hqchip.com/app/1720" target="_blank"><u>以太网</u></a>PHY参考<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>、低速<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>采样时钟完全够用，甚至普通<a href="https://m.hqchip.com/app/1537" target="_blank"><u>音频</u></a>Codec的时钟需求也能满足，不用加额外的校准电路。
-<h3>3. 输出特性不用额外调</h3>
-<p>CMOS输出，标配15pF负载，上升/下降沿最大5ns，占空比45%~55%，大部分场景直接把输出脚连到主控时钟输入就行，不用做阻抗匹配。</p>
-<h3>避坑提醒：OE引脚别接错</h3>
-<p>很多新手第一次用带使能的有源晶振容易踩坑：这款的1脚是OE使能脚，接高电平或者悬空的时候正常输出时钟，接低电平就关断输出，要是调试的时候发现晶振没输出，先看看OE脚是不是不小心接地了。另外使能延迟最大150μs，做电源动态切换的话记得留够余量。</p></li>
-</ul>
-<hr/>
-<h2>PCB+生产注意事项，直接抄少踩坑</h2>
-<h3>1. 引脚定义别搞反</h3>
-<p>仰视图（从PCB往上看晶振背面）的引脚顺序：
-1脚：OE使能 | 2脚：GND | 3脚：时钟输出 | 4脚：VDD供电
-印字面上18.432旁边的小圆点就是1脚标记，画封装的时候核对清楚，打板回来焊反了返修很麻烦。</p>
-<h3>2. 回流焊参数一定要同步给加工厂</h3>
-<p>无铅工艺的要求我列出来了，直接发给SMT厂就行：</p>
-<ul>
-<li>预热区150~200℃停留60~120s</li>
-<li>升温速率≤3℃/s，降温速率≤6℃/s</li>
-<li>峰值温度最高260℃，峰值停留时间≤30s</li>
-<li>最多过3次回流炉
-之前踩过坑，加工厂炉温没控好，批量晶振频偏超差，返修花了大几千，这个参数千万别忘了同步。</li>
-</ul>
-<hr/>
-<h2>可靠性够打，工业场景放心用</h2>
-<p>我特意看了下可靠性测试数据，全项测完频偏都不超过±5ppm：</p>
-<ul>
-<li>1米跌落3次、XYZ三个方向各2小时振动，频偏正常</li>
-<li>-40℃~85℃温冲10个循环、96小时湿热/低温/高温存储，频偏正常</li>
-<li>24小时盐雾无明显腐蚀，气密性满足工业级要求
-户外<a href="https://www.elecfans.com/soft/data/55-88/" target="_blank"><u>物联网</u></a>终端、<a href="https://www.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>器、车载后装设备这些场景直接用，比消费级晶振稳太多。</li>
-</ul>
-<hr/>
-<h2>最后说下选型建议</h2>
-<p>✅ 适合用的场景：</p>
-<ol>
-<li>低功耗电池供电设备，宽电压不用换料，最大消耗<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>只有10mA</li>
-<li>工业级测控、通信设备，温区和可靠性达标</li>
-<li>串口、音频、低速网络产品，18.432MHz刚好是常用时钟频点</li>
-</ol>
-<p>❌ 不适合的场景：
-如果是做高速<a href="https://www.elecfans.com/v/tag/105/" target="_blank"><u>射频</u></a>、<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>时钟同步类的项目，这个频差还是不够，建议选TCXO/OCXO级别的产品，普通场景这款完全够用，性价比很高。</p>
-<p>你们最近选型晶振有没有遇到什么坑？评论区聊聊？</p>]]></description></item><item>    <title><![CDATA[【选型笔记】工业级3225 10MHz有源晶振实测，这款国产料平替台系没压力]]></title>    <link>https://www.elecfans.com/d/8314006.html</link>    <guid>https://www.elecfans.com/d/8314006.html</guid>    <pubDate>2026-09-13 11:40:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8314006" value="https://file1.elecfans.com/web2/M00/C2/B1/wKgaomXerJmAJz0-ACVLW8x0Z90436.pdf"/><h1>【选型笔记】工业级3225 10MHz有源晶振实测，这款国产料平替台系没压力</h1>
-<p>最近在做一款户外工业数据采集板的方案，核心<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>源需求卡得挺死：SMD3225封装、10MHz、3.3V供电、宽温-40℃~105℃、全温频偏不能超过±50ppm，之前一直用某台系品牌的料，今年采购反馈价格涨了快2成，交期还拖到4周，就想着找国产替代。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8314006" target="_blank">SX3M10.000B10G40TNN.pdf</a></p>
-<p>翻立创商城的时候挖到了星通时频（SC<a href="https://m.hqchip.com/app/1522" target="_blank"><u>TF</u></a>）这款料号为<strong>SX3M10.000B10G40TNN</strong>的有源晶振，拿了规格书+打样测了快2周，给大家整理下参数和实测体验，省得大家选型踩坑。</p>
-<hr/>
-<h2>一、核心参数速查，按需对标</h2>
-<table>
-<thead>
-<tr>
-<th>直接把大家选晶振最关心的参数拎出来，不用翻几页规格书：</th>
-<th>参数项</th>
-<th>规格值</th>
-<th>实际使用解读</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>封装</td>
-<td>SMD3225</td>
-<td>常规贴片封装，布线不用改板直接兼容旧设计</td>
-</tr>
-<tr>
-<td>标称频率</td>
-<td>10.000000MHz</td>
-<td>有源输出不用配外部负载<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>，省了匹配调试的麻烦</td>
-</tr>
-<tr>
-<td>常温频差（25℃±2℃）</td>
-<td>±10ppm</td>
-<td>普通消费级、室内设备用这个精度绰绰有余</td>
-</tr>
-<tr>
-<td>全温频差（-40~105℃）</td>
-<td>±40ppm</td>
-<td>叠加常温频差总偏差最大±50ppm，刚好卡工业级项目的要求，户外冬夏温差大也不会飘</td>
-</tr>
-<tr>
-<td>工作电压</td>
-<td>3.3V±10%</td>
-<td>常规<a href="https://www.elecfans.com/v/tag/8791/" target="_blank"><u>数字电路</u></a>供电，不用额外加<a href="https://m.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>，电压波动大点也能稳住</td>
-</tr>
-<tr>
-<td>输出模式</td>
-<td>CMOS</td>
-<td>直接接<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>/PHY/<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>的时钟输入，不用额外电平转换</td>
-</tr>
-<tr>
-<td>消耗<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a></td>
-<td>≤10mA</td>
-<td>低功耗项目友好，配合使能引脚关断时功耗直接压到μA级</td>
-</tr>
-<tr>
-<td>年老化率</td>
-<td>±3ppm/第一年</td>
-<td>长期使用也不用担心频偏超标，不用定期校准</td>
-</tr>
-</tbody>
-</table>
-<hr/>
-<h2>二、硬件设计要注意的几个细节</h2>
-<p>别小看晶振的设计，很多板子时钟不稳定的玄学问题都是这里踩的：</p>
-<h3>1. OE使能引脚别乱接</h3>
-<p>这款晶振1脚是使能脚：接Vdd或者悬空的时候正常输出时钟，接GND就关断输出，我这次就是利用这个功能，采集板休眠的时候关时钟，整体功耗降了快10mA。
-⚠️ 注意不要把这个脚空焊、或者误接其他<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>，不然会出现时钟时有时无的问题，排查起来非常头疼。</p>
-<h3>2. 负载匹配不用瞎加电容</h3>
-<p>规格书标了输出负载是15pF，实际布线的时候算上<a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>寄生电容（一般3~5pF），不用额外加负载电容，我自己测过加10pF电容之后频偏直接飘到+12ppm，反而超差了。</p>
-<h3>3. 时序参数足够覆盖大部分场景</h3>
-<p>上升/下降沿最大5ns，占空比45~55%，用来给百兆PHY、中高速<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>C做时钟源都没问题，不用额外加整形电路；起振时间最大5ms，对于需要快速唤醒的低功耗设备也完全够用，不会出现上电后MCU等时钟的情况。</p>
-<hr/>
-<h2>三、焊接&amp;可靠性，工业场景放心用</h2>
-<p>我最关心的就是工业级产品的可靠性，这款的参数拿下来确实挺能打：
-首先是回流焊参数：无铅焊接峰值260℃最多停留30s，最多可以过3次炉，打样返修的时候不用担心焊两次就坏了，我自己测试过两次过炉，频偏变化只有±1ppm，完全没问题。</p>
-<p>我自己能测的几个可靠性项也做了验证，表现都达标：</p>
-<ul>
-<li>1米高度自由跌落3次到3cm厚木板，频偏变化≤±2ppm</li>
-<li>温冲-40℃~85℃循环10次，每次保温30分钟，频偏变化≤±3ppm</li>
-<li>85℃高温加电老化100小时，频偏变化≤±1ppm</li>
-</ul>
-<p>官方给的盐雾24h无腐蚀、振动测试频偏≤±5ppm这些我没条件测，但是就我测的这几项来说，工业户外、车载类场景用完全够，比我之前用的台系料表现还稳一点。</p>
-<hr/>
-<h2>最后几个小提醒</h2>
-<ol>
-<li>布线的时候晶振下方不要走高速信号线、大电流<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>走线，尽量做包地处理，避免干扰引入时钟抖动；</li>
-<li>这款是3.3V专属供电，不要误接5V，会直接烧芯片；</li>
-<li>如果对频偏要求特别高，拿到货之后可以自己做个常温校准，我这批抽测了20片，实际出厂频偏都在±5ppm以内，比标称的还要好。</li>
-</ol>
-<p>目前这款我已经小批量试产了100套，目前跑了1个月没有出时钟相关的问题，价格只有之前台系料的7成不到，交期现货3天，国产晶振现在真的越来越能打了。</p>
-<p>大家有没有用过星通时频的料？或者有什么其他好用的国产晶振推荐？评论区聊聊~</p>]]></description></item><item>    <title><![CDATA[选型参考：宽电压SMD3225 10MHz有源晶振参数梳理]]></title>    <link>https://www.elecfans.com/d/8314007.html</link>    <guid>https://www.elecfans.com/d/8314007.html</guid>    <pubDate>2026-09-13 11:40:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8314007" value="https://file.elecfans.com/web2/M00/AC/B5/pYYBAGSJlKmAMY0VAAsgi9Els40066.pdf"/><h1>选型参考：宽电压SMD3225 10MHz有源晶振参数梳理</h1>
-<p>最近做低功耗<a href="https://www.elecfans.com/tags/iot/" target="_blank"><u>IoT</u></a>项目选<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>源，找了一圈兼顾1.8V/3.3V平台的晶振，翻到星通时频这款型号为SX3M10.000M20F30TNN的有源<a href="https://www.hqchip.com/app/850" target="_blank"><u>振荡器</u></a>规格书，核心参数对普通工业、消费级场景非常友好，给大伙<a href="https://m.elecfans.com/v/tag/899/" target="_blank"><u>拆解</u></a>下，选型的时候可以做个参考。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8314007" target="_blank">SX3M10.000M20F30TNN.pdf</a></p>
-<hr/>
-<h2>一、基础参数速览</h2>
-<p>先上核心信息，不用翻规格书找半天：</p>
-<ul>
-<li>封装：标准SMD3225（3.2*2.5mm），通用<a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>封装直接用不用改</li>
-<li>标称频率：10.000MHz</li>
-<li>供电范围：1.62V~3.63V <strong>重点提下这个，1.8V、3.3V平台通吃，一个料号覆盖两个电压项目，BOM直接精简</strong></li>
-<li>输出模式：CMOS，负载15pF，常规<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>/Gateway的时钟输入<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>直接匹配，不用额外改匹配电路</li>
-</ul>
-<hr/>
-<h2>二、设计关注的核心<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>参数</h2>
-<table>
-<thead>
-<tr>
-<th>挑几个对硬件设计影响大的参数说：</th>
-<th>参数项</th>
-<th>规格值</th>
-<th>设计参考</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>常温频差（25℃）</td>
-<td>±20ppm</td>
-<td>普通消费级、<a href="https://www.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>对时钟精度要求不高的场景完全够用</td>
-</tr>
-<tr>
-<td>全温频差（-40~85℃）</td>
-<td>±30ppm</td>
-<td>户外设备、工业网关这类宽温工作场景也能扛</td>
-</tr>
-<tr>
-<td>工作<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a></td>
-<td>≤10mA</td>
-<td>低功耗场景无压力，比同规格的进口料电流还小一点</td>
-</tr>
-<tr>
-<td>上升/下降沿</td>
-<td>≤5ns</td>
-<td>百兆以内的<a href="https://www.elecfans.com/v/tag/8791/" target="_blank"><u>数字电路</u></a>同步完全没问题</td>
-</tr>
-<tr>
-<td>起振时间</td>
-<td>≤5ms</td>
-<td>低功耗唤醒场景不会拖系统启动后腿</td>
-</tr>
-<tr>
-<td>年老化率</td>
-<td>±3ppm/第一年</td>
-<td>5年以内的产品生命周期不用考虑时钟偏移超差问题</td>
-</tr>
-</tbody>
-</table>
-<p>额外提下OE脚的功能：1脚悬空或者接≥70%VDD的高电平时正常输出，接≤30%VDD的低电平时关断输出，做低功耗关断设计的时候非常实用，之前踩过坑：一开始以为1脚是NC直接接地，结果晶振直接不工作，查了半天才发现问题，大伙布线的时候注意。</p>
-<hr/>
-<h2>三、焊接与工艺要求</h2>
-<p>SMT生产的时候把这个参数甩给工厂，避免过炉出问题：</p>
-<ul>
-<li>无铅回流焊峰值温度最高260℃，维持时间不超过30s</li>
-<li>升温速率≤3℃/s，降温速率≤6℃/s</li>
-<li>最多支持3次过炉，返工的时候注意别超次数</li>
-<li>管脚定义（仰视图）：1脚OE，2脚GND，3脚OUT，4脚VDD，别焊反了</li>
-</ul>
-<hr/>
-<h2>四、可靠性兜底测试</h2>
-<p>这颗料的可靠性测试项给的很全，列几个大家关心的：</p>
-<ol>
-<li>1米跌落、三轴2小时振动测试后频偏≤±5ppm</li>
-<li>-40℃~85℃温冲10次、96小时湿热/高低温存储后频偏≤±5ppm</li>
-<li>24小时盐雾测试无腐蚀，户外设备用也放心</li>
-<li>回流焊后频偏≤±5ppm，不用怕过炉后时钟超差</li>
-</ol>
-<hr/>
-<h2>五、适用场景总结</h2>
-<p>整体看下来这颗料的性价比非常高，国内厂商供货也稳，适合这些场景用：
-✅ 多电压平台的<a href="https://www.elecfans.com/soft/data/39-96/" target="_blank"><u>消费电子</u></a>、IoT设备，不用备1.8V和3.3V两个料号
-✅ 工业控制、户外网关类宽温工作产品
-✅ 对BOM成本有要求的量产项目</p>
-<p>你们最近项目选晶振有没有踩过什么坑？比如温漂超差、起振慢之类的，评论区聊聊~</p>]]></description></item><item>    <title><![CDATA[选型干货|星通时频12MHz 3225有源晶振参数拆解&设计避坑指南]]></title>    <link>https://www.elecfans.com/d/8314008.html</link>    <guid>https://www.elecfans.com/d/8314008.html</guid>    <pubDate>2026-09-13 11:40:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8314008" value="https://file1.elecfans.com/web2/M00/C1/C0/wKgZomXesFmAKcKTACU-izr3PzQ123.pdf"/><h1>选型干货|星通时频12MHz 3225有源晶振参数拆解&amp;设计避坑指南</h1>
-<p>最近做工业数据采集板的<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>选型，翻到星通时频给立创供的这款<code>SX3M12.000B10F20TNN</code>有源晶振，参数刚好匹配工业级需求，把规格书里的核心点抠出来给大家捋一遍，省得各位<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>翻几十页文档找参数。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8314008" target="_blank">SX3M12.000B10F20TNN.pdf</a></p>
-<hr/>
-<h2>一、核心参数速览，选型先看这几点</h2>
-<table>
-<thead>
-<tr>
-<th>这款是SMD3225封装的3.3V有源晶振，标称频率12MHz，先把大家选型最关心的硬参数列出来：</th>
-<th>指标</th>
-<th>参数值</th>
-<th>适用场景参考</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>常温频差（25℃）</td>
-<td>±10ppm</td>
-<td>普通消费类、<a href="https://www.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>类场景完全满足</td>
-</tr>
-<tr>
-<td>全温频差（-40~85℃）</td>
-<td>±20ppm</td>
-<td>户外、车载、工业现场宽温环境适配</td>
-</tr>
-<tr>
-<td>年老化率</td>
-<td>±3ppm/年</td>
-<td>生命周期5~10年的产品不需要担心频偏超差</td>
-</tr>
-<tr>
-<td>工作<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a></td>
-<td>≤10mA</td>
-<td>低功耗场景也能适配，比同规格竞品功耗低20%左右</td>
-</tr>
-<tr>
-<td>输出负载</td>
-<td>15pF</td>
-<td>直接接<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>时钟引脚不需要额外加匹配<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a></td>
-</tr>
-</tbody>
-</table>
-<p>我自己测过同批次样品的频差一致性，基本都控制在±5ppm以内，品控还算稳定。</p>
-<hr/>
-<h2>二、<a href="https://bbs.elecfans.com/zhuti_dianlu_1.html" target="_blank"><u>电路设计</u></a>要避的坑，我踩过的给大家提个醒</h2>
-<h3>1. OE引脚别乱悬空</h3>
-<p>这款的1脚是使能端：高电平/悬空时正常输出，低电平停振。我之前做第一版原型的时候偷懒把它悬空了，在工业电磁环境测试的时候偶尔会出现偶发停振的问题，后来直接把1脚接3.3V<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>就彻底解决了，大家设计的时候别省这一根走线。</p>
-<h3>2. 时序裕量要留够</h3>
-<p>输出上升/下降沿最大5ns，高速设计的时候要算好时钟和数据的时序差，尽量把晶振输出走线控制在5cm以内，不要过孔，避免寄生电容超过15pF导致频偏。</p>
-<h3>3. 低功耗唤醒场景要留起振时间</h3>
-<p>最大起振时间5ms，做休眠唤醒的产品时，唤醒后要加至少5ms的等待时间再去读取时钟，不然很容易出现时钟校验错误的问题。</p>
-<hr/>
-<h2>三、SMT加工注意事项，别焊坏了怪器件质量</h2>
-<p>很多人晶振出问题就怪供应商，其实80%都是加工不规范导致的，这款的回流焊参数给大家标好了：</p>
-<ul>
-<li>无铅焊峰值温度≤260℃，峰值保持时间≤30s，整炉升温降温速率控制在3℃/s以内</li>
-<li>最多允许过3次回流焊，反复返工的话很容易导致内部晶振片损坏，频偏超标</li>
-<li>手工焊接的话烙铁温度不要超过300℃，焊接时间控制在3s以内，别长时间烫引脚。</li>
-</ul>
-<hr/>
-<h2>四、可靠性参数给工业级用户兜底</h2>
-<p>做户外、车载、恶劣环境产品的朋友可以放心用，这款的可靠性测试我对照过工业级要求完全达标：1米跌落、10~500Hz振动、-40~85℃温变循环、96小时湿热测试之后，频偏都不超过±5ppm，盐雾24小时无腐蚀，氦检气密性达标，基本能覆盖大部分工业场景的可靠性要求。</p>
-<hr/>
-<p>你们选晶振的时候最看重什么参数？欢迎评论区交流避坑经验~</p>]]></description></item><item>    <title><![CDATA[硬件选型拆解：星通时频3225封装12MHz有源晶振，工业级场景怎么用才不踩坑]]></title>    <link>https://www.elecfans.com/d/8314009.html</link>    <guid>https://www.elecfans.com/d/8314009.html</guid>    <pubDate>2026-09-13 11:40:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8314009" value="https://file1.elecfans.com/web2/M00/C1/C0/wKgZomXer2GASb3hACVNgpc5Lxo416.pdf"/><h1>硬件选型<a href="https://m.elecfans.com/v/tag/899/" target="_blank"><u>拆解</u></a>：星通时频3225封装12MHz有源晶振，工业级场景怎么用才不踩坑</h1>
-<p>最近做工业边缘网关的项目选<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>源，翻到了星通时频给立创供的这款<strong>SX3M12.000B10G40TNN</strong> 3225封装有源晶振，把规格书扒了一遍，参数对宽温工业场景非常友好，今天给大家拆解下关键参数和设计注意点，省得大家踩我之前掉过的坑。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8314009" target="_blank">SX3M12.000B10G40TNN.pdf</a></p>
-<hr/>
-<h2>1. 先把物料基础信息理明白</h2>
-<p>首先给大家把核心标识列出来，找料的时候别买错：</p>
-<ul>
-<li>供应商：深圳市星通时频（SC<a href="https://m.hqchip.com/app/1522" target="_blank"><u>TF</u></a>，做晶振的老厂了，品质比较稳）</li>
-<li>封装：SMD3225，体积非常小，<a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>布局紧张的项目也塞得下</li>
-<li>标称参数：12.000MHz 3.3V供电 CMOS输出</li>
-<li>料号：SX3M12.000B10G40TNN，立创商城直接搜就能找到现货</li>
-</ul>
-<hr/>
-<h2>2. 核心<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>参数，设计重点盯这几个</h2>
-<table>
-<thead>
-<tr>
-<th>很多人选晶振只看频率和电压，实际上这几个参数才是决定你产品会不会出批量问题的关键：</th>
-<th>参数项</th>
-<th>规格值</th>
-<th>设计意义</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>常温频差</td>
-<td>±10ppm@25℃</td>
-<td>常规室温下时钟精度足够，做普通<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>、数据采集完全够用</td>
-</tr>
-<tr>
-<td>全温频差</td>
-<td>±40ppm@-40~105℃</td>
-<td>划重点！这个参数太适合工业场景了，我之前踩过坑，选了个消费级晶振冬天放东北户外测试，频偏直接超200ppm，设备直接断连，这款全温范围才±40ppm，户外、高温工业柜里用都没问题</td>
-</tr>
-<tr>
-<td>消耗<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a></td>
-<td>≤10mA</td>
-<td>功耗不算高，电池供电的低功耗项目也能考虑</td>
-</tr>
-<tr>
-<td>起振时间</td>
-<td>≤5ms</td>
-<td>上电很快就出稳定时钟，对开机速度有要求的设备不用等时钟稳定</td>
-</tr>
-<tr>
-<td>OE使能脚</td>
-<td>高电平/悬空输出，低电平关闭</td>
-<td>低功耗场景神功能，休眠的时候直接拉低OE脚就能关掉时钟输出，不用额外加<a href="https://www.elecfans.com/soft/data/4-15/" target="_blank"><u>开关电路</u></a>切时钟，省了不少器件</td>
-</tr>
-<tr>
-<td>年老化率</td>
-<td>±3ppm@25℃</td>
-<td>用个5、6年频偏也不会超范围，不用做二次校准，适合部署完就很少运维的户外设备</td>
-</tr>
-</tbody>
-</table>
-<hr/>
-<h2>3. 焊接和工艺注意点，别把料焊废了</h2>
-<p>很多人晶振出问题都是焊接没搞对，这款的回流焊参数给大家标出来：</p>
-<ul>
-<li>无铅工艺峰值温度最高260℃，靠近峰值5℃以内的时间最多30s，整板从常温到峰值最多8分钟</li>
-<li>最多过3次回流焊，打样的时候返工一次也不用担心频偏超标，小厂的晶振很多过两次炉就偏出规格了</li>
-<li>引脚注意：1脚是OE使能脚，默认用直接悬空或者接3.3V就行，别误接GND，不然会没时钟输出，排查问题要查好久</li>
-</ul>
-<hr/>
-<h2>4. 可靠性够不够？工业场景放心用</h2>
-<p>我特意翻了下规格书里的可靠性测试项，基本覆盖了大部分严苛场景：</p>
-<ul>
-<li>1米自由跌落3次、10~500Hz振动2小时、-40~85℃温冲10次、96小时湿热/高低温存储后，频偏都不超过±5ppm</li>
-<li>24小时盐雾测试无腐蚀，海边、高腐蚀环境的项目也能用</li>
-<li>焊接浸锡率≥90%，不用担心虚焊问题</li>
-</ul>
-<hr/>
-<h2>最后聊聊选型适配</h2>
-<p>这款晶振我个人觉得非常适合这几类项目：<a href="https://www.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>设备、户外数据采集终端、通信网关、车规周边非安全域设备，既有小体积的优势，可靠性也够，价格也比进口品牌友好不少。</p>
-<p>你们平时选晶振最在意什么参数？是温漂？功耗？还是供货稳定性？评论区聊聊。</p>]]></description></item><item>    <title><![CDATA[瞻芯电子：国产SiC功率半导体崛起，国产替代正在从“可用”走向“好用”]]></title>    <link>https://www.elecfans.com/d/8312362.html</link>    <guid>https://www.elecfans.com/d/8312362.html</guid>    <pubDate>2026-09-13 11:43:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	如果说过去几年功率半导体国产化更多解决的是“有没有”，那么今天，国产SiC功率器件正在进入解决“好不好用”的新阶段。</p>
-<p style="text-indent:2em;">
-	在<a href="https://www.elecfans.com/v/tag/293/" target="_blank"><u>新能源</u></a>汽车、光伏储能、<a href="https://www.elecfans.com/tags/充电桩/" target="_blank"><u>充电桩</u></a>、<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>服务器<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>等应用快速发展的背景下，碳化硅（SiC）凭借低损耗、高频、高温和高功率密度等优势，正在成为新一代功率电子的重要技术路线。</p>
-<p style="text-indent:2em;">
-	而在这一赛道中，成立于2017年的上海瞻芯电子，正逐渐成为国产SiC产业链中值得关注的一家企业。</p>
-<p style="text-indent:2em;">
-	从6英寸SiC<a href="https://www.elecfans.com/tags/mosfet/" target="_blank"><u>MOSFET</u></a>，到完整功率半导体布局</p>
-<p style="text-indent:2em;">
-	上海瞻芯电子科技股份有限公司聚焦SiC功率半导体领域，产品覆盖SiC MOSFET、SiC<a href="https://m.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>、SiC<a href="https://www.hqchip.com/app/2047" target="_blank"><u>功率模块</u></a>、<a href="https://www.hqchip.com/app/1715" target="_blank"><u>栅极驱动</u></a>芯片以及电源控制芯片。与单纯做器件设计的企业不同，瞻芯电子正在向更完整的功率半导体产业链能力延伸。</p>
-<p style="text-indent:2em;">
-	据公司资料，瞻芯电子较早实现了国产6英寸SiC MOSFET产品及工艺平台的自主开发，并在浙江义乌建设车规级SiC晶圆厂，逐步形成从芯片设计、<a href="https://bbs.elecfans.com/group_66" target="_blank"><u>晶圆制造</u></a>到器件及模块的产业链能力。从发展节点来看，瞻芯电子2018年完成国产6英寸SiC MOSFET晶圆，2020年实现1200V SiC MOSFET量产，2022年核心产品通过车规级可靠性<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>，2025年SiC MOSFET累计交付量达到3000万颗。</p>
-<p style="text-indent:2em;">
-	这意味着，瞻芯电子已经从早期的技术验证阶段，逐渐进入规模化产品交付和市场验证阶段。</p>
-<p style="text-indent:2em;">
-	国产SiC，究竟在替代谁？</p>
-<p style="text-indent:2em;">
-	在SiC功率器件市场，国际厂商长期占据重要地位。例如Wolfspeed、Infineon、ROHM、onsemi、ST等，都已经形成较为成熟的SiC产品体系。其中，SiC MOSFET主要应用于新能源汽车主驱及OBC、光伏<a href="https://www.elecfans.com/tags/逆变器/" target="_blank"><u>逆变器</u></a>、储能PCS、充电桩、工业电源、服务器电源等高效率功率转换场景。</p>
-<p style="text-indent:2em;">
-	因此，国产替代并不是简单地“用国产型号替换进口型号”，而是围绕电压等级、导通电阻、开关损耗、封装、可靠性以及系统效率等指标进行方案级替代。以1200V SiC MOSFET为例，瞻芯电子目前已经形成较完整的产品矩阵。</p>
-<p style="text-indent:2em;">
-	2026年最新一代1200V SiC MOSFET覆盖10mΩ—150mΩ多个阻值规格，并提供多种主流封装，可覆盖从中低功率到高功率的不同应用场景。换句话说，在不少原本采用国际品牌1200V SiC MOSFET的设计中，瞻芯电子已经具备进行国产化选型和方案验证的基础。</p>
-<p style="text-indent:2em;">
-	不只是“替代”，更重要的是应用场景越来越丰富</p>
-<p style="text-indent:2em;">
-	瞻芯电子的优势，并不局限于单一颗MOSFET。在新能源汽车中，SiC器件可以用于OBC、<a href="https://www.elecfans.com/tags/dc/dc/" target="_blank"><u>DC/DC</u></a>等功率转换环节。相比传统Si MOSFET，SiC MOSFET能够降低开关及导通损耗，并帮助系统进一步提升效率、降低散热压力，从而支持更高功率密度的设计。在光伏逆变器、储能PCS对转换效率和功率密度要求越来越高之时，SiC正在成为重要的器件升级方向。瞻芯电子的1200V SiC MOSFET、SiC二极管及功率模块，可以覆盖逆变、升压等多个功率转换环节。</p>
-<p style="text-indent:2em;">
-	随着快充、高功率电源的发展，功率器件需要承担更高频率、更高效率的能量转换。SiC的高频、高温以及低损耗特性，使其在充电桩、工业电源、<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>驱动等领域拥有较大的应用空间。</p>
-<p style="text-indent:2em;">
-	还有一个正在快速升温的应用是AI算力基础设施。AI服务器功率不断提升，电源系统也正在向更高功率密度、更高效率方向发展。瞻芯电子目前已经将SiC产品布局延伸至服务器电源、UPS等数据<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>及<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>电源领域。这也意味着，SiC国产替代的战场正在从新能源汽车、光伏等传统新能源应用，进一步延伸到AI基础设施。</p>
-<p style="text-indent:2em;">
-	瞻芯电子的国产替代优势在哪里？</p>
-<p style="text-indent:2em;">
-	如果把国际品牌与国产厂商的竞争简单理解成“谁价格更低”，其实低估了国产SiC产业的发展。</p>
-<p style="text-indent:2em;">
-	瞻芯电子真正值得关注的地方，在于三个方面：</p>
-<p style="text-indent:2em;">
-	第一，产品矩阵正在完善。从SiC MOSFET、SBD，到功率模块、栅极驱动和<a href="https://www.hqchip.com/app/1730" target="_blank"><u>控制芯片</u></a>，瞻芯电子正在从单颗器件向系统级功率解决方案延伸。</p>
-<p style="text-indent:2em;">
-	第二，本土供应链响应能力。对于国内客户而言，国产供应商不仅意味着供应链安全，也意味着在样品、技术支持、产品迭代以及项目配合方面，可以获得更加灵活的本地化服务。</p>
-<p style="text-indent:2em;">
-	第三，产品性能正在从“国产可替代”走向“具备竞争力”。2026年，瞻芯电子进一步推出第三代1200V SiC MOSFET，并布局3.3kV SiC MOSFET。公司披露的3.3kV产品已进入固态变压器（SST）等<a href="https://m.elecfans.com/v/tag/873/" target="_blank"><u>高压</u></a>应用场景，并完成部分客户可靠性验证。</p>
-<p style="text-indent:2em;">
-	这说明国产SiC的竞争，已经不再只是中低端市场的替代，而是在向高压、高功率、高可靠性等更高价值场景延伸。</p>
-<p style="text-indent:2em;">
-	国产替代的下一站，是“方案级替代”</p>
-<p style="text-indent:2em;">
-	未来几年，功率半导体国产化很可能不会只是某一颗MOSFET的替换，而会逐渐转向完整方案的替代。从SiC MOSFET → <a href="https://m.hqchip.com/app/1787" target="_blank"><u>驱动芯片</u></a> → 二极管 → 功率模块 → 控制芯片，如果能够形成协同优化，就有机会进一步提升系统效率、降低BOM复杂度，同时增强供应链自主可控能力。</p>
-<p style="text-indent:2em;">
-	而这也正是瞻芯电子正在布局的方向。目前，其产品已经覆盖新能源汽车、充电桩、光伏、储能、工业电源、数据中心及通信电源等多个领域。</p>
-<p style="text-indent:2em;">
-	对于正在寻找SiC国产替代方案的<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>而言，瞻芯电子已经不再只是一个“国产替代选项”，而是正在成为值得纳入方案设计和器件选型的国产SiC品牌。</p>
-<p style="text-indent:2em;">
-	唯样：让国产替代更容易落地</p>
-<p style="text-indent:2em;">
-	从技术突破到真正进入工程师的BOM，中间还需要一个重要环节——稳定、便捷的供应链渠道。目前，唯样已成为Inventchip/瞻芯电子官方授权代理商，可提供瞻芯电子相关产品及技术资料支持。</p>
-<p style="text-indent:2em;">
-	对于正在进行SiC MOSFET国产替代、样品验证以及批量选型的客户，可以通过唯样进一步了解瞻芯电子产品，结合具体电压、<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>、RDS(on)、封装及应用场景进行选型。</p>
-<p style="text-indent:2em;">
-	国产功率<a href="https://www.hqchip.com/gongsi.html" target="_blank"><u>半导体</u></a>的故事，已经从“国产替代”走向“国产创新”。而瞻芯电子，正在成为这场产业升级中值得持续关注的一股力量。</p>]]></description></item><item>    <title><![CDATA[从汽车电子到AI时代电源管理，安世半导体热门器件正在成为电子系统“底层基石”]]></title>    <link>https://www.elecfans.com/d/8291879.html</link>    <guid>https://www.elecfans.com/d/8291879.html</guid>    <pubDate>2026-09-13 11:44:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	描述：安世<a href="https://www.hqchip.com/gongsi.html" target="_blank"><u>半导体</u></a>热门器件解析</p>
-<p style="text-indent:2em;">
-	在电子产业快速发展的今天，芯片算力不断提升，<a href="https://www.elecfans.com/v/tag/293/" target="_blank"><u>新能源</u></a>汽车持续渗透，<a href="https://m.elecfans.com/v/tag/633/" target="_blank"><u>工业自动化</u></a>加速升级，电子产品对于<a href="https://www.hqchip.com/ic/0" target="_blank"><u>元器件</u></a>的性能、可靠性以及供应稳定性提出了更高要求。但在众多高性能芯片和复杂系统背后，有一类基础半导体器件始终发挥着不可替代的作用。</p>
-<p style="text-indent:2em;">
-	它们负责<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>控制、<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>切换、<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>保护以及系统稳定运行，被广泛应用于<a href="https://bbs.elecfans.com/group_78" target="_blank"><u>汽车电子</u></a>、服务器、电源设备、<a href="https://www.elecfans.com/soft/data/39-96/" target="_blank"><u>消费电子</u></a>以及<a href="https://www.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>等领域。<a href="https://www.elecfans.com/tags/mosfet/" target="_blank"><u>MOSFET</u></a>、<a href="https://m.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>、三极管、<a href="https://www.hqchip.com/app/1587" target="_blank"><u>ESD</u></a>保护器件……这些看似“小而基础”的元器件，实际上构成了现代电子设备稳定运行的重要基础。</p>
-<p style="text-indent:2em;">
-	作为全球领先的基础半导体器件供应商之一，安世半导体（<a href="https://www.elecfans.com/tags/nexperia/" target="_blank"><u>Nexperia</u></a>）长期专注于高可靠、高性能半导体解决方案，产品覆盖MOSFET、双极<a href="https://m.hqchip.com/app/1555" target="_blank"><u>晶体管</u></a>、二极管、ESD保护器件、逻辑器件等多个领域。</p>
-<p style="text-indent:2em;">
-	唯样这几年已经是安世半导体线上授权代理商，一直持续为广大工程师及企业客户提供更加便捷、高效、可靠的元器件采购服务。</p>
-<p style="text-indent:2em;">
-	MOSFET：新能源与智能化时代的核心功率器件</p>
-<p style="text-indent:2em;">
-	随着新能源汽车、<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>服务器、工业电源等应用快速发展，电子系统对于能源效率、散热能力以及可靠性的要求不断提升。</p>
-<p style="text-indent:2em;">
-	MOSFET作为现代电子系统中的核心开关器件，承担着电能转换、电流控制以及功率调节的重要作用。安世半导体拥有丰富的MOSFET产品组合，包括：功率MOSFET、汽车级MOSFET、小信号MOSFET、应用专用MOSFET。覆盖多个电压等级和应用需求，为不同场景提供高效率、高可靠性的解决方案。</p>
-<p style="text-indent:2em;">
-	·汽车电子：智能汽车背后的关键器件</p>
-<p style="text-indent:2em;">
-	新能源汽车的发展，使汽车电子系统迎来了快速增长。从动力电池，到车身控制，再到智能座舱，越来越多电子模块需要高性能MOSFET实现精准控制。目前，安世MOSFET产品广泛应用于：<a href="https://www.hqchip.com/app/1712" target="_blank"><u>电池管理</u></a>系统（BMS）、<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机控制</u></a>系统、车身控制模块、<a href="https://m.hqchip.com/app/1721" target="_blank"><u>LED</u></a>照明系统、智能座舱设备</p>
-<p style="text-indent:2em;">
-	随着汽车向电动化、智能化方向发展，车规级器件对于耐高温、高可靠性以及长期稳定运行能力提出更高要求。安世半导体凭借成熟的制造工艺和丰富产品布局，为汽车电子应用提供可靠支持。</p>
-<p style="text-indent:2em;">
-	·AI服务器与<a href="https://m.hqchip.com/app/1731" target="_blank"><u>电源管理</u></a>：高算力时代的能源保障</p>
-<p style="text-indent:2em;">
-	近年来，AI服务器、数据<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>快速发展，<a href="https://www.elecfans.com/tags/gpu/" target="_blank"><u>GPU</u></a>功耗不断提升，服务器电源系统面临更高挑战。在高功率、高效率电源设计中，MOSFET承担着关键的电能转换任务。高性能MOSFET能够帮助系统：降低导通损耗、提升电源转换效率、减少设备发热、提升整体可靠性。因此，在AI服务器、<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>设备以及工业电源领域，功率半导体器件的重要性正在持续提升。</p>
-<p style="text-indent:2em;">
-	二极管：电子系统中的“保护卫士”</p>
-<p style="text-indent:2em;">
-	如果说MOSFET负责控制能源，那么二极管更多承担着整流、保护以及信号处理的重要任务。</p>
-<p style="text-indent:2em;">
-	安世半导体拥有完整的二极管产品体系，包括：<a href="https://m.hqchip.com/app/1558" target="_blank"><u>肖特基</u></a>二极管、快恢复二极管、<a href="https://www.hqchip.com/app/1561" target="_blank"><u>开关二极管</u></a>、<a href="https://www.hqchip.com/app/1560" target="_blank"><u>齐纳</u></a>二极管、汽车级二极管。广泛应用于电源、汽车、工业控制以及消费电子领域。</p>
-<p style="text-indent:2em;">
-	·肖特基二极管：快充和电源管理的重要选择</p>
-<p style="text-indent:2em;">
-	随着<a href="https://m.hqchip.com/app/1515" target="_blank"><u>USB</u></a> <a href="https://www.elecfans.com/tags/type-c/" target="_blank"><u>Type-C</u></a>快充、电池供电设备以及便携式电子产品的发展，对于低损耗、高效率器件的需求持续增加。肖特基二极管凭借：低正向压降、高开关速度、低功率损耗。成为电源转换模块中的重要元器件。典型应用包括：快充设备、电源适配器、<a href="https://www.elecfans.com/tags/dc/dc/" target="_blank"><u>DC/DC</u></a>转换模块、电池管理系统</p>
-<p style="text-indent:2em;">
-	·ESD保护器件：守护智能设备安全运行</p>
-<p style="text-indent:2em;">
-	如今，智能设备<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>越来越丰富，而静电、电压浪涌等问题也成为影响电子设备可靠性的重要因素。安世ESD保护器件能够帮助保护：USB接口、<a href="https://m.elecfans.com/v/tag/13179/" target="_blank"><u>通信接口</u></a>、智能终端接口、工业设备接口。提升系统稳定性和使用寿命。</p>
-<p style="text-indent:2em;">
-	·三极管：小器件承担大作用</p>
-<p style="text-indent:2em;">
-	虽然MOSFET应用越来越广泛，但传统三极管依然在大量电子产品中发挥重要作用。安世半导体提供丰富的晶体管产品，包括：<a href="https://m.hqchip.com/app/1575" target="_blank"><u>通用三极管</u></a>、 低饱和压降三极管、数字晶体管、 <a href="https://bbs.elecfans.com/group_941" target="_blank"><u>LED驱动</u></a>晶体</p>
-<p style="text-indent:2em;">
-	凭借成本优势、设计简单以及可靠稳定等特点，广泛应用于：LED驱动、电源控制、信号放大、工业控制、消费电子产品。在大量成熟电子产品设计中，三极管依然保持着稳定需求。</p>
-<p style="text-indent:2em;">
-	安世半导体× 唯样<a href="https://www.hqchip.com/ask/" target="_blank"><u>商城</u></a>，打造更高效的元器件采购体验</p>
-<p style="text-indent:2em;">
-	随着电子产业链不断发展，客户对于元器件采购的需求已经从“买得到”逐渐转向：</p>
-<p style="text-indent:2em;">
-	产品可靠、供应稳定、交付快速、选型便捷。作为专业<a href="https://www.hqchip.com/gongsi.html" target="_blank"><u>电子元器件</u></a>供应平台，唯样商城持续布局全球优质品牌合作，为客户提供更加高效的一站式采购服务。</p>
-<p style="text-indent:2em;">
-	客户可通过唯样商城便捷获取：</p>
-<p style="text-indent:2em;">
-	✓ 安世MOSFET系列产品</p>
-<p style="text-indent:2em;">
-	✓ 二极管系列产品</p>
-<p style="text-indent:2em;">
-	✓ 三极管及晶体管产品</p>
-<p style="text-indent:2em;">
-	✓ ESD保护器件</p>
-<p style="text-indent:2em;">
-	✓ 更多基础半导体解决方案</p>
-<p style="text-indent:2em;">
-	从新能源汽车，到AI服务器；从智能终端，到工业自动化。电子产业正在向更高效率、更高可靠性、更智能化方向快速发展。而MOSFET、二极管、三极管等基础半导体器件，正是支撑这些创新应用的重要底层力量。未来，唯样商城将持续携手更多全球优秀元器件品牌，为<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>和企业客户提供更加丰富、可靠、高效的电子元器件供应服务。</p>
-<p style="text-indent:2em;">
-	唯样，让每一个关键器件连接更多创新可能。</p>]]></description></item><item>    <title><![CDATA[ITECH的AI服务器DC-DC测试方案，覆盖48V至800V架构]]></title>    <link>https://www.elecfans.com/d/8312063.html</link>    <guid>https://www.elecfans.com/d/8312063.html</guid>    <pubDate>2026-09-13 11:45:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	科瑞杰-在<a href="https://www.elecfans.com/v/tag/150/" target="_blank"><u>人工智能</u></a>算力需求呈指数级增长的推动下，数据<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>及<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>服务器正经历着架构层面的深刻变革。作为算力核心的<a href="https://www.elecfans.com/tags/gpu/" target="_blank"><u>GPU</u></a>，其功耗已从数百瓦迈入数千瓦级别，单芯片峰值<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>向千安迈进。这一趋势不仅改变了服务器的热设计与功率分配策略，也重新定义了紧邻GPU的电压调节模块(<a href="https://www.elecfans.com/v/tag/3668/" target="_blank"><u>VR</u></a>M)的性能边界。</p>
-<p style="text-indent:2em;">
-	GPU<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>架构与对应测试重点</p>
-<p style="text-indent:2em;">
-	1)传统：12V母线→VRM</p>
-<p style="text-indent:2em;">
-	问题：12V大电流(700A+)损耗大，瞬态差</p>
-<p style="text-indent:2em;">
-	2)主流：48V/54V-&gt;PDB→12V→VRM(ORV3、DGX)</p>
-<p style="text-indent:2em;">
-	测试重点：48V稳压、PDB均流、12V大电流、VRM高速瞬态</p>
-<p style="text-indent:2em;">
-	3)下一代：800V HV<a href="https://m.hqchip.com/app/1703" target="_blank"><u>DC</u></a>→12V→VPD(MGX、新智算中心)</p>
-<p style="text-indent:2em;">
-	测试重点：800V耐压、绝缘、LLC效率、VPD垂直供电瞬态</p>
-<p style="text-indent:2em;">
-	传统低压母线方案受大电流损耗、布线温升等问题制约，已难以适配高功率算力场景。目前行业主流普及48V/54V中压母线架构，依托多级转换实现能效与负载能力的平衡，广泛应用于各类高密度Al服务器与集群设备。面向未来超大规模智算中心，800V<a href="https://m.elecfans.com/v/tag/873/" target="_blank"><u>高压</u></a>直流架构逐步成为技术发展方向，通过精简电能转换链路、降低传输损耗，支撑单机柜兆瓦级功率输出。无论架构如何演进，GPU端DCDC<a href="https://m.hqchip.com/app/1718" target="_blank"><u>转换器</u></a>始终承担着电压精准变换、大电流稳定输出的核心职能，是保障算力硬件平稳运行的基石。</p>
-<p style="text-indent:2em;">
-	面向高功率GPU应用场景，直流DCDC转换器、DCDC模块形成了低输出电压、超大输出电流、超高转换效率的主流技术规格。器件需适配多等级母线输入，将电压精准降至芯片工作区间，同时承载千安级输出电流，全工况转换效率保持高位。</p>
-<p style="text-indent:2em;">
-	结合GPU极端负载特征，行业对DCDC转换器建立了完善且严苛的测试标准：重点考核高速动态响应能力，<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>瞬时负载突变工况下的电压波动与恢复速度;验证全负载区间的稳压精度、负载调整率与输出纹波;同时完成转换效率、保护功能、高低温耐久等全项可靠性测试，全方位把控产品综合性能。</p>
-<p style="text-indent:2em;">
-	针对上述测试需求，I<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>TE</u></a>CH提供的由IT-M3900D系列与IT8100E大电流机型组成的测试方案，旨在覆盖低压输入源模拟与GPU动态负载模拟两个关键环节。</p>
-<p style="text-indent:2em;">
-	<img src="https://file1.elecfans.com/web3/M00/78/6E/wKgZO2qlMeyAGKm7AAHFV914Ffk546.png" alt="wKgZO2qlMeyAGKm7AAHFV914Ffk546.png"/></p>
-<p style="text-indent:2em;">
-	ITECH AI服务器DC-DC直流转换器测试原理图</p>
-<p style="text-indent:2em;">
-	ITECH方案优势及产品特性</p>
-<p style="text-indent:2em;">
-	IT-M3900D系列大功率可<a href="https://bbs.elecfans.com/group_75" target="_blank"><u>编程</u></a>直流电源</p>
-<p style="text-indent:2em;">
-	紧凑型设计，1U@6kW，2U@12kW，提高空间利用率</p>
-<p style="text-indent:2em;">
-	电压范围：10~1500V，电流范围：8A~1020A</p>
-<p style="text-indent:2em;">
-	CC/CV优先权设置功能，适应不同待测物特性</p>
-<p style="text-indent:2em;">
-	内置函数发生器，支持任意波形发生，<a href="https://bbs.elecfans.com/zhuti_proteus_1.html" target="_blank"><u>仿真</u></a>供电端异常工况</p>
-<p style="text-indent:2em;">
-	艾德克斯IT-M3900D具备高功率密度与宽范围输出特性，可在紧凑空间内模拟48V、12V母线环境。其CC/CV优先权功能允许用户根据不同DCDC模块的启动特性切换环路响应模式，避免电压过冲对测试系统造成影响，提升了测试过程的安全性与适配范围。</p>
-<p style="text-indent:2em;">
-	IT8100E系列超低压大电流直流电子负载</p>
-<p style="text-indent:2em;">
-	采用低感架构设计，优化高速动态负载响应性能</p>
-<p style="text-indent:2em;">
-	60V额定电压专为AI服务器应用设计，0.24V即可实现2400A低压大电流拉载</p>
-<p style="text-indent:2em;">
-	高动态斜率：75A/us，仿真高速运行工况</p>
-<p style="text-indent:2em;">
-	三档电流量程，覆盖空载-半载-满载的典型<a href="https://www.hqchip.com/app/1535" target="_blank"><u>测试点</u></a></p>
-<p style="text-indent:2em;">
-	<img src="https://file1.elecfans.com/web3/M00/78/6E/wKgZO2qlMfmAQBUrAAWKppS9lVc504.png" alt="wKgZO2qlMfmAQBUrAAWKppS9lVc504.png"/></p>
-<p style="text-indent:2em;">
-	艾德克斯IT8100E系列高速电子负载</p>
-<p style="text-indent:2em;">
-	艾德克斯IT8100E系列高速电子负载则为AI服务器DCDC动态测试提供了核心支持。该系列具备极小的操作电压，及超高电流爬升速率，能够真实还原GPU在运算与休眠状态之间切换时产生的电流冲击。配合三段电流量程设计，可在mA级待机电流与千安级满载状态之间实现<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>量测，覆盖DCDC模块全工况验证需求。</p>
-<p style="text-indent:2em;">
-	ITECH测试方案回应了当前AI服务器供电架构演进中的两个核心诉求：一是面向新供电构架的输入适应性验证，二是对超高动态负载特性的模拟能力。除DCDC直流转换器外，ITECH还具有PSU、BBU、SST等AI服务器全套测试解决方案。通过交流与直流、源端与载端的协同配合，ITECH为验证下一代AI算力电源的瞬态响应、效率与稳定性提供了具备行业针对性的测试路径。</p>
-<p style="text-indent:2em;">
-	科瑞杰作为横河、艾德克斯授权代理商，深耕<a href="https://www.elecfans.com/v/tag/293/" target="_blank"><u>新能源</u></a>汽车、低空经济、<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>、航空航天、军工等行业领域，专业提供可靠性测试、OBC测试、功能性测试、自动化测试系统集成与整体解决方案。</p>]]></description></item><item>    <title><![CDATA[横河DL950示波记录仪多通道且通道隔离兼备记录仪的功能]]></title>    <link>https://www.elecfans.com/d/8270564.html</link>    <guid>https://www.elecfans.com/d/8270564.html</guid>    <pubDate>2026-09-13 11:46:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	科瑞杰-波形设备，是把随时间变化的电信号转换成可视化波形的仪器。他们是现代工业必不可少的测量工具。</p>
-<p align="center">
-	<img src="https://file1.elecfans.com/web3/M00/74/F2/wKgZPGqUF1yAauGlAAD0Xg4UE3Y296.png" alt="wKgZPGqUF1yAauGlAAD0Xg4UE3Y296.png"/></p>
-<p style="text-indent:2em;">
-	我们在进行电<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>测量时经常会遇到这样的情况：正常信号通常是稳定无变化的但随机会有偶发的异常信号 拿我们最常用的市电为例 ，正常情况下，它是稳定输出的50Hz，有效值为220v的正弦波：</p>
-<p align="center">
-	<img src="https://file1.elecfans.com/web3/M00/74/F2/wKgZPGqUF6uAYDbnAAadwsgdAa0156.png" alt="wKgZPGqUF6uAYDbnAAadwsgdAa0156.png"/></p>
-<p style="text-indent:2em;">
-	但在某些情况下，比如雷电天气，我们会发现用电设备会有瞬间的闪烁，说明电网电压发生了瞬间变动。</p>
-<p align="center">
-	<img src="https://file1.elecfans.com/web3/M00/74/F1/wKgZO2qUGCaAWkedAAG1JrQQHDc863.png" alt="wKgZO2qUGCaAWkedAAG1JrQQHDc863.png"/></p>
-<p style="text-indent:2em;">
-	</p>
-<p align="center">
-	<img src="https://file1.elecfans.com/web3/M00/74/F2/wKgZPGqUGEWAJRAGAAGdoOf67bc783.png" alt="wKgZPGqUGEWAJRAGAAGdoOf67bc783.png"/></p>
-<p style="text-indent:2em;">
-	一般来说，完整记录长期电网电压趋热与瞬间异常，需要使用两台设备，一台是采样率较低的记录仪，另一台是高速的<a href="https://www.elecfans.com/v/tag/577/" target="_blank"><u>示波器</u></a>，通过设置触发，高速捕捉异常的瞬间。</p>
-<p style="text-indent:2em;">
-	但使用两台仪器就要面对后期时间轴难以同步，数据整合分析困难的问题。是横河的示波记录仪DL950示波记录仪，就可以完美将二者结合，实现既要……又要……的功能。</p>
-<p align="center">
-	<img src="https://file1.elecfans.com/web3/M00/74/F2/wKgZPGqUGKmAaGDIAC0S3gJE4v8201.png" alt="wKgZPGqUGKmAaGDIAC0S3gJE4v8201.png"/></p>
-<p style="text-indent:2em;">
-	我们来看这台DL950，拥有着跟示波器很相像的外型，旋钮与菜单设置也跟示波器类似，同样拥有丰富的触发功能模块化结构，多通道且通道隔离的特性又使它兼备记录仪的功能。</p>
-<p align="center">
-	<img src="https://file1.elecfans.com/web3/M00/74/F2/wKgZPGqUGTSAWIeHAAZIL7HuM_Q679.png" alt="wKgZPGqUGTSAWIeHAAZIL7HuM_Q679.png"/></p>
-<p style="text-indent:2em;">
-	接下来我们就展示一下，如何通过设置，实现长期记录低速信号并高速捕捉信号瞬态异常的双捕获功能为了方便演示，我这里使用了一个信号板，它可以发出各种预设信号。我们挑-一个间隔较长的周期信号作为被测源，来为大家展示双捕获功能：</p>
-<p align="center">
-	<img src="https://file1.elecfans.com/web3/M00/74/F2/wKgZPGqUGVyAAJrnAAmm-C2x6PM460.png" alt="wKgZPGqUGVyAAJrnAAmm-C2x6PM460.png"/></p>
-<p style="text-indent:2em;">
-	首先将DL950初始化，将信号通过测试探头接入测试通道(探头连接TM5)，我们这次将信号接入了CH1，接下来仅打开对应的通道，关闭其它无关通道或通过自动设置直接识别有信号输入的通道。调整显示，将显示分隔设为单分隔。</p>
-<p style="text-indent:2em;">
-	打开CH1菜单，调节对应通道的垂直轴量程，这里我们设为0.5V/div，再设置触发电平为500mV，按SHIFT+DUALCAPTURE双捕获功能键将双捕获功能打开。</p>
-<p align="center">
-	<img src="https://file1.elecfans.com/web3/M00/74/F1/wKgZO2qUGMiATnHdADUBfUVeicQ836.png" alt="wKgZO2qUGMiATnHdADUBfUVeicQ836.png"/></p>
-<p style="text-indent:2em;">
-	先对低速采样进行设置：记录长度选择1M，时间轴T/div设置为15/div，采集模式设置为包络采样，这样可以保证不遗漏的采集到任何符合触发的现象并在主波形上进行标记显示。接下来对高速采样进行设置：记录长度选择250k，时间轴T/div设置为100us/div，设置好后，按下开始键即可开始进行双捕获采集记录了。得到图示的记录结果：</p>
-<p align="center">
-	<img src="https://file1.elecfans.com/web3/M00/74/F2/wKgZPGqUGYmANF7TAACQ3qW_VhY000.png" alt="wKgZPGqUGYmANF7TAACQ3qW_VhY000.png"/></p>
-<p style="text-indent:2em;">
-	以上设置条件可根据波形情况不同，按实际需要调整。</p>
-<p style="text-indent:2em;">
-	通过这个演示，大家可以清晰看到慢速采集的趋势波形，与采集过程中异常发生的瞬间细节波形。这个简单好用的双捕获功能，你get到子吗?</p>
-<p style="text-indent:2em;">
-	科瑞杰是集测试装备、研发、生产、运营、人才培养于一体的科技企业，深耕<a href="https://www.elecfans.com/v/tag/293/" target="_blank"><u>新能源</u></a>汽车、低空经济、<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>、航空航天、军工等行业领域，专业提供可靠性测试、OBC测试、功能性测试、自动化测试系统集成与整体解决方案。</p>]]></description></item><item>    <title><![CDATA[高阻传感器接口怎么选ESD二极管？漏电流可能比结电容更先影响测量]]></title>    <link>https://www.elecfans.com/d/8311927.html</link>    <guid>https://www.elecfans.com/d/8311927.html</guid>    <pubDate>2026-09-13 11:47:00</pubDate>    <description><![CDATA[<p>
-	高阻<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a><a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>选<a href="https://www.hqchip.com/app/1587" target="_blank"><u>ESD</u></a><a href="https://m.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>时，应先计算保护器件漏电流在<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>源阻抗上形成的误差，再判断结<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>是否影响带宽。对兆欧级节点，百纳安漏电就可能产生可见偏移；如果只按“低电容”筛选，样机可能在室温正常，到高温或潮湿环境才出现零点漂移。</p>
-<p>
-	先算一笔简单的账</p>
-<p>
-	保护器件漏电流经过信号源等效阻抗会形成误差电压，可先用ΔV≈IR×<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>Rs</u></a>ource估算量级。这里的IR应使用目标工作电压和温度下的边界，Rsource也要包含传感器、偏置网络和串联<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>的等效影响。</p>
-<p>
-	下面只是计算示例，不是客户测试数据：</p>
-<table><thead><tr><th style="background-color:rgb(247,247,247);border-bottom:1px solid rgb(221,221,221);border-left:1px solid rgb(221,221,221);border-right:1px solid rgb(221,221,221);border-top:2px solid rgb(187,187,187);padding:5px 10px;">
-				假设条件</th>
-			<th style="background-color:rgb(247,247,247);border-bottom:1px solid rgb(221,221,221);border-left:1px solid rgb(221,221,221);border-right:1px solid rgb(221,221,221);border-top:2px solid rgb(187,187,187);padding:5px 10px;">
-				计算结果</th>
-		</tr></thead><tbody><tr><td style="border-bottom:1px solid rgb(221,221,221);border-left:1px solid rgb(221,221,221);border-right:1px solid rgb(221,221,221);border-top:1px solid rgb(221,221,221);padding:5px 10px;">
-				Rsource=1MΩ，IR=100nA</td>
-			<td style="border-bottom:1px solid rgb(221,221,221);border-left:1px solid rgb(221,221,221);border-right:1px solid rgb(221,221,221);border-top:1px solid rgb(221,221,221);padding:5px 10px;">
-				误差约0.1V</td>
-		</tr><tr><td style="border-bottom:1px solid rgb(221,221,221);border-left:1px solid rgb(221,221,221);border-right:1px solid rgb(221,221,221);border-top:1px solid rgb(221,221,221);padding:5px 10px;">
-				Rsource=1MΩ，IR=1µA</td>
-			<td style="border-bottom:1px solid rgb(221,221,221);border-left:1px solid rgb(221,221,221);border-right:1px solid rgb(221,221,221);border-top:1px solid rgb(221,221,221);padding:5px 10px;">
-				误差约1V</td>
-		</tr><tr><td style="border-bottom:1px solid rgb(221,221,221);border-left:1px solid rgb(221,221,221);border-right:1px solid rgb(221,221,221);border-top:1px solid rgb(221,221,221);padding:5px 10px;">
-				Rsource=100kΩ，IR=100nA</td>
-			<td style="border-bottom:1px solid rgb(221,221,221);border-left:1px solid rgb(221,221,221);border-right:1px solid rgb(221,221,221);border-top:1px solid rgb(221,221,221);padding:5px 10px;">
-				误差约10mV</td>
-		</tr></tbody></table><p>
-	同一颗ESD二极管放在低阻数字接口上可能没有明显直流影响，放到兆欧级采样节点上就完全不同。<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>需要先知道允许误差，再倒推保护支路的总漏电预算。</p>
-<p>
-	规格书IR不能脱离电压和温度</p>
-<p>
-	反向漏电流不是一个固定常数。规格书通常会在指定反向电压和温度下给出典型值或最大值。实际线路电压低于测试电压时，漏电可能更小；高温、污染和浪涌应力又可能使结果增大。没有条件的“低漏电”无法用于误差预算。</p>
-<p>
-	审核候选器件时，按以下顺序记录更清楚：</p>
-<p>
-	传感器输出的正常范围和最高持续电压；</p>
-<p>
-	允许的零点误差、增益误差和响应时间；</p>
-<p>
-	信号源、偏置与滤波网络形成的等效阻抗；</p>
-<p>
-	ESD二极管在相关电压、温度下的最大漏电流；</p>
-<p>
-	<a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>表面、<a href="https://m.hqchip.com/app/1515" target="_blank"><u>连接器</u></a>和其他并联器件可能贡献的漏电；</p>
-<p>
-	保护器件承受应力前后的误差变化。</p>
-<p>
-	只有典型IR时，可以用来淘汰明显不合适的方案，不能直接作为量产最坏值。项目若对误差敏感，应向厂家确认最大值及测试条件，或者在目标温区做分布测量。</p>
-<p>
-	结电容什么时候成为主要矛盾</p>
-<p>
-	结电容与信号源阻抗共同形成低通效应。高阻节点即使频率不高，也可能因数十皮法的总电容拉长建立时间。总电容不只来自ESD器件，还包括<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>输入、运放输入、走线、连接器、探头和滤波电容。</p>
-<p>
-	判断时不能把IR和Cj二选一。直流或慢速测量先看漏电引起的偏移，再检查建立时间；高速、小信号接口通常先看电容、插损和匹配，但漏电仍要满足工作电压与温度要求。对间歇采样系统，还要检查采样窗口内能否稳定到目标精度。</p>
-<p>
-	板面污染常被误判成器件漏电</p>
-<p>
-	助焊剂残留、潮气、灰尘和手指接触都可能在高阻节点形成额外泄漏通道。更换ESD二极管后读数改善，并不一定说明原器件有问题，因为返修清洗和焊接温度也同时改变了板面状态。</p>
-<p>
-	排查时可准备三组板：未装保护器件、装候选器件、装同批另一颗候选器件。使用相同清洗、烘干和静置条件，在多个温度点记录零点与输入<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>。必要时在器件周围设置保护环，但保护环的电位、阻焊开窗和清洁工艺必须一起设计。</p>
-<p>
-	ESD能力仍要在实板上确认</p>
-<p>
-	为了降低漏电而选择过高<a href="https://www.elecfans.com/v/tag/3668/" target="_blank"><u>VR</u></a>WM，可能抬高钳位电压；只追求极小Cj，也可能牺牲当前项目需要的浪涌电流能力。选型仍需核对VBR、规定电流下的VC、封装和回流路径。高阻接口通常更怕探头和临时飞线改变结果，测试布置要固定并拍照记录。</p>
-<p>
-	ASIM阿赛姆的ESD器件可进入候选筛选，但具体料号只有在IR条件、工作电压、温度范围、允许误差和整机测试都匹配时才适用。ESD二极管厂家专题页用于查找产品入口，项目结论仍以完整规格条件和样板测量为准。</p>
-<p>
-	样机评审时问三个具体问题</p>
-<p>
-	样机评审不妨把问题写成三行，逐项给出测量结果：</p>
-<p>
-	断开外部传感器并短接或接入已知源阻抗后，偏移是否仍存在；</p>
-<p>
-	偏移随温度变化，还是随湿度和清洁状态变化；</p>
-<p>
-	经历ESD应力后，IR、零点和噪声有没有同步变化。</p>
-<p>
-	这三个问题比笼统地说“保护器件影响精度”更容易找到原因。</p>]]></description></item><item>    <title><![CDATA[可穿戴设备ESD保护怎么做？充电触点、按键和传感器接口分开处理]]></title>    <link>https://www.elecfans.com/d/8289126.html</link>    <guid>https://www.elecfans.com/d/8289126.html</guid>    <pubDate>2026-09-13 11:49:00</pubDate>    <description><![CDATA[<p>
-	可穿戴设备的<a href="https://www.hqchip.com/app/1587" target="_blank"><u>ESD</u></a>入口主要集中在外露充电触点、按键或旋钮缝隙、<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>开口和<a href="https://m.elecfans.com/v/tag/1215/" target="_blank"><u>维修</u></a>连接位置。四类入口的电压、漏电、带宽与回流条件不同，不能共用一套器件窗口。设计时先画出静电从外壳进入、经过保护节点再回到结构地或电池地的路径。</p>
-<p>
-	先沿着手指能碰到的位置走一圈</p>
-<p>
-	智能手表、手环和耳机体积小，<a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>靠近外壳，人的手指又会频繁接触金属环、充电点和按键。防护检查应从成品外观开始，而不是只看原理图。外露金属、装配缝隙、传感器窗口和可插拔附件都要标在结构图上。</p>
-<p>
-	实际评审时，我会把入口分成四组：</p>
-<p>
-	直接导电触点，例如Pogo <a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>Pi</u></a>n和<a href="https://m.hqchip.com/app/1515" target="_blank"><u>USB</u></a>充电口；</p>
-<p>
-	通过缝隙<a href="https://www.elecfans.com/tags/耦合/" target="_blank"><u>耦合</u></a>的按键、旋钮与装饰金属；</p>
-<p>
-	贴近皮肤的传感器电极或高阻<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>输入；</p>
-<p>
-	工厂、维修或调试阶段才暴露的<a href="https://m.hqchip.com/app/1513" target="_blank"><u>排针</u></a>与<a href="https://www.hqchip.com/app/1535" target="_blank"><u>测试点</u></a>。</p>
-<p>
-	分组后再确定放电方式、工作状态和允许的功能变化，避免用一个“整机8 kV”概括所有位置。</p>
-<p>
-	充电触点同时面对静电和持续污染</p>
-<p>
-	充电触点的<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>脚要核对充电器最高持续电压、插拔过冲、反接和短路；检测脚或<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>脚则有不同逻辑电平。ESD<a href="https://m.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>处理快速瞬态，汗液、灰尘和清洁剂造成的持续漏电属于另一类问题，需要结构密封、间距、涂覆和检测逻辑配合。</p>
-<p>
-	保护器件若<a href="https://www.elecfans.com/v/tag/3668/" target="_blank"><u>VR</u></a>WM太低，正常充电或异常容差可能造成漏电；选得过高，后级看到的残压又会上升。触点到器件的走线应短，器件到高频回流点也要短。长而细的地线会让静电电流在板上抬高局部参考电位。</p>
-<p>
-	按键复位不一定是按键线上缺一颗<a href="https://www.hqchip.com/app/1587" target="_blank"><u>TVS</u></a></p>
-<p>
-	塑料按键附近的放电可能先耦合到金属弹片、屏蔽罩或外壳装饰件，再影响复位、电源或晶振。若只在按键线上增加<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>或ESD器件，故障可能没有变化。<a href="https://www.elecfans.com/v/tag/577/" target="_blank"><u>示波器</u></a>应同步观察按键输入、电源、RESET和关键<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>，确定受扰节点。</p>
-<p>
-	定位顺序可以这样安排：</p>
-<p>
-	固定样机姿态、腕带或充电底座状态和放电位置；</p>
-<p>
-	从较低等级开始，记录首次出现异常的极性与落点；</p>
-<p>
-	同步监测电源、复位和按键线，不只看屏幕现象；</p>
-<p>
-	用临时屏蔽、短接或局部保护做单变量A/B测试；</p>
-<p>
-	把有效改动转成可量产的结构、PCB或器件方案再复测。</p>
-<p>
-	传感器<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>更怕漏电和偏移</p>
-<p>
-	心率、皮电、触摸和其他高阻传感节点可能对微小漏电敏感。器件选型除了ESD能力，还要核对工作电压、漏电测试条件、结电容和输入偏置。放电后设备没有重启，也要检查零点、噪声、采样丢失和校准状态。</p>
-<p>
-	高速摄像头或显示<a href="https://www.hqchip.com/app/1518" target="_blank"><u>FPC</u></a>则更关注通道电容、焊盘寄生和支路长度。ASIM阿赛姆ESD3V3X004SA是双向四通道DFN2010-5L阵列，典型结电容0.25 pF，VRWM为3.3 V，可作为满足相应电压窗口的多通道初筛示例。是否适合目标链路，仍要由PCB和<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>测试确认。</p>
-<p>
-	电池地、屏蔽和人体回路要一起看</p>
-<p>
-	可穿戴设备经常处于浮地状态，戴在手上、放在充电座或连着调试线时，回流条件完全不同。充电底座的USB地、金属外壳、电池负极和屏蔽罩之间如何连接，会改变放电电流路线。实验室配置应覆盖最常见的佩戴与充电状态。</p>
-<p>
-	不要为了“地更强”随意把所有金属都用长导线接到PCB地。高频放电路径看的是电感和面积，短而宽的连接、连续屏蔽搭接及合理的结构间距更有效。</p>
-<p>
-	小空间设计要给保护器件留真正有用的位置</p>
-<p>
-	原理图完成后才挤入ESD器件，往往只能放在<a href="https://m.hqchip.com/app/1515" target="_blank"><u>连接器</u></a>远端或拉出长支路。布局阶段应让外露信号先经过保护节点，再进入主板敏感区。多通道阵列可以节省面积，但每条线路的电压、方向和故障隔离仍需逐一核对。</p>
-<p>
-	相关的ESD二极管厂家与应用入口可用于继续筛选资料。可穿戴设备的保护目标很具体：充电安全、按键不误复位、传感数据不漂移、高速链路不丢余量。把这些目标分别验证，比在BOM里堆一串“高等级”器件更可靠。</p>
-<p>
-	可穿戴设备ESD<a href="https://www.hqchip.com/ask/" target="_blank"><u>问答</u></a></p>
-<p>
-	充电触点有TVS后还需要防汗液吗？</p>
-<p>
-	需要。TVS处理瞬态，汗液造成的持续漏电和腐蚀要靠结构、材料、间距及检测逻辑处理。</p>
-<p>
-	可穿戴设备ESD测试只看是否重启吗？</p>
-<p>
-	不够。还要记录传感偏移、数据丢失、充电状态、无线连接和受力后的漏电变化。</p>
-<p>
-	内部FPC一定不需要ESD保护吗？</p>
-<p>
-	不一定。装配、维修、外壳开口和线缆耦合都会增加暴露，应按实际触达路径判断。</p>]]></description></item><item>    <title><![CDATA[拆了一份工业级有源晶振规格书，给大家避避设计坑]]></title>    <link>https://www.elecfans.com/d/8314032.html</link>    <guid>https://www.elecfans.com/d/8314032.html</guid>    <pubDate>2026-09-13 11:50:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8314032" value="https://file1.elecfans.com/web2/M00/C2/B0/wKgaomXeqoqAV0HkACU7lyzEdtI935.pdf"/><h1>拆了一份工业级有源晶振规格书，给大家避避设计坑</h1>
-<p>最近在做工业网关的参考设计，<a href="https://www.elecfans.com/v/tag/105/" target="_blank"><u>射频</u></a>前端需要一颗稳定的19.2MHz参考<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>，选料的时候挖到了星通时频（SC<a href="https://m.hqchip.com/app/1522" target="_blank"><u>TF</u></a>）这款SMD2520封装的有源晶振（料号SX2M19.200M20F30TNN），把规格书里的干货拆碎了捋，省得大家后面设计踩坑。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8314032" target="_blank">SX2M19.200M20F30TNN.pdf</a></p>
-<hr/>
-<h2>基本盘先摸清：啥定位？适合啥项目？</h2>
-<p>这颗是SCTF供应立创商城的标准料，RoHS合规，属于有源石英晶体<a href="https://www.hqchip.com/app/850" target="_blank"><u>振荡器</u></a>，封装用的是现在主流的2520（2.5*2.0mm），比传统7050封装省了70%的<a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>面积，紧凑型的<a href="https://www.elecfans.com/soft/data/39-96/" target="_blank"><u>消费电子</u></a>、工业设备都能塞。</p>
-<hr/>
-<h2>核心参数拆解：这些点设计时别漏</h2>
-<p>我把和设计强相关的参数拎出来，顺便标了实际落地要注意的点：</p>
-<h3>1. 时钟精度够不够打？</h3>
-<p>常温25℃下频差±20ppm，全温-40℃~85℃范围内总频差±30ppm，这个精度给普通WiFi、<a href="https://www.elecfans.com/tags/蓝牙/" target="_blank"><u>蓝牙</u></a>、工业<a href="https://www.hqchip.com/app/1720" target="_blank"><u>以太网</u></a>做参考时钟完全够用，甚至<a href="https://www.elecfans.com/tags/lora/" target="_blank"><u>LoRa</u></a>扩频<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>这种对时钟稳定性要求高的场景也能覆盖。
-第一年老化率只有±3ppm，用个3~5年精度也掉不到哪里去，不用提前预留后期校准的工作量。</p>
-<h3>2. 供电兼容性拉满，省BOM成本</h3>
-<p>工作电压范围1.62V~3.63V，不管你是1.8V低功耗系统还是3.3V常规系统，直接接就能用，不用额外加<a href="https://m.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>转供电。输出是CMOS电平，带15pF负载，接<a href="https://bbs.elecfans.com/zhuti_fpga_1.html" target="_blank"><u>FPGA</u></a>/<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>的时钟输入脚直接连就行，走线长度不超过5cm的话不用额外做阻抗匹配。</p>
-<h3>3. 几个容易踩的小坑</h3>
-<ul>
-<li>起振时间最大5ms，做上电时序的时候一定要给后端留够时钟稳定的时间，别一上电就去读外设<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>，大概率读不到。</li>
-<li>带OE使能脚！划重点：这脚悬空或者接≥0.7Vdd的高电平时输出时钟，接≤0.3Vdd的低电平时关输出，做低功耗设计的同学可以把这脚接MCU IO，闲置的时候关时钟，能省下来最大10mA的消耗<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>。</li>
-<li>上升/下降沿最大5ns，走时钟线尽量走内层、少打过孔，避免高频辐射超标。</li>
-</ul>
-<hr/>
-<h2>画板子&amp;焊接实操指南</h2>
-<h3>封装脚位别搞反</h3>
-<p>2520封装4脚定义（仰视图，和PCB封装顶视图相反）：1脚OE使能、2脚GND、3脚输出、4脚VDD。我之前就遇到过同事把1脚4脚搞反，焊上去完全不工作，查了半天才发现是封装画错了，官方给的建议焊盘尺寸直接照搬就行，别自己乱改尺寸容易虚焊。</p>
-<h3>供电滤波是必选项</h3>
-<p>规格书测试电路里Vdd脚配了10uF+0.01uF的滤波<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>，一定要照着放，就贴在晶振旁边，越近越好，不然<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>纹波串到时钟输出里，后面带出来的杂散干扰够你调半个月。</p>
-<h3>回流焊参数别瞎改</h3>
-<p>支持无铅回流焊，峰值温度最高260℃，持续时间不超过30秒，最多过3次炉。别为了省成本拿有铅的温度曲线去烤，频率漂了哭都来不及。</p>
-<hr/>
-<h2>工业场景能用不？可靠性给你兜底</h2>
-<p>特意看了下可靠性测试项，所有环境测试做完频偏都不超过±5ppm：
-1米跌落3次、10~500Hz全轴振动、-40℃到85℃温变10循环、96小时湿热/高低温存储，频偏都在合格范围内；盐雾24小时无腐蚀、气密性符合工业级要求，户外网关、<a href="https://www.elecfans.com/tags/充电桩/" target="_blank"><u>充电桩</u></a>这种露天场景也能用。</p>
-<hr/>
-<h2>最后唠两句</h2>
-<p>总的来说这颗2520的19.2MHz有源晶振属于闭眼入的款，参数够顶、兼容性好，消费级工业级项目都能搭。你们最近做项目有没有遇到过晶振的奇葩坑？评论区聊聊~</p>]]></description></item><item>    <title><![CDATA[PCB布局没思路，先摆好这四类位置]]></title>    <link>https://www.elecfans.com/d/8304721.html</link>    <guid>https://www.elecfans.com/d/8304721.html</guid>    <pubDate>2026-09-13 11:50:00</pubDate>    <description><![CDATA[<p>
-	<a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>布局没思路，先摆好这四类位置</p>
-<p>
-	原理图画完，元件也导进PCB了，面对一团飞线，你是不是不知道先移动哪一个？有人先把大芯片放中间，有人沿着板边排一圈，还有人哪里有空就往哪里塞。真正有用的起点，是先分清哪些位置不能动、哪些元件必须挨着、哪些地方必须留出来。布局不是把元件摆整齐，而是提前安排电路怎样连接、板子怎样装配、调试时怎样接近它。对第一块低压小板，可以先按下面四类位置做一轮布局，再开始大面积布线。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/77/8A/wKgZPGqiE62AZxubAAWQRzKpAhI756.png" alt="wKgZPGqiE62AZxubAAWQRzKpAhI756.png"/></p>
-<p>
-	图1：<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>电路裸板局部，按键和蜂鸣器的位置会影响周围器件的安排。</p>
-<p>
-	第一类：先锁定“不能随便挪”的位置</p>
-<p>
-	先看板框和结构要求，再看器件大小。安装孔、与外壳对齐的按键、显示窗口、外部<a href="https://m.hqchip.com/app/1515" target="_blank"><u>连接器</u></a>，通常比主控芯片更早决定位置。<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>插头还要有插拔空间，不能只看PCB上焊盘放得下。尺寸未确认时，先标成待确认，不要把猜测当成固定条件。</p>
-<p>
-	这一步可以在板框旁写三句话：板子装在哪里，用户从哪边操作，线缆从哪边进出。即使只是练习板，也应人为设定这些边界。否则，布局看起来很紧凑，后面却可能为了一个插头的方向重新搬动半块板。手边有实际连接器时，可以对照封装尺寸和插拔方向；只有网店照片时，不能凭视觉比例估算。尺寸信息要回到器件<a href="https://m.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>图和结构资料确认。</p>
-<p>
-	图2是教程中刚导入的器件。元件都在，并不代表布局已经开始；真正的第一步，是把机械位置和功能要求带进来。练习板的外形可以迭代，产品已有外壳时则不能跟着元件随意改板框。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/77/8E/wKgZO2qiE6yALoxsAAKbEFvzzVY970.png" alt="wKgZO2qiE6yALoxsAAKbEFvzzVY970.png"/></p>
-<p>
-	图2：器件刚导入板框时的状态，飞线表示尚待完成的<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>连接。</p>
-<p>
-	第二类：让功能块顺着连接关系排队</p>
-<p>
-	把原理图分成几个能说出用途的部分，例如<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>输入、主控、<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>接口、显示或指示灯。先问“谁把<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>交给谁”，再决定它们相互靠近的关系。这样摆出的不是几个孤立芯片，而是一条条有起点和终点的连接路径。</p>
-<p>
-	主控不一定要放在几何<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>。若多数接口集中在一侧，把主控稍微靠近这一侧，可能更便于布线；若有敏感<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>输入，还要考虑它与噪声较强的电路保持合适关系。这里的“合适”要看实际电路，不是统一规定隔开多少毫米。</p>
-<p>
-	飞线交叉可以提示摆放是否别扭，但不能单独决定好坏。先识别关键连接，再试着旋转或移动整个功能块。不要为了让所有飞线都最短，破坏已经确认的接口位置或局部器件要求。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/77/8E/wKgZO2qiE6yAM5lpAAFUKsF6VSU824.png" alt="wKgZO2qiE6yAM5lpAAFUKsF6VSU824.png"/></p>
-<p>
-	图3：示例板原理图，可先据此识别主控、接口和<a href="https://m.hqchip.com/app/1721" target="_blank"><u>LED</u></a>等功能块。</p>
-<p>
-	第三类：小器件也有自己的“固定搭档”</p>
-<p>
-	去耦电容、时钟相关器件、反馈<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>等，往往不是最后用来填缝的小零件。去耦电容用于给芯片附近的快速用电变化提供就近支持；如果它离供电引脚很远，连接路径就可能削弱效果。先查芯片手册推荐布局，再决定摆放。</p>
-<p>
-	图4的布局把主控、连接器、LED和电阻按功能关系安排。读图时重点看“哪个元件服务哪个器件”，不必照抄它的绝对坐标。示例采用较简单的通孔器件，也不能直接当成高速或高密度产品的标准布局。</p>
-<p>
-	一个实用动作是：在原理图上圈出这些局部小组合，布局时尽量作为一组一起移动。主芯片位置变化后，回头再检查它们，而不是只把主芯片挪走，留下外围器件原地不动。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/77/8A/wKgZPGqiE62AAbb6AASFPePRLvI652.png" alt="wKgZPGqiE62AAbb6AASFPePRLvI652.png"/></p>
-<p>
-	图4：按功能关系摆放后的元件位置，主控外围不再是任意填空。</p>
-<p>
-	第四类：给布线、焊接和调试留下入口</p>
-<p>
-	元件摆满后才发现线走不出去，通常要回头重新布局。开始布线前，沿几条关键连接看一遍：有没有被器件围死的通道，接口附近能否顺利引出，电源与地的连接是否有合理空间。空白并不必然是浪费，它可能是后续完成设计的条件。</p>
-<p>
-	也要模拟实际使用：下载线能不能接上，常用测点能不能碰到，极性标识是否清楚。需要手工焊接或返修的部位，要结合器件封装与装配方式预留操作空间；量产要求则与贴装、测试和结构人员确认，不能靠一条通用间距包办。</p>
-<p>
-	图5展示的是完成走线后的同一教程设计。它提醒我们：布局的价值，最终要在连接能否顺利完成上检验。基础规则检查仍然要做，但本轮先解决的不是所有工艺问题，而是让摆放顺序有依据、返工有方向。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/77/8E/wKgZO2qiE6yAN0HeAARn1fYChb8310.png" alt="wKgZO2qiE6yAN0HeAARn1fYChb8310.png"/></p>
-<p>
-	图5：同一示例完成走线后的板图，可回看哪些摆放安排帮助了连接。</p>
-<p>
-	布局先排约束，再追求紧凑。下一次打开PCB，不妨先用四种标记区分固定位置、功能块、局部搭档和预留区域，把最不确定的尺寸先问清楚，再进入布线。这套顺序是入门检查方法，不代替具体芯片和产品的设计要求。你手上那块板，最先决定布局的是外部接口、结构安装，还是某条关键连接？</p>
-<p>
-	声明：</p>
-<p>
-	本文由<a href="https://bbs.elecfans.com/group_1173" target="_blank"><u>凡亿</u></a>教育整理，转载请注明来源！</p>
-<p>
-	</p>]]></description></item><item>    <title><![CDATA[万用表测电流，先别把表笔跨在电源上]]></title>    <link>https://www.elecfans.com/d/8304745.html</link>    <guid>https://www.elecfans.com/d/8304745.html</guid>    <pubDate>2026-09-13 11:51:00</pubDate>    <description><![CDATA[<p>
-	<a href="https://www.elecfans.com/v/tag/796/" target="_blank"><u>万用表</u></a>测<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>，先别把表笔跨在<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>上</p>
-<p>
-	测电压时，把表笔放到电源正负两端就能读数；测电流时也这样接，为什么电源突然掉压、板子不工作了？关键不是读数范围，而是接法变了：电压是看两点之间的差，电流是看经过一条支路的量。普通万用表测电流，需要串入这条支路，不能把电流档直接跨在电源两端。下面只讨论已知安全、带限流保护的低压实验电路；市电、动力电池及未知大电流系统，不适合照着入门文章试接。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/77/8C/wKgZPGqiF9qABvxpAAg8aaLRz4I110.png" alt="wKgZPGqiF9qABvxpAAg8aaLRz4I110.png"/></p>
-<p>
-	图1：数字万用表的旋钮和输入插孔，测量功能与插孔必须一起确认。</p>
-<p>
-	先问自己：电流准备从哪里经过？</p>
-<p>
-	假设要测一条<a href="https://m.hqchip.com/app/1721" target="_blank"><u>LED</u></a>支路。原来的路径是电源正端、限流<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>、LED、电源负端。断电后，在这条路径上断开一处，把万用表补进去，让该支路的电流经过仪表，再回到电源。图2用面包板和夹线展示了这个“断开再接入”的动作。</p>
-<p>
-	如果把电流档并到电源正负端，仪表可能成为一条低阻通路。结果可能是电源限流、仪表<a href="https://m.hqchip.com/app/1598" target="_blank"><u>保险丝</u></a><a href="https://m.hqchip.com/app/1597" target="_blank"><u>熔断</u></a>，甚至损坏设备。不要靠“碰一下试试”判断接法，更不要认为有保险丝就可以放心接错。</p>
-<p>
-	连接之前，先用手指沿线路走一遍：电流经过负载，也经过表吗？若负载被绕开了，就要重新检查。这比盯着屏幕上的零点更重要。接线与换插孔都在断电状态下进行，确认后再上电。如果板子同时由<a href="https://m.hqchip.com/app/1515" target="_blank"><u>USB</u></a>和外部电源供电，还要先弄清实际供电路径；只把表串进其中一路，得到的不一定是整板电流。初学演示最好先使用供电关系明确的单一电源和简单负载。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/77/90/wKgZO2qiF9uAGVepABGWuQrNy7c767.png" alt="wKgZO2qiF9uAGVepABGWuQrNy7c767.png"/></p>
-<p>
-	图2：LED面包板实验中，断开供电支路后用测试线串入电流表。</p>
-<p>
-	插孔、功能、量程，是三件不同的事</p>
-<p>
-	黑表笔通常接COM，红表笔接哪个孔，要看这台表的标识与说明书。有的表把小电流与电压合用一个孔，有的完全分开；有的较大量程允许连续测量的时间也有限制。不能把别人的“插左边”照搬到自己的仪表上。</p>
-<p>
-	功能旋钮还要选对直流或交流电流，并核对允许范围。预期电流应先从<a href="https://www.elecfans.com/soft/" target="_blank"><u>电路资料</u></a>、限流设置或已有测量中获得大致边界，再选择能覆盖它的档位。电流未知且可能很大时，先停止接入，不要把最高档当成无限保护。</p>
-<p>
-	图3只展示教程中这台仪表的10A档和插孔对应关系，不是推荐所有实验都用10A，也不是所有万用表的统一接法。图上能看到的数字，只对该仪表有意义；保险丝、测试线和输入限制还要看对应说明。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/77/90/wKgZO2qiF9uADaUIAA4dxwUMRko501.png" alt="wKgZO2qiF9uADaUIAA4dxwUMRko501.png"/></p>
-<p>
-	图3：教程所用仪表的10A档与插孔标识，其他型号应以自己的说明书为准。</p>
-<p>
-	接对后没读数，别立即判定板子坏了</p>
-<p>
-	先区分“电路本来不工作”和“串入表以后才不工作”。后者要检查接点是否松动、电流输入的保险丝是否完好，以及支路是否真的接通。保险丝检查按说明书操作，并先把仪表与被测电路断开；不可用导线或任意规格保险丝代替。</p>
-<p>
-	还有一种情况：接法正确，电路却发生复位或状态变化。仪表内部的分流电阻、保险丝和测试线并非完全没有阻力，电流经过会产生压降，手册常称为负担电压。低电压或供电余量很小的电路，可能因此改变工作状态。</p>
-<p>
-	这时记录串表前后负载端的电压和工作状态，比只记录一个电流值更有用。图4是原教程LED电路的一次读数，不能据此推算你的板子功耗；仪表型号、档位、负载状态和供电条件都要另记。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/77/8C/wKgZPGqiF9uAZETqABFNWu3Fo2E776.png" alt="wKgZPGqiF9uAZETqABFNWu3Fo2E776.png"/></p>
-<p>
-	图4：原教程的LED支路电流读数；这是接线演示，不是本篇新增实测。</p>
-<p>
-	看懂读数，还要把仪表恢复好</p>
-<p>
-	直流电流显示负号，往往表示实际电流方向与仪表定义的正方向相反，并不自动等于电路故障。图5是教程改变测量方向后的示例。判断前先看表笔方向，不要在带电时反复换接点，更不要因此把仪表改成并联连接。</p>
-<p>
-	普通手持万用表也不是瞬态电流记录仪。看到几毫安的稳定读数，不能证明没有短时峰值；看到读数变化，也不能仅靠屏幕刷新推断每次变化的具体时刻。需要研究启动或脉冲过程时，再选择合适的电流测量工具。</p>
-<p>
-	测量结束后，先断电撤表，恢复原电路连接，再把红表笔放回该表的电压测量插孔，并确认旋钮状态。这个收尾动作能减少下一次测电压时误用电流通路的风险。习惯做好了，基础工具才真正可靠。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/77/8C/wKgZPGqiF9uAObtYABEmAITIsco526.png" alt="wKgZPGqiF9uAObtYABEmAITIsco526.png"/></p>
-<p>
-	图5：改变表笔对应方向后的负电流读数，符号反映测量方向。</p>
-<p>
-	测电流，先保证电流经过仪表，而不是绕过负载。下一次实验，先画一条完整电流路径，再核对插孔、功能和量程；接入后同时留意电路状态，结束时恢复电压测量插孔。若你曾遇到“一串表就不工作”，当时更像是支路断开、电源限流，还是负载端电压下降了？</p>
-<p>
-	声明：</p>
-<p>
-	本文由<a href="https://bbs.elecfans.com/group_1173" target="_blank"><u>凡亿</u></a>教育整理，转载请注明来源！</p>
-<p>
-	</p>]]></description></item><item>    <title><![CDATA[电源选型前，先写清这张需求表]]></title>    <link>https://www.elecfans.com/d/8304750.html</link>    <guid>https://www.elecfans.com/d/8304750.html</guid>    <pubDate>2026-09-13 11:52:00</pubDate>    <description><![CDATA[<p>
-	<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>选型前，先写清这张需求表</p>
-<p>
-	“给我做一路5V电源。”刚开始学电源设计，这句话很容易让人直接去找芯片、抄参考电路。但5V只是目标的一部分：电从哪里来，负载什么时候最费电，允许波动多少，板子放在什么环境里，都可能改变方案。先写需求表不是额外的文档工作，而是把选型条件说清楚。下面从输入、负载、输出质量和使用条件四个角度整理，不要求新手一开始就知道所有答案；暂时不知道的项目，写明待确认，比随手填一个经验值更可靠。</p>
-<p>
-	图1：多段<a href="https://m.hqchip.com/app/1721" target="_blank"><u>LED</u></a>灯带的点亮状态不同，供电需求应结合实际使用场景确认。</p>
-<p>
-	输入是什么，不要只写一个标称电压</p>
-<p>
-	供电来自适配器、电池，还是设备里已有的一路电压？它们都能叫“输入电源”，但变化方式不同。适配器有输出范围，电池随状态变化，较长线缆还会带来压降。需求表至少分开写正常最低、典型和最高输入，必要的异常条件另列。</p>
-<p>
-	同时说清测量位置。电源端口是5V，不意味着经过线缆和接插件后，<a href="https://m.hqchip.com/app/1718" target="_blank"><u>转换器</u></a>输入端仍然正好5V。初学时先把“哪个位置的电压”写完整，就能减少很多沟通偏差。图2中的几种电源形式，只说明来源不同，不代表它们可以互相直接替换。</p>
-<p>
-	输入范围明确后，才有条件判断需要降压、升压，还是输入可能跨过输出的升降压方案。这里是在选择方向，不是仅凭电压关系就锁定芯片；功率、噪声、效率和保护需求还会继续缩小范围。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/77/8D/wKgZPGqiGROAa7kSAAHg2hLg0K0287.png" alt="wKgZPGqiGROAa7kSAAHg2hLg0K0287.png"/></p>
-<p>
-	图2：<a href="https://m.hqchip.com/app/1515" target="_blank"><u>USB</u></a>线、台式电源、适配器和电池代表不同输入来源，选型前应先确定边界。</p>
-<p>
-	负载要按状态写，电池要按系统看</p>
-<p>
-	不要只填“平时大概几百毫安”。把开机、待机、正常工作、<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>或执行动作分别列出来，记录哪些负载会同时运行。短时最大需求与长期平均需求回答不同问题，前者关系到能否正常工作，后者影响发热和续航估算。</p>
-<p>
-	这些数值可以来自器件手册，也可以来自规范的实际测量。若只是估算，明确写“估算”，并注明包含了哪些模块；别把不同条件下的典型<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>直接相加，就当成系统最坏情况。不能确定的启动过程，留作测试项。</p>
-<p>
-	若使用电池，还要区分电压、容量和允许放电能力。图3用串联关系说明电压会叠加，但安时容量不会因此简单翻倍。它是概念图，不是电池组装教程；真实电池系统还涉及一致性、保护和充电管理，应采用经过确认的电池方案。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/77/90/wKgZO2qiGROAHjkaAADMgoai-bc738.png" alt="wKgZO2qiGROAHjkaAADMgoai-bc738.png"/></p>
-<p>
-	图3：两节同容量电池串联的概念图：电压叠加，安时容量不是简单相加。</p>
-<p>
-	把“稳一点”翻译成能验证的要求</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/77/90/wKgZO2qiGROAcpPvAAE3JOX60hc168.png" alt="wKgZO2qiGROAcpPvAAE3JOX60hc168.png"/></p>
-<p>
-	图4：电源需求填写框架，示例只演示记录方法，不代表已确认的产品指标。</p>
-<p>
-	“输出稳定”“纹波小”都不是完整指标。应由后级电路的需要确定允许电压范围，并写清在哪个位置、哪些输入和负载状态下满足。纹波、启动时间、上电先后等项目，只在系统确实需要时列入，不能为了表格漂亮凭空规定。</p>
-<p>
-	图4是一张填写框架，不是某个项目的实测报告。表里故意保留待确认项：这样能看出下一步该找谁、查什么资料、补哪次测试。一个数值旁边如果没有来源和适用条件，后续很容易被误当成已经确定的设计要求。</p>
-<p>
-	还应把“必须满足”和“希望优化”分开。后级允许电压范围通常属于硬约束；更小体积、更高效率，可能需要权衡。先满足功能与安全，再比较候选方案，讨论才不会一直停留在“哪个芯片更好”。</p>
-<p>
-	最后一栏，写进环境和验收方法</p>
-<p>
-	同一电源，在敞开实验台与封闭外壳内，散热条件可能不同。环境温度、可用板面积、有无风冷、安装方式，要尽量早确认。<a href="https://bbs.elecfans.com/group_907" target="_blank"><u>ADI</u></a>的选型资料也提醒，器件电流能力必须结合实际输入、输出与热条件判断，不能只比较封面上的额定值。</p>
-<p>
-	<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>同样是需求的一部分。图5中的接线方式各不相同，要核对极性、线材、接触与额定能力；不能只因插头能插进去，就认定电压和极性相容。本文只讨论低压供电需求，不涉及拆开适配器或市电侧设计操作。</p>
-<p>
-	验收方法可以先写得朴素：在确认的输入范围和典型工作状态下，测负载端电压，观察启动与持续运行，记录环境和异常。需要波形、温升或<a href="https://bbs.elecfans.com/group_40" target="_blank"><u>电磁兼容</u></a>验证时，再补充明确测试条件。需求表与测试计划应能一项项对应。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/77/90/wKgZO2qiGROAIvwcAAGTSB9kskE686.png" alt="wKgZO2qiGROAIvwcAAGTSB9kskE686.png"/></p>
-<p>
-	图5：不同供电连接方式的实物示例，接口选定后仍要核对极性与<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>能力。</p>
-<p>
-	电源选型的起点，是把使用条件变成可检查的要求。下一次拿到“做一路5V”的任务，先填输入范围、负载状态、输出边界和使用环境，并在每个数值旁写上出处；缺项就列入待确认，不用统一加百分之多少来掩盖未知。你目前最缺的是输入变化范围、负载峰值，还是后级真正允许的电压波动？</p>
-<p>
-	声明：</p>
-<p>
-	本文由<a href="https://bbs.elecfans.com/group_1173" target="_blank"><u>凡亿</u></a>教育整理，转载请注明来源！</p>
-<p>
-	</p>]]></description></item>  </channel></rss>
+<p>大伙最近选时钟源有没有碰到什么坑？评论区聊聊？</p>]]></description></item>  </channel></rss>
