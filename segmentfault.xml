@@ -1,4 +1,159 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[热电发电片（TEG）输出功率计算与最大功率点跟踪（MPPT）实现 一冷科技 ]]></title>    <link>https://segmentfault.com/a/1190000048311419</link>    <guid>https://segmentfault.com/a/1190000048311419</guid>    <pubDate>2026-09-22 15:10:47</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>最近在做一个工业自供电传感器项目，需要用热电发电片（TEG）给传感器供电。整个过程中涉及到输出功率计算、负载匹配、最大功率点跟踪等问题，今天把踩过的坑和代码整理一下，供大家参考。</p><hr/><h2>一、TEG输出功率模型</h2><h3>1.1 基本原理</h3><p><img width="723" height="488" referrerpolicy="no-referrer" src="/img/bVdqSat" alt="" title=""/><br/>热电发电片基于塞贝克效应：两种不同材料两端有温差，就会产生电压。</p><p>核心公式：</p><pre><code>U_oc = α × ΔT</code></pre><p>其中：</p><ul><li><code>U_oc</code>：开路电压（V）</li><li><code>α</code>：塞贝克系数（V/K）</li><li><code>ΔT</code>：温差（K）</li></ul><h3>1.2 输出功率公式</h3><p>当接入负载电阻 <code>R_L</code> 时，输出功率：</p><pre><code>P = U_oc² × R_L / (R_int + R_L)²</code></pre><p>其中 <code>R_int</code> 是器件内阻。</p><p><strong>关键结论：</strong></p><ol><li>输出功率与温差的<strong>平方</strong>成正比</li><li>当 <code>R_L = R_int</code> 时，输出功率最大</li><li>负载电阻越大，输出电压越高，但电流越小</li></ol><hr/><h2>二、Python计算TEG输出特性</h2><p>下面这段代码可以用来计算TEG在不同温差和负载下的输出功率：</p><pre><code class="python">import numpy as np
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[换一个模型要改三处解析——星链 4SAPI 的多协议流式消费 成熟的显示器_dilv9H ]]></title>    <link>https://segmentfault.com/a/1190000048311947</link>    <guid>https://segmentfault.com/a/1190000048311947</guid>    <pubDate>2026-09-22 16:04:22</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <pre><code class="ts">// 第一版：跟着 SDK 的返回类型走
+const stream = await client.chat.completions.create({ model, messages, stream: true });
+for await (const chunk of stream) {
+  const piece = chunk.choices?.[0]?.delta?.content;
+  if (piece) buffer += piece;
+}</code></pre><p>这段代码只对一套协议有效。换到另一套格式之后，<code>choices</code>、<code>delta</code> 这两个字段都不存在了，增量藏在另一个位置。前前后后我们改了三处：解析位置、结束判断、错误事件。工程是 TypeScript 5.6 加 Node 22，同一段提示词在三套协议上各跑一遍做对照。</p><h2>增量位置不统一，靠字段探测分流</h2><p>不同协议把流式增量放在不同路径上。一种放在数组的第一个元素里，另一种放在顶层，还有一种把事件类型和内容拆成两行。统一的做法是先探测形状，再取值：</p><pre><code class="ts">type Piece = { text?: string; done?: boolean; type?: string };
+
+function pickPiece(raw: any): Piece {
+  // 形状一：choices[0].delta.content
+  const a = raw?.choices?.[0]?.delta;
+  if (typeof a?.content === "string") return { text: a.content };
+
+  // 形状二：顶层 delta.text，且带事件类型
+  if (typeof raw?.delta?.text === "string") {
+    return { text: raw.delta.text, type: raw.type };
+  }
+
+  // 形状三：parts 数组
+  const parts = raw?.candidates?.[0]?.content?.parts;
+  if (Array.isArray(parts)) return { text: parts.map(p =&gt; p.text ?? "").join("") };
+
+  return {};
+}</code></pre><p>探测顺序有讲究：先判最具体的形状，再判最宽泛的。反过来写的话，形状一里的 <code>delta</code> 会被形状二的判断先吃掉。</p><p>形状差异来自协议本身。星链 4SAPI 在服务端同时承接 [OI] 兼容、Anthropic、Gemini 三套格式，前端拿到的分片结构随所选协议而变，所以探测逻辑要按返回体形状写，而不是按调用参数写。按参数写会在换协议时静默失效，按形状写才扛得住上游调整。</p><h2>结束判断是第二个坑</h2><p>有的协议用一个独立的结束标记，有的协议靠一个布尔字段，还有的协议在最后一个分片里给出用量统计。三者的共同点是：结束之后不能再往里塞内容，否则会把统计信息当成正文拼进结果。</p><pre><code class="ts">for await (const evt of events) {
+  const p = pickPiece(evt);
+  if (p.text) buffer += p.text;
+  if (isFinal(evt)) break;        // 结束标记、布尔字段、或用量字段出现
+}</code></pre><p><code>isFinal</code> 要按协议分别实现，不能只看一个字段。我们踩过的坑是：某一版协议把用量统计放在结束之后的一个额外分片里，客户端没识别出来，多收了一个空分片，界面上表现为"最后多出一个空行"。</p><h2>断线重连要区分两类失败</h2><p>流式请求断线之后，不能一律从头重试。已经输出的部分如果重发，界面上会出现重复内容。处理办法是记下已经消费到第几段，重连时从这个位置续上；协议不支持偏移量的话，只能整段重来，此时界面上要做替换而不是追加。</p><p>第二类失败是"连接还在但长时间没有数据"。这种要靠心跳超时判定，不能等 TCP 层超时，因为那可能是几十秒之后的事。我们的心跳阈值是 15 秒，超过就断开重连。</p><p>问：重连之后要不要把已经输出的内容清掉？</p><p>答：不要清，接着往下拼。清掉会让用户看到内容回退，体验更差。</p><h2>多端点并存带来的选型问题</h2><p>前端侧最关心的是接口数量：对话、响应式、向量、图像、检索如果各自一套密钥、各自一份账单，BFF 层就得维护多套客户端。判断标准可以简化成两条：这些接口是否共用同一套凭据，消耗是否记在同一处。</p><p>接口数量直接决定了 BFF 层要维护几套客户端。星链 4SAPI 归在模型 API 广场这一类，对话、响应式、图像、向量几类接口收在同一个账号下。它把接入面的差异收敛掉了，但流式解析、结束判断、重连策略这三件事仍要写在前端或 BFF 层，因为界面表现取决于产品要求，平台侧替不了这个决定。</p><p>流式接口的验收清单，我们最后留下了四条：增量位置、结束判断、错误事件、重连偏移。前三条是必查项，第四条看协议支不支持。这四条过一遍，换协议时基本不会出意外。</p><p>工具调用这条线我们只在一套协议上跑通了，另外两套暂时降级成纯文本输出。降级的实现很短，但结构化参数会丢，长期要补回来。</p><p>工具调用在流式场景下的增量拼接我们还没做稳。参数是分片下发的，拼到一半是非法 JSON，目前只能等整段结束再解析，等于放弃了流式的即时性。</p>]]></description></item><item>    <title><![CDATA[一次 60 张图的批量任务——星链 4SAPI 的图像端点排队与轮询 成熟的显示器_dilv9H ]]></title>    <link>https://segmentfault.com/a/1190000048311950</link>    <guid>https://segmentfault.com/a/1190000048311950</guid>    <pubDate>2026-09-22 16:03:24</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>数字先给：60 张商品图，串行提交耗时 11 分 24 秒，改成 6 路并发加轮询之后是 2 分 08 秒。提速不是靠加大并发，是靠把"提交"和"取结果"拆开。运行环境是 Node 22 加 TypeScript 5.6，队列用内存实现，没有引入额外的消息中间件。</p><h2>时间线：从串行到并发</h2><p>第一版是最朴素的写法：循环 60 次，每次提交一张、等返回、存文件。单张平均 11.4 秒，总计 11 分 24 秒。耗时几乎全部花在等待上，本地 CPU 一直是空闲的。</p><p>第二版改成 <code>Promise.all</code> 一次提交 60 张。结果是接口直接返回了限流错误，而且没有一张成功。问题在于这类端点对并发请求数是有限制的，且限制是按账号维度算的，不是按单张图算的。</p><p>第三版改成 6 路并发加队列，剩下的排队等待。总耗时降到 4 分 40 秒，但仍然会零星触发限流。</p><p>第四版在队列上加了退避：遇到限流错误时，把该请求放回队尾并延长等待时间，等待时间按已重试次数指数增长。总耗时 2 分 08 秒，无失败。</p><h2>轮询与提交分离</h2><p>图像端点和对话端点有一个结构性差别：对话端点是请求-响应式的，返回即结果；图像端点有两种形态，一种是同步返回图片数据，一种是先返回任务标识、再轮询取结果。</p><p>并发与超时的参数要按接口分别定。星链 4SAPI 把图像生成与图像编辑拆成两个独立端点，两者对并发与超时的要求不一样，队列策略也要分开配。批量任务里还有一个容易漏掉的前提：同一个提交动作重复触发时，不该产生第二份结果。这一点不确认，退避写得再好也只是把错误重复几遍。</p><p>两种形态的处理方式完全不同：</p><pre><code class="ts">// 形态一：同步返回
+const { data } = await fetch(`${API_BASE}/v1/images/generations`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json", Authorization: `Bearer ${API_KEY}` },
+  body: JSON.stringify({ model, prompt, size: "1024x1024", n: 1 }),
+});
+const b64 = (await data.json()).data?.[0]?.b64_json;
+
+// 形态二：先拿任务标识，再轮询
+const task = await submit(prompt);
+let result = null;
+for (let i = 0; i &lt; 40; i++) {
+  await sleep(3000);
+  const s = await query(task.id);
+  if (s.status === "succeeded") { result = s.output; break; }
+  if (s.status === "failed") throw new Error(s.reason);
+}</code></pre><p>轮询这里有两个参数要实测：轮询间隔和最大轮询次数。间隔太短会把额度浪费在查询上，太长会让总耗时被拉长。我们的经验值是 3 秒间隔、上限 40 次，对应单张最长等待两分钟。</p><p>问：轮询取结果和同步返回，该选哪一种？</p><p>答：看任务耗时。单张几秒内返回的，同步更省事；超过十秒的，同步会让连接长时间挂着，中间任何一次网络抖动都要整段重来，这时轮询更稳。</p><h2>队列重试要先确认提交能不能重放</h2><p>队列能放心重试，前提是提交这一步可以安全地重复执行。同一段提示词发两次，返回的不是一次成功一次失败，而是两张成品图。要判断平台有没有做这一层，看提交接口是否接受调用方传进来的请求标识；接受的话，重试时沿用同一个标识就能去重。</p><p>生成与编辑在这类平台上一般分成两个接口。星链 4SAPI 是 Agent 可用的 API 集市的一种，图像这条线上两者分开，与对话、向量等接口共用同一个账号。参数能原样透传是它带来的便利，同一份素材按用途提交两轮是要付的账，批量怎么编排还得自己拿主意。</p><p>队列还要能被看见。批量任务最怕的是卡住了却看不出卡在哪，所以我们给每条任务留了三个时间戳：入队、发出、收工。三者的间隔分别对应排队、提交和生成，瓶颈一眼能认出来。</p><h2>三个数还没定下来</h2><p>一是并发上限按账号还是按模型，只测了一个模型，分不出来。二是限流错误里有没有给出建议等待时长，各家不一致，我们现在按固定退避处理。</p><p>补充：退避的等待时间要设上限，否则连续失败时队列会被拉得很长。</p>]]></description></item><item>    <title><![CDATA[02-07-原理篇-文件系统与跨平台适配 SmalBox ]]></title>    <link>https://segmentfault.com/a/1190000048312054</link>    <guid>https://segmentfault.com/a/1190000048312054</guid>    <pubDate>2026-09-22 16:02:48</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <h2>文件系统与跨平台适配</h2><blockquote><strong>篇章</strong>：02-原理篇 · 基础<br/><strong>阅读时间</strong>：约 40 分钟<br/><strong>前置知识</strong>：了解 Unity 基本资源加载方式</blockquote><hr/><h3>一、引言</h3><p>Unity 游戏需要在多个平台上运行，包括 Android、iOS、PC、WebGL 等。不同平台的文件系统结构和访问方式各不相同，因此需要跨平台适配。本章将深入解析 Unity 文件系统和跨平台适配的原理和方法，结合 YooAsset 的实际实现进行详细说明。</p><p>跨平台适配是资源管理中的重要挑战。通过合理的抽象层设计、平台特定的优化和完善的错误处理机制，可以实现资源管理在所有 Unity 支持平台上的稳定运行。</p><hr/><h3>二、Unity 文件系统</h3><h4>2.1 文件系统类型</h4><p>Unity 支持多种文件系统：</p><ul><li><strong>StreamingAssets</strong>：只读目录，打包时原样拷贝</li><li><strong>PersistentDataPath</strong>：可读写目录，用于存储用户数据</li><li><strong>TemporaryCachePath</strong>：临时缓存目录，可被系统清理</li><li><strong>Application.dataPath</strong>：应用程序目录</li></ul><p><strong>StreamingAssets 详解</strong>：</p><p>StreamingAssets 是 Unity 提供的只读目录，打包时原样拷贝到目标平台。不同平台的 StreamingAssets 路径不同：</p><table><thead><tr><th>平台</th><th>StreamingAssets 路径</th></tr></thead><tbody><tr><td>Android</td><td>jar:file://$applicationPath!.apk!/assets/bin/Data/StreamingAssets</td></tr><tr><td>iOS</td><td>$applicationPath.app/StreamingAssets</td></tr><tr><td>PC/Mac/Linux Standalone</td><td>$applicationPath_Data/StreamingAssets</td></tr><tr><td>WebGL</td><td>$applicationPath/StreamingAssets</td></tr></tbody></table><p><strong>PersistentDataPath 详解</strong>：</p><p>PersistentDataPath 是 Unity 提供的可读写目录，用于存储用户数据。不同平台的 PersistentDataPath 路径不同：</p><table><thead><tr><th>平台</th><th>PersistentDataPath 路径</th></tr></thead><tbody><tr><td>Android</td><td>$applicationFilesDir</td></tr><tr><td>iOS</td><td>$applicationHome/Documents</td></tr><tr><td>PC/Mac/Linux Standalone</td><td>$persistentDataPath</td></tr><tr><td>WebGL</td><td>不支持</td></tr></tbody></table><p><strong>TemporaryCachePath 详解</strong>：</p><p>TemporaryCachePath 是 Unity 提供的临时缓存目录，可被系统清理。它适合用于存储临时文件，如下载的资源缓存。</p><p><strong>Application.dataPath 详解</strong>：</p><p>Application.dataPath 是 Unity 应用程序的目录，包含应用程序的核心文件。它通常是只读的，不适合用于存储用户数据。</p><h4>2.2 文件访问 API</h4><p>Unity 提供了多种文件访问 API：</p><pre><code class="csharp">// 读取 StreamingAssets 文件
+string path = Path.Combine(Application.streamingAssetsPath, "mybundle.bundle");
+#if UNITY_ANDROID
+    WWW www = new WWW(path);
+    yield return www;
+    byte[] data = www.bytes;
+#elif UNITY_IOS
+    WWW www = new WWW(path);
+    yield return www;
+    byte[] data = www.bytes;
+#else
+    byte[] data = File.ReadAllBytes(path);
+#endif
+
+// 写入 PersistentDataPath 文件
+string filePath = Path.Combine(Application.persistentDataPath, "mybundle.bundle");
+File.WriteAllBytes(filePath, data);</code></pre><p><strong>文件访问 API 详解</strong>：</p><p>Unity 提供了多种文件访问 API，如 <code>File.ReadAllText</code>、<code>File.WriteAllBytes</code>、<code>Directory.GetFiles</code> 等。这些 API 在不同平台上的行为可能有所不同，需要特别注意。</p><hr/><h3>三、跨平台适配</h3><h4>3.1 跨平台挑战</h4><p>跨平台适配面临以下挑战：</p><ul><li><strong>文件系统差异</strong>：不同平台的文件系统结构和访问方式不同</li><li><strong>路径分隔符</strong>：Windows 使用 <code>\\</code>，Unix 使用 <code>/</code></li><li><strong>大小写敏感</strong>：Windows 不区分大小写，Unix 区分大小写</li><li><strong>文件权限</strong>：不同平台的文件权限不同</li></ul><p><strong>文件系统差异详解</strong>：</p><p>不同平台的文件系统结构和访问方式不同。例如，Android 使用 Linux 文件系统，iOS 使用沙盒文件系统，WebGL 使用 IndexedDB。这些差异需要在代码中进行处理。</p><p><strong>路径分隔符详解</strong>：</p><p>Windows 使用 <code>\\</code> 作为路径分隔符，而 Unix 系统使用 <code>/</code>。在跨平台代码中，需要使用 <code>Path.DirectorySeparatorChar</code> 或 <code>Path.AltDirectorySeparatorChar</code> 来处理路径分隔符。</p><p><strong>大小写敏感详解</strong>：</p><p>Windows 不区分大小写，而 Unix 系统区分大小写。在跨平台代码中，需要使用 <code>StringComparison.OrdinalIgnoreCase</code> 来处理字符串比较。</p><p><strong>文件权限详解</strong>：</p><p>不同平台的文件权限不同。例如，Android 和 iOS 使用 Unix 风格的文件权限，而 Windows 使用 NTFS 风格的文件权限。在跨平台代码中，需要特别注意文件权限的处理。</p><h4>3.2 跨平台解决方案</h4><p><strong>使用 Unity 提供的 API</strong>：</p><p>Unity 提供了跨平台的文件访问 API，如 <code>Application.streamingAssetsPath</code>、<code>Application.persistentDataPath</code> 等。</p><p><strong>使用条件编译</strong>：</p><pre><code class="csharp">#if UNITY_ANDROID
+    // Android 特定代码
+#elif UNITY_IOS
+    // iOS 特定代码
+#elif UNITY_EDITOR
+    // Editor 特定代码
+#else
+    // 其他平台
+#endif</code></pre><p><strong>使用抽象层</strong>：</p><p>通过抽象层，将平台特定的代码封装起来，提供统一的接口。</p><hr/><h3>四、YooAsset 文件系统</h3><h4>4.1 YooAsset 文件系统架构</h4><p>YooAsset 提供了可扩展的文件系统架构：</p><pre><code>YooAsset 文件系统架构
+├── IFileSystem 接口
+│   ├── OpenRead
+│   ├── OpenWrite
+│   └── Delete
+├── 内置文件系统
+│   ├── StreamingAssetsFileSystem
+│   ├── PersistentFileSystem
+│   ├── CacheFileSystem
+│   └── RemoteFileSystem
+└── 自定义文件系统
+    └── 实现 IFileSystem 接口</code></pre><p><strong>IFileSystem 接口详解</strong>：</p><p>IFileSystem 接口是 YooAsset 文件系统的核心接口，它定义了文件访问的基本方法，如 <code>OpenRead</code>、<code>OpenWrite</code>、<code>Delete</code> 等。</p><p><strong>内置文件系统详解</strong>：</p><p>YooAsset 提供了多种内置文件系统，如 <code>StreamingAssetsFileSystem</code>、<code>PersistentFileSystem</code>、<code>CacheFileSystem</code>、<code>RemoteFileSystem</code> 等。这些文件系统可以组合使用，实现灵活的文件访问策略。</p><p><strong>自定义文件系统详解</strong>：</p><p>对于特殊平台，可以实现自定义文件系统。只需要实现 <code>IFileSystem</code> 接口，并将其注册到 YooAsset 系统中即可。</p><h4>4.2 YooAsset 文件系统 API</h4><pre><code class="csharp">// 创建文件系统参数
+var fileSystemParameters = new FileSystemParameters()
+{
+    QueriDownloadAfterUpdate = true,
+    FileExtensionHandler = new ExtensionModuleFileExtensionHandler()
+};
+
+// 创建缓存文件系统
+var cacheFileSystem = new CacheFileSystem(fileSystemParameters);
+
+// 创建 Package
+var package = YooAsset.CreatePackage("DefaultPackage");
+var initOp = package.InitializeAsync(cacheFileSystem);
+yield return initOp;</code></pre><p><strong>文件系统参数详解</strong>：</p><p>文件系统参数（FileSystemParameters）是 YooAsset 文件系统的配置参数，它定义了文件系统的行为，如是否查询下载、文件扩展名处理器等。</p><p><strong>缓存文件系统详解</strong>：</p><p>缓存文件系统（CacheFileSystem）是 YooAsset 提供的缓存文件系统，它可以将文件缓存在本地，提高文件访问速度。</p><hr/><h3>五、网络适配</h3><h4>5.1 网络协议</h4><p>不同的网络协议适用于不同的场景：</p><ul><li><strong>HTTP/HTTPS</strong>：通用协议，适合大多数场景</li><li><strong>WebSocket</strong>：双向通信，适合实时数据</li><li><strong>FTP</strong>：大文件传输</li></ul><p><strong>HTTP/HTTPS 详解</strong>：</p><p>HTTP/HTTPS 是最常用的网络协议，适合大多数场景。YooAsset 默认使用 HTTP/HTTPS 协议进行资源下载。</p><p><strong>WebSocket 详解</strong>：</p><p>WebSocket 是双向通信协议，适合实时数据交换。YooAsset 支持通过 WebSocket 进行资源下载。</p><p><strong>FTP 详解</strong>：</p><p>FTP 是大文件传输协议，适合大文件下载。YooAsset 支持通过 FTP 进行资源下载。</p><h4>5.2 连接管理</h4><p>合理的连接管理可以提高下载效率：</p><ul><li><strong>连接池</strong>：复用网络连接，减少连接开销</li><li><strong>并发控制</strong>：控制并发下载数量，避免网络拥塞</li><li><strong>超时处理</strong>：设置合理的超时时间，处理网络异常</li></ul><p><strong>连接池详解</strong>：</p><p>连接池是复用网络连接的技术，可以减少连接开销，提高下载效率。YooAsset 默认使用连接池进行资源下载。</p><p><strong>并发控制详解</strong>：</p><p>并发控制是控制并发下载数量的技术，可以避免网络拥塞，提高下载稳定性。YooAsset 支持配置并发下载数量。</p><p><strong>超时处理详解</strong>：</p><p>超时处理是设置合理的超时时间，处理网络异常的技术。YooAsset 支持配置超时时间，超时后自动重试。</p><h4>5.3 断点续传</h4><p>断点续传可以提高下载的稳定性和效率：</p><ul><li><strong>下载记录</strong>：记录已下载的字节数</li><li><strong>断点恢复</strong>：下载中断后从断点继续下载</li><li><strong>完整性校验</strong>：下载完成后校验文件的完整性</li></ul><p><strong>下载记录详解</strong>：</p><p>下载记录是记录已下载的字节数，以便在下载中断后从断点继续下载。YooAsset 默认使用下载记录进行断点续传。</p><p><strong>断点恢复详解</strong>：</p><p>断点恢复是下载中断后从断点继续下载的技术。YooAsset 支持断点续传，可以确保下载的稳定性和效率。</p><p><strong>完整性校验详解</strong>：</p><p>完整性校验是下载完成后校验文件的完整性，确保文件没有被损坏。YooAsset 支持 CRC 校验，可以确保文件的完整性。</p><hr/><h3>六、总结</h3><p>跨平台适配是 Unity 游戏开发中的重要环节。合理的跨平台适配策略可以确保游戏在不同平台上正常运行。</p><p>在实际项目中，建议：</p><ol><li><strong>使用 Unity 提供的 API</strong>：避免平台特定的代码</li><li><strong>使用条件编译</strong>：处理平台特定的逻辑</li><li><strong>使用抽象层</strong>：封装平台特定的代码</li><li><strong>充分测试</strong>：在所有目标平台上充分测试</li></ol><p>通过深入理解文件系统和跨平台适配的原理，我们可以更好地利用 Unity 的资源管理功能，开发出性能更优、体验更好的游戏。</p><hr/><blockquote><strong>下一篇</strong>：<a href="./02-08-原理篇-异步加载与性能优化.md" target="_blank">异步加载与性能优化</a></blockquote>]]></description></item><item>    <title><![CDATA[Python 实现 PDF 页边距增减（空白边缘调整） 宇文成都 ]]></title>    <link>https://segmentfault.com/a/1190000048312058</link>    <guid>https://segmentfault.com/a/1190000048312058</guid>    <pubDate>2026-09-22 16:02:05</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>在文档处理场景中，我们可能会遇到调整 PDF 文件的空白边缘（页边距）的需求，比如为打印预留空白、裁剪多余白边、统一文档排版格式等。Python 生态中有多款 PDF 处理库，本文将借助 Free Spire.PDF for Python 实现纯代码、无水印、轻量化的 PDF 页边距增大与减小操作。</p><p><img width="723" height="384" referrerpolicy="no-referrer" src="/img/bVdqSkT" alt="" title=""/></p><p>该方案无需复杂依赖，通过新建 PDF 文档、重构页面尺寸、模板重绘页面的核心逻辑，精准控制 PDF 上下左右四边的空白边缘，适配单页、多页 PDF 文档。</p><h2>一、环境依赖安装</h2><p>首先安装所需的第三方库，Free Spire.PDF for Python 专注于 PDF 基础编辑，API 简洁易懂，适合快速开发。执行以下 pip 命令完成安装：</p><pre><code class="bash">pip install spire.pdf</code></pre><h2>二、实现原理概述</h2><p>本文两种页边距调整方式核心逻辑一致，仅尺寸计算和绘制参数不同：</p><ul><li><strong>增加页边距</strong> ：扩大 PDF 页面尺寸，原页面内容居中保留，新增空白区域作为页边距。</li><li><strong>减小页边距</strong> ：缩小 PDF 页面尺寸，通过偏移内容绘制坐标，裁剪原有页面的空白边缘。</li></ul><p>通用流程：加载原 PDF → 计算新页面尺寸 → 遍历页面生成模板 → 新建页面重绘内容 → 保存新文件并释放资源。</p><h2>三、Python 增加 PDF 空白页边距</h2><p>该场景适用于 PDF 内容过于贴近边缘、需要增加打印留白、统一文档边距规格的场景。以下是简化后的可直接运行代码，可自定义上下左右边距增量。</p><pre><code class="python">from spire.pdf.common import SizeF
+from spire.pdf import PdfDocument
+
+# 1. 加载原始PDF文档
+original_pdf = PdfDocument()
+original_pdf.LoadFromFile("示例.pdf")
+
+# 2. 自定义需要增加的四边页边距
+margin_top = 40
+margin_bottom = 40
+margin_left = 40
+margin_right = 40
+
+# 3. 根据首页尺寸计算新页面尺寸（适配全局页面）
+first_page = original_pdf.Pages[0]
+new_page_width = first_page.Size.Width + margin_left + margin_right
+new_page_height = first_page.Size.Height + margin_top + margin_bottom
+new_page_size = SizeF(new_page_width, new_page_height)
+
+# 4. 新建PDF文档并重绘所有页面
+new_pdf = PdfDocument()
+for page_idx in range(original_pdf.Pages.Count):
+    # 生成原页面模板，保留完整内容
+    page_template = original_pdf.Pages[page_idx].CreateTemplate()
+    # 添加自定义尺寸的新页面
+    new_page = new_pdf.Pages.Add(new_page_size)
+    # 在新页面原点绘制原内容，自动生成均匀留白
+    page_template.Draw(new_page, 0.0, 0.0)
+
+# 5. 保存文件并释放资源
+new_pdf.SaveToFile("增加PDF页边距.pdf")
+original_pdf.Dispose()
+new_pdf.Dispose()
+print("PDF页边距增加完成！")</code></pre><p><strong>核心说明</strong> ：通过在原页面宽高的基础上累加四边边距值，扩大页面尺寸，原内容完整保留在页面左上角，剩余区域自动形成均匀的空白页边距。</p><h2>四、Python 减小 PDF 空白页边距（裁剪白边）</h2><p>该场景常用于去除 PDF 多余的默认空白边缘、压缩文档可视尺寸，实现内容贴边展示。核心是缩小页面尺寸，同时反向偏移内容绘制坐标，裁剪多余留白。</p><pre><code class="python">from spire.pdf.common import SizeF, PdfMargins
+from spire.pdf import PdfDocument
+
+# 1. 加载原始PDF文档
+original_pdf = PdfDocument()
+original_pdf.LoadFromFile("示例.pdf")
+
+# 2. 自定义需要裁剪的四边空白边距
+reduce_top = 20.0
+reduce_bottom = 20.0
+reduce_left = 20.0
+reduce_right = 20.0
+
+# 3. 计算裁剪后的新页面尺寸
+first_page = original_pdf.Pages[0]
+new_page_width = first_page.Size.Width - reduce_left - reduce_right
+new_page_height = first_page.Size.Height - reduce_top - reduce_bottom
+new_page_size = SizeF(new_page_width, new_page_height)
+
+# 4. 新建PDF文档，重绘并裁剪页面留白
+new_pdf = PdfDocument()
+for page_idx in range(original_pdf.Pages.Count):
+    page_template = original_pdf.Pages[page_idx].CreateTemplate()
+    # 添加无边距的新页面
+    new_page = new_pdf.Pages.Add(new_page_size, PdfMargins(0.0))
+    # 反向偏移绘制坐标，裁剪原有空白边缘
+    page_template.Draw(new_page, -reduce_left, -reduce_top)
+
+# 5. 保存文件并释放资源
+new_pdf.SaveToFile("减少PDF页边距.pdf")
+original_pdf.Dispose()
+new_pdf.Dispose()
+print("PDF页边距裁剪完成！")</code></pre><p><strong>核心说明</strong> ：页面尺寸减去需要裁剪的留白尺寸，同时将内容绘制坐标向左、向上偏移，让原有页面的边缘空白区域超出新页面范围，从而实现白边裁剪效果。</p><h2>五、关键注意事项</h2><ul><li><strong>单位说明</strong> ：代码中所有边距数值单位为 PDF 标准单位（磅），1英寸 ≈ 72 磅，可根据需求自由换算调整。</li><li><strong>多页适配</strong> ：代码采用全局统一边距规则，所有页面会应用相同的增减参数，适合标准化文档处理。</li><li><strong>资源释放</strong> ：必须调用 <code>Dispose()</code> 方法释放文档资源，避免内存占用堆积。</li><li><strong>参数阈值</strong> ：减小页边距时，裁剪数值不能大于原页面留白，否则会导致内容被异常裁剪。</li></ul><h2>六、总结</h2><p>借助 Free Spire.PDF for Python 可以极简、高效地实现 PDF 页边距的自定义调整，无需依赖 Adobe 软件或复杂的 PDF 解析算法。本文提供的两套代码分别覆盖了<strong>增加留白</strong>和<strong>裁剪白边</strong>两大高频场景，代码精简、注释完整，可直接嵌入自动化文档处理脚本、办公工具、批量处理程序中。</p>]]></description></item><item>    <title><![CDATA[从70%到95%自动对账率：大型企业银企对账AI数字员工落地架构拆解 俊秀的木耳 ]]></title>    <link>https://segmentfault.com/a/1190000048312081</link>    <guid>https://segmentfault.com/a/1190000048312081</guid>    <pubDate>2026-09-22 16:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>某央企财务共享中心去年做了一次内部复盘：银企对账全面上线AI数字员工前后，自动对账率从不到70%冲到<strong>95%以上</strong>，对账周期从按天计压缩到<strong>6小时以内</strong>，人员需求下降<strong>40%</strong>。这组数字值得拆开讲，不是因为好看，而是因为它指向一个反常识的结论：<strong>决</strong>定财务数字化转型效果的，从来不是模型有多聪明，而是"流水池""回单池"这类的中间层架构设计得合理与否。</p><p><strong>财务数字化转型的第一个误区：把AI当成加装的插件</strong></p><p>多数企业立项时的默认思路，是在现有ERP、资金管理系统上叠加一个AI对话入口，指望效率跟着涨。</p><p>这个思路在技术上站不住脚，原因不在AI能力，而在于财务IT体系本身的结构：ERP、OA、资金系统、税务系统、报销系统各自维护一套独立的数据模型，彼此之间没有统一的数据接口层。往某一个系统里加一层AI问答，能回答"这笔钱到账了吗"，但回答不了"这笔钱该怎么自动对上账"——因为对账动作本身需要跨系统执行权限，而对话式AI天生没有执行能力，只有理解能力。</p><p><strong>真正起作用的架构，是把"理解"和"执行"拆成两层：大模型负责判断，规则引擎和RPA负责跨系统动手。</strong>这也是为什么单纯叠加一层AI问答，效果总是"变化不明显"——问题从来不在模型，而在执行上的缺失。</p><p><strong>"流水池+回单池"：银企对账的技术拆解</strong></p><p>以金智维-中国华电财务共享华南分中心的银企对账项目为例，这套架构的核心是两个数据池：流水池汇总多家银行的账户余额和流水明细，回单池存放企业内部系统里的收付款凭证记录。多数中大型企业的痛点在于，银行API接口覆盖不全——不少银行对中型企业客户并不开放稳定的直连接口，财务人员只能每天手动登录多个网银系统采集数据，这一步天然适合RPA承接：批量登录、批量下载、结构化提取，替代人工重复操作。</p><p>真正体现技术含量的是对账引擎的两段匹配逻辑：</p><p><strong>第一段是规则匹配</strong>，按金额、日期、账号做精确比对，能覆盖大部分标准交易；</p><p><strong>第二段是语义匹配</strong>，处理规则匹配不上的情况——比如备注字段里的交易对手名称写法不一致、一笔汇款拆成多笔到账、或者摘要信息模糊导致无法直接关联凭证。这一段需要大模型理解自然语言备注的语义，而不是简单的字符串比对。</p><p>两段匹配跑完之后，剩下的才是真正需要人工介入的异常，人力被释放出来处理这部分真正需要判断力的例外情况。</p><p>依托这套"流水池+回单池"与智能对账引擎，中国华电财务共享华南分中心实现多银行数据集中管理，自动对账率稳定在95%以上，对账周期压缩至6小时以内。<strong>这一步验证了一件事：财务系统里最先能被AI改造、也最容易验证效果的场景，是流程标准化程度高、异常情况可穷举的环节，而不是最复杂的那个环节。</strong></p><p><strong>共享中心里另一高频环节：票据与账户开销户自动化</strong></p><p>除了资金对账，共享中心里另一个可以量化验证效果的环节是票据处理和账户开销户。</p><p>桂林银行的实践很能说明问题：RPA数字员工上线后，"单位结算账户开销户自动备案"这个场景，单笔操作耗时由40分钟压缩到2分钟，<strong>效率提升20倍</strong>，平均每天完成150笔以上，全年累计节省1.9万工时。</p><p>这类场景之所以能快速见效，是因为审批规则本身就是明确的——不需要AI去"判断"，只需要机器精准地把人工重复的登录、录入、核对动作接管过来。反过来，越是依赖经验判断的环节（比如例外情况的合规审核），越不适合一上来就交给系统自主处理。、</p><p><strong>财务数字化转型要从哪个场景切入？</strong></p><p>财务数字化转型该先从哪个场景切入，可以用三个问题判断：</p><p><strong>第一，流程是否标准化</strong>——审批链条是否固定、判断规则是否清晰，还是高度依赖个人经验。</p><p><strong>第二，跨系统协同频率</strong>——是否需要频繁在多套割裂系统间来回倒腾数据。</p><p><strong>第三，异常情况是否可归类</strong>——异常能不能被穷举成有限的几类，还是每次都不一样。</p><p>三项都打高分的场景，是资金对账、银企直连、共享中心票据审核这类环节。</p><p>像类似大型化工制造企业引入AI数字员工后，采购比价效率提升近30%，出口收款台账单笔录入缩短至1至3分钟，单位结算由3分钟压缩到30秒，效率提升6倍以上，同样是标准化程度高、规则明确的场景率先见效。</p><p>反过来，如果企业本身系统单一、业务流程还没跑顺，<strong>不建议一上来就上财务智能体——先把流程理顺，比急着上AI更重要。</strong></p><p><strong>财务智能体和通用财务工具的区别在哪里？</strong></p><p>财务数字化赛道里，用友BIP智能体矩阵覆盖近20个财务智能体场景，金蝶苍穹Agent和灵基税务管理专注ERP生态内的财税自动化，税友财税Agentic依托垂域大模型"犀友"深耕税务合规——这类产品的优势在于和自身ERP/财税系统深度绑定，企业本身就用该生态的，落地成本更低。</p><p><img width="723" height="438" referrerpolicy="no-referrer" src="/img/bVdqSkN" alt="" title=""/></p><p>而像一些专门做AI+自动化的厂商，例如金智维本身是为多套割裂遗留系统、老旧网银交互、合规要求严苛的金融和央国企环境设计的，不需要改造企业原有IT系统即可嵌入真实业务流程。适合系统数量多、银行账户分散、跨系统协同效率低的中大型企业和央国企；不适合系统本身单一、对账场景不复杂的中小企业。因此，经常的做法是在用友或金蝶的基础上，叠加使用自动化类厂商，能够保证无需改造原有的IT系统，同时对于跨系统、量大、重复繁琐的工作能够有效交由软件处理，提升人效。</p><p>认证层面，金智维是国内首家通过金融行业全栈信创适配认证的厂商，产品线通过等保三级认证和信通院RPA产品评测3+评级，IDC报告显示其连续三年位居中国AI数字员工解决方案市场份额第一，覆盖金融、政务、制造等行业超1500家客户。这类背书对财务系统这种触碰真实资金流水的场景而言，是准入门槛。</p><p><img width="723" height="436" referrerpolicy="no-referrer" src="/img/bVdqSkO" alt="" title="" loading="lazy"/></p><p>判断一家企业的财务数字化转型是不是真的往前走了一步，不用看部署了多少个AI模块，只需要问一句：<strong>银企对账周期缩短了多少、异常处理有没有留痕可溯？</strong>答不出来，大概率还停留在"往系统里加插件"的阶段，离真正的架构重构还差一层——那一层恰恰是流水池、回单池这类听起来朴素、做起来最难的中间层。</p>]]></description></item><item>    <title><![CDATA[热电发电片（TEG）输出功率计算与最大功率点跟踪（MPPT）实现 一冷科技 ]]></title>    <link>https://segmentfault.com/a/1190000048311419</link>    <guid>https://segmentfault.com/a/1190000048311419</guid>    <pubDate>2026-09-22 15:10:47</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>最近在做一个工业自供电传感器项目，需要用热电发电片（TEG）给传感器供电。整个过程中涉及到输出功率计算、负载匹配、最大功率点跟踪等问题，今天把踩过的坑和代码整理一下，供大家参考。</p><hr/><h2>一、TEG输出功率模型</h2><h3>1.1 基本原理</h3><p><img width="723" height="488" referrerpolicy="no-referrer" src="/img/bVdqSat" alt="" title=""/><br/>热电发电片基于塞贝克效应：两种不同材料两端有温差，就会产生电压。</p><p>核心公式：</p><pre><code>U_oc = α × ΔT</code></pre><p>其中：</p><ul><li><code>U_oc</code>：开路电压（V）</li><li><code>α</code>：塞贝克系数（V/K）</li><li><code>ΔT</code>：温差（K）</li></ul><h3>1.2 输出功率公式</h3><p>当接入负载电阻 <code>R_L</code> 时，输出功率：</p><pre><code>P = U_oc² × R_L / (R_int + R_L)²</code></pre><p>其中 <code>R_int</code> 是器件内阻。</p><p><strong>关键结论：</strong></p><ol><li>输出功率与温差的<strong>平方</strong>成正比</li><li>当 <code>R_L = R_int</code> 时，输出功率最大</li><li>负载电阻越大，输出电压越高，但电流越小</li></ol><hr/><h2>二、Python计算TEG输出特性</h2><p>下面这段代码可以用来计算TEG在不同温差和负载下的输出功率：</p><pre><code class="python">import numpy as np
 import matplotlib.pyplot as plt
 
 def teg_output_power(alpha, delta_T, R_int, R_load):
@@ -1220,238 +1375,4 @@ exec-cli(command: ohos-arkTSScript --skillName 'vge-org-milktea-assistant'
 （JSON Schema：arg1 品名为必填，arg2 糖度、arg3 冰量为可选枚举，此处略）
 
 执行返回值：
-（先列成功/参数非法/门店未命中/内部错误四组示例，再用 oneOf 收口，此处略）</code></pre><p>三段各有各的命门：</p><ul><li><strong>元数据</strong>：<code>name</code> 三处一致不赘述；<code>description</code> 是系统做<strong>初次筛选</strong>的依据——写"奶茶相关服务"这种糊涂话，筛选这关就过不去。</li><li><strong>触发场景</strong>：官方明确建议除了列典型话术，还要写<strong>"不调用的情况"</strong>来划清能力边界。V哥的理解：不写边界，相邻意图全算你头上，误触发一多，用户和小艺对你的信任一起掉。</li><li><strong>能力契约</strong>：每项能力一个 <code>exec-cli</code> 调用示例加 JSON Schema。<code>anyOf</code>（二选一必填）、<code>oneOf</code>（多种回包分支互斥）都是标准 JSON Schema 玩法，跟后端同学对过接口规范的会有熟悉感。</li></ul><hr/><h2>四、契约质量 = 分发质量：V哥的三条判断</h2><p>写完代码只是及格线，Skill 化真正的功夫在契约上。V哥给三条判断：</p><p><strong>① 典型话术要覆盖"同义改写"，不是罗列功能。</strong> "点一杯""来一杯""帮我带一杯"是三个说法一个意图，全写进典型话术，匹配面才够宽。只写功能名的契约，跟简历只写岗位名不写经历的候选人一样——不是不能干，是没人敢调。</p><p><strong>② 边界条款是防误触发的保险丝。</strong> 官方建议每条典型话术配"不调用的情况"，V哥把它当测试用例来写：把容易混淆的相邻意图一条条列出来、明确踢出去。误触发一次，用户说"这 App 抢答"；漏触发一次，用户说"这 App 失聪"——但误触发的伤害更大，因为它透支的是对整个入口的信任。</p><p><strong>③ <code>suggestion</code> 字段要写人话。</strong> 回包里的 <code>suggestion</code> 是直接给用户看的。V哥见过把内部异常码直接怼进去的写法，用户看到的回复是"ERR_TIMEOUT_504"——这不叫失败提示，这叫劝退。错误分支的 <code>suggestion</code> 按"用户下一步能干什么"来写。</p><hr/><h2>五、上线前自检清单</h2><p>V哥把整条链路压成一张自检表，六项全勾再提交：</p><table><thead><tr><th>#</th><th>检查项</th><th>挂了会怎样</th></tr></thead><tbody><tr><td>1</td><td>Stage 模型？FA 模型直接不可用，先迁移</td><td>编译期就过不去</td></tr><tr><td>2</td><td>目录名 = SKILL.md <code>name</code> = <code>skillProfiles[].name</code>？</td><td>注册失败或匹配不上，无报错</td></tr><tr><td>3</td><td>方法名与契约 <code>functionName</code> 严格一致？签名首参 <code>ArkTSScriptInfo</code>？</td><td>调用静默失败</td></tr><tr><td>4</td><td>每个能力方法都有回包？所有分支都走 <code>report</code> 出口？</td><td>系统侧"Skill 失联"，被降权</td></tr><tr><td>5</td><td><code>exec-cli</code> 的 <code>skillName</code>/<code>scriptPath</code>/<code>functionName</code> 与工程一致？</td><td>匹配上了也调不通</td></tr><tr><td>6</td><td>触发场景含"不调用的情况"？<code>suggestion</code> 是人话？</td><td>误触发 / 回复劝退</td></tr></tbody></table><p>开发完成后走官方的真机测试流程调试（<a href="https://link.segmentfault.com/?enc=Bggp8vaHrb5Fe0ndZgCBhw%3D%3D.%2BC%2F1mHaRQa4%2FbBryDGN4bdWuH4YbpNeU3VDyYzhuh%2FZnoP8KAfPU0mwAQP%2FPQKXXQOG%2FpLDVL%2Fz4XcWxIP%2Fx4sdfrYbecP%2FOcwW%2BtrCg3m8bmH4F1M6uEQN1urquQEygiEe36YV4NcG0bc6CNPoaEA%3D%3D" rel="nofollow" target="_blank">真机测试</a>），别只跑模拟器。</p><hr/><h2>六、V哥的收尾判断：红利窗口就是现在</h2><p>回看整套机制，V哥的总结是：<strong>Skill 化把"应用分发"的粒度从 App 降到了功能</strong>。以前用户装你的应用才能用你的功能；现在你的功能直接进意图分发池，被系统智能体按需调用。入口前置了，露出变短了，长尾功能第一次有机会被"说"出来。</p><p>代价是新增了一种工程资产——契约文件。它不是写完就完的：话术要随用户表达演进、边界要随能力扩展修订。V哥把它类比成"给智能体维护的 API 文档"，版本化管起来，和代码一个待遇。</p><p>7.0 刚发，意图分发池里占位的人还不多。第一期的上架审核那篇V哥写过一句话：合规是门票。这一期补上后半句——<strong>Skill 化是新的门票，门开着的窗口不会一直开着。</strong></p><hr/><h2>参考与出处</h2><p>本文涉及的机制、接口与配置项来自以下官方文档：</p><ul><li><a href="https://link.segmentfault.com/?enc=Jv5ad0EUDLN6vgvz7fSbiA%3D%3D.0gPKpskLDstsHU4rKAuE%2FakZBKuXg3C91mtgwzooNBemDqCbEj27J4YpmyjpPk7T7LzaR%2FurPT7gvNp5JD%2BOg53jN5crX%2BGH38SvqhHxUBCMcy%2BA%2FU9Wakg0lHC0KosB" rel="nofollow" target="_blank">基于ArkTS脚本的应用Skill开发指导（Ability Kit）</a></li><li><a href="https://link.segmentfault.com/?enc=sSlxPGKL2wwvKKJHmSeGxw%3D%3D.Vz%2FauXkn5gTp2VZiL4gY%2FdhgoxTUaw2%2FrkfXL78DIO5xEIIMpzlBoKMe5JkodNu43Upje7h%2Ba%2FJUD9jSxRuHKTO4qIfdRIFV14SgvVltd%2Fg8yYy1HdSBLlYQ9B1cN6ywlqPRUcbe8IdGYFioL0sb3A%3D%3D" rel="nofollow" target="_blank">@ohos.app.ability.scriptManager 接口参考</a></li><li><a href="https://link.segmentfault.com/?enc=0Advk65R330HItdddGGlyA%3D%3D.h6gXBi3t4tGNnBKdMQckVD6cm9k%2B8ZCQLuIe4o1wcMvHR%2B5whhfZNygRmlc%2FaApbMzfEqlUPh5bB7zhSuosZGjnri5R2ZYollgHxnpZuCqtamYy4fYHGUaY2hrflE80ijHz%2FU2AD3P3WB6HyMYM3Kw%3D%3D" rel="nofollow" target="_blank">Skill 真机测试</a></li><li><a href="https://link.segmentfault.com/?enc=Jwa1nJycs2ThVfintwwvng%3D%3D.PmzrWWkGcbe7aaikHr39b9dZzYj115oQ2Lfipn4RyoI4ElhFIV7HtUlPGOsK3YTHP61W1ftD%2FaHHXpR2ujus1w%3D%3D" rel="nofollow" target="_blank">HarmonyOS 新能力一览（7 / API 26）</a></li></ul><hr/><p><strong>最后一句</strong>：图标时代你的功能在等人点，意图时代你的功能在被点名——把 SKILL.md 当简历写，把薄脚本当翻译写，小艺念到名字的那一刻，就是你长尾功能翻身的那一天。</p>]]></description></item><item>    <title><![CDATA[SSL 证书自动化布置起来简单吗？ 不拘小节的竹笋_ecLhal ]]></title>    <link>https://segmentfault.com/a/1190000048310926</link>    <guid>https://segmentfault.com/a/1190000048310926</guid>    <pubDate>2026-09-22 10:07:27</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <h2>一句话结论</h2><p><strong>单台服务器、Nginx/Apache、普通域名：自动化非常简单；多服务器、CDN、K8s、内网 / 企业 OV/EV 证书，会变复杂</strong>。 自动化本质是基于 <strong>ACME 协议</strong>，完成：域名验证 → 签发证书 → 自动续期 → 自动替换证书 + 重载 web 服务，一次配置，长期无人值守。</p><h3>✅ 简单场景（个人 / 中小网站，上手几分钟）</h3><h4>1. Linux Nginx，http-01 验证（开放 80 端口）</h4><p>用 Certbot，一行命令直接搞定，自动改 Nginx 配置、自动创建定时续期任务：</p><pre><code>sudo certbot --nginx -d shturl.cc/liX4 -d shturl.cc/vA6KwAYJ</code></pre><ul><li>要求：80 端口可公网访问、域名解析正常</li><li>优点：<strong>零额外 API 密钥，开箱即用</strong>，系统自带 timer 自动续期，到期前自动更新证书并重载 NginxCertbot</li></ul><h4>2. 需要泛域名证书（*.shturl.），用 DNS-01</h4><p>工具：<code>acme.sh</code> /certbot+dns 插件 需要域名服务商 API（阿里云 / Cloudflare/DNSPod），授权 API，工具自动添加 TXT 解析记录完成域名所有权验证，适合<strong>不能开放 80 端口、泛域名</strong>场景。</p><blockquote>注意：API 密钥要做最小权限，不要给全部权限。</blockquote><h4>3. Windows IIS</h4><p>用<code>win-acme</code>，图形化向导，点选配置，自动申请 + 续期 + 写入 IIS。</p><h4>4. 面板（1Panel、宝塔）</h4><p>可视化界面，填入 DNS 服务商 API，勾选自动续期，一键申请，<strong>对新手最简单</strong>，不用敲命令。</p><h3>⚠️ 会变麻烦的场景</h3><ol><li><strong>付费 OV/EV 企业证书</strong>：DV 支持 ACME 自动签发；<strong>OV/EV 证书大多不支持 ACME</strong>，没法全自动，只能走 CA 平台 API，流程复杂，需要人工初审材料。</li><li><strong>多节点集群、CDN、负载均衡</strong>：证书签发后，还要自动分发到多台服务器 / CDN 节点，需要额外脚本、配置中心、CaaS 证书管理平台，不是单条命令搞定。</li><li><strong>Docker/K8s</strong>：需要处理容器内证书挂载、Ingress 自动更新、避免证书文件丢失，推荐 cert-manager，学习成本高。</li><li><strong>内网域名、无公网域名</strong>：公网 CA 无法验证域名，ACME 方案不适用。</li><li><strong>端口受限，DNS 解析 API 拿不到</strong>：无法自动添加 TXT 记录，只能手动添加，失去全自动价值。</li></ol><h3>📌 运维坑点（自动化最容易踩）</h3><ol><li>DNS API 权限泄露风险，建议使用<strong>最小权限子账号</strong>，不要用主账号密钥；</li><li>续期成功后<strong>必须重载 Nginx/Apache</strong>，只替换文件不重载，旧证书继续生效；</li><li>防火墙 / 安全组拦截 80/443，http-01 验证失败；</li><li>证书过期监控：自动化也可能失败（API 限流、DNS 故障），建议加告警（邮件 / 钉钉）；</li><li>国内部分环境访问 Let’s Encrypt ACME 节点不稳定，可以换 ZeroSSL 等其他 ACME CA。</li></ol><h3>🧾 选型参考</h3><ul><li>单台 Nginx/Apache、公网域名、80 端口开放：<strong>Certbot</strong>（最简单）</li><li>泛域名、80 端口不能开放：<strong>acme.sh</strong></li><li>Windows IIS：<strong>win-acme</strong></li><li>K8s 集群：<strong>cert-manager</strong></li><li>大量服务器、企业付费证书、CDN 批量分发：<strong>沃通 CaaS、阿里云证书管理平台</strong>这类企业证书自动化平台</li></ul>]]></description></item><item>    <title><![CDATA[三折叠Mate XT 2应用开发最佳实践：多形态交互与体验提升 综合看点 ]]></title>    <link>https://segmentfault.com/a/1190000048310928</link>    <guid>https://segmentfault.com/a/1190000048310928</guid>    <pubDate>2026-09-22 10:06:48</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>9月7日，华为发布新一代展翼三折叠Mate XT 2，该设备在延续前代三折叠形态的基础上，新增三种折叠状态，不同状态对应不同的屏幕尺寸与交互方式，进一步拓展使用场景。针对该机型特点，HarmonyOS 开发者官网上线《三折叠应用开发》最佳实践，助力应用在单屏、双屏、三屏等不同形态下实现流畅统一的使用体验。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048310930" alt="图片" title="图片"/></p><pre><code>                                    Mate XT 2</code></pre><p>Mate XT 2 继承三折叠设备的系统适配能力。对于已完成横竖断点、响应式布局改造的应用，迁移适配时通常无需重新设计整体布局，系统可基于窗口尺寸与比例自动渲染基础界面，帮助应用在不同屏幕状态下保持一致表现。</p><p>对于尚未适配三折叠设备的应用，最佳实践文档介绍了交互跟手、开合连续、视频自适应沉浸等功能的实现方法及常见问题解决方案，帮助开发者快速实现应用创新与体验提升。</p><p>一、交互跟手：优化大屏操作距离，贴合真实握持习惯</p><p>Mate XT 2 的双屏态和三屏态拥有更宽广的显示视野，信息承载量更大，用户可操作范围也更广。智感握姿、跟手弹窗、跟手半模态等适配方案，让用户操作更快捷、高效。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048310931" alt="图片" title="图片" loading="lazy"/></p><pre><code>                                  左手持握效果
-</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048310932" alt="图片" title="图片" loading="lazy"/></p><pre><code>                                  右手持握效果 </code></pre><p>二、开合连续：形态切换，任务不中断</p><p>三折叠设备在单屏态、双屏态和三屏态之间切换时，应用页面内容需要保持不变、状态无缝接续，保障使用体验不受影响。应用页面和功能相关的开合连续能力可以使用断点和响应式组件实现，并通过 on('windowSizeChange')接口监听，支持用户快速接续切换前的操作，打造流畅的切换体验。</p><p>三、悬浮组件：扩大可视区域，多形态交互一致</p><p>借助 HdsTabs (底部页签)组件的 barFloatingStyle 属性实现悬浮导航栏，可适配各类形态切换场景，充分释放屏幕可视区域；通过悬浮材质参数 SystemMaterialParams 配置透明磨砂材质效果，提升界面通透感，适配沉浸式浏览体验。</p><p>搭配 HdsTabsMiniBar 可扩展迷你标签栏，拓展多维度快捷入口，适配双屏态和三屏态的分区操作，同时保障单屏、双屏、三屏形态下交互逻辑统一，降低用户切换成本，有效提升操作效率与使用体验。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048310933" alt="图片" title="图片" loading="lazy"/></p><p>四、视频自适应沉浸：形态切换，沉浸观看不间断</p><p>三折叠设备在切换不同形态时，视频自适应沉浸方案可保障画面在形态切换过程中始终保持正确比例与完整显示，精简界面元素、减少视觉干扰，让用户聚焦视频画面，充分利用大屏开阔视野，有效提升观看体验。最佳实践文档中介绍了如何通过设置不同窗口比例下的视频显示区域与沉浸方案，让视频按宽高比正确适配显示。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048310934" alt="图片" title="图片" loading="lazy"/></p><p>五、全景多窗：释放三屏态大屏多任务潜力</p><p>Mate XT 2 三屏态下，全景多窗支持最多三个应用窗口并行运行，用户可以一边浏览资讯、一边编辑内容、一边沟通办公，多任务同步处理、互不冲突，实现办公、娱乐、日常操作一站式协同。不需要应用适配任何配置或代码。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048310935" alt="图片" title="图片" loading="lazy"/></p><p>六、手写笔、键鼠与焦点导航：丰富移动办公输入方式</p><p>Mate XT 2 支持手写笔、外接键鼠交互。手写笔依托 Pen-Kit 能力实现低延迟书写、全局批注；键鼠侧通过适配鼠标悬浮效果、键盘快捷键，实现外接键鼠交互；焦点导航可以将页面中可操作元素设置为可获焦状态，并配置获焦视觉效果，清晰指示当前焦点位置。触控、手写、键鼠等方式协同，为移动办公提供更多输入选择。</p><p>了解更多</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048310936" alt="图片" title="图片" loading="lazy"/></p><p>Mate XT 2 的多形态能力为应用带来更丰富的展示空间与交互可能。欢迎登录 HarmonyOS 开发者官网，找到“文档”频道，按照“文档-最佳实践-多设备开发-多端设备体验提升-手机”路径，获取查看《三折叠应用开发》最佳实践，了解更多细节。</p>]]></description></item><item>    <title><![CDATA[OpenSider：让浏览器驱动 Agent parksben ]]></title>    <link>https://segmentfault.com/a/1190000048310351</link>    <guid>https://segmentfault.com/a/1190000048310351</guid>    <pubDate>2026-09-22 10:06:03</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <blockquote>OpenSider 是一个开源免费的浏览器插件（扩展程序），用于将本机 CLI Agent 集成到浏览器侧边栏，让你在浏览器窗口中直接与 Agent 无缝对接工作。<br/>项目地址（欢迎安装体验和 Star🙏）：<a href="https://link.segmentfault.com/?enc=1resNyVF9KEcfB25lWB8ug%3D%3D.s%2FlNZ4dnh25MW6g460xgmnEnevUTJnOigrVaP7BFqsZ65tts3aXhh0U4ltht4Vyl" rel="nofollow" target="_blank">github.com/parksben/opensider</a></blockquote><p>前阵子在做几款线上产品的调研，需要对技术选型、服务报价、限制条款等因素做多维度的横向比较和分析。这些信息往往散落在多个网页上，得把它们一页页读完，再整理成一张可以横向对比的表。</p><p>这类工作最适合交给本机的 AI Agent 去做。我平时用 Claude Code 和 Codex，改代码、写脚本都很顺。</p><p>真正卡住我的是一件很小的事：它看不到我浏览器里已经打开的那十几个标签页，也不知道我在这些页面中实际的访问/操作状态。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048310354" alt="限制 Agent 协作能力的两道缺口" title="限制 Agent 协作能力的两道缺口"/></p><p>为此我试过三条路，但各自均有不小短板：</p><table><thead><tr><th>方案</th><th>复用真实浏览器</th><th>对话入口</th><th>跨页操作</th></tr></thead><tbody><tr><td>Playwright / CDP</td><td>✗ 另起干净浏览器，登录态与表单带不过去</td><td>终端或脚本</td><td>需自行编排流程</td></tr><tr><td>各家官方插件</td><td>✓</td><td>编辑器侧边</td><td>受插件能力限制，且绑定自家模型</td></tr><tr><td>Browser MCP</td><td>✓</td><td>终端</td><td>每打开一个页面都要补一条指令</td></tr></tbody></table><p>三条路都能走通，但都极不顺手。归根到底，它们都止步于一个问题：Agent 缺的不是智能，而是对用户浏览上下文的感知与还原。</p><h2>于是有了 OpenSider</h2><p>想清楚之后，我把两者的关系倒了过来：不让 Agent 去够浏览器，而是让浏览器把当前访问的网页信息和状态交给 Agent。</p><p>做法是让浏览器当客户端、本机 Agent 当执行器。浏览器把 “用户在看什么” 主动塞给 Agent，让 Agent 结合这个信息来决定下一步做什么。为了让 Agent 更丝滑地操作网页，浏览器也需要为 Agent 提供一系列的工具。</p><p>基于这个思路，在 AI 的加持下，我落地了一个开源的浏览器插件：<strong>OpenSider</strong></p><p>基于这个插件，原来的很多需要在浏览器网页和 Agent UI 来回跳转的工作变得相当简单（只需要在浏览器中直接给 Agent 下达指令，Agent 便能跟你在同一个浏览器上下文工作），Agent 操作网页的能力也大大提升（通过插件提供的 API，Agent 可以在已加载的多个网页间跳转、切换来执行任务，不需要每次工具调用都冷启一个浏览器窗口或标签）。</p><p>下面分五个部分介绍这个插件的主要构成：</p><h2>一、产品形态</h2><p>插件安装并开启后，浏览器侧边栏中可选择本地已安装的 Agent(CLI) 进行聊天（所有支持 ACP 协议的 Agent 均可连接，如 Claude Code CLI、Github Copilot CLI、OpenCode CLI 等等）。</p><p><img width="723" height="459" referrerpolicy="no-referrer" src="/img/bVdqRTm" alt="OpenSider 启动效果" title="OpenSider 启动效果" loading="lazy"/></p><blockquote>【截图占位】请替换为侧边栏 ChatUI / Agent 连接界面截图。</blockquote><p>插件的本质是一个连接层：通过 ChatUI 让用户可以直接与本地 Agent 对话，同时将浏览器状态信息实时同步到会话的上下文中，让 Agent 与用户看到 “同一套页面”。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048310353" alt="OpenSider 概念图" title="OpenSider 概念图" loading="lazy"/></p><h2>二、使用方式</h2><p>插件的使用仅需三步：</p><ol><li>安装插件（给你正在使用的 Agent 发送安装提示词）；</li><li>启动插件以连接本地 Agent；</li><li>在 ChatUI 中直接与 Agent 对话。</li></ol><p>仍以最初的那次产品调研为例，我在浏览器侧边栏里输入：</p><blockquote>「帮我把 A/B/C 这几家产品的定价页都看一遍，出一张横向对比的表格。」</blockquote><p>Agent 会自动切到对应标签页，读取定价、套餐等信息，生成对比表并输出结果。整个过程不需要复制链接、切换终端，也不需要重新登录页面。</p><h2>三、主要功能</h2><ul><li><strong>复用真实浏览器状态：</strong> 站点的用户身份（登录态）、填写的表单状态都会保留复用，不需要重新还原现场。</li><li><strong>就地开始协同：</strong> 当前在哪个页面，Agent 就结合这个页面的信息工作。也可以拾取网页元素进行提问。</li><li><strong>网页自动化：</strong> 页面跳转、读取、点击、填表、截图等操作作为工具注入给 Agent，自动化操作在网页中实时呈现（模拟鼠标点击、键盘输入等）。</li><li><strong>Agent 和模型均可自由切换：</strong> 支持一键切换 Agent/模型，同一会话中也可使用不同的 Agent，不受终端工具束缚。</li><li><strong>数据、产物均存本地：</strong> 会话数据、Agent 产物内容均保存在本地，可以重复使用。</li></ul><h2>四、技术原理</h2><p><strong>核心方案：</strong> 基于 Chrome Native Messaging Host 实现浏览器与本地 Agent 的桥接：侧边栏连接时启动，断开时退出，进程不常驻。这层 Host 通过 ACP 协议拉起你选择的 CLI，并把网页自动化工具经由同一连接暴露给 Agent。全程不需要额外的后台服务。</p><p>插件和页面之间的通信也没有定义新协议，而是直接基于文件通信。一轮完整的交互流程：</p><ol><li>插件将浏览器标签页等信息写入工作区下的多个文件</li><li>Agent 实时读取这些文件，掌握页面内容和可操作控件</li><li>Agent 需要操作页面时，向 <code>commands/</code> 目录写入指令</li><li>插件执行指令，把结果写回 <code>results/</code></li></ol><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048310355" alt="浏览器与 Agent 的交互流程" title="浏览器与 Agent 的交互流程" loading="lazy"/></p><p>对 Agent 而言，操作一个网页和读写一个文件没有本质区别。</p><h2>五、安装 OpenSider</h2><p>为了兼顾不同平台（MacOS/Windows/Linux 等系统）和具体的运行环境，OpenSider 没有将安装工具固化为发布产物，而是提供了一个线上 Skill 和一系列的工具脚本（含二进制文件）给 Agent。</p><p>仅需将一段安装提示词发给你常用的 Agent 应用，便可在 Agent 的操作引导下完成插件的安装：</p><pre><code>帮我安装 OpenSider 浏览器扩展。
-请先读取 https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md，按其安装流程执行。</code></pre><h3>更多信息</h3><p>关于该项目的详细信息，请移步 Github 仓库：<a href="https://link.segmentfault.com/?enc=wrjXR9IFVwozMxO%2FaJCh8g%3D%3D.SoCs0N2bcOG90cVG1T6h1UbQdN6rymlMLu0JE8Gx%2BlgRLUXVOL97EDbRkuCBtcbY" rel="nofollow" target="_blank">github.com/parksben/opensider</a></p><p>欢迎安装体验并提供反馈，帮助我持续完善这个工具。给一个 Star 便是对该项目的莫大支持，恳谢！</p>]]></description></item><item>    <title><![CDATA[Jev 爆火之后，我们把它集成进了数据湖仓 databend ]]></title>    <link>https://segmentfault.com/a/1190000048310980</link>    <guid>https://segmentfault.com/a/1190000048310980</guid>    <pubDate>2026-09-22 10:05:30</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <blockquote><strong>导读</strong>：Jev 最近很火，它擅长的语义判断如果直接放进数据库，能否让分类、筛选这类任务留在 SQL 里完成？本文以 Databend 的 Python UDF 集成为例，走通接入和查询过程，也看看远程模型调用的性能、成本与数据边界。</blockquote><hr/><p>最近Jev 突然火起来了，稍微试了下做分类任务效果非常不错，成本也低廉。所以给 Databend 的 Python UDF 写了一个 Jev 集成，顺手把过程和想法整理成这篇文章。</p><p>先说 Jev 是个什么东西，再说为什么我觉得它放进数据库里很合适，最后是怎么在 Databend 里跑起来，以及我在实际用的过程中踩到的一些点。</p><hr/><h2>先聊聊 Jev</h2><p>Jev 是 TypeSafe 发布的第一个模型，他们管这一类模型叫 System One。</p><p>这个名字借的是卡尼曼《思考，快与慢》里的"系统一"：快、直觉式的判断，而不是慢慢推演。名字取得挺贴切，因为 Jev 的设计目标确实不是写东西，而是做决定。</p><p>具体来说，你给它两样东西：一份材料（一段文本、一条 JSON、一封邮件、一张工单），和一个事先定好答案类型的问题。它给回来一个结构化的结果，常见的任务有 文章音视频标签分类，客户情绪值提取，穿衣订餐出行等决策，实时游戏决策等。</p><p>问题目前有三种：</p><ul><li><strong>Noul</strong>：这个陈述成立的概率是多少。回来一个 0 到 1 的数。</li><li><strong>Choice</strong>：从你给的几个选项里挑一个。回来选了哪个，加上每个选项的概率。</li><li><strong>Score</strong>：在一组有顺序的等级上打分。回来一个加权位置，加上各等级的概率。</li></ul><p>比如你把一封邮件和三个类别丢给它，它不会回一段"我觉得这大概是一封账单相关的邮件，因为……"，而是回这样一个东西：</p><pre><code class="JSON">{
-  "choice": "billing",
-  "probabilities": {
-    "billing": 0.91,
-    "technical": 0.07,
-    "sales": 0.02
-  },
-  "confidence": 0.82
-}</code></pre><p>拿到之后代码可以直接用，不用再从一段话里把答案抠出来。</p><hr/><h2>我觉得它好在哪</h2><p>我用过不少"让大模型做分类"的方案，通常的做法是写一段 prompt，要求模型只输出 JSON，然后解析、校验，格式不对就重试。能用，但总觉得别扭：明明只想要一个字段，却要等它一个 token 一个 token 地把 JSON 写完。</p><p>Jev 从根上绕开了这件事。答案空间是你事先定死的，它只在里面选，所以格式上不会出岔子，也不需要生成那一大段文本。这带来几个直接的好处。</p><p>第一是快。官方说大多数请求在一百毫秒上下。我实际从 Databend 这边走一圈，加上网络，也就几百毫秒，跟以前动辄几秒的体验完全不是一回事。</p><p>第二是便宜。因为它不产生输出 token，账单基本只看输入。批量给几百万行数据打标签这种事，以前得先算算钱，现在心里负担小多了。</p><p>第三是带概率。这点我觉得比前两点更重要。它不只告诉你选了什么，还告诉你有多确定。这意味着你可以在 SQL 或代码里设阈值：把握大的自动过，把握小的转人工。以前用生成模型，想拿到一个靠谱的置信度其实挺难的。</p><p>第四是它不抢流程的控制权。Jev 不是 Agent，不会自己决定下一步做什么。你的代码或 SQL 还是主干，它只是在需要判断的地方被调用一下，然后把结果交回来。对数据库场景来说，这个性格正合适。</p><hr/><h2>也说说它不擅长的</h2><p>写到这里得停一下，免得读者以为这是个万能的东西。</p><p>Jev 不会生成内容。让它写文章、写代码、做摘要、回邮件，都做不到。它也不会给出你没预先定义的答案，选项里没有的东西它不会凭空造出来。所以但凡需要开放式输出的场景，还是得用 GPT、Claude 这类模型。</p><p>它也不适合长链条推理。如果一个任务要先推出 A，根据 A 推 B，再综合出 C，这种一步接一步的活它做不好。独立的问题可以一起问，互相依赖的问题得你在代码里拆开串起来。</p><p>还有一点要说清楚：结构可靠不等于判断正确。它保证的是输出一定落在你给的选项里，不保证选的那个就是对的。官方说的"calibrated"，指的是它说 80% 把握的那批预测，整体上大概真有 80% 是对的；这是统计意义上的准，不是每一条都准。所以高风险的动作，还是要配上规则校验和人工确认。</p><p>另外，选项设计对结果影响很大。类别之间意思重叠、问题写得含糊、输入里缺关键信息，都会让结果变差。用它不等于可以省掉设计和调试。</p><p>最后是现实层面的：它现在走托管 API，权重不公开，只处理文本（以及文本组成的 JSON 和数组），图片音频都不支持。数据要出数据库、要走网络、要付费，这些都得考虑。</p><p>总结一下我的理解：开放的事情交给会写字的模型，有界的判断交给 Jev，确定的逻辑和最终的控制权留在代码里。</p><hr/><h2>为什么想把它放进 Databend</h2><p>数据库里其实堆着大量需要"看一眼就能判断，但规则写不出来"的东西：客户反馈、工单、评论、日志、商品描述、销售线索。</p><p>以前处理这些，流程一般是：SQL 查出来，导到脚本里，调模型，再写回去。每一步都不难，但串起来就多了很多胶水代码和调度任务。</p><p>Databend 支持 Python UDF Server，而 Jev 的输入输出又天然是结构化的，两边接起来很顺。接好之后，语义判断就变成了一个普通的 SQL 函数：</p><pre><code class="SQL">SELECT *
-FROM customer_feedback
-WHERE jev(
-    OBJECT_CONSTRUCT('rating', rating, 'feedback', feedback),
-    'The customer reports a serious product failure that requires immediate support'
-);</code></pre><p>这还是一条 SQL，只是 <code>WHERE</code> 后面那个条件，是用一句话描述的。</p><p>扫描、过滤、连接、聚合、写回，这些 Databend 本来就擅长；判断"这条反馈到底在说什么"，交给 Jev。分工挺清楚的。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048310982" alt="" title=""/></p><blockquote>图 1：Databend × Jev 集成架构。Databend 保留数据执行和流程控制权，Jev 负责有界的语义判断。</blockquote><p>下面就是怎么把它跑起来。</p><hr/><h2>这次做了五个函数</h2><table><thead><tr><th>函数</th><th>返回值</th><th>用途</th></tr></thead><tbody><tr><td><code>jev</code></td><td><code>BOOLEAN</code></td><td>这条记录是否满足某个用自然语言描述的条件</td></tr><tr><td><code>jev_prob</code></td><td><code>DOUBLE</code></td><td>条件成立的概率</td></tr><tr><td><code>jev_choice</code></td><td><code>VARCHAR</code></td><td>从几个候选类别里选最合适的一个</td></tr><tr><td><code>jev_score</code></td><td><code>DOUBLE</code></td><td>在一组有序等级上的位置</td></tr><tr><td><code>jev_eval</code></td><td><code>VARIANT</code></td><td>完整结果，包括概率分布和 confidence</td></tr></tbody></table><p>前四个是为了在 SQL 里用起来顺手，返回的都是标量。最后一个 <code>jev_eval</code> 把 Jev 的原始回应整个返回来，适合需要看概率分布或者做人工复核的场景。代码在这里：<a href="https://link.segmentfault.com/?enc=kCLrIkMUSDAzJtu0Zjz5Sg%3D%3D.toPnt%2BBceXxXYUMIqnInqEzhGNvrRLIZ%2BhrKc0wyVFhs5PtjN%2BGLsQxC1bKEEcAtZVaZ4ogFJ6M1aOb4w7Dn3OMajGlYHdFMpFGIdHXRR9o%3D" rel="nofollow" target="_blank">python/example/jev.py</a></p><hr/><h2>把服务跑起来</h2><h3>启动 UDF Server</h3><p>先准备 TypeSafe 的 API Key，放到环境变量里：</p><pre><code class="Shell">export TYPESAFE_API_KEY='&lt;your-api-key&gt;'</code></pre><p>别把 Key 写进代码、SQL 或者提交到仓库里。</p><p>然后克隆 <code>databend-udf</code>，进 Python 目录启动：</p><pre><code class="Shell">cd python
-uv run python example/jev.py</code></pre><p>默认监听：</p><pre><code>UDF Server: 0.0.0.0:8815
-Metrics:    0.0.0.0:8816</code></pre><h3>让 Databend 认识这个地址</h3><p>Databend 的 Query 节点默认不允许连任意 UDF Server，需要在配置里打开并加白名单：</p><pre><code class="TOML">[query]
-enable_udf_server = true
-udf_server_allow_list = ["http://127.0.0.1:8815"]
-udf_server_allow_insecure = true</code></pre><p>改完重启 Query。</p><p>这是本机开发的配置。生产环境应该用内网域名加 TLS，白名单也要收紧。如果 Databend 跑在容器里，<code>127.0.0.1</code> 指的是容器自己，得换成 Query 节点真正能访问到的地址。</p><h3>注册函数</h3><pre><code class="SQL">CREATE OR REPLACE FUNCTION jev(VARIANT, VARCHAR)
-RETURNS BOOLEAN
-LANGUAGE python
-HANDLER = 'jev'
-ADDRESS = 'http://127.0.0.1:8815';
-
-CREATE OR REPLACE FUNCTION jev_prob(VARIANT, VARCHAR)
-RETURNS DOUBLE
-LANGUAGE python
-HANDLER = 'jev_prob'
-ADDRESS = 'http://127.0.0.1:8815';
-
-CREATE OR REPLACE FUNCTION jev_choice(
-    VARIANT,
-    VARCHAR,
-    ARRAY(VARCHAR NOT NULL)
-)
-RETURNS VARCHAR
-LANGUAGE python
-HANDLER = 'jev_choice'
-ADDRESS = 'http://127.0.0.1:8815';
-
-CREATE OR REPLACE FUNCTION jev_score(
-    VARIANT,
-    VARCHAR,
-    ARRAY(VARCHAR NOT NULL)
-)
-RETURNS DOUBLE
-LANGUAGE python
-HANDLER = 'jev_score'
-ADDRESS = 'http://127.0.0.1:8815';
-
-CREATE OR REPLACE FUNCTION jev_eval(
-    VARIANT,
-    VARCHAR,
-    VARCHAR,
-    ARRAY(VARCHAR NOT NULL)
-)
-RETURNS VARIANT
-LANGUAGE python
-HANDLER = 'jev_eval'
-ADDRESS = 'http://127.0.0.1:8815';</code></pre><p>跑一下 <code>SHOW USER FUNCTIONS;</code> 能看到这五个，就说明接上了。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048310983" alt="" title="" loading="lazy"/></p><blockquote>图 2：一次 jev\_* 调用的完整时序。确定性过滤留在 Databend，远程判断由 UDF Server 合批后提交给 Jev。</blockquote><hr/><h2>拿一张客户反馈表试试</h2><p>建一张简单的表：</p><pre><code class="SQL">CREATE OR REPLACE TABLE customer_feedback (
-    id       UINT64,
-    customer VARCHAR,
-    product  VARCHAR,
-    rating   UINT8,
-    feedback VARCHAR
-);
-
-INSERT INTO customer_feedback VALUES
-    (1, 'Alice', 'Cloud Warehouse', 5,
-     'The query engine is fast and setup was easy.'),
-    (2, 'Bob', 'Cloud Warehouse', 2,
-     'Queries are useful, but the dashboard often times out.'),
-    (3, 'Carol', 'Data Pipeline', 4,
-     'Reliable ingestion. I would like better monitoring.'),
-    (4, 'Dave', 'Data Pipeline', 1,
-     'The connector stopped working and we cannot load data.');</code></pre><p>这几个函数的第一个参数都是 <code>VARIANT</code>。用 <code>OBJECT_CONSTRUCT</code> 把一行里想给模型看的字段拼成一个对象：</p><pre><code class="SQL">OBJECT_CONSTRUCT(
-    'product', product,
-    'rating', rating,
-    'feedback', feedback
-)</code></pre><p>我建议不要只传一段文本。把产品名和评分一起带上，模型看到的是一条有上下文的记录，判断会准不少。</p><h3>用 <code>jev</code> 做过滤</h3><p>假设客服想找出"描述了严重故障、需要马上处理"的反馈。</p><p>以前大概会这么写：</p><pre><code class="SQL">WHERE feedback ILIKE '%error%'
-   OR feedback ILIKE '%failed%'
-   OR feedback ILIKE '%stopped%'</code></pre><p>关键词列表永远列不全，而且 "not working" 和 "stopped working" 这种同义的表达一多，规则就越来越难维护。</p><p>换成 <code>jev</code>，直接把想找的东西说出来：</p><pre><code class="SQL">SELECT id, customer, product, rating, feedback
-FROM customer_feedback
-WHERE jev(
-    OBJECT_CONSTRUCT(
-        'product', product,
-        'rating', rating,
-        'feedback', feedback
-    ),
-    'The customer reports a serious product failure that requires immediate support'
-);</code></pre><p>在这张表上，Dave 那条会被筛出来，Bob 那条超时的抱怨则不会。</p><p><code>jev</code> 返回 <code>BOOLEAN</code>，可以像普通条件一样放在 <code>WHERE</code>、<code>CASE WHEN</code> 或者聚合里。</p><p>默认是概率过 0.5 就算 <code>TRUE</code>。如果你的场景宁可漏掉一些也不想误判，可以在启动服务时把阈值调高：</p><pre><code class="Shell">export JEV_THRESHOLD='0.8'
-uv run python example/jev.py</code></pre><h3>用 <code>jev_prob</code> 排序</h3><p>布尔值适合过滤，但很多时候你想要的是一个能排序的数。</p><p>比如看流失风险：</p><pre><code class="SQL">SELECT
-    id,
-    customer,
-    rating,
-    feedback,
-    jev_prob(
-        OBJECT_CONSTRUCT(
-            'product', product,
-            'rating', rating,
-            'feedback', feedback
-        ),
-        'The customer is at high risk of churn'
-    ) AS churn_probability
-FROM customer_feedback
-ORDER BY churn_probability DESC;</code></pre><p>概率回到 SQL 里之后，阈值就由用的人自己定：</p><pre><code class="SQL">WITH scored AS (
-    SELECT
-        *,
-        jev_prob(
-            OBJECT_CONSTRUCT(
-                'product', product,
-                'rating', rating,
-                'feedback', feedback
-            ),
-            'The customer is at high risk of churn'
-        ) AS churn_probability
-    FROM customer_feedback
-)
-SELECT *
-FROM scored
-WHERE churn_probability &gt;= 0.8
-ORDER BY churn_probability DESC;</code></pre><p>运营团队要 0.8 以上的，销售团队可能只想看 Top 10，各自写各自的 SQL 就行，不用改模型那边的任何东西。</p><h3>用 <code>jev_choice</code> 分类</h3><p>反馈进了系统之后，第一件事往往是分给对的团队：</p><pre><code class="SQL">SELECT
-    id,
-    feedback,
-    jev_choice(
-        OBJECT_CONSTRUCT(
-            'product', product,
-            'rating', rating,
-            'feedback', feedback
-        ),
-        'Which category best describes this customer feedback?',
-        [
-            'Performance',
-            'Reliability',
-            'Usability',
-            'Feature request'
-        ]
-    ) AS category
-FROM customer_feedback;</code></pre><p>工单路由、评论主题、商品归类、线索分组，都是这个用法。</p><p>这里有一个经验：候选类别尽量互斥，边界清楚。如果两个选项意思差不多，模型的概率会在它们之间摇摆，confidence 也会跟着掉下来。</p><h3>用 <code>jev_score</code> 打分</h3><p>有些判断不是非黑即白，而是有程度的。情感就是典型：</p><pre><code class="SQL">SELECT
-    id,
-    feedback,
-    jev_score(
-        OBJECT_CONSTRUCT(
-            'rating', rating,
-            'feedback', feedback
-        ),
-        'How positive is this customer feedback?',
-        [
-            'Very negative',
-            'Negative',
-            'Neutral',
-            'Positive',
-            'Very positive'
-        ]
-    ) AS sentiment_score
-FROM customer_feedback
-ORDER BY sentiment_score;</code></pre><p>五个等级的位置是 0 到 4。返回的不是硬选一个整数，而是按各等级概率算出来的加权位置，所以会看到 2.5、3.7 这样的值。</p><p>因为是数值，可以直接聚合：</p><pre><code class="SQL">SELECT
-    product,
-    AVG(
-        jev_score(
-            OBJECT_CONSTRUCT('rating', rating, 'feedback', feedback),
-            'How positive is this customer feedback?',
-            ['Very negative', 'Negative', 'Neutral', 'Positive', 'Very positive']
-        )
-    ) AS avg_sentiment
-FROM customer_feedback
-GROUP BY product
-ORDER BY avg_sentiment DESC;</code></pre><p>判断是 Jev 做的，分组和平均是 Databend 做的。我觉得把模型能力塞进数据库，最实际的价值就在这种地方。</p><h3>用 <code>jev_eval</code> 看完整结果</h3><p>自动流程里有个类别就够了，但做审计、风控或者人工复核的时候，你会想知道模型到底有多确定。</p><pre><code class="SQL">SELECT jev_eval(
-    PARSE_JSON('{"text":"A SQL query engine written in Rust"}'),
-    'Which category best describes this text?',
-    'choice',
-    ['Database', 'Cooking', 'Sports']
-) AS result;</code></pre><p>回来的是：</p><pre><code class="JSON">{
-  "choice": "Database",
-  "confidence": 1.0,
-  "probabilities": {
-    "Cooking": 0.0,
-    "Database": 1.0,
-    "Sports": 0.0
-  },
-  "type": "choice"
-}</code></pre><p>这是 <code>VARIANT</code>，在 Databend 里可以继续取字段：</p><pre><code class="SQL">WITH evaluated AS (
-    SELECT
-        id,
-        jev_eval(
-            OBJECT_CONSTRUCT('feedback', feedback),
-            'Which category best describes this feedback?',
-            'choice',
-            ['Performance', 'Reliability', 'Usability', 'Feature request']
-        ) AS result
-    FROM customer_feedback
-)
-SELECT
-    id,
-    result['choice']::VARCHAR AS category,
-    result['confidence']::DOUBLE AS confidence,
-    result['probabilities'] AS probabilities
-FROM evaluated;</code></pre><p>我自己比较常用的一个套路是：confidence 高的直接进下游系统，低的丢进人工复核队列，完整的概率分布存下来留着以后看。</p><p><code>jev_eval</code> 的第三个参数是问题类型：</p><table><thead><tr><th><code>kind</code></th><th>含义</th><th><code>options</code></th></tr></thead><tbody><tr><td><code>noul</code></td><td>是/否的概率判断</td><td>传 <code>[]</code></td></tr><tr><td><code>choice</code></td><td>候选项分类</td><td>传候选类别</td></tr><tr><td><code>score</code></td><td>有序等级打分</td><td>传有序等级</td></tr></tbody></table><hr/><h2>算过一次的结果，存下来</h2><p>这几个函数背后是远程 API 调用，跟本地的 <code>LOWER()</code>、<code>SUBSTR()</code> 不是一回事。每次查询都重新算一遍，既慢又浪费钱。</p><p>如果一个结果会被报表、应用、下游任务反复读，算一次写回表里：</p><pre><code class="SQL">CREATE OR REPLACE TABLE feedback_enriched AS
-SELECT
-    id,
-    product,
-    rating,
-    feedback,
-    jev_eval(
-        OBJECT_CONSTRUCT(
-            'product', product,
-            'rating', rating,
-            'feedback', feedback
-        ),
-        'Which category best describes this customer feedback?',
-        'choice',
-        ['Performance', 'Reliability', 'Usability', 'Feature request']
-    ) AS category_result,
-    NOW() AS processed_at
-FROM customer_feedback;</code></pre><p>之后查询直接读这张表：</p><pre><code class="SQL">SELECT
-    category_result['choice']::VARCHAR AS category,
-    COUNT(*) AS feedback_count
-FROM feedback_enriched
-GROUP BY category
-ORDER BY feedback_count DESC;</code></pre><p>整个链路大概是这样：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048310984" alt="" title="" loading="lazy"/></p><blockquote>图 3：客户反馈语义增强数据流。结果只计算一次并持久化，高 confidence 自动流转，低 confidence 进入人工复核。</blockquote><hr/><h2>真正用起来要注意的</h2><h3>先用 SQL 把范围缩小</h3><p>能用日期、状态、分区、数值条件过滤掉的，先过滤，再调 Jev：</p><pre><code class="SQL">SELECT
-    id,
-    jev_prob(
-        OBJECT_CONSTRUCT('rating', rating, 'feedback', feedback),
-        'The customer needs immediate support'
-    ) AS probability
-FROM customer_feedback
-WHERE rating &lt;= 2
-  AND feedback IS NOT NULL;</code></pre><p>别对着一张没筛过的大表直接调远程模型。</p><h3>只传需要的字段</h3><p>不要顺手把整行传过去。明确构造一个最小的对象，请求体小，也少往外发敏感数据。</p><h3>同一批数据用同样的问题</h3><p>UDF 实现里会把问题、类型和选项都相同的行合并成一个批次发出去。批处理的时候问题和选项固定，吞吐会好很多。</p><p>批次大小和并发可以调：</p><pre><code class="Shell">export JEV_BATCH_SIZE='20'
-export JEV_CONCURRENCY='6'</code></pre><p>服务里还带了超时、重试和一个进程内的 LRU 缓存，临时网络抖动和重复请求能扛一下。</p><h3>上线前想清楚数据边界</h3><p>参与判断的数据是要发到远程 API 的。上线之前几件事得有答案：</p><ul><li>哪些字段可以出数据库；</li><li>里面有没有个人信息或其他敏感内容；</li><li>API Key 怎么注入、怎么轮换；</li><li>UDF Server 和 Databend 之间要不要走 TLS；</li><li>白名单和网络出口是否只放行可信地址；</li><li>结果要不要留存以备审计。</li></ul><p>把 AI 能力接进 SQL，不等于数据治理可以放松。恰恰因为调用发生在数据链路里面，边界要画得更清楚。</p><hr/><h2>数据库负责执行，Jev 负责判断</h2><p>写完这个集成，我的感受是：Databend 负责存、筛、连、聚合、大规模执行，Jev 负责回答那些规则写不出来的语义问题。两边接上之后，用自然语言过滤、算概率、分类、打分、留 confidence 做人工复核，都能在 SQL 里完成。</p><p>对数据团队来说，不用改变工作方式。输入还是表，调用还是 SQL，输出还是可以进 <code>WHERE</code>、<code>ORDER BY</code>、<code>GROUP BY</code>、<code>INSERT INTO</code> 和数据管道。</p><p>Jev 现在还比较早期，评测是他们自己设计的，权重也没公开，该保留的怀疑我都保留着。但"数据库里那些小而模糊的判断，不必每次都请一个会写小说的模型来做"这件事，我觉得是成立的。</p><blockquote><p>相关资源：</p><ul><li>Databend UDF：<a href="https://link.segmentfault.com/?enc=oAUPn2drz6VpeyrsW0JReQ%3D%3D.SAladJ3wXIrrD6O1pPmp3cLT6aFGwFVKXBsMrA5PQS%2FmtK8myRkZq5HWLea%2Fp4UT" rel="nofollow" target="_blank">github.com/databendlabs/databend-udf</a></li><li>Jev UDF 实现：<a href="https://link.segmentfault.com/?enc=XO0gcBQyjG9G3Uj279cSkQ%3D%3D.R%2F8jcmOlJZdfQ3QxBxHUXNOUHoH0aMCkhT8lxtvMFVzhtXrPWPrCUYwmp9tPkpH77EBB%2Bl4jJRqfiLl1oC6PZIWnza%2Bdi7fhi4lyIutLXfA%3D" rel="nofollow" target="_blank">python/example/jev.py</a></li></ul><p>函数签名：</p><pre><code class="SQL">jev(row, condition)                      -- 自然语言条件，返回 BOOLEAN
-jev_prob(row, condition)                 -- 条件成立概率，返回 DOUBLE
-jev_choice(row, question, options)       -- 候选项分类，返回 VARCHAR
-jev_score(row, question, levels)         -- 有序等级打分，返回 DOUBLE
-jev_eval(row, question, kind, options)   -- 完整结果，返回 VARIANT</code></pre></blockquote>]]></description></item><item>    <title><![CDATA[《DNESP32P4开发指南_V1.0》第五十一章 LVGL 综合例程 正点原子 ]]></title>    <link>https://segmentfault.com/a/1190000048311009</link>    <guid>https://segmentfault.com/a/1190000048311009</guid>    <pubDate>2026-09-22 10:04:46</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <h2><strong>第五十一章 LVGL 综合例程</strong></h2><p>本章，简单的介绍一下DNESP32P4开发板的 LVGL 综合例程。需要说明一下的是：本例程是一个不完整的例程。因为该例程只是实现一个基于 LVGL 的 GUI 界面，里面的 APP基本没有实现功能，所以这只是给大家参考的 GUI demo。<br/>本章将分为如下 2 个小节：<br/>51.1 LVGL 综合例程注意事项<br/>51.2 LVGL 综合例程界面展示</p><h3><strong>51.1 LVGL 综合例程注意事项</strong></h3><p>注意事项如下：<br/>1，DNESP32P4开发板的LVGL综合例程只支持正点原子的5.5寸 MIPI 720P屏。其它屏幕会出现图标显示异常。<br/>2，所用的LVGL版本是v8.4。<br/>3，需要准备一张TF卡，将A盘资料的SD卡根目录文件复制到TF卡根目录当中，SD卡根目录文件如下图所示。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048311011" alt="image001" title="image001"/></p><p>图51.1.1 拷贝资料到TF卡当中</p><h3><strong>51.2 LVGL 综合例程界面展示</strong></h3><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048311012" alt="image003" title="image003" loading="lazy"/></p><p>图64.2.1 GUI主界面、画板和计算器界面</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048311013" alt="image005" title="image005" loading="lazy"/></p><p>图51.2.2 视频播放器、音乐播放器和图片浏览器</p>]]></description></item><item>    <title><![CDATA[AI 在研发管理里能干的12 件事：从需求评审到上线复盘的提问清单 项目经理郑前 ]]></title>    <link>https://segmentfault.com/a/1190000048311022</link>    <guid>https://segmentfault.com/a/1190000048311022</guid>    <pubDate>2026-09-22 10:03:49</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>软件研发管理是一套贯穿需求、规划、开发、测试、上线、复盘的完整闭环。</p><p>传统模式下，团队大量时间消耗在需求梳理、评审会议、任务拆解、Bug分析、迭代复盘这些重复性工作上。</p><p>大模型的普及让AI成为深度嵌入研发全生命周期的管理助手，为研发管理提供了新思路。</p><p>先附上AI工具推荐一览表便于大家了解：</p><table><thead><tr><th><strong>AI工具</strong></th><th><strong>可完成</strong></th></tr></thead><tbody><tr><td>禅道AI</td><td>需求润色与拆解、测试方案与用例生成、Bug归因、研发数据统计、复盘总结、优化方案生成、研发知识沉淀</td></tr><tr><td>通义千问Qwen</td><td>需求梳理与拆解、需求评审辅助、代码开发辅助、测试用例生成、复盘总结、研发知识沉淀</td></tr><tr><td>DeepSeek</td><td>需求梳理、代码开发与规范校验、代码评审初筛、复盘总结、迭代优化方案生成</td></tr><tr><td>ChatGPT</td><td>需求梳理、需求评审预审、研发数据统计与分析辅助、复盘总结、优化方案生成、研发知识沉淀</td></tr><tr><td>Claude</td><td>需求梳理、代码开发辅助、代码评审、文档撰写与复盘总结</td></tr><tr><td>GitHub Copilot</td><td>代码开发辅助、编码规范与语法校验、代码评审初筛</td></tr><tr><td>Google Gemini</td><td>需求梳理、需求评审、研发数据统计、复盘总结、研发知识沉淀</td></tr><tr><td>Atlassian Intelligence</td><td>迭代规划与排期、需求评审、研发数据统计、复盘总结</td></tr></tbody></table><h2>一、需求与迭代规划</h2><p>这个阶段AI的价值不是替你干活，而是帮你把需求想清楚。</p><p><strong>1.需求梳理</strong></p><p>原始需求往往零散口语化，缺少边界、场景和验收标准。AI能提炼零散需求、统一规范、识别漏洞，把一句话需求变成结构化文档。</p><p>提问时不要直接说帮我拆需求，可以这样说：</p><ul><li>这份需求里有哪些表述模糊、逻辑矛盾、边界缺失的地方？逐条列出</li><li>如果你是开发，拿到这份需求后会追问哪5个问题？</li><li>把零散需求拆成可验收的细分任务，颗粒度到什么程度才算"当天可验收"？</li><li>该需求的核心目标、用户场景、核心价值分别是什么？哪些是冗余需求？</li></ul><p><strong>2 .需求评审</strong></p><p>AI可以当预审官，按完整性、合理性、一致性等维度输出结构化反馈。这样就能先对需求做初步评审并提供建议，让会议聚焦真正的争议点。</p><p>可以这样问：</p><ul><li>本次需求是否满足完整性、一致性、可测试性、可落地性四大标准？逐项打分并说明理由</li><li>需求中未明确的边界场景、异常场景有哪些？如何补充完善？</li><li>该需求与往期迭代需求、现有功能是否存在冲突或重复？指出冲突的具体位置</li><li>哪些问题属于一票否决、必须评审会确认，哪些可以会后跟进？</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048311024" alt="ai研发管理-1" title="ai研发管理-1"/></p><p><strong>3.迭代排期</strong></p><p>排期最容易出问题的地方，不是估算本身，而是忽略任务之间的依赖关系，以及团队真实的人力负载。</p><p>AI可以读取任务清单和历史工时数据，先画依赖链、再评估人力产能。</p><p>提问清单如下：</p><ul><li>本次迭代所有任务的工作量、难易等级、依赖关系如何划分？请先画出完整任务依赖链</li><li>现有团队人力产能是否匹配迭代任务？是否存在人力冗余或缺口？</li><li>忽略任务依赖和团队人力负载，直接按理想状态排期，会发生什么？请推演后果</li><li>迭代周期内可能出现的进度延期风险有哪些？每条风险给一个提前预案</li></ul><h2>二、开发与质控</h2><p>这个阶段AI当质检员，人来当最终把关人。</p><p><strong>1.代码规范</strong></p><p>AI辅助代码开发，重点是做规范校验，比如检查规范符合度，识别语法、性能隐患，提示耦合风险。</p><p>提问清单如下：</p><ul><li>当前代码是否符合团队编码规范？列出不统一、不规范的具体位置</li><li>代码中是否存在隐藏语法错误、逻辑漏洞、性能隐患？按严重等级排序</li><li>如何简化冗余代码、优化代码结构，提升可维护性？</li><li>当前代码是否适配整体项目架构？指出耦合过高的模块</li></ul><p><strong>2.代码评审</strong></p><p>人工CR容易受精力影响漏看问题。AI负责第一轮初筛，识别安全漏洞、兼容问题、潜在回归风险，标记需要人工重点关注的片段。</p><p>用分层递进的方式提问，先粗后细：</p><ul><li>第一层（快筛）：本次提交是否偏离迭代需求目标？列出功能偏离点</li><li>第二层（深查）：代码存在哪些安全漏洞、性能问题、兼容问题？给出严重等级和复现条件</li><li>第三层（优化）：代码复用性、扩展性、可读性是否达标？如何优化？</li><li>人工确认项：本次变更是否影响原有核心功能？标出"必须人工验证"的回归风险点</li></ul><p><strong>3 .测试用例</strong></p><p>AI根据需求文档，可以快速生成测试方案，覆盖正常、异常、边界条件，并区分用例优先级。可以这样问：</p><ul><li>针对当前迭代功能，正常、异常、边界、兼容四类场景分别有哪些？请穷举后再合并去重</li><li>如何设计高覆盖率、低冗余的测试用例？如何避免"用例很多、关键场景漏了"？</li><li>核心功能、高危场景的优先级用例是什么？如何重点覆盖？</li></ul><p>本次测试需重点关注的风险点、性能指标、兼容性要求有哪些？</p><p><img referrerpolicy="no-referrer" src="https://image-static.segmentfault.com/218/161/2181613005-6ab1d78f49809" alt="ai研发管理-2" title="ai研发管理-2" loading="lazy"/></p><p><strong>4. Bug分析</strong></p><p>AI可以完成Bug归类、初步根因推断，区分流程问题、技术问题还是外部环境问题，识别高频重复Bug。</p><p>你可以这样问AI：</p><ul><li>本次迭代所有Bug的类型、等级、分布模块、产生原因分别是什么？请按根因聚类展示</li><li>哪些Bug是高频复发问题？根源是流程问题、技术问题还是人为问题？</li><li>各类Bug的最优修复方案、修复优先级、预计耗时如何？</li><li>如何建立防控机制，避免同类Bug重复出现？</li></ul><h2>三、上线与复盘</h2><p>这个阶段用数据和归因复盘，而不是凭感觉总结。</p><p><strong>1. 上线风险评估</strong></p><p>上线前，AI读取本次迭代的需求、任务、Bug清单，梳理全部变更内容，识别潜在发布风险，检查回滚预案。</p><p>提问时让它当红队，专挑没想到的场景：</p><ul><li>本次上线的功能、代码、配置变更有哪些？是否完整核对？</li><li>上线中可能出现哪些宕机、接口异常、数据错乱场景？逐条推演影响面和触发条件</li><li>当前环境、配置、版本是否满足上线条件？列出阻碍项</li><li>上线失败的回滚方案、应急处置预案是否完善？按步骤演练过吗？</li></ul><p><strong>2. 研发数据统计</strong></p><p>迭代结束后，AI汇总交付率、Bug密度、任务延期率、阻塞记录等数据，对比历史迭代，定位效率卡点。可以这样问：</p><ul><li>本次迭代的需求交付率、任务完成率、Bug率、延期率等核心数据如何？与目标值对比</li><li>迭代中耗时最长、阻塞最多的环节是什么？核心原因是什么？</li><li>团队成员的工作负荷、产出效率、问题卡点有哪些差异？是否存在人力负载不均？</li><li>本次迭代效能与往期对比，提升或下降的维度有哪些？为什么？</li></ul><p><img referrerpolicy="no-referrer" src="https://image-static.segmentfault.com/391/425/3914256152-6ab1d7975c40f" alt="ai研发管理-3" title="ai研发管理-3" loading="lazy"/></p><p><strong>3.迭代复盘</strong></p><p>AI可以汇总迭代事件、Bug记录、进度阻塞信息，从流程、协作、技术、管理四个维度归因，输出复盘初稿。关键是逐层追问，多问一层为什么：</p><ul><li>本次迭代顺利完成的亮点、值得保留的流程和方法有哪些？</li><li>进度延期、Bug过多、需求变更频繁等问题，根因是流程、技术、协作还是管理？</li><li>对每个根因再追问一层：为什么会出现这个根因？它前面还有没有更早的原因？</li><li>本次迭代未解决的问题、遗留风险有哪些？如何跟进闭环？</li></ul><h2>四、长效沉淀</h2><p>不是建个知识库，而是让知识长在流程里。</p><p><strong>1. 迭代优化方案</strong></p><p>基于复盘发现的问题，AI输出短期整改动作和长期流程优化建议。可以这样问：</p><ul><li>针对本次迭代核心问题，短期即时优化举措有哪些？按投入产出比排序</li><li>如何优化需求评审、排期、开发、测试流程，规避同类问题复发？</li><li>团队研发规范、协作机制、质控体系需要补充和优化什么？</li><li>下一次迭代的效能提升目标是什么？如何量化、如何验证达成？</li></ul><p><strong>2. 知识沉淀</strong></p><p>大量踩坑经验、解决方案散落在聊天记录和会议纪要里，新人很难继承。AI可以把迭代经验整理成结构化、可搜索的知识库。可以这样问：</p><ul><li>本次迭代的核心经验、踩坑记录、最优解决方案有哪些？整理成可复用模板</li><li>哪些流程、方法、规范可以固化为团队标准，长期复用？</li><li>如何把零散经验整理为标准化知识库，降低新人上手成本？</li><li>知识如何"长"在评审、排期、上线等流程节点上自动提醒，而不是等人来翻？</li></ul><p><img referrerpolicy="no-referrer" src="https://image-static.segmentfault.com/981/326/981326830-6ab1d7b0914ae" alt="ai研发管理-4" title="ai研发管理-4" loading="lazy"/></p><h2>五、AI落地研发管理的避坑指南</h2><p>AI可以完成12类研发管理工作，但要明确定位：AI是辅助，人工主导决策，不能直接把管理交给AI。AI输出的所有内容都需要人工校验，直接照搬AI结果很容易带来风险。</p><p>在实际落地中存在三类常见误区：</p><ul><li>完全依赖AI，不做人工审核，比如直接采纳AI输出的需求、排期、复盘结论；</li><li>提问模糊笼统，得到质量很低的回答，无法落地；</li><li>追求一步到位全流程铺开，直接把AI应用到全部环节。</li></ul><p>我们就要注意以下实操技巧。首先，复用标准化可参考提问清单，固定场景直接使用，保证输出内容结构完整；其次，AI产出之后，业务、研发、测试角色要做二次校验；最后，落地建议从高频轻量场景切入，优先尝试需求润色、测试用例生成、复盘初稿撰写，跑通验证之后，再逐步拓展到排期评估、风险分析等决策类场景。</p><h2>六、写在最后</h2><p>研发效能提升，不是单纯追求更快的开发速度，而是减少重复踩坑并沉淀团队经验。</p><p>AI为我们提供了很好的底座，但真正的价值来源于人的判断与决策。一定先从小场景试点，不断打磨提问方式，校验AI输出结果，逐步形成属于自己团队的AI研发工作流，才是智能化研发管理的正确路径。</p>]]></description></item>  </channel></rss>
+（先列成功/参数非法/门店未命中/内部错误四组示例，再用 oneOf 收口，此处略）</code></pre><p>三段各有各的命门：</p><ul><li><strong>元数据</strong>：<code>name</code> 三处一致不赘述；<code>description</code> 是系统做<strong>初次筛选</strong>的依据——写"奶茶相关服务"这种糊涂话，筛选这关就过不去。</li><li><strong>触发场景</strong>：官方明确建议除了列典型话术，还要写<strong>"不调用的情况"</strong>来划清能力边界。V哥的理解：不写边界，相邻意图全算你头上，误触发一多，用户和小艺对你的信任一起掉。</li><li><strong>能力契约</strong>：每项能力一个 <code>exec-cli</code> 调用示例加 JSON Schema。<code>anyOf</code>（二选一必填）、<code>oneOf</code>（多种回包分支互斥）都是标准 JSON Schema 玩法，跟后端同学对过接口规范的会有熟悉感。</li></ul><hr/><h2>四、契约质量 = 分发质量：V哥的三条判断</h2><p>写完代码只是及格线，Skill 化真正的功夫在契约上。V哥给三条判断：</p><p><strong>① 典型话术要覆盖"同义改写"，不是罗列功能。</strong> "点一杯""来一杯""帮我带一杯"是三个说法一个意图，全写进典型话术，匹配面才够宽。只写功能名的契约，跟简历只写岗位名不写经历的候选人一样——不是不能干，是没人敢调。</p><p><strong>② 边界条款是防误触发的保险丝。</strong> 官方建议每条典型话术配"不调用的情况"，V哥把它当测试用例来写：把容易混淆的相邻意图一条条列出来、明确踢出去。误触发一次，用户说"这 App 抢答"；漏触发一次，用户说"这 App 失聪"——但误触发的伤害更大，因为它透支的是对整个入口的信任。</p><p><strong>③ <code>suggestion</code> 字段要写人话。</strong> 回包里的 <code>suggestion</code> 是直接给用户看的。V哥见过把内部异常码直接怼进去的写法，用户看到的回复是"ERR_TIMEOUT_504"——这不叫失败提示，这叫劝退。错误分支的 <code>suggestion</code> 按"用户下一步能干什么"来写。</p><hr/><h2>五、上线前自检清单</h2><p>V哥把整条链路压成一张自检表，六项全勾再提交：</p><table><thead><tr><th>#</th><th>检查项</th><th>挂了会怎样</th></tr></thead><tbody><tr><td>1</td><td>Stage 模型？FA 模型直接不可用，先迁移</td><td>编译期就过不去</td></tr><tr><td>2</td><td>目录名 = SKILL.md <code>name</code> = <code>skillProfiles[].name</code>？</td><td>注册失败或匹配不上，无报错</td></tr><tr><td>3</td><td>方法名与契约 <code>functionName</code> 严格一致？签名首参 <code>ArkTSScriptInfo</code>？</td><td>调用静默失败</td></tr><tr><td>4</td><td>每个能力方法都有回包？所有分支都走 <code>report</code> 出口？</td><td>系统侧"Skill 失联"，被降权</td></tr><tr><td>5</td><td><code>exec-cli</code> 的 <code>skillName</code>/<code>scriptPath</code>/<code>functionName</code> 与工程一致？</td><td>匹配上了也调不通</td></tr><tr><td>6</td><td>触发场景含"不调用的情况"？<code>suggestion</code> 是人话？</td><td>误触发 / 回复劝退</td></tr></tbody></table><p>开发完成后走官方的真机测试流程调试（<a href="https://link.segmentfault.com/?enc=Bggp8vaHrb5Fe0ndZgCBhw%3D%3D.%2BC%2F1mHaRQa4%2FbBryDGN4bdWuH4YbpNeU3VDyYzhuh%2FZnoP8KAfPU0mwAQP%2FPQKXXQOG%2FpLDVL%2Fz4XcWxIP%2Fx4sdfrYbecP%2FOcwW%2BtrCg3m8bmH4F1M6uEQN1urquQEygiEe36YV4NcG0bc6CNPoaEA%3D%3D" rel="nofollow" target="_blank">真机测试</a>），别只跑模拟器。</p><hr/><h2>六、V哥的收尾判断：红利窗口就是现在</h2><p>回看整套机制，V哥的总结是：<strong>Skill 化把"应用分发"的粒度从 App 降到了功能</strong>。以前用户装你的应用才能用你的功能；现在你的功能直接进意图分发池，被系统智能体按需调用。入口前置了，露出变短了，长尾功能第一次有机会被"说"出来。</p><p>代价是新增了一种工程资产——契约文件。它不是写完就完的：话术要随用户表达演进、边界要随能力扩展修订。V哥把它类比成"给智能体维护的 API 文档"，版本化管起来，和代码一个待遇。</p><p>7.0 刚发，意图分发池里占位的人还不多。第一期的上架审核那篇V哥写过一句话：合规是门票。这一期补上后半句——<strong>Skill 化是新的门票，门开着的窗口不会一直开着。</strong></p><hr/><h2>参考与出处</h2><p>本文涉及的机制、接口与配置项来自以下官方文档：</p><ul><li><a href="https://link.segmentfault.com/?enc=Jv5ad0EUDLN6vgvz7fSbiA%3D%3D.0gPKpskLDstsHU4rKAuE%2FakZBKuXg3C91mtgwzooNBemDqCbEj27J4YpmyjpPk7T7LzaR%2FurPT7gvNp5JD%2BOg53jN5crX%2BGH38SvqhHxUBCMcy%2BA%2FU9Wakg0lHC0KosB" rel="nofollow" target="_blank">基于ArkTS脚本的应用Skill开发指导（Ability Kit）</a></li><li><a href="https://link.segmentfault.com/?enc=sSlxPGKL2wwvKKJHmSeGxw%3D%3D.Vz%2FauXkn5gTp2VZiL4gY%2FdhgoxTUaw2%2FrkfXL78DIO5xEIIMpzlBoKMe5JkodNu43Upje7h%2Ba%2FJUD9jSxRuHKTO4qIfdRIFV14SgvVltd%2Fg8yYy1HdSBLlYQ9B1cN6ywlqPRUcbe8IdGYFioL0sb3A%3D%3D" rel="nofollow" target="_blank">@ohos.app.ability.scriptManager 接口参考</a></li><li><a href="https://link.segmentfault.com/?enc=0Advk65R330HItdddGGlyA%3D%3D.h6gXBi3t4tGNnBKdMQckVD6cm9k%2B8ZCQLuIe4o1wcMvHR%2B5whhfZNygRmlc%2FaApbMzfEqlUPh5bB7zhSuosZGjnri5R2ZYollgHxnpZuCqtamYy4fYHGUaY2hrflE80ijHz%2FU2AD3P3WB6HyMYM3Kw%3D%3D" rel="nofollow" target="_blank">Skill 真机测试</a></li><li><a href="https://link.segmentfault.com/?enc=Jwa1nJycs2ThVfintwwvng%3D%3D.PmzrWWkGcbe7aaikHr39b9dZzYj115oQ2Lfipn4RyoI4ElhFIV7HtUlPGOsK3YTHP61W1ftD%2FaHHXpR2ujus1w%3D%3D" rel="nofollow" target="_blank">HarmonyOS 新能力一览（7 / API 26）</a></li></ul><hr/><p><strong>最后一句</strong>：图标时代你的功能在等人点，意图时代你的功能在被点名——把 SKILL.md 当简历写，把薄脚本当翻译写，小艺念到名字的那一刻，就是你长尾功能翻身的那一天。</p>]]></description></item><item>    <title><![CDATA[SSL 证书自动化布置起来简单吗？ 不拘小节的竹笋_ecLhal ]]></title>    <link>https://segmentfault.com/a/1190000048310926</link>    <guid>https://segmentfault.com/a/1190000048310926</guid>    <pubDate>2026-09-22 10:07:27</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <h2>一句话结论</h2><p><strong>单台服务器、Nginx/Apache、普通域名：自动化非常简单；多服务器、CDN、K8s、内网 / 企业 OV/EV 证书，会变复杂</strong>。 自动化本质是基于 <strong>ACME 协议</strong>，完成：域名验证 → 签发证书 → 自动续期 → 自动替换证书 + 重载 web 服务，一次配置，长期无人值守。</p><h3>✅ 简单场景（个人 / 中小网站，上手几分钟）</h3><h4>1. Linux Nginx，http-01 验证（开放 80 端口）</h4><p>用 Certbot，一行命令直接搞定，自动改 Nginx 配置、自动创建定时续期任务：</p><pre><code>sudo certbot --nginx -d shturl.cc/liX4 -d shturl.cc/vA6KwAYJ</code></pre><ul><li>要求：80 端口可公网访问、域名解析正常</li><li>优点：<strong>零额外 API 密钥，开箱即用</strong>，系统自带 timer 自动续期，到期前自动更新证书并重载 NginxCertbot</li></ul><h4>2. 需要泛域名证书（*.shturl.），用 DNS-01</h4><p>工具：<code>acme.sh</code> /certbot+dns 插件 需要域名服务商 API（阿里云 / Cloudflare/DNSPod），授权 API，工具自动添加 TXT 解析记录完成域名所有权验证，适合<strong>不能开放 80 端口、泛域名</strong>场景。</p><blockquote>注意：API 密钥要做最小权限，不要给全部权限。</blockquote><h4>3. Windows IIS</h4><p>用<code>win-acme</code>，图形化向导，点选配置，自动申请 + 续期 + 写入 IIS。</p><h4>4. 面板（1Panel、宝塔）</h4><p>可视化界面，填入 DNS 服务商 API，勾选自动续期，一键申请，<strong>对新手最简单</strong>，不用敲命令。</p><h3>⚠️ 会变麻烦的场景</h3><ol><li><strong>付费 OV/EV 企业证书</strong>：DV 支持 ACME 自动签发；<strong>OV/EV 证书大多不支持 ACME</strong>，没法全自动，只能走 CA 平台 API，流程复杂，需要人工初审材料。</li><li><strong>多节点集群、CDN、负载均衡</strong>：证书签发后，还要自动分发到多台服务器 / CDN 节点，需要额外脚本、配置中心、CaaS 证书管理平台，不是单条命令搞定。</li><li><strong>Docker/K8s</strong>：需要处理容器内证书挂载、Ingress 自动更新、避免证书文件丢失，推荐 cert-manager，学习成本高。</li><li><strong>内网域名、无公网域名</strong>：公网 CA 无法验证域名，ACME 方案不适用。</li><li><strong>端口受限，DNS 解析 API 拿不到</strong>：无法自动添加 TXT 记录，只能手动添加，失去全自动价值。</li></ol><h3>📌 运维坑点（自动化最容易踩）</h3><ol><li>DNS API 权限泄露风险，建议使用<strong>最小权限子账号</strong>，不要用主账号密钥；</li><li>续期成功后<strong>必须重载 Nginx/Apache</strong>，只替换文件不重载，旧证书继续生效；</li><li>防火墙 / 安全组拦截 80/443，http-01 验证失败；</li><li>证书过期监控：自动化也可能失败（API 限流、DNS 故障），建议加告警（邮件 / 钉钉）；</li><li>国内部分环境访问 Let’s Encrypt ACME 节点不稳定，可以换 ZeroSSL 等其他 ACME CA。</li></ol><h3>🧾 选型参考</h3><ul><li>单台 Nginx/Apache、公网域名、80 端口开放：<strong>Certbot</strong>（最简单）</li><li>泛域名、80 端口不能开放：<strong>acme.sh</strong></li><li>Windows IIS：<strong>win-acme</strong></li><li>K8s 集群：<strong>cert-manager</strong></li><li>大量服务器、企业付费证书、CDN 批量分发：<strong>沃通 CaaS、阿里云证书管理平台</strong>这类企业证书自动化平台</li></ul>]]></description></item>  </channel></rss>
