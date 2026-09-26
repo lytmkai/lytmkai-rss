@@ -1,4 +1,225 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[HarmonyOS 7 数字身份 DID 实战：TEE 颁发、本人同意、最小化出示 威哥爱编程 ]]></title>    <link>https://segmentfault.com/a/1190000048319169</link>    <guid>https://segmentfault.com/a/1190000048319169</guid>    <pubDate>2026-09-26 19:02:54</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <blockquote>本文基于 HarmonyOS 7（API 26）官方《DID数字身份》开发指导与官方新能力一览整理。文中接口名称、权限名与版本号均标注官方出处；示例代码以官方开发步骤为骨架改写，未做真机实测，不编造任何实测数据。数字身份为 HarmonyOS 7 新能力，需升级至 HarmonyOS 7 并以实际支持机型为准。</blockquote><hr/><p><img width="723" height="311" referrerpolicy="no-referrer" src="/img/bVdqOHL" alt="HarmonyOS 7 数字身份 DID 实战" title="HarmonyOS 7 数字身份 DID 实战"/></p><h2>引子：出示证件照这件事，我们交出去了多少多余信息</h2><p>V哥先讲一个所有人都干过的事：注册某个服务，被要求"上传身份证照片"。照片拍完传上去，你交出去的是什么？姓名、性别、民族、出生日期、住址、身份证号、签发机关、有效期——<strong>全部</strong>。而那个业务真正要验证的，可能只有一句话："这个人是不是成年人。"</p><p>一张证件照，交出去一百个字段，用上一个。多出来的九十九个去哪了？存在对方服务器里，存多久、谁能看、会不会被爬，你一概不知。V哥不是吓唬人，这是过去几十年"复印件思维"的通病：验证身份的唯一办法，就是把证件本身交出去。</p><p>HarmonyOS 7（API 26）给这个问题上了一个系统级解法——<strong>分布式数字身份 DID</strong>（Decentralized Identifier，去中心化身份）。官方新能力一览的原文是这么说的（<a href="https://link.segmentfault.com/?enc=9D8NqIYZ0pF4hfxj%2F90sSw%3D%3D.nvWRePRTTKQO5I%2B2C6NB%2BpJ4w%2F9SujTZ7fAxJTf2iJQcCK7eti2uCpSTkEVA4qvgvHqLD8%2BOK4FG1v3e2JZIeg%3D%3D" rel="nofollow" target="_blank">HarmonyOS 7 新能力一览</a>）：</p><blockquote>系统级的数字身份 DID 框架，通过 TEE 存储颁发用户的数字身份，使用时经本人同意后按需出示，证明身份且最小化证件隐私暴露。</blockquote><p>V哥把这句话拆成三个词：<strong>TEE 颁发、本人同意、最小化出示</strong>。这也是本文标题的由来，更是这一期想讲透的主线：数字身份的要害不是"把证件数字化"，而是<strong>最小化暴露</strong>——凭证存在 TEE 里，用的时候经本人同意、按需出示，应用自始至终碰不到原始证件数据。</p><hr/><h2>一、先想明白：DID 到底换了什么</h2><p>传统方式和 DID 方式的差别，V哥画一张链路图就清楚了：</p><p><img width="723" height="322" referrerpolicy="no-referrer" src="/img/bVdqOHM" alt="DID 颁发出示链路" title="DID 颁发出示链路" loading="lazy"/></p><p>对应到官方能力，HarmonyOS 7 在 <strong>Online Authentication Kit（在线认证服务）</strong> 里新增了数字身份特性（从 API 版本 26.0.0 开始，<a href="https://link.segmentfault.com/?enc=V6WM%2BFCh0KLWRZxgaXcKAQ%3D%3D.zcUVD%2BCotZ6aGDtqWh6rHgfm0fhrBw6MPxDoR3H8yQ%2F191JsEuZWTA44GsJEZ4r9scaCAjBFhdOkhWZeN8%2FU2ZUdMh27jLxrAgX2b0QOELIc57ntC5eSiKZDBADiOAkS" rel="nofollow" target="_blank">官方开发指导</a>），提供四块能力：</p><table><thead><tr><th>能力</th><th>官方描述关键词</th><th>对开发者的意义</th></tr></thead><tbody><tr><td><strong>DID 密钥创建及使用</strong></td><td>创建及使用与用户 DID 关联的密钥</td><td>密钥在 TEE 里生成，应用拿不到私钥</td></tr><tr><td><strong>DID 导入、查询及删除</strong></td><td>导入 DID 标识、DID 文档等信息到设备</td><td>身份标识由用户设备持有，不在应用手里</td></tr><tr><td><strong>VC 导入、查询及删除</strong></td><td>可验证凭证（Verifiable Credentials）导入设备 TEE 环境安全存储</td><td>凭证存 TEE，应用只能拿到概要信息</td></tr><tr><td><strong>VP 出示</strong></td><td>获取用户同意后，在 TEE 中将需披露的属性组装成 VP（Verifiable Presentation）返回</td><td><strong>出示这一步过本人同意 + 部分披露</strong></td></tr></tbody></table><p>注意官方那句"在 TEE 中将 VC 中需要披露的属性组装成 VP"——这句话就是"复印件思维"的终结者。传统流程里应用拿到的是完整证件；DID 流程里应用拿到的是<strong>系统在 TEE 里按你声明的字段范围裁剪、签名后的出示声明</strong>，多一个字段都出不来。</p><p>V哥在这里给出本文的自创观点：<strong>DID 的真正革命不是加密，而是"验证方权限的降维"</strong>。过去验证方默认有权查看证件全本，DID 之后验证方只拥有"提问权"——你问"是否成年"，系统答"是"，至于生日是哪天，从头到尾不经过你。把"查看"降级成"问答"，隐私问题才从根上解决，加密只是给这套问答上了把锁。</p><p>还有一个架构认知先立住：这套体系是<strong>端云协同</strong>的，不是端侧单机游戏。移动端负责 TEE 密钥、凭证存储和出示；你的应用还得有一个符合 <strong>W3C DID 协议</strong>的服务器，负责公钥上链、获取 DID 文档、向发行方拿凭证。官方原话："应用部署符合 DID 协议的服务器之后，结合移动端的数字身份能力，可实现跨平台互通互认的数字身份业务场景。"</p><hr/><h2>二、准入门槛：三条硬约束，一条都不能少</h2><p>写代码之前先对表，官方"约束与限制"给了三条（<a href="https://link.segmentfault.com/?enc=UUhfCS7LidrfppefPRXKZQ%3D%3D.RUYO7UjkTN41%2FlCAf%2FvKLaL%2F1Qvt%2BCZNJj9GMcflHE1KTsg%2FCscRjLkZS6mgjVaI6D1YtnTp4chS%2BbkO80SF5Acsa%2B8WsKMXUy919F3TUNONplsMCuk9GJUU4o4fv%2BXs" rel="nofollow" target="_blank">官方开发指导</a>）：</p><p><strong>① 服务器门槛。</strong> 应用已部署符合 DID 标准协议的服务器。这是最大的工程量所在——端侧 API 反而不难，难在云侧要按 W3C DID 协议把 DID 文档、凭证颁发、VP 核验这套东西建起来。</p><p><strong>② 设备门槛。</strong> 设备需支持生物特征（指纹/3D人脸），且达到 <strong>ATL4 级别的认证可信等级</strong>。官方给的查询方式：</p><pre><code class="typescript">import { BusinessError } from '@kit.BasicServicesKit';
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[Vue组件树内的数据共享：useCompExp defghy ]]></title>    <link>https://segmentfault.com/a/1190000048319207</link>    <guid>https://segmentfault.com/a/1190000048319207</guid>    <pubDate>2026-09-26 21:02:01</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <h2>useCompExp：Vue组件树内的数据共享</h2><p><code>useCompExp</code> 基于 Vue 的 <code>provide</code> / <code>inject</code>，在组件树内共享数据方法，简化<code>typescript</code>类型，无需层层透传 <code>props</code> / <code>emit</code>。</p><h3>一、和 Pinia 的区别</h3><ul><li><strong>Pinia 全局变量</strong>：适合多个不同类型组件共享数据。</li><li><strong>useCompExp 组件树内数据</strong>：作用域仅限 master 组件的后代，随组件销毁而回收。适合与ui紧密相关的数据方法分享，比如搜索框与<code>keyword</code>变量</li></ul><h3>二、基础用法</h3><p>使用<code>useCompExp</code>规定类型</p><pre><code class="ts">export const useActivity = ({ isMaster = false } = {}) =&gt;
+  useCompExp&lt;{
+    freshList: () =&gt; any
+    keyword: Ref&lt;string&gt;
+  }&gt;({ isMaster, key: 'activity' })</code></pre><p><strong>根组件</strong></p><pre><code class="ts">const { registerFunc, funcs } = useActivity({ isMaster: true })
+
+const list = ref([])
+const freshList = function() {
+  list.value = totalList.filter(item =&gt; item.name === funcs.keyword.value)
+}
+registerFunc({ freshList })</code></pre><p><strong>子组件</strong></p><pre><code class="ts">const { funcs, registerFunc } = useActivity()
+
+// 反向注册自己的能力
+registerFunc({ 
+  keyword: ref('')
+})
+
+// 点击搜索按钮，触发列表刷新
+const onSearch = function () {
+  funcs.freshList()
+}</code></pre><p>注意：master 必须是祖先，否则拿到空对象且不报错；子组件别误传 <code>isMaster: true</code></p><h3>三、实现原理</h3><p>核心只有十几行：</p><pre><code class="ts">export const useCompExp = function &lt;T&gt;({ isMaster = true, key = 'compExp' } = {} as any) {
+  if (isMaster) {
+    const funcs = {} as T
+    const registerFunc = funcList =&gt; Object.assign(funcs, funcList)
+    provide(key, { funcs, registerFunc })
+    return { funcs, registerFunc }
+  }
+  const { funcs, registerFunc } = inject(key, { funcs: {}, registerFunc: () =&gt; {} })
+  return { funcs, registerFunc } as { funcs: T; registerFunc: (f: Partial&lt;T&gt;) =&gt; any }
+}</code></pre><p>要点：</p><ul><li>master 创建 <code>funcs</code> 并 <code>provide</code> 给子树；<code>inject</code> 到的是<strong>同一个对象引用</strong>。</li><li><code>registerFunc</code> 用 <code>Object.assign</code> <strong>原地合并</strong>，引用始终不变，注册前后都能访问。</li><li><code>funcs</code> 是普通对象，<strong>响应式要自己负责</strong>：注册 <code>ref</code> / <code>computed</code>，别注册裸值。</li><li>类型只是编译期断言，未注册字段运行时是 <code>undefined</code>，需要空值保护。</li></ul><h3>结语</h3><p>把它当 Pinia 的补充：全局状态交给 Pinia，组件树内的能力互通交给 <code>useCompExp</code>。</p>]]></description></item><item>    <title><![CDATA[Oracle 慢 SQL 怎么查？这一套组合拳够用了 三笠ぃ ]]></title>    <link>https://segmentfault.com/a/1190000048319232</link>    <guid>https://segmentfault.com/a/1190000048319232</guid>    <pubDate>2026-09-26 21:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <h2>前言</h2><p>做 DBA 应该经常碰到这种事情，业务突然发过来一条消息：</p><blockquote>这条 SQL 最近很慢，帮忙看一下。</blockquote><p>这种问题处理多了以后，我现在拿到 SQL 已经很少第一时间去想“是不是缺索引”了。一条 SQL 慢，可能是 Physical Reads 突然上来了，也可能是 Buffer Gets 本身就很高；还有些 SQL 读的数据并不多，时间其实耗在锁等待、RAC 或其他 Wait Event 上。</p><p>所以我现在拿到 SQL_ID，我一般先看几个最直接的指标：</p><pre><code class="text">Physical Reads
+      ↓
+Buffer Gets（逻辑读）
+      ↓
+Rows Processed
+      ↓
+Elapsed Time</code></pre><p>先把 SQL 慢在哪里定下来，再去翻 AWR、看执行计划、查 Stats、索引、选择性和 Bind。下面这套查询基本就是我现在常用的完整路径，拿到 SQL_ID 后可以一路往下查。</p><h2>只有 SQL Text，先找到 SQL_ID</h2><p>如果业务已经给了 SQL_ID，这一步直接跳过。如果只有 SQL Text，或者只知道涉及某张表，可以先从 Shared Pool 找。RAC 环境建议直接查 <code>GV$SQL</code>：</p><pre><code class="sql">SET LINES 300
+SET PAGES 200
+SET LONG 1000000
+SET LONGCHUNKSIZE 1000000
+
+SELECT inst_id,
+       sql_id,
+       child_number,
+       plan_hash_value,
+       executions,
+       buffer_gets,
+       disk_reads,
+       rows_processed,
+       ROUND(elapsed_time/1e6,2) elapsed_s,
+       TO_CHAR(last_active_time,'YYYY-MM-DD HH24:MI:SS') last_active
+FROM gv$sql
+WHERE UPPER(sql_fulltext) LIKE '%PE_BATCH_PROCESS%'
+ORDER BY last_active_time DESC;</code></pre><p>找到 SQL_ID 后，把完整 SQL 拿出来：</p><pre><code class="sql">SELECT sql_fulltext
+FROM gv$sql
+WHERE sql_id='&amp;sql_id'
+  AND ROWNUM=1;</code></pre><p>如果 SQL 已经不在 Shared Pool，可以继续从 AWR 找：</p><pre><code class="sql">SELECT sql_id,
+       sql_text
+FROM dba_hist_sqltext
+WHERE UPPER(sql_text) LIKE '%PE_BATCH_PROCESS%';</code></pre><p>先把 SQL_ID 确定下来，后面的当前执行情况、历史表现、执行计划和 Bind 才能串到一起。</p><h2>拿到 SQL_ID，先看当前资源画像</h2><p>我一般先把单次执行的几个核心指标一次查出来：</p><pre><code class="sql">SET LINES 300
+SET PAGES 200
+
+SELECT inst_id,
+       sql_id,
+       child_number,
+       plan_hash_value,
+       executions,
+       buffer_gets,
+       disk_reads,
+       rows_processed,
+       ROUND(disk_reads/NULLIF(executions,0)) reads_per_exec,
+       ROUND(buffer_gets/NULLIF(executions,0)) gets_per_exec,
+       ROUND(rows_processed/NULLIF(executions,0)) rows_per_exec,
+       ROUND(elapsed_time/1e6/NULLIF(executions,0),2) elapsed_per_exec_s,
+       ROUND(cpu_time/1e6/NULLIF(executions,0),2) cpu_per_exec_s,
+       TO_CHAR(last_active_time,'YYYY-MM-DD HH24:MI:SS') last_active
+FROM gv$sql
+WHERE sql_id='&amp;sql_id'
+ORDER BY inst_id,child_number;</code></pre><p>第一眼先看 <code>Reads/Exec</code>。Physical Reads 明显升高，SQL 很容易从几秒变成几十秒；如果 Physical Reads 不高，再看 <code>Gets/Exec</code>，判断 SQL 本身是不是做了大量逻辑访问。Buffer Gets 很高时还要结合 <code>Rows/Exec</code>，因为“为了返回几十行访问几百万个块”和“本身就要处理几百万行”不是一回事。</p><p>大致可以先按下面的方式定方向：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048319234" alt="" title=""/></p><p>这里先做初步定性，不急着改 SQL。</p><h2>Reads 和 Gets 都解释不了，再看 Wait</h2><p>如果 Physical Reads 和 Buffer Gets 都不高，但 <code>Elapsed/Exec</code> 仍然很高，就应该先确认时间到底花在哪里。</p><p>SQL 正在执行时：</p><pre><code class="sql">SET LINES 300
+SET PAGES 200
+
+SELECT inst_id,
+       sid,
+       serial#,
+       username,
+       sql_id,
+       status,
+       event,
+       wait_class,
+       seconds_in_wait,
+       blocking_instance,
+       blocking_session,
+       module,
+       program
+FROM gv$session
+WHERE sql_id='&amp;sql_id'
+ORDER BY inst_id,sid;</code></pre><p>如果 SQL 已经执行结束，可以从 ASH 看历史状态：</p><pre><code class="sql">SELECT NVL(event,'ON CPU') event,
+       NVL(wait_class,'CPU') wait_class,
+       COUNT(*) samples,
+       ROUND(COUNT(*) * 10 / 60,2) active_minutes
+FROM dba_hist_active_sess_history
+WHERE sql_id='&amp;sql_id'
+GROUP BY NVL(event,'ON CPU'),
+         NVL(wait_class,'CPU')
+ORDER BY samples DESC;</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048319235" alt="" title="" loading="lazy"/></p><p>这一步主要解决一个问题：<strong>Elapsed 很高，到底是 SQL 自己在做事，还是大部分时间其实在等。</strong></p><h2>再通过 AWR 看历史变化</h2><p>当前数据只能说明这一刻，业务反馈“以前几秒，现在几十秒”可以作为参考，但是建议最好从 AWR 看真实历史：</p><pre><code class="sql">SET LINES 300
+SET PAGES 300
+
+SELECT s.instance_number,
+       s.snap_id,
+       TO_CHAR(s.begin_interval_time,'YYYY-MM-DD HH24:MI') begin_time,
+       st.plan_hash_value,
+       st.executions_delta executions,
+       st.buffer_gets_delta buffer_gets,
+       st.disk_reads_delta disk_reads,
+       st.rows_processed_delta rows_processed,
+       ROUND(st.disk_reads_delta/
+             NULLIF(st.executions_delta,0)) reads_per_exec,
+       ROUND(st.buffer_gets_delta/
+             NULLIF(st.executions_delta,0)) gets_per_exec,
+       ROUND(st.rows_processed_delta/
+             NULLIF(st.executions_delta,0)) rows_per_exec,
+       ROUND(st.elapsed_time_delta/1e6/
+             NULLIF(st.executions_delta,0),2) elapsed_per_exec_s,
+       ROUND(st.cpu_time_delta/1e6/
+             NULLIF(st.executions_delta,0),2) cpu_per_exec_s
+FROM dba_hist_sqlstat st
+JOIN dba_hist_snapshot s
+  ON s.dbid=st.dbid
+ AND s.instance_number=st.instance_number
+ AND s.snap_id=st.snap_id
+WHERE st.sql_id='&amp;sql_id'
+ORDER BY s.begin_interval_time DESC,
+         s.instance_number;</code></pre><p>这里主要比较 <code>Plan Hash</code>、<code>Reads/Exec</code>、<code>Gets/Exec</code>、<code>Rows/Exec</code>、<code>Elapsed/Exec</code> 和 <code>Executions</code>。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048319236" alt="" title="" loading="lazy"/></p><p>AWR 这一层最重要的是找到：<strong>到底哪个指标从什么时候开始发生变化。</strong></p><h2>确认是 SQL 本身的问题，再看执行计划</h2><p>如果前面的证据已经指向 SQL 自身访问量或访问路径，再看执行计划：</p><pre><code class="sql">SET LINES 300
+SET PAGES 500
+SET LONG 1000000
+SET LONGCHUNKSIZE 1000000
+
+SELECT *
+FROM TABLE(
+    DBMS_XPLAN.DISPLAY_CURSOR(
+        '&amp;sql_id',
+        NULL,
+        'ALLSTATS LAST +PEEKED_BINDS +PREDICATE +ALIAS'
+    )
+);</code></pre><p>我主要看：</p><pre><code class="text">Access Predicate
+Filter Predicate
+E-Rows / A-Rows
+Starts
+Buffers / Reads
+Peeked Binds</code></pre><p>表面上出现 <code>INDEX RANGE SCAN</code> 不代表访问路径一定合理。真正要看的是 Oracle 用什么条件进入索引，又有哪些条件被留到回表以后才过滤。</p><p><code>E-Rows / A-Rows</code> 也很重要。如果 CBO 估算几十行，实际却返回几十万行，说明基数估算已经明显失真，这时候下一步应该先查 Stats、Histogram、Bind 或列相关性，而不是直接开始建索引。</p><blockquote><code>ALLSTATS LAST</code> 只有在实际执行统计被采集时才能看到完整的 A-Rows、Buffers 等信息。如果没有采集到，不要把缺失值当成 0，先利用现有的 E-Rows、Predicate、Peeked Binds 和其他运行数据继续分析。</blockquote><h2>根据 Plan，再查 Stats、索引、选择性和 Bind</h2><p>如果执行计划估算明显不对，先查表统计信息：</p><pre><code class="sql">SET LINES 300
+SET PAGES 200
+
+SELECT owner,
+       table_name,
+       num_rows,
+       blocks,
+       avg_row_len,
+       stale_stats,
+       stattype_locked,
+       TO_CHAR(last_analyzed,'YYYY-MM-DD HH24:MI:SS') last_analyzed
+FROM dba_tab_statistics
+WHERE owner='&amp;owner'
+  AND table_name='&amp;table_name'
+  AND object_type='TABLE';</code></pre><p>重点看 <code>NUM_ROWS</code>、<code>BLOCKS</code>、<code>LAST_ANALYZED</code>、<code>STALE_STATS</code> 和 <code>STATTYPE_LOCKED</code>。如果 CBO 仍然拿着明显过期的数据规模和分布做成本估算，计划出现偏差并不奇怪。</p><p>Stats 没明显问题，再把现有索引摊开：</p><pre><code class="sql">SET LINES 300
+SET PAGES 300
+
+SELECT i.index_name,
+       i.uniqueness,
+       i.status,
+       i.degree,
+       ic.column_position,
+       ic.column_name
+FROM dba_indexes i
+JOIN dba_ind_columns ic
+  ON ic.index_owner=i.owner
+ AND ic.index_name=i.index_name
+WHERE i.table_owner='&amp;owner'
+  AND i.table_name='&amp;table_name'
+ORDER BY i.index_name,
+         ic.column_position;</code></pre><p>再看真正参与过滤的字段：</p><pre><code class="sql">SELECT column_name,
+       num_distinct,
+       num_nulls,
+       density,
+       histogram,
+       num_buckets,
+       sample_size,
+       TO_CHAR(last_analyzed,'YYYY-MM-DD HH24:MI') last_analyzed
+FROM dba_tab_col_statistics
+WHERE owner='&amp;owner'
+  AND table_name='&amp;table_name'
+ORDER BY column_name;</code></pre><p>这里真正要回答的不是“有没有索引”，而是<strong>索引列顺序是否匹配 SQL 的过滤方式，当前 Access Predicate 的选择性到底怎么样</strong>。</p><p>如果 SQL 使用 Bind Variable，还要把实际捕获到的 Bind 一起看：</p><pre><code class="sql">SET LINES 300
+SET PAGES 300
+
+SELECT inst_id,
+       sql_id,
+       child_number,
+       name,
+       position,
+       datatype_string,
+       value_string,
+       TO_CHAR(last_captured,'YYYY-MM-DD HH24:MI:SS') last_captured
+FROM gv$sql_bind_capture
+WHERE sql_id='&amp;sql_id'
+ORDER BY inst_id,
+         child_number,
+         position;</code></pre><p>同一条时间范围 SQL，查一天和查三个月，SQL_ID 可以完全一样，实际扫描量却不是一回事。自己构造测试 SQL 时，Bind 尽量还原业务现场。</p><p>到这里，优化方向通常已经比较清楚：Stats 失真就处理统计信息；访问路径不合理再考虑索引；扫描范围本身太大就考虑 SQL 改写、分区裁剪或者业务侧缩小范围；如果 SQL 本身读得不多，真正耗时来自 Blocking、RAC 或 I/O 等待，就应该处理对应等待，而不是继续加索引。</p><h2>优化后，再跑一次核心指标验收</h2><p>真正实施变更以后，不需要重新发明一套验收方法，直接回到文章最开始那几个指标：</p><pre><code class="sql">SELECT inst_id,
+       sql_id,
+       child_number,
+       plan_hash_value,
+       executions,
+       ROUND(disk_reads/NULLIF(executions,0)) reads_per_exec,
+       ROUND(buffer_gets/NULLIF(executions,0)) gets_per_exec,
+       ROUND(rows_processed/NULLIF(executions,0)) rows_per_exec,
+       ROUND(elapsed_time/1e6/NULLIF(executions,0),2) elapsed_per_exec_s,
+       ROUND(cpu_time/1e6/NULLIF(executions,0),2) cpu_per_exec_s,
+       TO_CHAR(last_active_time,'YYYY-MM-DD HH24:MI:SS') last_active
+FROM gv$sql
+WHERE sql_id='&amp;sql_id'
+ORDER BY inst_id,child_number;</code></pre><p>前后至少对比：</p><pre><code class="text">Plan Hash
+Reads/Exec
+Gets/Exec
+Rows/Exec
+Elapsed/Exec</code></pre><p>例如：</p><table><thead><tr><th>指标</th><th align="right">优化前</th><th align="right">优化后</th></tr></thead><tbody><tr><td>Plan Hash</td><td align="right">A</td><td align="right">B</td></tr><tr><td>Reads/Exec</td><td align="right">65,000</td><td align="right">0</td></tr><tr><td>Gets/Exec</td><td align="right">800,000</td><td align="right">198</td></tr><tr><td>Elapsed/Exec</td><td align="right">32.5s</td><td align="right">0.08s</td></tr><tr><td>Rows/Exec</td><td align="right">50</td><td align="right">50</td></tr></tbody></table><p>Explain Plan 变好了不算结束，手工测试变快也不能完全代表业务现场。条件允许的话，等真实业务再次执行以后，再从 <code>GV$SQL</code> 或 AWR 验证一次，结果才更有说服力。</p><h2>最后</h2><p>如果把整套过程压成一条线，就是：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048319237" alt="" title="" loading="lazy"/></p><p>SQL 优化真正重要的不是最后用了哪一种手段，而是前面的证据链能不能说明：<strong>它为什么慢、为什么这样改，以及改完以后到底改善了多少。</strong></p>]]></description></item><item>    <title><![CDATA[HarmonyOS 7 数字身份 DID 实战：TEE 颁发、本人同意、最小化出示 威哥爱编程 ]]></title>    <link>https://segmentfault.com/a/1190000048319169</link>    <guid>https://segmentfault.com/a/1190000048319169</guid>    <pubDate>2026-09-26 19:02:54</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <blockquote>本文基于 HarmonyOS 7（API 26）官方《DID数字身份》开发指导与官方新能力一览整理。文中接口名称、权限名与版本号均标注官方出处；示例代码以官方开发步骤为骨架改写，未做真机实测，不编造任何实测数据。数字身份为 HarmonyOS 7 新能力，需升级至 HarmonyOS 7 并以实际支持机型为准。</blockquote><hr/><p><img width="723" height="311" referrerpolicy="no-referrer" src="/img/bVdqOHL" alt="HarmonyOS 7 数字身份 DID 实战" title="HarmonyOS 7 数字身份 DID 实战"/></p><h2>引子：出示证件照这件事，我们交出去了多少多余信息</h2><p>V哥先讲一个所有人都干过的事：注册某个服务，被要求"上传身份证照片"。照片拍完传上去，你交出去的是什么？姓名、性别、民族、出生日期、住址、身份证号、签发机关、有效期——<strong>全部</strong>。而那个业务真正要验证的，可能只有一句话："这个人是不是成年人。"</p><p>一张证件照，交出去一百个字段，用上一个。多出来的九十九个去哪了？存在对方服务器里，存多久、谁能看、会不会被爬，你一概不知。V哥不是吓唬人，这是过去几十年"复印件思维"的通病：验证身份的唯一办法，就是把证件本身交出去。</p><p>HarmonyOS 7（API 26）给这个问题上了一个系统级解法——<strong>分布式数字身份 DID</strong>（Decentralized Identifier，去中心化身份）。官方新能力一览的原文是这么说的（<a href="https://link.segmentfault.com/?enc=9D8NqIYZ0pF4hfxj%2F90sSw%3D%3D.nvWRePRTTKQO5I%2B2C6NB%2BpJ4w%2F9SujTZ7fAxJTf2iJQcCK7eti2uCpSTkEVA4qvgvHqLD8%2BOK4FG1v3e2JZIeg%3D%3D" rel="nofollow" target="_blank">HarmonyOS 7 新能力一览</a>）：</p><blockquote>系统级的数字身份 DID 框架，通过 TEE 存储颁发用户的数字身份，使用时经本人同意后按需出示，证明身份且最小化证件隐私暴露。</blockquote><p>V哥把这句话拆成三个词：<strong>TEE 颁发、本人同意、最小化出示</strong>。这也是本文标题的由来，更是这一期想讲透的主线：数字身份的要害不是"把证件数字化"，而是<strong>最小化暴露</strong>——凭证存在 TEE 里，用的时候经本人同意、按需出示，应用自始至终碰不到原始证件数据。</p><hr/><h2>一、先想明白：DID 到底换了什么</h2><p>传统方式和 DID 方式的差别，V哥画一张链路图就清楚了：</p><p><img width="723" height="322" referrerpolicy="no-referrer" src="/img/bVdqOHM" alt="DID 颁发出示链路" title="DID 颁发出示链路" loading="lazy"/></p><p>对应到官方能力，HarmonyOS 7 在 <strong>Online Authentication Kit（在线认证服务）</strong> 里新增了数字身份特性（从 API 版本 26.0.0 开始，<a href="https://link.segmentfault.com/?enc=V6WM%2BFCh0KLWRZxgaXcKAQ%3D%3D.zcUVD%2BCotZ6aGDtqWh6rHgfm0fhrBw6MPxDoR3H8yQ%2F191JsEuZWTA44GsJEZ4r9scaCAjBFhdOkhWZeN8%2FU2ZUdMh27jLxrAgX2b0QOELIc57ntC5eSiKZDBADiOAkS" rel="nofollow" target="_blank">官方开发指导</a>），提供四块能力：</p><table><thead><tr><th>能力</th><th>官方描述关键词</th><th>对开发者的意义</th></tr></thead><tbody><tr><td><strong>DID 密钥创建及使用</strong></td><td>创建及使用与用户 DID 关联的密钥</td><td>密钥在 TEE 里生成，应用拿不到私钥</td></tr><tr><td><strong>DID 导入、查询及删除</strong></td><td>导入 DID 标识、DID 文档等信息到设备</td><td>身份标识由用户设备持有，不在应用手里</td></tr><tr><td><strong>VC 导入、查询及删除</strong></td><td>可验证凭证（Verifiable Credentials）导入设备 TEE 环境安全存储</td><td>凭证存 TEE，应用只能拿到概要信息</td></tr><tr><td><strong>VP 出示</strong></td><td>获取用户同意后，在 TEE 中将需披露的属性组装成 VP（Verifiable Presentation）返回</td><td><strong>出示这一步过本人同意 + 部分披露</strong></td></tr></tbody></table><p>注意官方那句"在 TEE 中将 VC 中需要披露的属性组装成 VP"——这句话就是"复印件思维"的终结者。传统流程里应用拿到的是完整证件；DID 流程里应用拿到的是<strong>系统在 TEE 里按你声明的字段范围裁剪、签名后的出示声明</strong>，多一个字段都出不来。</p><p>V哥在这里给出本文的自创观点：<strong>DID 的真正革命不是加密，而是"验证方权限的降维"</strong>。过去验证方默认有权查看证件全本，DID 之后验证方只拥有"提问权"——你问"是否成年"，系统答"是"，至于生日是哪天，从头到尾不经过你。把"查看"降级成"问答"，隐私问题才从根上解决，加密只是给这套问答上了把锁。</p><p>还有一个架构认知先立住：这套体系是<strong>端云协同</strong>的，不是端侧单机游戏。移动端负责 TEE 密钥、凭证存储和出示；你的应用还得有一个符合 <strong>W3C DID 协议</strong>的服务器，负责公钥上链、获取 DID 文档、向发行方拿凭证。官方原话："应用部署符合 DID 协议的服务器之后，结合移动端的数字身份能力，可实现跨平台互通互认的数字身份业务场景。"</p><hr/><h2>二、准入门槛：三条硬约束，一条都不能少</h2><p>写代码之前先对表，官方"约束与限制"给了三条（<a href="https://link.segmentfault.com/?enc=UUhfCS7LidrfppefPRXKZQ%3D%3D.RUYO7UjkTN41%2FlCAf%2FvKLaL%2F1Qvt%2BCZNJj9GMcflHE1KTsg%2FCscRjLkZS6mgjVaI6D1YtnTp4chS%2BbkO80SF5Acsa%2B8WsKMXUy919F3TUNONplsMCuk9GJUU4o4fv%2BXs" rel="nofollow" target="_blank">官方开发指导</a>）：</p><p><strong>① 服务器门槛。</strong> 应用已部署符合 DID 标准协议的服务器。这是最大的工程量所在——端侧 API 反而不难，难在云侧要按 W3C DID 协议把 DID 文档、凭证颁发、VP 核验这套东西建起来。</p><p><strong>② 设备门槛。</strong> 设备需支持生物特征（指纹/3D人脸），且达到 <strong>ATL4 级别的认证可信等级</strong>。官方给的查询方式：</p><pre><code class="typescript">import { BusinessError } from '@kit.BasicServicesKit';
 import { userAuth } from '@kit.UserAuthenticationKit';
 
 // 查询设备人脸识别是否达到 ATL4 认证可信等级（官方示例）
@@ -1760,14 +1981,4 @@ pass</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/146000004
     L --&gt;|否| N[下架并通知用户]
     E --&gt; O[风险控制：来源白名单机制]
     I --&gt; P[风险控制：指纹库拦截重复侵权]
-    N --&gt; Q[风险控制：审核与投诉响应机制]</code></pre><p>该流程将合规要求嵌入技术实现的各个环节：抓取阶段通过 robots 协议与来源白名单控制内容来源，版权校验阶段对内容状态进行前置判断，存储分发阶段借助内容指纹库识别重复侵权文件，用户上传阶段则通过审核与操作日志留存实现可追溯管理。</p><h3>5. 运营层面的合规实践</h3><p>运营策略直接影响合规风险等级，以下实践建议值得参考。</p><h4>5.1 版权投诉处理流程</h4><p>建立标准化的 DMCA 投诉响应机制，明确投诉受理、内容下架、申诉复核的完整流程。响应时效直接影响避风港原则的适用。</p><h4>5.2 内容审核与分级管理</h4><p>对上传内容进行分级审核，高风险内容（如畅销书、新书）优先人工复核。建立黑名单作者与出版社库，主动屏蔽其作品。</p><h4>5.3 商业模式与盈利边界</h4><p>广告收入、会员付费、打赏等盈利模式可能被认定为"直接获利"，削弱避风港保护。如需商业化，建议通过合法内容订阅、捐赠等模式实现。</p><h3>6. 常见合规陷阱与典型案例</h3><p>以下场景是 ZLibrary 类项目最容易踩坑的地方，需要特别警惕。</p><ul><li><strong>陷阱一：以"学习交流"为名规避责任</strong>——非营利目的不能免除侵权责任，只是影响赔偿金额的酌定。</li><li><strong>陷阱二：忽视镜像站与域名轮换风险</strong>——频繁更换域名、使用镜像站可能被认定为规避监管，加重处罚。</li><li><strong>陷阱三：用户协议中的免责条款无效</strong>——平台与用户之间的免责约定不能对抗著作权人的合法主张。</li><li><strong>陷阱四：技术中立抗辩的误用</strong>——"技术中立"不等于"平台无责"，主动推荐、索引侵权内容仍可能担责。</li></ul><h3>7. 合规转型路径建议</h3><p>对于已上线或计划上线的项目，建议从以下方向推进合规转型。</p><h4>7.1 内容合法化改造</h4><p>逐步清理侵权内容，引入公版书、开放授权（如 CC 协议）资源，与出版社或作者建立正规合作。</p><h4>7.2 功能定位调整</h4><p>从"资源 下载 站"转型为"阅读工具"或"书单推荐社区"，弱化内容存储与分发属性，降低侵权风险敞口。</p><h4>7.3 法律合规团队建设</h4><p>聘请专业法律顾问，建立常态化的合规审查机制，定期评估业务模式的法律风险变化。</p><h3>8. 总结与行动清单</h3><p>ZLibrary 类项目的合规问题不是"能不能做"的判断题，而是"如何做"的规划题。建议在项目启动前完成以下动作：</p><ol><li>明确项目定位，评估著作权风险等级。</li><li>建立内容来源白名单与版权校验机制。</li><li>完善 DMCA 投诉响应与内容审核流程。</li><li>审慎设计商业模式，避免直接获利认定。</li><li>预留合规转型空间，保持业务模式灵活性。</li></ol><p>合规不是发展的阻碍，而是项目长期存续的基石。希望本文能帮助开发者与运营者建立系统的风险认知，在合法框架内探索可持续的产品形态。</p><h3>9. 合规自检清单</h3><p>为帮助项目团队在关键节点快速自查，以下清单按项目启动前、开发中、上线后三个阶段梳理合规检查项，供对照执行。</p><table><thead><tr><th>阶段</th><th>检查内容</th><th>风险等级</th><th>通过标准</th></tr></thead><tbody><tr><td><strong>项目启动前</strong></td><td>明确项目定位与内容来源</td><td>高</td><td>已书面界定平台模式（聚合/存储/UGC），并完成著作权风险评估</td></tr><tr><td>建立内容来源白名单</td><td>高</td><td>所有内容来源均经过版权状态前置校验，白名单机制已生效</td></tr><tr><td>制定 DMCA 投诉响应预案</td><td>中</td><td>投诉受理、内容下架、申诉复核流程已文档化并指定责任人</td></tr><tr><td>审慎设计商业模式</td><td>高</td><td>盈利模式已评估，避免被认定为"直接获利"，优先采用合法订阅或捐赠</td></tr><tr><td><strong>开发中</strong></td><td>遵守 robots 协议与抓取规范</td><td>中</td><td>爬虫未绕过技术保护措施，抓取策略符合目标站点规则</td></tr><tr><td>建立内容指纹库</td><td>中</td><td>指纹库已上线，可识别并拦截重复上传的侵权文件</td></tr><tr><td>完善用户行为约束机制</td><td>中</td><td>用户协议、上传审核、关键词过滤、人工巡检均已部署，操作日志完整留存</td></tr><tr><td>避免主动推荐与编辑侵权内容</td><td>高</td><td>平台未对侵权内容进行主动分类、推荐或编辑，避免被认定"应知"</td></tr><tr><td><strong>上线后</strong></td><td>执行版权投诉响应流程</td><td>高</td><td>DMCA 投诉在规定时效内响应，下架与复核流程可追溯</td></tr><tr><td>持续内容审核与分级管理</td><td>中</td><td>高风险内容（畅销书、新书）优先人工复核，黑名单作者与出版社库持续更新</td></tr><tr><td>定期评估商业模式合规性</td><td>中</td><td>广告、会员、打赏等收入模式已定期复核，未触发"直接获利"认定</td></tr><tr><td>保留合规转型空间</td><td>低</td><td>业务模式保持灵活性，可随时向合法内容订阅、阅读工具方向转型</td></tr></tbody></table>]]></description></item><item>    <title><![CDATA[GitHub 日榜趋势速报 | 2026-09-25 user_LpNnRqvo ]]></title>    <link>https://segmentfault.com/a/1190000048317806</link>    <guid>https://segmentfault.com/a/1190000048317806</guid>    <pubDate>2026-09-25 12:05:44</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <blockquote>本期按近 24 小时 Star 增量筛选出 20 个值得关注的开源项目，具体能力请以项目仓库为准。</blockquote><h2>01. NandhaKishorM/laya</h2><p>Laya 是一个多语言、非自回归的 System 1 决策引擎，基于 Python 开发，支持 100 余种语言。它通过单次前向传播（约 33 毫秒）对文本、邮件、工单或 JSON 等结构化状态执行类型化决策（选择、评分、否/中立/是），使用强化学习（RLCD）训练，无需文本生成，适合需要低延迟、高可靠分类决策的开发者和企业。</p><ul><li>⭐ 23,002（24h +2,620）· Python</li><li>仓库：<a href="https://link.segmentfault.com/?enc=AEI5fPiw0%2FJoQANYf%2Fo%2FGQ%3D%3D.7CbWTeAQZKMCe33VlnzyLgtv4dioVvUBOanOAAQfuEhTFcW0sCgA1oPqofD8jFUo" rel="nofollow" target="_blank">https://github.com/NandhaKishorM/laya</a></li></ul><h2>02. jev-chat/jev-chat-jarvis</h2><p>Jev 聊天助手是一款基于 Kotlin 的 Android 应用，利用系统无障碍服务和 OCR 技术读取微信、QQ、X、飞书等聊天软件的屏幕内容，先判断对话意图与风险，再生成候选回复并一键填入输入框，所有数据本地处理，用户自行决定是否发送。</p><ul><li>⭐ 6,060（24h +838）· Kotlin</li><li>仓库：<a href="https://link.segmentfault.com/?enc=mkDiUpvScXHaIjqFBI6GNQ%3D%3D.hleHAQ9YuSBQ8GZe%2BDj5hEpqFaYTqccb4zgOgVrX%2FJuuzmP3iIv2I3XfoxtuLu9Q" rel="nofollow" target="_blank">https://github.com/jev-chat/jev-chat-jarvis</a></li></ul><h2>03. mizorewww/laya-mlx</h2><p>Laya-MLX 是在 Apple Silicon 本地运行的开源 Python 库，提供高效的 Laya 类型决策模型推理，单条英文问题约 13 ms，支持多语言，适用于需要快速、离线决策的业务场景。</p><ul><li>⭐ 6,217（24h +270）· Python</li><li>仓库：<a href="https://link.segmentfault.com/?enc=ZHHW39aGQaWSoCjiXauALw%3D%3D.BDRAgBJahgTlXCJZngVHvUJdutDLSyHYvxWNC%2BjDVyHPjSUnSvI4TDQyZhz5IIfk" rel="nofollow" target="_blank">https://github.com/mizorewww/laya-mlx</a></li></ul><h2>04. zai-org/ZCode</h2><p>ZCode 是一款 AI 编程工作台，提供桌面、Web 与终端三种入口，集成了 Agent CLI、共享 UI 与后端服务，支持 TypeScript 开发，旨在帮助开发者在多平台上高效编写、调试与部署代码。</p><ul><li>⭐ 6,708（24h +176）· TypeScript</li><li>仓库：<a href="https://link.segmentfault.com/?enc=mBux5RneFfx8wNPKIeM3sw%3D%3D.RzSz94Lfk7hbj82D%2FB0Xvz0QMFWRNIlpU%2BU9PUxjlv35fZlbsdl%2BG8Up187nfE6I" rel="nofollow" target="_blank">https://github.com/zai-org/ZCode</a></li></ul><h2>05. unreallabsai/unreal-agent</h2><p>Unreal Agent 是 Unreal Labs 开源的 Go 语言实现的异步优先代理框架，提供会话持久化、去重、LLM 调度及工具调用的完整流水线，面向需要可靠、可扩展 AI 代理的开发者。</p><ul><li>⭐ 1,878（24h +172）· Go</li><li>仓库：<a href="https://link.segmentfault.com/?enc=foo4bLh6Lp1VtwjQfwd8Ag%3D%3D.6bH9I9wAlDiZdCgr6j8o2uJuZtKsX0bs2RUyRlke3IlVmJuhA1ByQg2%2Bt%2FffpNb9" rel="nofollow" target="_blank">https://github.com/unreallabsai/unreal-agent</a></li></ul><h2>06. newliver666/apk-reverse</h2><p>apk-reverse 是一个基于 Python 的 Android APK 逆向工程工具集，提供去广告、代码裁剪、Dex 打补丁、重新打包及运行时分析等功能，面向需要在客户端快速评估可行性并安全修改 APK 的安全研究员和逆向工程师。</p><ul><li>⭐ 1,415（24h +145）· Python</li><li>仓库：<a href="https://link.segmentfault.com/?enc=DqU0pE%2BOJkFDyXAt0SL00A%3D%3D.%2BQ9mSnhGIIr685nbvE%2Bm4fa%2BfXpTJ8xTNJzIczrFN86wcTF7b5sKVhIHRDiLKI%2BD" rel="nofollow" target="_blank">https://github.com/newliver666/apk-reverse</a></li></ul><h2>07. Lumid-Off/AirCard-Windows</h2><p>AirCard 是一款基于 Rust 的 Windows 客户端，利用 Apple 的 AirTraffic 同步漏洞，无需越狱即可为 iOS 18+ 的 Apple Wallet 卡片和锁屏密码键盘自定义皮肤，支持 USB 与 Wi‑Fi 传输，提供安全可逆的状态快照。</p><ul><li>⭐ 869（24h +87）· Rust</li><li>仓库：<a href="https://link.segmentfault.com/?enc=7pTaB81Xl%2Bgpu8s2hfohtA%3D%3D.61JDlmhEyoL3VVDFJo2uxfvsOvOfxXzSFS5RmC6c%2FwAdCXY1pd5awORTOvBYhIpl" rel="nofollow" target="_blank">https://github.com/Lumid-Off/AirCard-Windows</a></li></ul><h2>08. bespokelabsai/nimble</h2><p>Bespoke Nimble 是基于 Qwen3.5-9B 的轻量化模型，使用 LoRA 微调实现对文本的“一次读取、单词级别打分”式结构化决策。通过平面 schema（枚举或布尔）快速返回每个问题的答案及概率，适用于路由、条件判断、策略执行和分级评分等业务场景。</p><ul><li>⭐ 1,731（24h +49）· Python</li><li>仓库：<a href="https://link.segmentfault.com/?enc=DjUCdtou6rRruyfGfrJnMw%3D%3D.5BgcePKU98dWWvRn8a3HXMze4gKU79Fl4DMx6O5iaWX2cpPn7G7ooScrftSB0Ptu" rel="nofollow" target="_blank">https://github.com/bespokelabsai/nimble</a></li></ul><h2>09. mizorewww/laya-coreml</h2><p>Laya-CoreML 是一个专为 Apple Silicon 设计的本地 Laya 模型推理库，利用 Core ML 与 Neural Engine 实现毫秒级多语言决策，无需生成文本。它支持快速部署、低能耗，并提供 Snake 游戏演示与性能基准，适用于需要即时、可解释决策的场景。</p><ul><li>⭐ 1,438（24h +47）· Python</li><li>仓库：<a href="https://link.segmentfault.com/?enc=o30EDUWm9jfhQxRhJpnxKA%3D%3D.eoQmP7K17EJGDOzQGej4g5LmDtU%2FFriA8b34kPrV7hcxSyimo8LcGwMlBhAtLlCY" rel="nofollow" target="_blank">https://github.com/mizorewww/laya-coreml</a></li></ul><h2>10. heyjunpenn/awesome-jev</h2><p>Awesome Jev 是一个社区维护的目录，收录了 834 个基于 Jev（TypeSafe AI System One）构建的开源项目，覆盖 11 类别、27 种语言，帮助开发者快速查找、评估和复用已有实现。</p><ul><li>⭐ 807（24h +42）· Astro</li><li>仓库：<a href="https://link.segmentfault.com/?enc=6HuzahGACI3McqFZZpZQlA%3D%3D.ynwxgQcLiYroVbLgazFUOGYRtxHBj5CXVvGceoF1rvPg2%2FV%2BVF1aUNP9k8Da365S" rel="nofollow" target="_blank">https://github.com/heyjunpenn/awesome-jev</a></li></ul><h2>11. mikehasa/golive-skill</h2><p>GoLive 是一个开源的 Agent Skill，使用 TypeScript 编写，提供零依赖的 Node CLI，帮助开发者将由代码生成代理构建的应用快速上线。它能够自动检测应用所需的托管、数据库、域名、邮件、支付等资源，生成并执行部署计划，支持人工审批、部署验证、漂移检查以及完整的拆除流程，适用于希望自行管理云服务账号且不依赖 GoLive 官方后端的用户。</p><ul><li>⭐ 874（24h +0）· TypeScript</li><li>仓库：<a href="https://link.segmentfault.com/?enc=Fvrae%2B%2FFEJqxlIH7%2ByaqpQ%3D%3D.Ic%2BnvctSIJewsu8xa7u1vImaz4X4xMgQxr7lWmmNjbkPlr0xbLWttVaDFC5QrUtl" rel="nofollow" target="_blank">https://github.com/mikehasa/golive-skill</a></li></ul><h2>12. Contrastive-LM/CLM</h2><p>Contrastive Language Models (CLM) 是一种基于对比学习的 System One 模型，专注于将状态与动作进行对齐。CLM‑8B 通过预训练、半训练和后训练三阶段，使用 60M Q&amp;A 对、30M 合成负样本和 1M 代理轨迹，能够在计算机使用、游戏和工具调用任务中与 Jev 相当，同时延迟低 9 倍。其状态与动作嵌入可独立缓存，训练与推理成本低，适用于快速、可扩展的决策系统。</p><ul><li>⭐ 807（24h +0）· Python</li><li>仓库：<a href="https://link.segmentfault.com/?enc=irO7VqJno3pDKJ%2BGpkl4iw%3D%3D.6H7agMJ%2FMPgQna1nGAx0FPpKiRqb2irO1w4useEeol3fdnWRiNFFG5lFa8ZVp5XN" rel="nofollow" target="_blank">https://github.com/Contrastive-LM/CLM</a></li></ul><h2>13. riba2534/claude-opus-5-5-demo</h2><p>claude-opus-5-5-demo 是一个展示 Claude Opus 5.5 单轮对话代码生成能力的示例项目，提供三个基于 Three.js 的 3D 网页游戏（鹈鹕骑自行车、穿越火线运输船、QQ 飞车），每个游戏仅凭一句提示词由模型全自动生成代码、构建并部署至 Cloudflare Pages，适合评估大语言模型在前端游戏开发中的完整流水线能力。</p><ul><li>⭐ 778（24h +0）· JavaScript</li><li>仓库：<a href="https://link.segmentfault.com/?enc=Pm%2FcarpXdtvhzCO8f%2FPYuA%3D%3D.fLMHy06wmXoPZ8evDmdfa%2BpOh2m9rIi3HiciwrEZK58iz8Qa438UOjV0dIo4V%2FXNEhgfawHHsgar2uQAWzVF%2FQ%3D%3D" rel="nofollow" target="_blank">https://github.com/riba2534/claude-opus-5-5-demo</a></li></ul><h2>14. yetone/magpie</h2><p>magpie 是用 Go 编写的跨平台桌面与终端工具，集中管理本机多个 AI 代理的模型配置，提供统一本地网关，实现模型切换、配置编辑与多供应商统一调用，适用于需要统一管理多 AI 模型的开发者。</p><ul><li>⭐ 611（24h +0）· Go</li><li>仓库：<a href="https://link.segmentfault.com/?enc=5%2BflWvI1FCOEPgffvFCQGA%3D%3D.z1ZyFS9vONpUZOBkBQmg37eAkSazRALdfUqQ2fDuephNP6nwz8dkmfhFAGTKVwkd" rel="nofollow" target="_blank">https://github.com/yetone/magpie</a></li></ul><h2>15. kryvora-network/kryvora-node</h2><p>kryvora-node 是 Kryvora Network 的官方客户端守护进程，负责将物理工作节点与 Kryvora Hub 连接，执行遥测探针、验证节点状态并报告可用性证明，适用于需要在 Arbitrum One 上持有 Genesis Node Key 的去中心化物理基础设施验证节点。</p><ul><li>⭐ 710（24h +0）· Go</li><li>仓库：<a href="https://link.segmentfault.com/?enc=jJiZC2XrNtVgpgTzqPfpSg%3D%3D.3J1MT%2B6T6z60G9eeLBUjtT%2FpNiOqKQK6v0OqvwQyOy2gaqC%2BTGjhXx9vttzN2nis" rel="nofollow" target="_blank">https://github.com/kryvora-network/kryvora-node</a></li></ul><h2>16. JohnHeibel/PDoomVideo</h2><p>本项目提供 Claude Opus 5.5 生成的音乐视频《I'm Upping My P(doom)》的完整源代码与渲染脚本，展示如何利用 p5.js 与 p5.brush 在浏览器中绘制动画帧，并通过 headless Chrome 与 ffmpeg 编码成 MP4。项目包含九章动画脚本、共享角色与歌词资源、自动化渲染工具及生成过程的文档。适用于想学习 AI 生成动画、实验 Claude Opus 5.5 代码生成与前端渲染技术的开发者。</p><ul><li>⭐ 690（24h +0）· JavaScript</li><li>仓库：<a href="https://link.segmentfault.com/?enc=3Xra3GAUmSG2lHpa7wUsAQ%3D%3D.NF64Pi5qG8KOI%2BhoB9%2BoTSpjs1PCCCvI0LykrNq1fy4erfg4ojzRWFTcTRGzPc0i" rel="nofollow" target="_blank">https://github.com/JohnHeibel/PDoomVideo</a></li></ul><h2>17. deepopen-com/deepopen</h2><p>DeepOpen 是一款完全开源的非自回归 System 1 决策引擎，专为结构化类型决策场景设计。它通过三大优化检查点（英文、多语言、类型决策）实现 100+ 语言的多维度判断，单请求延迟低至 33 毫秒，批量处理仅 7.2 毫秒。依托 RLCD 强化学习训练，输出置信度严格校准，零幻觉、低成本部署，适用于高并发分类、路由与打分任务。</p><ul><li>⭐ 1,006（24h +0）· Python</li><li>仓库：<a href="https://link.segmentfault.com/?enc=S5vOt67eB2fd6lir%2BWluEQ%3D%3D.acdEPUe12jP1T9Ip%2FznORb85RG0ObYT4NhITBtyOHipScifCJAaV9U4h73zwgtJd" rel="nofollow" target="_blank">https://github.com/deepopen-com/deepopen</a></li></ul><h2>18. driceroland/Search</h2><p>Search 是一款基于 macOS 内置 WebKit 的极简浏览器，体积约 3 MB、启动迅速，提供单字段地址/搜索、无干扰标签、阅读模式、预渲染广告拦截、视频画中画、钥匙串密码管理及兼容 Chrome 扩展等功能，面向追求轻量、专注阅读的 Mac 用户。</p><ul><li>⭐ 1,241（24h +0）· Swift</li><li>仓库：<a href="https://link.segmentfault.com/?enc=akW8YxfkNcaImi%2Ba9sy79A%3D%3D.9X68ZA7b79x86y8OxoVwAzIc797%2BxZU%2FyOnGO2octU%2FCBClnrJpk%2Bcoo4NUoP73j" rel="nofollow" target="_blank">https://github.com/driceroland/Search</a></li></ul><h2>19. freestylefly/WeChatBridge</h2><p>WeChatBridge 是一款原生 macOS 应用，利用微信的合并转发功能，将选中的聊天记录（ZIP 包）通过 Share Extension 快速发送至 AI Agent、Obsidian 或剪贴板，实现本地归档与智能处理，面向需要高效整理微信对话的个人或团队用户。</p><ul><li>⭐ 654（24h +0）· Swift</li><li>仓库：<a href="https://link.segmentfault.com/?enc=Ljw8uWLSpqBFHroZTh8ARA%3D%3D.Xvd9toA8MS73%2BOxKtGGMANsmFt650bA2K1g3G%2BxHiSK5KJ0XjAsVQ%2FPCCYKnV7h4" rel="nofollow" target="_blank">https://github.com/freestylefly/WeChatBridge</a></li></ul><h2>20. volotat/mini-AGI</h2><p>mini-AGI 是一个在单张 8 GB GPU 上从零训练的字节级持续学习语言模型，采用磁盘分页方式突破显存限制，旨在演示在普通硬件上持续学习且不忘记的可能性，适用于希望自行训练或继续训练小规模模型的个人用户。</p><ul><li>⭐ 753（24h +0）· Python</li><li>仓库：<a href="https://link.segmentfault.com/?enc=1agObLIN2UO4IM6Hz%2FVv6A%3D%3D.Hj8kUFTP4ffXP8jmQXf%2BRwNdYbPJXiprEqHv7jS4jEEqOlzbzDMsJWVNqvGsPxFh" rel="nofollow" target="_blank">https://github.com/volotat/mini-AGI</a></li></ul><hr/><p>数据来源：<a href="https://link.segmentfault.com/?enc=YXrCgqkXL5hblF%2FX8EnjGw%3D%3D.oiJqt3F0xztQTJ9OVnQ7zQ9z1tDK61NbCteo6EowQCcvM2rZVBuYyXLdS2N3nus%2B" rel="nofollow" target="_blank">YourTools GitHub 趋势榜</a>，每日更新。</p><p>关注公众号「YourTools」，每天推送 GitHub 趋势与开源工具速报：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048305775" alt="YourTools 公众号" title="YourTools 公众号"/></p>]]></description></item><item>    <title><![CDATA[驰骋BPM低代码-组织结构-设计 驰骋工作流_表单_低代码 ]]></title>    <link>https://segmentfault.com/a/1190000048317927</link>    <guid>https://segmentfault.com/a/1190000048317927</guid>    <pubDate>2026-09-25 12:04:50</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <h4>1. 定义</h4><p>组织结构是指系统运行所依赖的<strong>人员、部门、角色</strong>，以及它们之间的对应关系。CCBPM 将这些数据持久化在 <code>Port_*</code> 系列数据表中（实体类位于 <code>BP.Port</code> 命名空间）。</p><p><strong>核心五表</strong>（视图/接口集成时通常需要映射这五张表）：</p><table><thead><tr><th>表名</th><th>实体类</th><th>说明</th></tr></thead><tbody><tr><td><code>Port_Emp</code></td><td><code>Emp</code></td><td><strong>人员（用户）</strong>。主键 <code>No</code>；<code>FK_Dept</code> 为主部门；含姓名、手机、邮箱、状态等。SAAS 模式下另有 <code>UserID</code> 字段，账号 <code>No</code> 通常为 <code>组织编号_UserID</code> 格式。</td></tr><tr><td><code>Port_Dept</code></td><td><code>Dept</code></td><td><strong>部门</strong>。树形结构，<code>ParentNo</code> 表示上级部门，<code>NameOfPath</code> 为部门全路径；<code>Leader</code> 为部门领导账号；<code>OrgNo</code> 标识所属组织。</td></tr><tr><td><code>Port_Station</code></td><td><code>Station</code></td><td><strong>角色（岗位）</strong>。流程选人规则的核心维度之一；通过 <code>FK_StationType</code> 归属角色类型；集团/SAAS 模式下含 <code>OrgNo</code> 做组织隔离。</td></tr><tr><td><code>Port_DeptEmp</code></td><td><code>DeptEmp</code></td><td><strong>部门-人员</strong>。支持一人多部门（兼职）；主键 <code>MyPK = FK_Dept + "_" + FK_Emp</code>。删除记录时会级联清理该人员在该部门下的角色关系。</td></tr><tr><td><code>Port_DeptEmpStation</code></td><td><code>DeptEmpStation</code></td><td><strong>部门-角色-人员</strong>。三要素关联，是流程节点"按部门+角色找人"的数据基础；主键 <code>MyPK = FK_Dept + "_" + FK_Emp + "_" + FK_Station</code>。</td></tr></tbody></table><p><strong>扩展表</strong>（多组织模式下使用，集成时按需处理）：</p><table><thead><tr><th>表名</th><th>实体类</th><th>说明</th></tr></thead><tbody><tr><td><code>Port_Org</code></td><td><code>Org</code></td><td><strong>组织/租户</strong>。集团模式与 SAAS 模式的隔离单元；<code>No</code> 通常与根部门编号相同；<code>Adminer</code> 为主管理员。</td></tr><tr><td><code>Port_OrgAdminer</code></td><td><code>OrgAdminer</code></td><td><strong>组织管理员</strong>。记录主管理员与二级管理员，可配置流程/表单目录权限。</td></tr><tr><td><code>Port_StationType</code></td><td><code>StationType</code></td><td><strong>角色类型</strong>。对 <code>Port_Station</code> 做分类，如"管理岗""业务岗"。</td></tr><tr><td><code>Port_Team</code> / <code>Port_TeamType</code> / <code>Port_TeamEmp</code></td><td><code>Team</code> 等</td><td><strong>标签（用户组）</strong>。用于人员分组，辅助选人，非流程核心依赖。</td></tr></tbody></table><p><strong>表间关系</strong>：</p><pre style="display:none;"><code class="mermaid">erDiagram
-    Port_Org ||--o{ Port_Dept : "OrgNo"
-    Port_Dept ||--o{ Port_Dept : "ParentNo"
-    Port_Dept ||--o{ Port_Emp : "FK_Dept(主部门)"
-    Port_Dept ||--o{ Port_DeptEmp : "FK_Dept"
-    Port_Emp ||--o{ Port_DeptEmp : "FK_Emp"
-    Port_StationType ||--o{ Port_Station : "FK_StationType"
-    Port_Dept ||--o{ Port_DeptEmpStation : "FK_Dept"
-    Port_Emp ||--o{ Port_DeptEmpStation : "FK_Emp"
-    Port_Station ||--o{ Port_DeptEmpStation : "FK_Station"
-    Port_Org ||--o{ Port_OrgAdminer : "OrgNo"</code></pre><p>要点：</p><ul><li>人员通过 <code>Port_Emp.FK_Dept</code> 归属一个<strong>主部门</strong>；通过 <code>Port_DeptEmp</code> 可额外挂接其他部门。</li><li>流程按"某部门的某角色"找人时，查询的是 <code>Port_DeptEmpStation</code>，而非 <code>Port_Station</code> 本身。</li><li>集团/SAAS 模式下，部门、人员、角色等表通过 <code>OrgNo</code> 字段做数据隔离。</li></ul><h4>2. 组织结构的运行模式</h4><p>CCBPM 支持三种组织结构运行模式，通过配置项 <code>CCBPMRunModel</code> 切换：</p><ul><li>JFlow：<code>jflow.properties</code></li><li>CCFlow：<code>app.config</code> / <code>appsettings.json</code></li></ul><table><thead><tr><th>值</th><th>模式</th><th>说明</th></tr></thead><tbody><tr><td><code>0</code></td><td><strong>单组织</strong></td><td>只有一个管理员 <code>admin</code>，管理组织、数据源及组织内流程。无 <code>OrgNo</code> 隔离。</td></tr><tr><td><code>1</code></td><td><strong>集团组织</strong></td><td>一个集团管理员 <code>admin</code> 可创建多个独立组织；每个组织有主管理员和若干二级管理员；各组织流程/表单默认互不可见，可通过 <code>OrgNo</code> 隔离；用户账号全局唯一；组织间可共享流程。类比：一个生产队（集团）管理多户人家（组织），每户有家长（组织管理员）。</td></tr><tr><td><code>2</code></td><td><strong>SAAS 模式</strong></td><td>超级管理员可开通租户；每个租户有独立管理员；<strong>用户账号可跨租户重复</strong>（如租户 1 和租户 2 均可有 <code>001</code> 用户，通过 <code>OrgNo</code> + <code>UserID</code> 区分）；租户间无业务往来。类比：联合国（超级管理员）下辖多个独立国家（租户）。</td></tr></tbody></table><h4>3. 组织结构集成</h4><p>CCBPM 运行在内置组织结构之上。若业务系统已有自己的组织数据，需保持两边一致，这一过程称为<strong>组织结构集成</strong>——本质是让 CCBPM 能读取您系统的部门、人员、角色数据。</p><p><strong>两种集成方式</strong>：</p><table><thead><tr><th>方式</th><th>做法</th><th>适用场景</th></tr></thead><tbody><tr><td><strong>视图模式</strong></td><td>删除 CCBPM 侧五张核心表，创建同结构的<strong>数据库视图</strong>，将外部数据映射过来。</td><td>推荐：CCBPM 库与业务库可合并部署，无特殊隔离要求、不做流程服务中心时优先采用。</td></tr><tr><td><strong>接口模式（数据同步）</strong></td><td>业务系统组织数据变更时，调用 CCBPM 提供的同步 API 增删改对应记录。核心接口见 <code>OrganizationAPI</code>：<code>Port_Org_Save</code>、<code>Port_Dept_Save</code>、<code>Port_Emp_Save</code>、<code>Port_Station_Save</code> 等。</td><td>CCBPM 库与业务库不在同一服务器，或无法共用数据库时采用。</td></tr></tbody></table><p><strong>接口同步注意事项</strong>（参考 <code>Port_Emp_Save</code> 实现）：</p><ul><li>一人只有一个部门时，调用一次 <code>Port_Emp_Save</code>，传入部门编号及该部门下的角色编号集合。</li><li>一人兼任多个部门时，<strong>每个部门各调用一次</strong> <code>Port_Emp_Save</code>。</li><li>SAAS 模式下，<code>kvs</code> 参数必须包含 <code>@UserID=xxxx</code>；用户编号通常为 <code>组织编号_UserID</code> 格式。</li></ul><p><strong>总结</strong>：</p><ul><li>数据库可合并时 → 视图模式，维护成本最低。</li><li>数据库必须分离时 → 接口模式，在业务系统组织变更时主动同步。</li></ul>]]></description></item>  </channel></rss>
+    N --&gt; Q[风险控制：审核与投诉响应机制]</code></pre><p>该流程将合规要求嵌入技术实现的各个环节：抓取阶段通过 robots 协议与来源白名单控制内容来源，版权校验阶段对内容状态进行前置判断，存储分发阶段借助内容指纹库识别重复侵权文件，用户上传阶段则通过审核与操作日志留存实现可追溯管理。</p><h3>5. 运营层面的合规实践</h3><p>运营策略直接影响合规风险等级，以下实践建议值得参考。</p><h4>5.1 版权投诉处理流程</h4><p>建立标准化的 DMCA 投诉响应机制，明确投诉受理、内容下架、申诉复核的完整流程。响应时效直接影响避风港原则的适用。</p><h4>5.2 内容审核与分级管理</h4><p>对上传内容进行分级审核，高风险内容（如畅销书、新书）优先人工复核。建立黑名单作者与出版社库，主动屏蔽其作品。</p><h4>5.3 商业模式与盈利边界</h4><p>广告收入、会员付费、打赏等盈利模式可能被认定为"直接获利"，削弱避风港保护。如需商业化，建议通过合法内容订阅、捐赠等模式实现。</p><h3>6. 常见合规陷阱与典型案例</h3><p>以下场景是 ZLibrary 类项目最容易踩坑的地方，需要特别警惕。</p><ul><li><strong>陷阱一：以"学习交流"为名规避责任</strong>——非营利目的不能免除侵权责任，只是影响赔偿金额的酌定。</li><li><strong>陷阱二：忽视镜像站与域名轮换风险</strong>——频繁更换域名、使用镜像站可能被认定为规避监管，加重处罚。</li><li><strong>陷阱三：用户协议中的免责条款无效</strong>——平台与用户之间的免责约定不能对抗著作权人的合法主张。</li><li><strong>陷阱四：技术中立抗辩的误用</strong>——"技术中立"不等于"平台无责"，主动推荐、索引侵权内容仍可能担责。</li></ul><h3>7. 合规转型路径建议</h3><p>对于已上线或计划上线的项目，建议从以下方向推进合规转型。</p><h4>7.1 内容合法化改造</h4><p>逐步清理侵权内容，引入公版书、开放授权（如 CC 协议）资源，与出版社或作者建立正规合作。</p><h4>7.2 功能定位调整</h4><p>从"资源 下载 站"转型为"阅读工具"或"书单推荐社区"，弱化内容存储与分发属性，降低侵权风险敞口。</p><h4>7.3 法律合规团队建设</h4><p>聘请专业法律顾问，建立常态化的合规审查机制，定期评估业务模式的法律风险变化。</p><h3>8. 总结与行动清单</h3><p>ZLibrary 类项目的合规问题不是"能不能做"的判断题，而是"如何做"的规划题。建议在项目启动前完成以下动作：</p><ol><li>明确项目定位，评估著作权风险等级。</li><li>建立内容来源白名单与版权校验机制。</li><li>完善 DMCA 投诉响应与内容审核流程。</li><li>审慎设计商业模式，避免直接获利认定。</li><li>预留合规转型空间，保持业务模式灵活性。</li></ol><p>合规不是发展的阻碍，而是项目长期存续的基石。希望本文能帮助开发者与运营者建立系统的风险认知，在合法框架内探索可持续的产品形态。</p><h3>9. 合规自检清单</h3><p>为帮助项目团队在关键节点快速自查，以下清单按项目启动前、开发中、上线后三个阶段梳理合规检查项，供对照执行。</p><table><thead><tr><th>阶段</th><th>检查内容</th><th>风险等级</th><th>通过标准</th></tr></thead><tbody><tr><td><strong>项目启动前</strong></td><td>明确项目定位与内容来源</td><td>高</td><td>已书面界定平台模式（聚合/存储/UGC），并完成著作权风险评估</td></tr><tr><td>建立内容来源白名单</td><td>高</td><td>所有内容来源均经过版权状态前置校验，白名单机制已生效</td></tr><tr><td>制定 DMCA 投诉响应预案</td><td>中</td><td>投诉受理、内容下架、申诉复核流程已文档化并指定责任人</td></tr><tr><td>审慎设计商业模式</td><td>高</td><td>盈利模式已评估，避免被认定为"直接获利"，优先采用合法订阅或捐赠</td></tr><tr><td><strong>开发中</strong></td><td>遵守 robots 协议与抓取规范</td><td>中</td><td>爬虫未绕过技术保护措施，抓取策略符合目标站点规则</td></tr><tr><td>建立内容指纹库</td><td>中</td><td>指纹库已上线，可识别并拦截重复上传的侵权文件</td></tr><tr><td>完善用户行为约束机制</td><td>中</td><td>用户协议、上传审核、关键词过滤、人工巡检均已部署，操作日志完整留存</td></tr><tr><td>避免主动推荐与编辑侵权内容</td><td>高</td><td>平台未对侵权内容进行主动分类、推荐或编辑，避免被认定"应知"</td></tr><tr><td><strong>上线后</strong></td><td>执行版权投诉响应流程</td><td>高</td><td>DMCA 投诉在规定时效内响应，下架与复核流程可追溯</td></tr><tr><td>持续内容审核与分级管理</td><td>中</td><td>高风险内容（畅销书、新书）优先人工复核，黑名单作者与出版社库持续更新</td></tr><tr><td>定期评估商业模式合规性</td><td>中</td><td>广告、会员、打赏等收入模式已定期复核，未触发"直接获利"认定</td></tr><tr><td>保留合规转型空间</td><td>低</td><td>业务模式保持灵活性，可随时向合法内容订阅、阅读工具方向转型</td></tr></tbody></table>]]></description></item>  </channel></rss>
