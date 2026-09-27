@@ -1,4 +1,235 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[群聊里一句“不要发给 @B”，为什么仍可能触发路由 神勇威武的椅子 ]]></title>    <link>https://segmentfault.com/a/1190000048320032</link>    <guid>https://segmentfault.com/a/1190000048320032</guid>    <pubDate>2026-09-27 14:01:24</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>“请不要转发给 @B。”如果 B 是群里唯一能被这个名字匹配到的成员，这句话在我检查的群聊路由实现里，仍可能让回复交给 B。这里说的是从代码推导出的测试输入，不是一次线上事故。</p><h2>匹配器只找名字</h2><p>路由先扫描整段回复，寻找 <code>@</code> 后面跟字母、数字、下划线或连字符的片段：</p><pre><code class="ts">const tokens = text.match(/@[\p{L}\p{N}_-]+/gu) ?? []</code></pre><p>随后，<code>resolveMentions</code> 把片段与群成员的名字对应起来，按成员 ID 去重。匹配结果必须唯一；一个词同时指向两位成员时，程序不会猜。</p><p>这个扫描没有理解“不要”的含义，也没有跳过引用或代码块。因此，否定句里的 <code>@B</code>、用来举例的 <code>@B</code>，以及真正要求交接的 <code>@B</code>，都会先进入同一套名字解析逻辑。能否找到 B，与说话者是否想让 B 收到消息，是两件事。</p><h2>找到名字，还要过调度检查</h2><p><code>selectRecipients</code> 会排除发言者本人和本轮已经说过话的成员。若消息来自智能体且没有可解析的点名，它不会自动选择默认成员；来自用户的消息在这种情况下才可能走入口成员或首位成员。</p><p><code>planSteps</code> 还会检查下一跳是否超过预算。执行队列在出队时也会再次排除已经用过回合的成员。所以，“不要发给 @B”并非一定产生调用。要观察到交接，B 必须能被唯一解析、有本轮发言资格，而且还留有跳数。</p><p>测试这类问题时，我会把输入和预期分开写：</p><table><thead><tr><th>输入或条件</th><th>当前实现应观察到的结果</th></tr></thead><tbody><tr><td>正文包含“不要发给 @B”</td><td>名字解析仍找到 B</td></tr><tr><td><code>@B</code> 出现在引用或代码块</td><td>名字解析仍找到 B</td></tr><tr><td>B 已在本轮说过话</td><td>收件人筛选排除 B</td></tr><tr><td>下一跳超过预算</td><td>不生成下一步</td></tr><tr><td>点名同时匹配两位成员</td><td>该点名不指向任何人</td></tr></tbody></table><p>这张表是按实现写的回归测试预期，不是已经跑完的测试报告。解析器测试只负责验证“找到了谁”；调度测试再给定成员状态和跳数，验证“会不会真的调用”。把两层混在一起，容易把“B 没资格”误判成“系统理解了不要转发”。</p><p>提示词会提醒智能体：写出同伴名字可能转发当前回复和用户问题，并占用对方回合。但模型读到提示词，不等于路由器会按自然语言意图重新判读正文。路由器处理的是返回的文本。</p><p>如果希望智能体可以在正文里自由讨论同伴，一种设计是把交接请求从正文拆出来：输出单独的目标成员字段和交接内容，正文只用于对用户说话。这是改法建议，当前代码并没有这个结构。即使改成结构化输出，程序仍须验证目标属于当前群、没有用过本轮机会，而且没有越过跳数限制。</p><p>我更想固定的一条测试是：正文引用 <code>@B</code> 不单独触发交接，只有通过校验的交接字段才能规划下一步。它清楚地标出了要改变的行为，也避免让一个普通句子承担调度指令的职责。</p>]]></description></item><item>    <title><![CDATA[社区实践：用Gemini 3.8 TTS + Agora 做个实时互动 AI 播客 RTE开发者社区]]></title>    <link>https://segmentfault.com/a/1190000048319825</link>    <guid>https://segmentfault.com/a/1190000048319825</guid>    <pubDate>2026-09-27 11:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p><img referrerpolicy="no-referrer" src="/img/remote/1460000048319827" alt="" title=""/></p><h2>Gemini 3.8 TTS 发布：声音定制与语音生成能力升级</h2><p>9 月 23 日，Google 发布 Gemini 3.8 Flash TTS 和 Flash-Lite TTS 两款文本转语音模型，带来更灵活的声音定制和表达控制。</p><p>Agora 作为 Google 的合作伙伴，支持通过 Gemini API 集成 Gemini 3.8 Flash TTS，开发者可以结合 Agora RTC 构建实时语音应用。</p><p>本文将介绍 Gemini 3.8 TTS 的核心特性，并以开源项目 Agora Podcasts 为例，展示如何将主题或文章生成双主播节目，让听众实时收听、举手提问，并在主播回答后继续原来的内容。</p><h3>两款模型，声音定制与规模化生成</h3><p>两款模型各有侧重。</p><ul><li>Flash TTS 适用于需要深度声音定制和角色塑造的场景；</li><li>Flash-Lite TTS 更适合大规模内容生成，在优化成本效率的同时，保留对语气、节奏和情绪表达的控制能力。</li></ul><h3>从声音设计到逐句表达控制</h3><p>两款模型都支持 <strong>逐句控制语音表达</strong>。</p><p>开发者可以在文本中加入表达要求，调整每句内容的语气、节奏和情绪，具体包括：</p><p><strong>1.声音设计：用文字定义角色声音</strong></p><p>Flash TTS 支持通过自然语言描述声音特征、角色定位和口音，帮助开发者设计符合场景需求的声音。开发者也可以从 2,000 多种声音中选择合适的音色，并保存设计结果，在后续内容中持续复用。</p><p>例如，为课程讲解员设计声音时，可以描述为“音色温暖、吐字清晰、使用普通话”；为故事中的角色设计声音时，则可以进一步指定角色特点和口音。</p><p>Flash TTS 还支持声音复刻：通过一段 30 秒的本人或已获授权的声音样本，创建可复用的声音。</p><p><strong>2.逐句控制：让表达更贴合内容</strong></p><p>两款模型均支持逐句控制语音表达。开发者可以针对不同台词设置语气、节奏和情绪，使同一角色在开场、讲解、互动等不同场景中呈现更自然的表达效果。</p><p>例如，一段课程开场中，“欢迎回来”可以读得轻快一些；进入复杂概念时，可以放缓语速、增加停顿；提出问题时，再调整重音和语调。</p><p><strong>3.双人对话与长音频：保持角色和内容的连贯性</strong></p><p>除了单人语音生成，两款模型还支持以下能力：</p><ul><li><strong>双人多轮对话：</strong> 通过一份脚本生成双人对话，区分两种声音，并安排自然的轮流发言，可用于播客或故事演绎。</li><li><strong>声音细节：</strong> 在脚本中加入笑声、叹息、吸气声和简短回应，补充台词之外的表达。</li><li><strong>长音频生成：</strong> 据发布介绍，可在数小时的连续音频中保持较稳定的音色和自然节奏，减少前后声音不一致的情况。</li></ul><p>制作长内容时，除了确认单句效果，也需要检查不同段落之间的音色、语速，以及双人对话的衔接是否符合脚本安排。</p><h3>性能参数</h3><p><strong>1.综合质量</strong></p><p>综合来看，Flash TTS 和 Flash-Lite TTS 分别以 <strong>0.920</strong> 和 <strong>0.914</strong> 位列第一、第二，明显高于上一代 Gemini 3.1 Flash TTS 的 0.783。</p><p>两款模型的 <strong>多说话人表现</strong> 分别为 4.14 和 4.10，高于上一代的 3.60，说明它们更适合生成双人对话。两款模型的<strong>类人语音变化</strong>也高于上一代，跨多轮表达时更接近真人。<strong>单一风格标签控制</strong> 则分别为 4.34 和 4.32，较上一代略有提升。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048319828" alt="" title="" loading="lazy"/></p><p><strong>2. Flash TTS 声音设计能力突出</strong></p><p>在 <strong>Text-to-Speech Voice Design Leaderboard</strong> 列出的模型中，Flash TTS 的英语综合得分为 <strong>71.4</strong>，位列第一；多语言得分为 <strong>3.82</strong>，口音得分为 <strong>60.8</strong>，两项也都排名第一。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048319829" alt="" title="" loading="lazy"/></p><p><strong>3.多语言表现</strong></p><p>在 <strong>Voice Arena</strong> 的多语言榜单中，两款模型在 7 种语言中分别取得最高分：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048319830" alt="" title="" loading="lazy"/></p><p>Gemini 3.8 TTS 的优势并不局限于英语。两款模型在 7 种语言中都拿到过最高分：<strong>Flash TTS</strong> 在日语、现代标准阿拉伯语、印地语和墨西哥西班牙语中领先，<strong>Flash-Lite TTS</strong> 则在英语、巴西葡萄牙语和越南语中得分最高。</p><p>对于需要多语言配音、播客或语音智能体的开发者，可以根据目标语言选择模型，而不必只依赖单一模型覆盖所有场景。</p><h3>开发者体验与接入</h3><p>开发者可在 Google AI Studio 音频工作台体验声音设计、声音复刻和双人脚本编辑，也可通过 Gemini API 接入应用。</p><h2>社区实践：Gemini 3.8 TTS 实时互动 AI 播客</h2><p>模型正式发布后，有社区开发者基于 Gemini 3.8 Flash TTS 制作了一个实时 AI 播客 Demo。</p><p>该项目基于 Agora RTC + RTM，搭建了一个可以多人加入的 AI 播客，它支持：</p><ul><li><strong>多人同步收听：</strong> 多个听众可以进入同一房间，实时收听同一场 AI 播客。</li><li><strong>随时加入对话：</strong> 听众可以举手插话，Gemini 3.5 Transcribe Live 会实时转写语音。</li><li><strong>双人主持人即时回应：</strong> Gemini 3.8 Flash TTS 驱动两位 AI 主持人根据问题生成并播回答。</li><li><strong>节目自动恢复：</strong> 互动结束后，原节目自动继续播放，保持完整的收听流程。</li></ul><p><strong>与 NotebookLM 的交互式音频相比，这个示例把个人问答扩展成了多人共享的现场。</strong> NotebookLM 允许用户加入音频概览、向 AI 主播提问，但其他人不能通过共享链接加入这段互动。Agora Podcasts 则让多位听众进入同一个实时房间：大家共同收听，也可以依次举手提问；一个人的问题和主播的回答，其他人也能听到。</p><p>与 Clubhouse 的真人语音房相比，这里的对谈主播由 AI 担任。 Clubhouse 让人们进入房间，围绕话题展开实时交流；Agora Podcasts 则由两位 AI 主播组织节目内容、展开对谈，并回应听众的提问。它保留了多人共同参与的语音房体验，也让 AI 从内容生成工具变成了房间里的对话参与者。</p><p>GitHub 链接：<br/><a href="https://link.segmentfault.com/?enc=rvxIz9%2FzqjLCtyPif0jONQ%3D%3D.vc6vmLGMamNX1Ha9PXMmPfm6gGZBlM68srKjIJdptbsnGXoJhFCyZtI%2Fi4jnnMP8" rel="nofollow" target="_blank">https://github.com/zicojiao/agora-podcasts</a></p><p><strong>架构概览</strong></p><pre><code class="python">
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[【AI开发之Rust】第 19 课：UniFFI 导出核心能力 悟空聊AI ]]></title>    <link>https://segmentfault.com/a/1190000048320082</link>    <guid>https://segmentfault.com/a/1190000048320082</guid>    <pubDate>2026-09-27 15:02:04</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <h2>19.1 从"手写 FFI"到"自动绑定"</h2><p>第 16 课手动搭桥教会我们 FFI 的三条协议（布局、所有权、安全）。但手写绑定有致命问题：</p><pre><code>重复劳动：每个函数都要配 no_mangle/extern "C"、内存配对、catch_unwind
+类型贫瘠：String/Vec/Result/回调全要手工映射
+绑定爆炸：每支持一种语言（Swift/Kotlin/TS/Python）就要再写一遍</code></pre><p><strong>UniFFI（Mozilla 出品）</strong>把这事自动化：你给 Rust 代码贴几个属性宏，它生成两层东西：</p><pre><code>第 1 层：scaffolding —— C ABI 胶水（等价于 16 课手写部分，编译期/构建期自动生成）
+第 2 层：bindings —— 各语言绑定（Swift/Kotlin/Python/TS……），调用 scaffolding</code></pre><pre><code>   Rust core（17-18 课）
+         │ #[uniffi::export] 等
+         ▼
+   UniFFI 生成 scaffolding（C ABI，自动处理
+       布局/内存/错误/panic/异步）
+         │ 生成的各语言绑定（Swift/Kotlin/Python…）
+         ▼
+   iOS App / Android App / Desktop / 测试脚本</code></pre><blockquote>💡 UniFFI 的取舍：<strong>桥更"厚"但更安全</strong>——它按 16 课的三条协议写死模板并自动成对生成 free/错误处理，人类不再手写 C 胶水。代价：能过桥的类型要符合它的"受支持类型集"，个别花哨类型（复杂泛型、某些回调形态）需要绕道。<strong>本课 = 学会在 UniFFI 的类型约束内导出 17-18 课的 core。</strong></blockquote><p>版本声明：UniFFI 迭代快，<strong>本课按 0.2x（0.29 系）写法示例</strong>。若你安装的版本更新，以官方 docs（mozilla.github.io/uniffi-rs）的迁移说明为准——核心概念不变，属性名/宏入口偶尔微调。</p><h2>19.2 工程结构：ffi-bindings crate</h2><p>第 17 课建过空壳，现在填实。<strong>导出层与 core 分离</strong>，让 core 保持"无 UniFFI 依赖"：</p><pre><code>ffi-bindings/
+├── Cargo.toml
+├── build.rs            # 生成 scaffolding（proc-macro 模式无需 UDL）
+└── src/
+    ├── lib.rs          # uniffi::setup_scaffolding!()
+    ├── models.rs       # #[derive(uniffi::Record/Enum)] 的传输类型（壳层 DTO）
+    └── api.rs          # #[derive(uniffi::Object)] 门面对象 + #[uniffi::export]</code></pre><pre><code class="toml"># ffi-bindings/Cargo.toml
+[package]
+name = "my_ai_ffi"
+edition = "2021"
+
+[dependencies]
+my-ai-core = { path = "../core" }
+uniffi = { version = "0.29", features = ["tokio"] }   # tokio：异步导出用
+
+[build-dependencies]
+uniffi = { version = "0.29", features = ["build"] }</code></pre><pre><code class="rust">// build.rs —— proc-macro 模式：生成 Rust scaffolding（无需 .udl 接口文件）
+fn main() {
+    uniffi::generate_scaffolding("src/lib.rs").expect("UniFFI scaffolding 生成失败");
+}</code></pre><pre><code class="rust">// src/lib.rs —— 导出层入口
+uniffi::setup_scaffolding!();          // 必须出现且只出现一次（放在被 generate_scaffolding 指向的文件）
+
+pub mod api;
+pub mod models;</code></pre><blockquote>⚠️ 关键点：<code>setup_scaffolding!</code> 所在文件路径必须与 <code>build.rs</code> 里 <code>generate_scaffolding("src/lib.rs")</code> 一致——UniFFI 靠它定位 crate 根符号。路径不一致是最常见的"链接期找不到符号"原因。</blockquote><h2>19.3 传输类型：Record / Enum 的映射规则</h2><p>UniFFI 只认它支持的"安全类型子集"。把 core 的内部类型（<code>models::Session</code> 等）与 UniFFI 类型<strong>解耦</strong>的惯用手法：在 ffi 层定义镜像 DTO。</p><h3>19.3.1 Record（结构体）与 Enum</h3><pre><code class="rust">// ffi-bindings/src/models.rs
+#[derive(uniffi::Record)]
+pub struct Session {
+    pub id: String,
+    pub title: String,
+    pub created_at_ms: i64,
+}
+
+#[derive(uniffi::Enum)]
+pub enum Role {
+    User,
+    Assistant,
+    System,
+}
+
+#[derive(uniffi::Record)]
+pub struct Message {
+    pub id: String,
+    pub session_id: String,
+    pub role: Role,
+    pub content: String,
+    pub created_at_ms: i64,
+}
+
+impl From&lt;&amp;my_ai_core::models::Session&gt; for Session {
+    fn from(s: &amp;my_ai_core::models::Session) -&gt; Self {
+        Session { id: s.id.clone(), title: s.title.clone(), created_at_ms: s.created_at_ms }
+    }
+}
+
+impl From&lt;&amp;my_ai_core::models::Message&gt; for Message {
+    fn from(m: &amp;my_ai_core::models::Message) -&gt; Self {
+        Message {
+            id: m.id.clone(),
+            session_id: m.session_id.clone(),
+            role: match m.role {
+                my_ai_core::models::Role::User =&gt; Role::User,
+                my_ai_core::models::Role::Assistant =&gt; Role::Assistant,
+                my_ai_core::models::Role::System =&gt; Role::System,
+            },
+            content: m.content.clone(),
+            created_at_ms: m.created_at_ms,
+        }
+    }
+}</code></pre><p>对应到各语言的自然形态：</p><table><thead><tr><th>Rust（UniFFI 标记）</th><th>Swift</th><th>Kotlin</th><th>Python</th></tr></thead><tbody><tr><td><code>#[derive(uniffi::Record)]</code> struct</td><td><code>struct</code></td><td><code>data class</code></td><td><code>@dataclass</code></td></tr><tr><td><code>#[derive(uniffi::Enum)]</code> enum</td><td><code>enum</code></td><td><code>sealed class/enum</code></td><td><code>Enum</code></td></tr><tr><td><code>#[derive(uniffi::Object)]</code> + impl</td><td><code>class</code>（引用语义）</td><td><code>class</code></td><td>对象</td></tr><tr><td><code>String</code> / <code>i64</code> / <code>Vec&lt;T&gt;</code></td><td><code>String</code>/<code>Int64</code>/数组</td><td>对应基础类型</td><td>对应类型</td></tr></tbody></table><blockquote>💡 支持类型清单（最常用子集）：<code>String</code>、整数族（<code>i8..u64</code>）、<code>f32/f64</code>、<code>bool</code>、<code>Vec&lt;T&gt;</code>、<code>Option&lt;T&gt;</code>、<code>HashMap&lt;String, T&gt;</code>、上述 Record/Enum、Object、<code>Result&lt;T, E&gt;</code>（E 是导出的 Error）。<strong>不支持</strong>：<code>&amp;str</code> 参数、泛型自定义类型、<code>usize</code>（建议统一 i64）。</blockquote><h3>19.3.2 Error：让调用方能 match</h3><p>core 的错误枚举（17 课）不能直接导出（内含 <code>#[from]</code> 包装的 io/rusqlite 等不可表示类型），惯例做法也是<strong>在 ffi 层定义"UI 可理解"的错误</strong>：</p><pre><code class="rust">// ffi-bindings/src/models.rs
+#[derive(uniffi::Error)]
+pub enum ApiError {
+    /// 存储错误：含 DB 语义（UI 可提示"历史加载失败"）
+    Store { message: String },
+    /// LLM 错误：细分为"上游/网络/超时/中断"，UI 可针对性提示或重试
+    Llm { kind: LlmErrorKind, message: String },
+    /// 参数非法（空标题、空会话 id 等），UI 拦截即可
+    InvalidArgument { message: String },
+    /// 其他（通用兜底）
+    Other { message: String },
+}
+
+#[derive(uniffi::Enum)]
+pub enum LlmErrorKind {
+    Http,
+    Upstream,
+    Timeout,
+    StreamInterrupted,
+    Config,
+}</code></pre><pre><code class="rust">impl From&lt;my_ai_core::service::ServiceError&gt; for ApiError {
+    fn from(e: my_ai_core::service::ServiceError) -&gt; Self {
+        use my_ai_core::llm::chat::LlmError;
+        use my_ai_core::service::ServiceError as Inner;
+        match e {
+            Inner::Store(_) =&gt; ApiError::Store { message: format!("{e}") },
+            Inner::SessionNotFound =&gt; ApiError::InvalidArgument { message: "会话不存在".into() },
+            Inner::Llm(l) =&gt; ApiError::Llm {
+                kind: match l {
+                    LlmError::Http(_) =&gt; LlmErrorKind::Http,
+                    LlmError::Upstream(_) =&gt; LlmErrorKind::Upstream,
+                    LlmError::Timeout =&gt; LlmErrorKind::Timeout,
+                    LlmError::StreamInterrupted =&gt; LlmErrorKind::StreamInterrupted,
+                    LlmError::Config(_) =&gt; LlmErrorKind::Config,
+                },
+                message: format!("{l}"),
+            },
+        }
+    }
+}</code></pre><blockquote>💡 这条"错误翻译链"就是 7 课"库用精确错误、边界转可展示错误"的落地。UI 拿到 <code>ApiError</code> 就能按 <code>kind</code> 决定：网络错→重试按钮，超时→提示，中断→展示已收到部分。</blockquote><h2>19.4 导出门面：Object + async</h2><h3>19.4.1 同步能力的导出</h3><pre><code class="rust">// ffi-bindings/src/api.rs
+use crate::models::{ApiError, Session};
+use my_ai_core::service::AssistantService;
+
+/// 门面对象：每个 UI 层一个实例（持有 store 与 llm）
+#[derive(uniffi::Object)]
+pub struct AiAssistant {
+    inner: AssistantService,     // 不直接导出 core 类型，包在 Object 里
+}
+
+#[uniffi::export]
+impl AiAssistant {
+    #[uniffi::constructor]
+    pub fn new(db_path: String, system_prompt: String) -&gt; Result&lt;Arc&lt;AiAssistant&gt;, ApiError&gt; {
+        // 用 18 课的真实 sqlite store
+        let store = my_ai_core::store::SqliteStore::open(&amp;db_path)
+            .map_err(|e| ApiError::Store { message: format!("{e}") })?;
+        // LLM 客户端在下一节换成真实实现；此处给"配置缺失"占位
+        let llm = crate::llm_client::build_client()?;
+
+        let service = AssistantService::new(Box::new(store), llm, system_prompt);
+        Ok(Arc::new(AiAssistant { inner: service }))
+    }
+
+    pub fn list_sessions(&amp;self, limit: u32) -&gt; Result&lt;Vec&lt;Session&gt;, ApiError&gt; {
+        let sessions = self.inner.list_sessions(limit).map_err(ApiError::from)?;
+        Ok(sessions.iter().map(Session::from).collect())
+    }
+
+    pub fn delete_session(&amp;self, session_id: String) -&gt; Result&lt;(), ApiError&gt; {
+        self.inner.delete_session(&amp;session_id).map_err(ApiError::from)
+    }
+}</code></pre><h3>19.4.2 async 导出</h3><pre><code class="rust">use std::sync::Arc;
+
+#[uniffi::export(async_runtime = "tokio")]     // 关键：指定驱动 core 内部 async 的运行时
+impl AiAssistant {
+    pub async fn new_session(&amp;self, title: String) -&gt; Result&lt;Session, ApiError&gt; {
+        let s = self.inner.new_session(&amp;title).await.map_err(ApiError::from)?;
+        Ok(Session::from(&amp;s))
+    }
+
+    /// 一次问答：返回完整回答文本
+    pub async fn ask(&amp;self, session_id: String, question: String) -&gt; Result&lt;String, ApiError&gt; {
+        let store = ...; // 演示占位：完整实现见 code/19-uniffi/
+        let answer = self.inner.ask(&amp;session_id, &amp;question).await.map_err(ApiError::from)?;
+        Ok(answer)
+    }
+}</code></pre><blockquote><p>⚠️ async 导出的三条现实约束：</p><ol><li><strong>绑定层对"流式回调"支持有限</strong>——历史版本的 UniFFI 不允许把"回调 + async"组合得舒服。实战方案（也是各厂 App 的常见妥协）：<strong>Rust 侧流式消费并逐段追加到会话的 chunk 队列，UI 侧轮询/定时拉取</strong>（19.6 给可运行方案）；纯实时推送交给壳层自建 socket 或 UniFFI 回调版本（随版本演进，本课程用"轮询队列"保证跨版本稳定）。</li><li>导出的 async 函数会在各自绑定的线程池上跑，Rust 侧若用 <code>#[tokio::main]</code> 之外的运行时需 <code>Arc&lt;Runtime&gt;</code> 托底——遵循"一个 core 一套 tokio 运行时"。</li><li><code>#[derive(uniffi::Object)]</code> 的方法签名里，<strong>返回引用/借用类型不可导出</strong>——全走"值传递"（<code>Session</code> 而非 <code>&amp;Session</code>），所以 19.3 的 DTO 是值类型。</li></ol></blockquote><h2>19.5 流式问答的跨端妥协：增量队列 + 轮询</h2><p>先讲清取舍，再给"能跑"的代码。UniFFI 目前对"逐字推送回调"支持不完整，因此实战上常用<strong>两步走</strong>：</p><pre><code>Rust 侧：ask_stream 执行期间把每个 delta 追加进 "chunk 队列"
+         （对象内 Mutex&lt;Vec&lt;String&gt;&gt;，App 线程可随时读走）
+UI 侧：每隔 ~50-100ms 调 drain_pending() 取走新增量 → 刷新气泡
+       结束后调 is_busy() == false / 取完整文本收尾</code></pre><pre><code class="rust">use std::sync::Mutex;
+
+#[derive(uniffi::Object)]
+pub struct LlmSession {
+    chunks: Mutex&lt;Vec&lt;String&gt;&gt;,       // 流式增量暂存
+    done: Mutex&lt;bool&gt;,
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl LlmSession {
+    #[uniffi::constructor]
+    pub fn new(session_id: String) -&gt; Arc&lt;LlmSession&gt; {
+        Arc::new(LlmSession { chunks: Mutex::new(Vec::new()), done: Mutex::new(false) })
+    }
+
+    /// 启动一次流式问答（不阻塞 UI；由 Rust 侧把增量写进队列）
+    pub async fn ask_stream(&amp;self, question: String) -&gt; Result&lt;(), ApiError&gt; {
+        // —— 伪骨架，完整实现见 code/19 ——
+        // let mut rx = self.inner.ask_stream(&amp;self.session_id, &amp;question).await?;
+        for piece in ["你", "好", "世", "界"] {
+            self.chunks.lock().unwrap().push(piece.to_string());  // 模拟增量
+            tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+        }
+        *self.done.lock().unwrap() = true;
+        Ok(())
+    }
+
+    /// UI 轮询：取走新到的增量（并清空队列）
+    pub fn drain_pending(&amp;self) -&gt; Vec&lt;String&gt; {
+        std::mem::take(&amp;mut *self.chunks.lock().unwrap())
+    }
+
+    pub fn is_done(&amp;self) -&gt; bool {
+        *self.done.lock().unwrap()
+    }
+}</code></pre><blockquote>💡 这个"队列 + 轮询"在移动端是务实且被证明可行的模式（很多语音助手的"打字中"就是 ~80ms 轮询）。真正的"事件推送"若要做得丝滑，可让壳层自建一层：壳持有 native 回调 → 第 20 课把"增量转成 UI 事件"放壳侧实现。</blockquote><h2>19.6 生成绑定：Python 立刻验证 / Swift / Kotlin</h2><pre><code class="bash"># 1) 先编译并生成 scaffolding
+cargo build -p my_ai_ffi
+
+# 2) 用 uniffi-bindgen 生成目标语言绑定
+cargo install uniffi_bindgen --version 0.29.0          # 与 uniffi 版本严格一致！
+uniffi-bindgen generate src/lib.rs --library target/debug/libmy_ai_ffi.dylib \
+  --language python --out-dir bindings/python
+uniffi-bindgen generate src/lib.rs --library ... --language swift --out-dir bindings/swift
+uniffi-bindgen generate src/lib.rs --library ... --language kotlin --out-dir bindings/kotlin</code></pre><blockquote>⚠️ <strong>bindgen 与 uniffi crate 版本必须一致</strong>，否则二进制接口对不上——这是 UniFFI 最常见的报错 <code>...does not match the version...</code>。建议固定 <code>uniffi = "0.29"</code> 且 <code>cargo install uniffi_bindgen --version 0.29.0</code>。</blockquote><p>Python 侧冒烟（教学最快验证路径，等价 16 课的 ctypes 但要爽得多）：</p><pre><code class="python"># bindings/python/demo.py
+import asyncio
+import sys
+
+sys.path.append(".")  # 让 my_ai_ffi 模块可见
+import my_ai_ffi
+
+async def main():
+    # 构造器对应 #[uniffi::constructor] new
+    assistant = my_ai_ffi.AiAssistant(":memory:", "你是课程助教")
+    session = await assistant.new_session("Python 冒烟")
+    print("会话 id:", session.id, "标题:", session.title)
+
+    answer = await assistant.ask(session.id, "Rust 的 async 是什么？")
+    print("回答:", answer)
+
+    sessions = assistant.list_sessions(10)
+    print("历史条数:", len(sessions))
+
+asyncio.run(main())</code></pre><blockquote>💡 注意 async 方法在 Python 侧是 <code>await</code>（UniFFI 用 Python 原生 <code>async/await</code> 包装）；同步方法直接调用。Swift/Kotlin 侧同理（async → Swift concurrency / Kotlin coroutines）。20 课会把它们接进 UI。</blockquote><h2>19.7 测试与陷阱清单</h2><pre><code class="bash"># 每轮改动的回归链
+cargo test -p my-ai-core                     # 核心逻辑（无 UniFFI 依赖）
+cargo build -p my_ai_ffi                      # 导出层
+python3 bindings/python/demo.py               # 跨语言冒烟</code></pre><table><thead><tr><th>现象</th><th>原因</th><th>解决</th></tr></thead><tbody><tr><td><code>undefined symbol: _uniffi_*</code></td><td>setup_scaffolding 路径与 build.rs 不一致</td><td>统一 <code>generate_scaffolding("src/lib.rs")</code></td></tr><tr><td>bindgen 版本不匹配报错</td><td>uniffi 与 uniffi_bindgen 版本漂移</td><td>用 <code>cargo install uniffi_bindgen --version X</code></td></tr><tr><td><code>usize</code>/<code>&amp;str</code> 类型报不支持</td><td>不在 UniFFI 类型集</td><td>换 i64 / String</td></tr><tr><td>导出 async 无 tokio feature</td><td>忘开 <code>features=["tokio"]</code></td><td>补 uniffi 依赖 feature</td></tr><tr><td>Object 方法想返回借用</td><td>Object 只走值/句柄语义</td><td>返回 <code>Vec&lt;DTO&gt;</code>/<code>Arc&lt;Object&gt;</code></td></tr></tbody></table><h2>19.8 📝 动手练习</h2><p>参考实现放 <code>code/19-uniffi/</code>（写作时同步给出；若网络无法安装 bindgen，用 16 课 ctypes 通道验证等价行为）。</p><ol><li><strong>最小导出</strong>：把 17 课的 <code>Session</code>/<code>Message</code>/<code>Role</code> 镜像成 Record/Enum，只导出 <code>list_sessions</code>/<code>new_session</code> 同步或 async 各一，Python 冒烟通过。</li><li><strong>错误翻译</strong>：把 18 课"删不存在会话"路径触发 core <code>StoreError</code>，经 <code>ApiError::from</code> 映射到 UI 侧，Python 侧 <code>except my_ai_ffi.ApiError</code> 断言 kind/message。</li><li><strong>队列流式</strong>：实现 <code>LlmSession</code>（19.5），Python 侧 <code>asyncio</code> 里 80ms 轮询 <code>drain_pending</code> 拼出完整回答，断言与预期一致。</li><li><strong>多线程安全</strong>：Python 里同时开 5 个 coroutine 各发一次 <code>ask</code>，验证无 panic、数据不串（体会 18 课 Mutex 的串行化设计）。</li><li><strong>重开持久化</strong>：用临时 db 文件而非 <code>:memory:</code>，完成一轮问答后重新 <code>AiAssistant::new</code>，确认历史还在（与 18.6 遥相呼应）。</li></ol><p><strong>验收门禁</strong>：能说出 UniFFI 生成的两层产物分别是什么；能默写 Record/Enum/Object/constructor/async 的标记；能解释"为什么在 ffi 层再造 DTO/错误，而不是直接导出 core 类型"。</p><h2>✅ 本节小结</h2><ul><li><strong>动机</strong>：UniFFI = 16 课手动 FFI 三协议的模板化与自动化；一层 scaffolding（C ABI）+ 一层各语言绑定；</li><li><strong>结构</strong>：core（纯逻辑，零 UniFFI 依赖）+ ffi-bindings（导出门面）；</li><li><strong>类型</strong>：Record（struct）/ Enum / Object 三类标记；类型集受限 → 造镜像 DTO + 映射 From；</li><li><strong>错误</strong>：core 精确错误 → ffi 层翻译成 <code>ApiError</code>（UI 可按 kind 决策）；</li><li><strong>async</strong>：<code>#[uniffi::export(async_runtime = "tokio")]</code>；流式回调未成熟 → 增量队列 + UI 轮询的务实模式；</li><li><strong>绑定</strong>：<code>uniffi-bindgen generate</code>，版本必须与 crate 一致；Python 是最快验证通道；</li><li><strong>纪律</strong>：核心逻辑始终在 core 测（无 UniFFI 也能全绿），ffi 层只做"翻译 + 导出"。</li></ul><p><strong>下一课预告</strong>：第 20 课《壳侧 API 封装》——进入 App 的世界：Swift 的 async/await 封装与增量回调、Kotlin 协程桥接、TypeScript/桌面侧封装；错误码 → 用户提示的策略、离线与断流路径、以及"让原生 UI 消费 Rust 能力"的边界设计。第 21 课就做双端集成与出包（Android AAR / iOS xcframework），第 22 课一键多平台与工程收尾。</p>]]></description></item><item>    <title><![CDATA[2026年国际云账号被风控封了怎么办？申诉流程+资料补救+替代渠道全指南 群华 ]]></title>    <link>https://segmentfault.com/a/1190000048320174</link>    <guid>https://segmentfault.com/a/1190000048320174</guid>    <pubDate>2026-09-27 15:01:27</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>2026年，网络威胁产业化让账号接管、撞库、异常登录和支付欺诈更常见，Claude、OpenAI及国际云/SaaS平台风控全面收紧。很多用户因共享代理IP、支付异常、多人登录、自动化调用或内容违规，被临时限制甚至永久封禁。本文按判断封禁类型、官方申诉、资料补救、避坑、解封后保护、替代渠道展开，帮你尽量降低损失。<img width="723" height="488" referrerpolicy="no-referrer" src="/img/bVdqoZx" alt="" title=""/></p><h2>一、先判断：临时风控还是永久封禁</h2><p>临时风控通常提示“账号暂停、待审核”，一般可申诉；永久封禁多写“永久撤销访问权限”，通常无申诉通道，应合规换新。API Key报AuthenticationError、PermissionDeniedError或显示Disabled，也要先查账号状态。</p><p>常见触发原因包括：共享账号、多人异地登录、VPN频繁切IP、同设备注册多账号、虚拟卡或一次性支付；违法内容、越狱提示、版权侵权、高风险领域未披露AI；Key泄露、被代码仓库扫描、异常高频调用和批量脚本。国内用户高发点是共享代理IP、支付风控、合租账号和频繁切节点。</p><p>先别立即重复注册，不要购买代解封，也不要在同一时间通过三个渠道重复提交同一申诉。</p><h2>二、官方申诉流程与时间线</h2><p>优先使用App内置申诉，其次按平台规则走网页、邮件或控制台入口。API和企业账号走官方邮件，并附企业合规资质。</p><p>提交后3天无反馈，可在原申诉页礼貌追加，不要重复新建。收到补材料通知，尽量1个工作日内补齐，遗漏会驳回。首次驳回后间隔3个工作日，补充新佐证再二次申诉。企业或API账号最长约10个工作日完成核验。</p><p>个人IP误封，说明合规办公用途，约5天反馈，成功率相对较高；国内网络误风控，要佐证无违规、纯个人办公；企业账号提交资质和API用途；多人批量共享成功率通常不足5%，反复申诉可能永久拉黑，建议合规新注册。</p><p>申诉信建议中英双语，语气诚恳，不质疑平台判断，说明账号用途、安全措施、可能误判原因和后续合规承诺。可借助AI生成不同角度，但不要套用网络旧模板。持续申诉时，每次补充新角度，越具体越真诚越好。</p><h2>三、资料补救清单与提交原则</h2><p>资料包括身份或账号所有权证明，本人名下合规海外支付账户与订阅凭证，常用登录设备、IP和使用场景说明，企业营业执照与API用途说明，API调用日志、无违规承诺及安全措施。</p><p>原则是1个工作日内补齐，真实、完整、对应官方要求。禁止虚假截图、虚假身份和虚假使用证明，遗漏信息会导致审核驳回。</p><h2>四、7类操作会触发永久拉黑</h2><p>套用网络旧模板；同一时间三个渠道重复提交；付费找第三方代解封；威胁、辱骂、挑衅审核人员；提交虚假材料；多账号批量申诉施压；反复申诉已判定的永久封禁账号。需要强调：目前全网无Anthropic官方授权代申诉服务，绝大多数代解封都是诈骗。</p><h2>五、解封后如何避免二次封禁</h2><p>固定登录IP节点，禁止短时间频繁切换多国网络；控制单日对话频率，不使用自动化脚本和批量接口；Claude Pro等订阅优先使用本人名下合规海外支付账户；禁止多人异地共享同一账号；定期清理异常登录记录，及时下线陌生设备；API Key用环境变量管理，不硬编码，防止泄露。</p><h2>六、申诉失败后的替代与合规兜底</h2><p>若永久封禁，不要尝试破解或刷改数据。更换合规纯净环境、设备、IP和支付主体，避免与旧账号关联。替代矩阵包括ChatGPT/OpenAI API、Google Gemini、Azure OpenAI、AWS Bedrock；国内可选择DeepSeek、通义千问、Kimi、豆包等；云平台有AWS、GCP、Azure、阿里云、腾讯云、华为云。还可本地部署开源模型，做多供应商冗余，把内容和数据备份到多个平台。不推荐破解、黑产账号、代解封和内部渠道，风险包括永久拉黑、连带封禁、资金损失和法律风险。</p><h2>七、高频问题FAQ</h2><p>Q1：临时与永久怎么区分？看提示是“待审核”还是“永久撤销”。<br/>Q2：正常使用会误封吗？会，IP和支付异常常触发。<br/>Q3：多次申诉失败影响新账号吗？同设备、同IP、同支付主体可能关联风控。<br/>Q4：共享账号解封后还能多人用吗？不建议，极易再封。<br/>Q5：申诉用中文还是英文？英文优先，可中英双语。<br/>Q6：API Key被封怎么办？先查账号状态，走官方开发者申诉。<br/>Q7：代解封靠谱吗？不靠谱，多为诈骗。<br/>Q8：多久有结果？常见3至10个工作日。<br/>Q9：永久封禁还有必要申诉吗？通常没必要，优先合规换新。<br/>Q10：如何防二次封禁？固定环境、合规支付、不共享、不自动化。</p><h2>八、发布与合规提示</h2><p>本文以各平台公开政策为准，实际处理请以官方页面为准。建议为FAQ和操作步骤添加结构化数据，内链到注册、支付、IP方案、替代评测和API安全文章；外链只概括平台政策与威胁报告。图片可使用封禁判断流程图、申诉时间线、资料清单和替代平台对比表。更新日期注明2026年，并声明本文不提供代申诉服务，不鼓励规避平台规则。</p><h2>结语</h2><p>账号只是载体，合规与数据才是核心资产。遇到风控，先判断临时还是永久，再走官方申诉；补材料尽量1个工作日内完成，首次驳回后间隔3个工作日补充新证据二次申诉，远离代解封和虚假材料。若永久封禁，应合规换新并分散到多个平台，定期备份内容与API配置，使用稳定网络与本人支付账户。把业务押在单一账号上风险最高，提前建立替代方案，才能在2026年的严格风控下保持连续运营。</p>]]></description></item><item>    <title><![CDATA[群聊里一句“不要发给 @B”，为什么仍可能触发路由 神勇威武的椅子 ]]></title>    <link>https://segmentfault.com/a/1190000048320032</link>    <guid>https://segmentfault.com/a/1190000048320032</guid>    <pubDate>2026-09-27 14:01:24</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>“请不要转发给 @B。”如果 B 是群里唯一能被这个名字匹配到的成员，这句话在我检查的群聊路由实现里，仍可能让回复交给 B。这里说的是从代码推导出的测试输入，不是一次线上事故。</p><h2>匹配器只找名字</h2><p>路由先扫描整段回复，寻找 <code>@</code> 后面跟字母、数字、下划线或连字符的片段：</p><pre><code class="ts">const tokens = text.match(/@[\p{L}\p{N}_-]+/gu) ?? []</code></pre><p>随后，<code>resolveMentions</code> 把片段与群成员的名字对应起来，按成员 ID 去重。匹配结果必须唯一；一个词同时指向两位成员时，程序不会猜。</p><p>这个扫描没有理解“不要”的含义，也没有跳过引用或代码块。因此，否定句里的 <code>@B</code>、用来举例的 <code>@B</code>，以及真正要求交接的 <code>@B</code>，都会先进入同一套名字解析逻辑。能否找到 B，与说话者是否想让 B 收到消息，是两件事。</p><h2>找到名字，还要过调度检查</h2><p><code>selectRecipients</code> 会排除发言者本人和本轮已经说过话的成员。若消息来自智能体且没有可解析的点名，它不会自动选择默认成员；来自用户的消息在这种情况下才可能走入口成员或首位成员。</p><p><code>planSteps</code> 还会检查下一跳是否超过预算。执行队列在出队时也会再次排除已经用过回合的成员。所以，“不要发给 @B”并非一定产生调用。要观察到交接，B 必须能被唯一解析、有本轮发言资格，而且还留有跳数。</p><p>测试这类问题时，我会把输入和预期分开写：</p><table><thead><tr><th>输入或条件</th><th>当前实现应观察到的结果</th></tr></thead><tbody><tr><td>正文包含“不要发给 @B”</td><td>名字解析仍找到 B</td></tr><tr><td><code>@B</code> 出现在引用或代码块</td><td>名字解析仍找到 B</td></tr><tr><td>B 已在本轮说过话</td><td>收件人筛选排除 B</td></tr><tr><td>下一跳超过预算</td><td>不生成下一步</td></tr><tr><td>点名同时匹配两位成员</td><td>该点名不指向任何人</td></tr></tbody></table><p>这张表是按实现写的回归测试预期，不是已经跑完的测试报告。解析器测试只负责验证“找到了谁”；调度测试再给定成员状态和跳数，验证“会不会真的调用”。把两层混在一起，容易把“B 没资格”误判成“系统理解了不要转发”。</p><p>提示词会提醒智能体：写出同伴名字可能转发当前回复和用户问题，并占用对方回合。但模型读到提示词，不等于路由器会按自然语言意图重新判读正文。路由器处理的是返回的文本。</p><p>如果希望智能体可以在正文里自由讨论同伴，一种设计是把交接请求从正文拆出来：输出单独的目标成员字段和交接内容，正文只用于对用户说话。这是改法建议，当前代码并没有这个结构。即使改成结构化输出，程序仍须验证目标属于当前群、没有用过本轮机会，而且没有越过跳数限制。</p><p>我更想固定的一条测试是：正文引用 <code>@B</code> 不单独触发交接，只有通过校验的交接字段才能规划下一步。它清楚地标出了要改变的行为，也避免让一个普通句子承担调度指令的职责。</p>]]></description></item><item>    <title><![CDATA[社区实践：用Gemini 3.8 TTS + Agora 做个实时互动 AI 播客 RTE开发者社区]]></title>    <link>https://segmentfault.com/a/1190000048319825</link>    <guid>https://segmentfault.com/a/1190000048319825</guid>    <pubDate>2026-09-27 11:01:23</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p><img referrerpolicy="no-referrer" src="/img/remote/1460000048319827" alt="" title=""/></p><h2>Gemini 3.8 TTS 发布：声音定制与语音生成能力升级</h2><p>9 月 23 日，Google 发布 Gemini 3.8 Flash TTS 和 Flash-Lite TTS 两款文本转语音模型，带来更灵活的声音定制和表达控制。</p><p>Agora 作为 Google 的合作伙伴，支持通过 Gemini API 集成 Gemini 3.8 Flash TTS，开发者可以结合 Agora RTC 构建实时语音应用。</p><p>本文将介绍 Gemini 3.8 TTS 的核心特性，并以开源项目 Agora Podcasts 为例，展示如何将主题或文章生成双主播节目，让听众实时收听、举手提问，并在主播回答后继续原来的内容。</p><h3>两款模型，声音定制与规模化生成</h3><p>两款模型各有侧重。</p><ul><li>Flash TTS 适用于需要深度声音定制和角色塑造的场景；</li><li>Flash-Lite TTS 更适合大规模内容生成，在优化成本效率的同时，保留对语气、节奏和情绪表达的控制能力。</li></ul><h3>从声音设计到逐句表达控制</h3><p>两款模型都支持 <strong>逐句控制语音表达</strong>。</p><p>开发者可以在文本中加入表达要求，调整每句内容的语气、节奏和情绪，具体包括：</p><p><strong>1.声音设计：用文字定义角色声音</strong></p><p>Flash TTS 支持通过自然语言描述声音特征、角色定位和口音，帮助开发者设计符合场景需求的声音。开发者也可以从 2,000 多种声音中选择合适的音色，并保存设计结果，在后续内容中持续复用。</p><p>例如，为课程讲解员设计声音时，可以描述为“音色温暖、吐字清晰、使用普通话”；为故事中的角色设计声音时，则可以进一步指定角色特点和口音。</p><p>Flash TTS 还支持声音复刻：通过一段 30 秒的本人或已获授权的声音样本，创建可复用的声音。</p><p><strong>2.逐句控制：让表达更贴合内容</strong></p><p>两款模型均支持逐句控制语音表达。开发者可以针对不同台词设置语气、节奏和情绪，使同一角色在开场、讲解、互动等不同场景中呈现更自然的表达效果。</p><p>例如，一段课程开场中，“欢迎回来”可以读得轻快一些；进入复杂概念时，可以放缓语速、增加停顿；提出问题时，再调整重音和语调。</p><p><strong>3.双人对话与长音频：保持角色和内容的连贯性</strong></p><p>除了单人语音生成，两款模型还支持以下能力：</p><ul><li><strong>双人多轮对话：</strong> 通过一份脚本生成双人对话，区分两种声音，并安排自然的轮流发言，可用于播客或故事演绎。</li><li><strong>声音细节：</strong> 在脚本中加入笑声、叹息、吸气声和简短回应，补充台词之外的表达。</li><li><strong>长音频生成：</strong> 据发布介绍，可在数小时的连续音频中保持较稳定的音色和自然节奏，减少前后声音不一致的情况。</li></ul><p>制作长内容时，除了确认单句效果，也需要检查不同段落之间的音色、语速，以及双人对话的衔接是否符合脚本安排。</p><h3>性能参数</h3><p><strong>1.综合质量</strong></p><p>综合来看，Flash TTS 和 Flash-Lite TTS 分别以 <strong>0.920</strong> 和 <strong>0.914</strong> 位列第一、第二，明显高于上一代 Gemini 3.1 Flash TTS 的 0.783。</p><p>两款模型的 <strong>多说话人表现</strong> 分别为 4.14 和 4.10，高于上一代的 3.60，说明它们更适合生成双人对话。两款模型的<strong>类人语音变化</strong>也高于上一代，跨多轮表达时更接近真人。<strong>单一风格标签控制</strong> 则分别为 4.34 和 4.32，较上一代略有提升。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048319828" alt="" title="" loading="lazy"/></p><p><strong>2. Flash TTS 声音设计能力突出</strong></p><p>在 <strong>Text-to-Speech Voice Design Leaderboard</strong> 列出的模型中，Flash TTS 的英语综合得分为 <strong>71.4</strong>，位列第一；多语言得分为 <strong>3.82</strong>，口音得分为 <strong>60.8</strong>，两项也都排名第一。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048319829" alt="" title="" loading="lazy"/></p><p><strong>3.多语言表现</strong></p><p>在 <strong>Voice Arena</strong> 的多语言榜单中，两款模型在 7 种语言中分别取得最高分：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048319830" alt="" title="" loading="lazy"/></p><p>Gemini 3.8 TTS 的优势并不局限于英语。两款模型在 7 种语言中都拿到过最高分：<strong>Flash TTS</strong> 在日语、现代标准阿拉伯语、印地语和墨西哥西班牙语中领先，<strong>Flash-Lite TTS</strong> 则在英语、巴西葡萄牙语和越南语中得分最高。</p><p>对于需要多语言配音、播客或语音智能体的开发者，可以根据目标语言选择模型，而不必只依赖单一模型覆盖所有场景。</p><h3>开发者体验与接入</h3><p>开发者可在 Google AI Studio 音频工作台体验声音设计、声音复刻和双人脚本编辑，也可通过 Gemini API 接入应用。</p><h2>社区实践：Gemini 3.8 TTS 实时互动 AI 播客</h2><p>模型正式发布后，有社区开发者基于 Gemini 3.8 Flash TTS 制作了一个实时 AI 播客 Demo。</p><p>该项目基于 Agora RTC + RTM，搭建了一个可以多人加入的 AI 播客，它支持：</p><ul><li><strong>多人同步收听：</strong> 多个听众可以进入同一房间，实时收听同一场 AI 播客。</li><li><strong>随时加入对话：</strong> 听众可以举手插话，Gemini 3.5 Transcribe Live 会实时转写语音。</li><li><strong>双人主持人即时回应：</strong> Gemini 3.8 Flash TTS 驱动两位 AI 主持人根据问题生成并播回答。</li><li><strong>节目自动恢复：</strong> 互动结束后，原节目自动继续播放，保持完整的收听流程。</li></ul><p><strong>与 NotebookLM 的交互式音频相比，这个示例把个人问答扩展成了多人共享的现场。</strong> NotebookLM 允许用户加入音频概览、向 AI 主播提问，但其他人不能通过共享链接加入这段互动。Agora Podcasts 则让多位听众进入同一个实时房间：大家共同收听，也可以依次举手提问；一个人的问题和主播的回答，其他人也能听到。</p><p>与 Clubhouse 的真人语音房相比，这里的对谈主播由 AI 担任。 Clubhouse 让人们进入房间，围绕话题展开实时交流；Agora Podcasts 则由两位 AI 主播组织节目内容、展开对谈，并回应听众的提问。它保留了多人共同参与的语音房体验，也让 AI 从内容生成工具变成了房间里的对话参与者。</p><p>GitHub 链接：<br/><a href="https://link.segmentfault.com/?enc=rvxIz9%2FzqjLCtyPif0jONQ%3D%3D.vc6vmLGMamNX1Ha9PXMmPfm6gGZBlM68srKjIJdptbsnGXoJhFCyZtI%2Fi4jnnMP8" rel="nofollow" target="_blank">https://github.com/zicojiao/agora-podcasts</a></p><p><strong>架构概览</strong></p><pre><code class="python">
 Gemini 3.8 Flash
 生成双主播脚本
     │
@@ -1488,4 +1719,4 @@ pnpm install &amp;&amp; pnpm run build &amp;&amp; pnpm dsh web</code></pre><p>�
   -&gt; 分配 GPIO、定时器、ADC、通信接口和中断
   -&gt; 检查冲突与共地
   -&gt; 面包板/杜邦线验证
-  -&gt; 原理图和 PCB 固化</code></pre><h2>最后橘猫说</h2><p>接线真正要解决的不是“这根线插哪个孔”，而是让每个模块在正确的电压下，通过明确的信号线和共同的参考地，按照已经分配好的芯片资源协同工作。面包板的孔位、红蓝电源轨、杜邦线和 PCB 都只是实现这个决定的工具。</p><h2>最后蜘蛛说</h2><p>感觉又回到了高中的电路题啊。</p>]]></description></item><item>    <title><![CDATA[【完结】Vibe Gaming 一人工作室微信小游戏开发实战 逆袭的牙膏_bLHDl2 ]]></title>    <link>https://segmentfault.com/a/1190000048318198</link>    <guid>https://segmentfault.com/a/1190000048318198</guid>    <pubDate>2026-09-25 18:01:54</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>运营增长与商业化——让小游戏从“上线”走向“赚钱”</p><p>ninety percent的独立游戏死在“做完就不管了”。上线只是起点，数据、迭代、增长、变现才是长期战场。本篇讲透上线后的运营打法，让你的游戏从作品变成产品，从产品变成收入。</p><p>一、上线后第一周：盯紧三个数据。 小游戏后台提供完整的数据看板，第一周重点看三个指标：留存，次日留存是玩法质量的体温计，休闲小游戏次日留存做到三成以上算及格，五成算优秀；如果低于两成，问题一定在核心玩法或前三十秒体验，不要急着加功能，先改手感。时长，单次游玩时长反映上头程度，休闲玩法单次三五分钟是健康区间，太短说明反馈不够，太长可能节奏拖沓。分享率，多少比例的玩家主动分享了？分享是小游戏的生命线，低于百分之五就要重新设计分享的激励点。看数据的正确姿势：不焦虑单日波动，看趋势、找断崖——哪一步流失异常严重，就集中火力修哪一步。</p><p>二、新手体验：前三十秒决定生死。 数据不好，八成的问题出在新手引导。休闲玩家的耐心以秒计算，前三十秒必须完成三件事：让玩家看懂怎么玩（最好不用文字，用动效演示）、让玩家完成第一次正反馈（得分、合成、通关，越快越好）、让玩家明白“差一点就能更好”（建立再来一局的动力）。优化方法是反复看真实玩家的录像或让朋友当场试玩，玩家在哪里犹豫、哪里误触、哪里退出，哪里就是病根。新手体验的每一次优化，都会直接反映在留存曲线上，这是投入产出比最高的改进方向。</p><p>三、内容迭代：用更新节奏养住玩家。 小游戏用户来得快走得也快，持续的更新是留人的根本。建立稳定的迭代节奏：每两周一个版本，交替更新“玩法内容”（新关卡、新元素、新机制）和“体验优化”（手感、动效、Bug修复）。迭代方向由数据决定而不是拍脑袋：看玩家卡在哪一关、用什么道具最多、在什么时间流失。同时建一个玩家群，几十人的群就能提供最真实的需求和吐槽，玩家提出并被采纳的建议，会让核心玩家产生强烈的参与感，成为你的自来水。</p><p>四、增长打法：把社交裂变做透。 小游戏最大的红利是微信社交链，增长三板斧：第一，分享激励设计，复活要分享、领奖励要分享、比拼要分享，但注意方式合规自然，让分享成为玩法的一部分而不是骚扰；第二，比拼场景营造，好友排行、挑战好友、战报生成（一张漂亮的成绩图是最强的分享素材）；第三，借势热点，节假日做主题皮肤和限定玩法，给老玩家回来的理由，给分享增加由头。单人开发者不要追求买量投放，那是有资本的游戏，你只需要把自然裂变的每个环节做到极致。</p><p>五、商业化：广告变现的正确姿势。 对非内购小游戏，广告是主要收入来源，核心是“不伤害体验的前提下最大化展示”。常用广告位：激励视频，玩家主动触发，看广告换复活、换双倍奖励、换道具，这是体验和收入平衡最好的形式，也是收入的绝对主力；插屏广告，在关卡结束等自然间歇展示，频率要克制；Banner，挂在页面边缘，收入有限但稳定。变现设计的原则：广告是“选项”不是“障碍”——不看广告也能正常玩，看了广告是“赚到了”，这样玩家意愿和收入才能兼得。日活到一定量级后，广告收入能覆盖个人开发者的基础成本，做得好可以成为可观的持续收入。</p><p>六、矩阵化：单人开发者的放大器。 单款游戏有天花板，单人开发者的破局思路是“矩阵”：第一套玩法验证成功后，把技术框架、界面体系、运营流程沉淀成“模板”，第二款游戏只换核心玩法和皮，开发周期从几周压缩到几天；多款游戏互相导流，在A游戏里推荐B游戏，形成自有流量池；同时保持“多上快跑”的策略，每月或每两月上一款新品，用数量对冲单款的不确定性。很多成功的独立小游戏工作室，本质上都是“高效的玩法验证机器”。</p><p>七、长期主义：把开发做成事业。 最后聊长期。独立游戏开发者的成长路径通常是：量变，前十款游戏练手感、攒数据、建模板；质变，某一款跑出增长曲线后，集中所有资源运营它、扩展它；升级，从小游戏到App、从休闲到中度品类，用赚到的钱和经验扩大战场。三条心态建议：一是接受大部分作品平庸，爆款是概率的礼物，你能控制的是出手次数和质量下限；二是持续学习，AI工具月月进化，平台规则不断变化，停下学习就是退步；三是保护创作热情，定期做点“纯粹好玩”的小实验，别让商业计算磨灭了做游戏的初心。一个人、一台电脑、一个想法，就能触达亿万玩家，这是这个时代给独立开发者最好的礼物。现在就打开开发者工具，从你的第一个原型开始吧。</p>]]></description></item><item>    <title><![CDATA[【23章】DeepAgents+MCP+A2A+Skills超级多智能体全流程实战 想出家的山寨机_]]></title>    <link>https://segmentfault.com/a/1190000048318212</link>    <guid>https://segmentfault.com/a/1190000048318212</guid>    <pubDate>2026-09-25 18:01:24</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>实战篇——从项目落地到能力变现的完整路径</p><p>架构懂了、流程通了，最后一公里是落地与回报。本篇讲实战经验：真实项目怎么推进、常见坑怎么避、这项能力如何转化为职业竞争力和商业收入。</p><p>一、项目启动：从最小系统开始。 落地第一个项目，强烈建议从“三智能体最小系统”起步：一个规划者、一个执行者、一个审查者。选择一个真实但规模适中的任务，比如“每周自动产出一份行业动态简报”或“批量处理一批文档并生成摘要”。目标不是做大，而是跑通完整闭环：任务拆解、执行、审查、交付、复盘。跑通一次最小闭环的价值，远大于搭一个半途而废的庞大系统，你会在这个小循环里踩完最基础的坑，学到最关键的经验。</p><p>二、实战中的五个高频坑与解法。 坑一，任务拆解过粗，执行者拿到“写一份行业分析”这种大任务直接迷失。解法：规划者产出的子任务必须细到“一个任务一次执行能完成、产出可独立验收”。坑二，上下文传递失真——上游信息传到下游残缺或走样，执行者理解偏差越走越远。解法：交接信息模板化，任务卡固定字段，强制填写完整。坑三，审查流于形式，审查者被“自己人”心态感染，什么都能过。解法：审查者与执行者严格隔离上下文，只看产出不看过程，并给审查者设定明确的否决标准。坑四，成本失控，智能体反复调用、循环往复，费用悄然飙升。解法：每次任务设预算上限，超限自动中止并上报。坑五，错误滚雪球，早期一个小错误没拦住，后续环节全部建立在错误之上。解法：每个检查站严格验收，宁慢勿错。</p><p>三、效果评估：四个维度量化系统质量。 多智能体系统的评估不能靠感觉，四个维度建指标：任务完成质量，交付物与验收标准的符合度，可由独立评估智能体或人工抽检打分；协作效率，从接单到交付的端到端时长、返工次数、平均每个任务的执行轮数；资源消耗，单任务的模型调用成本、工具调用次数，算清单个任务的经济账；稳定性，同类任务多次执行的结果一致率，一致率低说明流程存在随机性漏洞。每周复盘一次指标，持续优化提示词、任务模板和协作规则。</p><p>四、从个人项目到团队基础设施。 当你在个人项目里验证了价值，下一步是团队化。三个动作：第一，标准化输出——把你的智能体角色定义、任务模板、Skill库、协作流程整理成文档和配置，团队成员可以直接复制部署；第二，场景推广，从团队最痛的重复性工作切入，周报汇总、竞品监控、文档整理，用一个个小胜利建立信任；第三，建立治理规范——明确哪些决策可以交给智能体、哪些必须人工确认、出问题如何定责，规范先行，团队采用才没有心理负担。做到这三步，你就从“会用多智能体的人”升级为“定义组织智能协作标准的人”。</p><p>五、职业价值：智能体架构师的崛起。 这项能力对应的新职业定位正在清晰浮现：智能体架构师，设计智能体系统、定义协作协议、把握质量与成本平衡的人。它的稀缺性在于复合要求：既懂AI的能力边界、又懂业务流程的拆解、还有系统工程思维。市面上会调API的人很多，能把多智能体系统设计得稳定、可控、经济的人极少。无论在职场上还是市场上，“能把一群AI组织起来干成事”的能力，正在成为未来几年最抢手的技能之一。</p><p>六、商业变现的三条路径。 路径一，效率自用：把多智能体系统用于自己的业务或工作，内容生产、数据处理、项目调研，省下的时间和人力就是最直接的回报，这条路当天就能启动。路径二，方案交付：为企业定制智能体工作流，中小企业的需求真实存在，报告生成、客服质检、数据分析流水线，按项目收费，单价远高于单点AI应用开发。路径三，产品化沉淀：把验证过的场景做成标准化产品或模板，比如“行业简报智能体模板”“合同审查智能体流水线”，一次开发反复售卖，实现从卖时间到卖资产的跃迁。节奏建议：先自用验证、再定制积累案例、最后产品化放大。</p><p>七、长期主义：押注组织智能的时代。 站远一点看，超级多智能体代表的不只是技术趋势，而是工作方式的底层重构——未来十年，个人与组织的核心竞争力，将从“掌握某项技能”转向“善于组织智能完成任务”。今天你学会的智能体角色设计、协作机制、质量控制，本质上是数字时代的管理学。工具会更迭、协议会升级，但“拆解问题、设计分工、建立制衡、持续优化”这套思维内核，会穿越所有技术周期。从今晚的第一个三智能体小系统开始，你搭的不只是一个程序，而是面向未来的核心能力。</p>]]></description></item>  </channel></rss>
+  -&gt; 原理图和 PCB 固化</code></pre><h2>最后橘猫说</h2><p>接线真正要解决的不是“这根线插哪个孔”，而是让每个模块在正确的电压下，通过明确的信号线和共同的参考地，按照已经分配好的芯片资源协同工作。面包板的孔位、红蓝电源轨、杜邦线和 PCB 都只是实现这个决定的工具。</p><h2>最后蜘蛛说</h2><p>感觉又回到了高中的电路题啊。</p>]]></description></item>  </channel></rss>
