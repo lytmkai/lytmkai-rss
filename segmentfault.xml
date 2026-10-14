@@ -1,4 +1,99 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[spring-abac：属性化授权（ABAC）微服务拆解 erishen ]]></title>    <link>https://segmentfault.com/a/1190000048350926</link>    <guid>https://segmentfault.com/a/1190000048350926</guid>    <pubDate>2026-10-14 11:14:08</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>spring-abac 与同目录的 spring-rbac 是<strong>一对对照实验</strong>（<a href="https://link.segmentfault.com/?enc=gY1z0nc2Mh0OXV3gOgxIaQ%3D%3D.yiVIXl3NtcHQhynnWY03N0btf4vBlFGgDI3akcC6iVY%3D" rel="nofollow" target="_blank">spring-rbac 项目文章</a>）：两套几乎一样的微服务骨架（Spring Boot 3.2.5 + Spring Cloud 2023.0.3 + Next.js），唯一差异在授权模型。</p><p>这篇文章主要回答三个问题：</p><ol><li><strong>ABAC 比 RBAC 多解决了什么？</strong></li><li><strong>属性、策略和裁决如何落到微服务？</strong></li><li><strong>这套授权模型如何延伸到 Agent 的工具调用？</strong></li></ol><pre><code>RBAC：  user ──belongs to──&gt; role ──has──&gt; permission ──&gt; can access?
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[KServe 工作流程：从 InferenceService 到 vLLM 服务 探索云原生 ]]></title>    <link>https://segmentfault.com/a/1190000048351681</link>    <guid>https://segmentfault.com/a/1190000048351681</guid>    <pubDate>2026-10-14 12:02:58</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p><img referrerpolicy="no-referrer" src="/img/remote/1460000048351683" alt="KServe 工作流程：从 InferenceService 到 vLLM 服务" title="KServe 工作流程：从 InferenceService 到 vLLM 服务"/></p><p>上一篇完成了 KServe 的安装，并通过 InferenceService 跑通了一个 Qwen 模型服务。</p><p>当时提交的 InferenceService 只包含模型格式、存储地址、GPU 资源和启动参数，KServe 却创建出了 Deployment、Service 和 HTTPRoute。这份 YAML 中没有容器镜像，那么 KServe 如何选中 HuggingFaceServer，Pod 中又为什么会运行 vLLM？</p><p>这一篇先看 KServe 的整体架构和核心 CRD，再结合上一篇的 <code>qwen-llm</code>，梳理从提交 InferenceService 到请求进入 vLLM 的完整流程。</p><blockquote>以下内容基于 KServe 0.18，部署模式为 Standard。</blockquote><p>&lt;!--more--&gt;</p><h2>1. KServe 整体架构</h2><p>KServe 是一个构建在 Kubernetes 之上的 AI 推理平台：<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000048314172" alt="KServe AI 推理平台架构概览" title="KServe AI 推理平台架构概览" loading="lazy"/></p><p>整体分为控制面和数据面：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048351684" alt="KServe Standard 模式控制面与数据面架构" title="KServe Standard 模式控制面与数据面架构" loading="lazy"/></p><h3>1.1 控制面：从 InferenceService 到推理服务</h3><p>控制面负责创建和维护推理服务。整个过程从用户提交 InferenceService 开始：</p><ol><li>用户通过 <code>kubectl apply</code> 将 InferenceService 提交到 Kubernetes API Server。</li><li>Admission Webhook 对配置进行默认化和校验。例如补充默认部署模式，并拒绝不符合 API 约束的配置。</li><li>InferenceService 写入集群后，KServe Controller 通过 Watch 感知对象变化，开始执行调谐。</li><li>Controller 根据 <code>modelFormat</code> 匹配 ServingRuntime，从 Runtime 中取得模型服务器镜像和默认启动参数，再与 InferenceService 中的模型地址、运行参数和资源需求合并。</li><li>在 Standard 模式下，Controller 根据合并后的配置创建 Deployment、Service 和 HTTPRoute。Pod 创建时，KServe Pod Mutating Webhook 根据存储注解注入 PVC volume 和 volumeMount；接下来由 Kubernetes 负责调度 Pod、挂载存储和分配 GPU，Gateway Controller 负责让 HTTPRoute 生效。</li><li>Controller 持续观察 Deployment 和 HTTPRoute 的状态。当 Predictor 可用、路由被 Gateway 接受后，会更新 <code>PredictorReady</code>、<code>IngressReady</code> 和最终的 <code>Ready</code> 状态。</li></ol><p>所以，控制面管理的是推理服务的生命周期：创建、更新、状态同步，以及配置变更后的持续调谐。</p><h3>1.2 数据面：访问已经创建的推理服务</h3><p>数据面由实际运行模型和处理请求的资源组成。上一篇的环境使用 Envoy Gateway 作为 Gateway API 的实现。模型服务 Ready 后，客户端就可以通过数据面访问推理服务。</p><p>客户端访问模型域名时，请求先到达 Envoy Gateway 管理的 Envoy Proxy。Envoy Proxy 应用 <code>HTTPRoute/qwen-llm</code> 的规则，并根据其中指向 <code>Service/qwen-llm-predictor</code> 的 <code>backendRef</code>，将请求发送到 Ready 的 Predictor Pod。这里的 Service 用于标识和发现后端，并不是一个独立的代理进程。Pod 中运行的是 HuggingFaceServer，当前配置使用 vLLM 作为推理后端。vLLM 完成推理后，响应沿原链路返回客户端。</p><pre><code class="text">Client
+  -&gt; Envoy Proxy（匹配 HTTPRoute）
+  -&gt; Predictor Pod（后端由 Predictor Service 标识）
+  -&gt; HuggingFaceServer
+  -&gt; vLLM Backend
+  -&gt; NVIDIA GPU</code></pre><p>控制面决定服务应该如何部署，并保证它处于期望状态；数据面负责服务创建后的请求转发和模型推理。在线请求不会经过 KServe Controller。</p><h2>2. 核心 CRD</h2><p>KServe 通过 CRD 描述模型服务、运行时、推理图和模型存储初始化方式。对于上一篇的 Qwen Demo，最核心的是 InferenceService 和 ClusterServingRuntime。</p><p>二者之间的关系如下：</p><pre><code class="text">InferenceService
+  ├── 模型格式
+  ├── 模型地址
+  ├── 启动参数
+  └── 资源需求
+          |
+          | 根据 modelFormat 匹配
+          v
+ServingRuntime / ClusterServingRuntime
+  ├── 模型服务器镜像
+  ├── 默认启动参数
+  ├── 支持的模型格式
+  └── 推理协议</code></pre><h3>2.1 InferenceService</h3><p>InferenceService 用于描述一个模型服务需要什么，包括模型格式、模型地址、运行参数、副本数和资源需求。</p><p>一个最小的 InferenceService 如下：</p><pre><code class="yaml">apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: qwen-llm
+spec:
+  predictor:
+    model:
+      modelFormat:
+        name: huggingface
+      storageUri: pvc://qwen-model</code></pre><p>InferenceService 的 Spec 可以包含以下三个逻辑部分：</p><table><thead><tr><th>组成部分</th><th>是否必需</th><th>作用</th></tr></thead><tbody><tr><td>Predictor</td><td>是</td><td>加载模型并执行预测或生成</td></tr><tr><td>Transformer</td><td>否</td><td>请求预处理和响应后处理</td></tr><tr><td>Explainer</td><td>否</td><td>生成模型解释</td></tr></tbody></table><p>对于大模型推理，通常只需要 Predictor。上一篇的 Qwen 服务也只配置了 Predictor。</p><p>这里的 Predictor 是一个逻辑角色。到了 Standard 模式下，它最终会变成名为 <code>qwen-llm-predictor</code> 的 Deployment 和 Service。</p><h3>2.2 ServingRuntime 和 ClusterServingRuntime</h3><p>InferenceService 描述要运行什么模型，ServingRuntime 描述使用什么模型服务器运行。</p><p>Runtime API 按作用范围分为两种：</p><ul><li>ServingRuntime 只在当前 Namespace 中生效</li><li>ClusterServingRuntime 则可以被整个集群中的 InferenceService 使用</li></ul><p>一个简化后的 HuggingFace Runtime 如下：</p><pre><code class="yaml">apiVersion: serving.kserve.io/v1alpha1
+kind: ClusterServingRuntime
+metadata:
+  name: kserve-huggingfaceserver
+spec:
+  containers:
+    - name: kserve-container
+      image: kserve/huggingfaceserver:v0.18.0
+  supportedModelFormats:
+    - name: huggingface
+      version: "1"
+      autoSelect: true</code></pre><p><code>containers</code> 定义模型服务器的镜像和启动方式，<code>supportedModelFormats</code> 声明它支持哪些模型格式。</p><p>当 InferenceService 没有显式指定 Runtime 时，KServe 会根据 <code>modelFormat</code>、版本、协议以及 Runtime 的 <code>autoSelect</code> 和 <code>priority</code> 自动匹配。</p><p>因此：</p><pre><code class="yaml">modelFormat:
+  name: huggingface</code></pre><p>表示模型格式为 <code>huggingface</code>，KServe 会选择支持该格式的 Runtime。它并不表示 Pod 中只能使用 Hugging Face Transformers 进行推理。</p><h3>2.3 其他 CRD</h3><p>除了 InferenceService 和 Runtime，KServe 还提供了一些面向特定场景的 CRD：</p><ul><li>InferenceGraph 编排多个 InferenceService，实现路由、分支和服务组合</li><li>ClusterStorageContainer 定义不同模型存储协议对应的初始化容器和匹配规则</li><li>TrainedModel 在 ModelMesh 场景中声明需要加载或卸载的模型</li></ul><p>上一篇的 Demo 没有使用这些资源，后续遇到对应场景时再单独分析。</p><h2>3. 核心组件</h2><p>CRD 只描述期望状态，真正读取这些对象并创建模型服务的是 KServe 控制面。</p><h3>3.1 Webhook</h3><p>Webhook 位于资源写入 Kubernetes API 的入口。InferenceService Admission Webhook 负责补充默认值，并拒绝不符合 API 约束的配置；Pod Mutating Webhook 则会在 Pod 创建时注入模型存储相关配置。</p><p>在当前环境中，Webhook 和 Controller 运行在同一个 <code>kserve-controller-manager</code> Pod 中，但承担不同职责。</p><h3>3.2 KServe Controller</h3><p>KServe Controller 持续 Watch InferenceService，并通过 Reconcile 循环让实际状态与期望状态保持一致。</p><p>它主要负责：</p><ul><li>匹配 ServingRuntime 或 ClusterServingRuntime</li><li>合并 Runtime 与 InferenceService 中的容器配置</li><li>创建工作负载、Service 和网络入口</li><li>处理模型存储和健康检查配置</li><li>观察底层资源状态并回写 InferenceService Status</li></ul><p>Controller 只负责资源编排。Deployment 创建以后，Pod 由 Kubernetes Scheduler 调度，GPU 由 NVIDIA Device Plugin 分配；Gateway Controller 负责让 HTTPRoute 生效，实际流量由 Envoy Proxy 转发。</p><h3>3.3 Predictor Pod 内部结构</h3><p>以上一篇的 Qwen 服务为例，Predictor Pod 内部的层次如下：</p><pre><code class="text">Predictor Pod
+  └── HuggingFaceServer（容器主进程）
+        └── vLLM Backend
+              └── NVIDIA GPU</code></pre><p>Predictor Pod 是模型服务的运行载体，容器主进程是 HuggingFaceServer。它负责启动模型服务并提供 OpenAI 兼容接口。</p><p>当前模型使用 vLLM 作为 HuggingFaceServer 的推理后端。HuggingFaceServer 会在同一个容器中创建 vLLM 引擎，由 vLLM 使用 GPU 执行推理。</p><h2>4. Qwen Demo 工作流程</h2><p>前面介绍的 CRD 和组件，最终会通过 Controller 的调谐过程串起来。</p><p>上一篇的 <code>qwen-llm</code> 使用 Standard 模式，下面只分析该模式下的资源创建和请求流程。</p><p>上一篇使用的核心配置如下：</p><pre><code class="yaml">apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: qwen-llm
+  namespace: kserve-test
+spec:
+  predictor:
+    model:
+      modelFormat:
+        name: huggingface
+      storageUri: pvc://qwen-model
+      args:
+        - --model_name=qwen
+        - --max_model_len=4096
+        - --max-num-seqs=32
+        - --gpu-memory-utilization=0.8
+      resources:
+        limits:
+          nvidia.com/gpu: "1"</code></pre><p><code>qwen-model</code> PVC 是上一篇提前创建的，InferenceService 只负责引用它。</p><h3>4.1 控制面资源创建流程</h3><p>从提交 InferenceService 到服务 Ready，完整流程如下：</p><pre><code class="text">1. 用户提交 InferenceService/qwen-llm
+                     |
+2. Webhook 默认化并校验配置
+                     |
+3. Controller 根据 huggingface 匹配 ClusterServingRuntime
+                     |
+4. 合并启动参数、镜像和 GPU 资源，并写入模型存储注解
+                     |
+5. 创建 Deployment、Service 和 HTTPRoute
+                     |
+6. Pod Mutating Webhook 注入 PVC volume 和 volumeMount
+                     |
+7. Kubernetes 调度 Pod、挂载 PVC 并分配 GPU
+                     |
+8. Pod 启动并加载模型，Controller 汇总状态并回写 InferenceService</code></pre><p>可以从 InferenceService Status 查看最终选择结果：</p><pre><code class="bash">kubectl get inferenceservice qwen-llm -n kserve-test \
+  -o jsonpath='{.status.deploymentMode}{"\n"}{.status.clusterServingRuntimeName}{"\n"}'</code></pre><pre><code class="text">Standard
+kserve-huggingfaceserver</code></pre><p>Controller 选择 <code>kserve-huggingfaceserver</code>，再把 InferenceService 中的参数和 GPU 资源合并到 Runtime 提供的容器模板中。最终 Deployment 使用 GPU 版本的 HuggingFaceServer 镜像：</p><pre><code class="text">docker.m.daocloud.io/kserve/huggingfaceserver:v0.18.0-gpu</code></pre><p>Standard 模式下创建的资源关系如下：</p><pre><code class="text">InferenceService/qwen-llm
+├── Deployment/qwen-llm-predictor
+│   └── ReplicaSet
+│       └── Pod
+├── Service/qwen-llm-predictor
+├── HTTPRoute/qwen-llm
+└── HTTPRoute/qwen-llm-predictor</code></pre><p>Deployment 可用、HTTPRoute 就绪后，Controller 会把底层状态汇总到 InferenceService：</p><pre><code class="yaml">status:
+  conditions:
+    - type: IngressReady
+      status: "True"
+    - type: PredictorReady
+      status: "True"
+    - type: Ready
+      status: "True"</code></pre><h3>4.2 模型 Pod 启动流程</h3><p><code>storageUri</code> 描述模型的来源，不是容器内的最终路径，也不是 HuggingFaceServer 的启动参数。Controller 会将 <code>pvc://qwen-model</code> 写入 Pod 模板注解；ReplicaSet 创建 Pod 时，KServe Pod Mutating Webhook 读取该注解，将 <code>qwen-model</code> 解析为 PVC 名称，并向模型容器注入 PVC volume 和挂载到 <code>/mnt/models</code> 的 volumeMount。</p><p>如果这里使用 <code>hf://</code> 地址，Webhook 则会注入 Storage Initializer init container，先从 Hugging Face Hub 下载模型，再通过共享的 EmptyDir volume 将模型提供给模型容器。</p><p>HuggingFaceServer 启动后，<code>backend</code> 默认为 <code>auto</code>。GPU 镜像中包含 vLLM；当 vLLM 可用且模型架构在 vLLM 的支持列表中时，HuggingFaceServer 会创建 vLLM 后端并从 <code>/mnt/models</code> 加载模型。</p><p>实际日志如下：</p><pre><code class="text">Initializing a V1 LLM engine (v0.19.0)
+device_config=cuda
+Starting to load model /mnt/models...</code></pre><p><code>kserve-huggingfaceserver</code> 是本次部署选择的 Runtime，vLLM 是 HuggingFaceServer 容器内自动选择的推理后端。因此，这次部署不需要单独指定 vLLM Runtime；集群中是否还存在其他自定义 vLLM Runtime，与这条执行链路无关。</p><h3>4.3 在线请求流程</h3><p>服务 Ready 后，上一篇的 OpenAI Chat Completions 请求沿着下面的路径进入模型：</p><pre><code class="text">Client
+  -&gt; Envoy Proxy（匹配 HTTPRoute/qwen-llm）
+  -&gt; Predictor Pod:8080（backendRef: Service/qwen-llm-predictor:80）
+  -&gt; HuggingFaceServer
+  -&gt; vLLM Backend
+  -&gt; NVIDIA GPU</code></pre><p>这条请求链路属于数据面。KServe Controller 会继续维护 Deployment 和 InferenceService 状态，但不会参与请求转发。</p><h2>5. 总结</h2><p>结合上一篇的 Qwen Demo，KServe 的整个工作过程可以概括为：</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048351684" alt="KServe Standard 模式控制面与数据面架构" title="KServe Standard 模式控制面与数据面架构" loading="lazy"/></p><ul><li><p>InferenceService 描述模型服务需要什么</p><ul><li><code>modelFormat</code> 声明模型格式，供 KServe 匹配 Runtime</li><li><code>storageUri</code> 指定模型存储地址</li><li><code>args</code> 设置模型服务器和推理引擎的启动参数</li><li><code>resources</code> 声明 CPU、内存和 GPU 等资源需求</li></ul></li><li><code>ClusterServingRuntime/kserve-huggingfaceserver</code> 提供模型服务器镜像和启动方式</li><li>KServe Controller 匹配 Runtime、合并配置，并创建 Deployment、Service 和 HTTPRoute</li><li>Kubernetes 负责调度 Pod、挂载 PVC 和分配 GPU</li><li>Envoy Proxy 应用 HTTPRoute 规则，通过 Predictor Service 标识的后端将请求发送到 Ready Pod</li><li>HuggingFaceServer 使用 vLLM Backend，由 vLLM 通过 GPU 执行推理</li></ul>]]></description></item><item>    <title><![CDATA[服务器 RAID 怎么选？级别对比、阵列卡与磁盘规划 极云Cloud ]]></title>    <link>https://segmentfault.com/a/1190000048351692</link>    <guid>https://segmentfault.com/a/1190000048351692</guid>    <pubDate>2026-10-14 12:02:12</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>RAID 是被问得最多的服务器配置项之一，也是最容易被误解的一个。它解决的是硬盘故障导致的服务中断，不解决数据丢失，这两件事在很多方案里被混为一谈。这篇文章讲清常见级别的取舍在哪、硬 RAID 与软 RAID 差什么、上架前的磁盘规划要考虑哪几件事，以及为什么做了 RAID 仍然要备份。</p><h3>一、行业背景：RAID 解决的是可用性</h3><p>RAID 的目标很明确：当一块硬盘故障时，业务不中断，运维有时间从容更换。它通过把数据分布到多块盘上、并额外存储校验或副本信息来实现这一点。这是可用性层面的收益。</p><p>它挡不住的事情同样明确。误删除、误格式化、勒索软件加密、操作系统层的数据损坏，这些操作在 RAID 看来都是正常写入，会同步反映到所有成员盘上。阵列正常，数据没了，这是最常见的场景。</p><p>托管场景下还有一层认知要摆正。托管机房负责的是空间、电力、网络与基础设施运维，服务器里的磁盘与数据属于客户自己。机房工程师可以按你的要求协助更换故障盘，但不会也无法替你管理数据。所以磁盘配置这件事，最终责任在客户一侧。</p><h3>二、常见级别对比</h3><p><img width="723" height="251" referrerpolicy="no-referrer" src="/img/bVdq2Dy" alt="" title=""/></p><p>选级别其实是在三个变量之间做权衡：可用容量、容错能力、成本。RAID 0 容量利用率最高但没有容错，只适合数据可以随时重建的场景。RAID 1 和 RAID 10 用一半容量换可靠性，写入表现好，常用于系统盘和对性能敏感的业务。RAID 5 在容量与容错之间取平衡，是通用场景的常见选择。</p><p>RAID 6 的价值在大容量单盘上更明显。单盘容量越大，重建所需时间越长，而重建期间阵列处于降级状态。这一窗口越长，第二块盘在此期间出问题的风险就越高，这正是 RAID 6 想缓解的情形。</p><h3>三、硬 RAID 与软 RAID 差在哪</h3><p><strong>硬件阵列卡</strong>自带处理芯片与缓存，阵列运算不占用主机 CPU，对操作系统透明。换服务器时，只要把阵列卡和硬盘一起迁移，阵列信息通常能直接识别，迁移成本低。部分型号带缓存并有电池或电容保护，断电时能把缓存中未落盘的数据保住。代价是成本，以及需要关注固件版本与驱动兼容性。</p><p><strong>操作系统软 RAID</strong>由系统自身实现，不需要额外硬件，成本最低，配置也灵活。代价是阵列运算消耗主机 CPU 与内存，跨平台迁移相对麻烦，且阵列信息依赖操作系统，重装系统时需要额外处理。</p><p><strong>主板集成 RAID</strong>介于两者之间，多数属于固件层面的软实现，功能与性能有限，适合入门或非关键场景。它的主要价值在于能在装系统前建立逻辑盘，方便引导。</p><p>怎么选，取决于负载与团队习惯。对 I/O 压力大、需要频繁迁移或对数据一致性要求高的场景，硬件阵列卡更稳妥；对成本敏感、规模不大的场景，软 RAID 也能满足基本容错需求。<br/><img width="723" height="411" referrerpolicy="no-referrer" src="/img/bVdq2DC" alt="" title="" loading="lazy"/></p><h3>四、磁盘规划要定的四件事</h3><p><strong>第一，用更多小盘还是更少大盘。</strong>盘数多，同级别下容错单元更多、重建速度更快，但占用槽位与功耗也更高。盘数少，管理简单，但单盘容量大意味着单点失效影响更大、重建更慢。这一取舍要和机箱槽位、功耗预算一起考虑。</p><p><strong>第二，要不要配热备盘。</strong>热备盘平时不参与读写，阵列降级时可自动顶替并开始重建，无需人工介入。它的代价是占用一个槽位且不贡献容量。对无人值守或响应时间要求高的场景，热备盘能显著缩短降级窗口。</p><p><strong>第三，SSD 与 HDD 要不要混用。</strong>不建议把两者放进同一个阵列。性能会向慢的一方看齐，寿命与故障模式也不同。合理的做法是分层：SSD 独立成阵列承载高 IO 业务，HDD 阵列承载容量型数据。</p><p><strong>第四，阵列卡的缓存策略怎么设。</strong>写缓存能提升性能，但前提是有掉电保护。如果阵列卡没有电池或电容，突然断电可能导致缓存中数据丢失，此时应采用直写策略。这一项在交付验收时应当确认清楚。</p><h3>五、为什么做了 RAID 还要备份</h3><p>把 RAID 等同于备份，是方案评审里最常见的问题。两者保护的是不同的东西。<br/><img width="723" height="106" referrerpolicy="no-referrer" src="/img/bVdq2DD" alt="" title="" loading="lazy"/></p><p>判断标准很简单，问一句：如果数据被误删了，RAID 能不能帮我恢复？答案是不能。RAID 里的副本是实时同步的，写错的东西会同时写到每一块盘上。要恢复，只能靠另外存放的备份副本。所以磁盘配置和备份策略要一起规划，缺任何一环，数据保护都是不完整的。</p><h3>六、采购建议</h3><p><strong>第一，先按数据性质分阵列。</strong>系统盘、业务数据盘、日志或缓存盘对可靠性与性能的要求不同，不必成套配置同一级别。系统盘用 RAID 1 保证能开机、数据盘按业务特性选择，通常比全盘一个级别更划算。</p><p><strong>第二，把重建窗口当成设计参数。</strong>阵列降级后重建期间是最脆弱的时段。选择级别、盘数与容量时把这段时间估算进去，必要时用 RAID 6 或热备盘缩短暴露时间。</p><p><strong>第三，确认阵列卡有没有掉电保护。</strong>这直接决定缓存写策略能不能开。没有保护还开了写缓存，断电时丢的是缓存里的数据，且不易察觉。交付验收时应当作为一项确认内容。</p><p><strong>第四，把磁盘更换流程提前约定。</strong>机房是否能协助更换故障盘、由谁提供备件、响应时限如何，这些在上架前谈清楚，比故障发生后临时协调有效得多。</p><p><strong>第五，备份策略与 RAID 一起评审。</strong>在方案里明确备份的对象、频率、保留周期和恢复演练方式。只写"已配置 RAID"的容灾方案，实际上没有覆盖数据可恢复性。</p><h3>七、总结</h3><p>选 RAID 的本质是把可用性目标翻译成配置参数。级别决定容错能力与容量代价，阵列卡决定性能与迁移便利性，磁盘规划决定降级窗口有多长。这四件事定下来，磁盘这块的基本盘就有了。最后一句话留在这里：RAID 保的是业务不停，备份保的是数据还在。两者同时做，才叫完整的数据保护。</p>]]></description></item><item>    <title><![CDATA[DevOps 场景下，PromTCS 如何解决时间序列存储内存问题？ OceanBase技术站 ]]></title>    <link>https://segmentfault.com/a/1190000048351713</link>    <guid>https://segmentfault.com/a/1190000048351713</guid>    <pubDate>2026-10-14 12:01:32</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>近日，西安电子科技大学与 OceanBase 团队合作完成的论文《PromTCS: An Efficient Two-Dimensional Metadata Management and Tailored Hybrid Storage Architecture for Performance Monitoring Time Series》被 FAST 2027 接收。</p><p>FAST（USENIX Conference on File and Storage Technologies）代表着计算机存储领域的国际最高研究水平。FAST 2027 将于 2027 年 2 月 23 日至 25 日在美国华盛顿州伦顿（Renton）举行。</p><p>此次被接收的论文聚焦 DevOps 场景下海量时间序列存储的成本问题。</p><p>时间序列存储是 DevOps 性能监控的重要基础，但传统元数据模型按整条时间序列保存标签，难以抑制高基数带来的内存开销，而直接依赖大容量 NVMe SSD 来维持写入性能，又会带来高昂的设备成本。</p><p>针对这一问题，PromTCS 提出兼顾性能和成本的存储方案，由二维元数据管理和按介质定制的混合存储架构组成。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048351715" alt="" title=""/></p><p>PromTCS 架构图</p><p><strong>二维元数据管理</strong></p><p>一条性能监控时间序列对应某个数据源上的某个指标。</p><p>指标会在大量主机上重复出现，同一数据源又会导出多个指标。PromTCS 据此把标签拆成互不相交的两类：指标标签映射为 MetricID，数据源标签映射为 SourceID，时间序列由 (MetricID, SourceID) 唯一标识。</p><p>实验证明，相比 Prometheus tsdb 的原始模型与 TimeUnion 的组模型，二维元数据模型能有效减少内存占用。</p><p>在二维模型之上，PromTCS 重新设计了三类元数据索引。</p><ul><li>后向索引将标签解析为 ID，位于每条读写路径的入口，因而需要支持高并发查找。指标标签与数据源标签分别由一棵 Thmap 管理：读操作无锁，更新使用节点级细粒度锁。</li><li>前向索引将 (MetricID, SourceID) 映射到时间序列对象。该索引以查询为主，更新仅发生在新序列注册时，因此侧重读性能与存储密度。历史条目存放于可按地址直接访问的扁平数组；新增条目先写入 Thmap，再定期合并进扁平数组。</li><li>倒排索引将数据源标签映射为 SourceID 的 posting list，采用两级结构。标签 key 基数较小，第一级用 Thmap 管理；标签 value 基数大且仅部分被频繁查询，第二级将热 value 留在 Thmap，冷 value 迁至内存开销更低的 MergeSet，新写入的 value 先进入 Thmap。posting list 存放 SourceID。数据源数量远小于时间序列数量，列表因此更短。</li></ul><p>写入路径上，标签划分为指标与数据源两部分，经后向索引得到 MetricID 与 SourceID，再由前向索引定位时间序列对象；新序列则分配 ID 并更新索引。</p><p>查询路径上，指标标签经后向索引解析；对数据源标签，在倒排索引上检索 posting list 并求交，再由前向索引取出匹配的时间序列对象。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048351716" alt="" title="" loading="lazy"/></p><p>元数据索引读写路径</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048351717" alt="" title="" loading="lazy"/></p><p>前向索引与倒排索引</p><p><strong>为时间序列定制的混合存储架构</strong></p><p>混合存储将新数据与日志置于 DRAM 和少量 NVMe SSD，将冷数据置于 HDD。</p><p>不同介质的带宽与访问特性各不相同，PromTCS 据此做三处设计：面向 NVMe SSD 的免合并引擎 TreeSeries、按介质区分的数据迁移，以及元数据驱动的并行 WAL。HDD 沿用按时间分区的 LSM-tree 管理冷数据，使合并不与写入和日志争用 SSD 带宽。</p><p><strong>TreeSeries</strong></p><p>时间分区 LSM-tree 直接部署于 NVMe SSD 时，为维持全局有序而反复合并、重写数据。对照变体在合并期间插入吞吐反复下降，写放大达 5.4 倍。TreeSeries 作为 SSD 上的写缓冲，以宽松有序代替全局排序，从而省去这一合并。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048351718" alt="" title="" loading="lazy"/></p><p>TreeSeries结构</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048351719" alt="" title="" loading="lazy"/></p><p>slab结构与宽松有序</p><p>数据以与 SSD 页对齐的 4 KB slab 为管理单元，使读写粒度与 SSD 页一致。slab 内 item 的大小在压缩效率与查询时的解压开销之间取折中。写入先进入内存中的 slab buffer，达到阈值后再由后台线程刷入 SSD 上的 slab file，以避免样本直接落盘。</p><p>每个 slab 绑定 slabinfo，由无锁队列分别跟踪内存与磁盘上的空闲、已满和待回收状态。已迁出的 slab 进入回收队列，仅当空闲 slab 耗尽时才原地覆盖。</p><p>并发由两套索引分担：</p><p>MetaHash 是二维表，按 MetricID 与 SourceID 取模定位可写 slab，并以细粒度锁将不同时间序列分散到不同 slab，从而降低插入时的锁争用，也使单个 slab 容纳的时间序列尽量少。</p><p>查询使用无锁、缓存友好的 B+ 树，键由同一 slab 内同一时间序列的 SourceID、MetricID 与时间范围组成，以减少索引项和大范围查询的 I/O。</p><p>宽松有序指：同一 slab 内、同一时间序列的 item 按起始时间排列；不同时间序列之间，以及不同 slab 之间，不维持顺序。全局有序所需的合并因此可以省去。</p><p>宕机恢复只需重建已落盘部分。slab 从 buffer 刷入 SSD 时，系统将已落盘 slab 的 slabinfo 及对应索引项写入 SSD 上的 slabinfo 区域；恢复时读回这些元数据，重建磁盘侧队列与树索引。</p><p>在 NVMe SSD 上，相对时间分区 LSM-tree，TreeSeries 的插入吞吐高 6.3–8.2 倍，查询延迟相当，写放大降低 75.8%–81.5%。</p><p><strong>数据迁移</strong></p><p>DRAM、NVMe SSD 与 HDD 之间的带宽差会使数据堆积在高带宽层，进而限制写入性能。PromTCS 按介质选择写入方式，并以早迁移与懒刷新利用各层 I/O，同时控制对查询的影响。</p><p>迁往 NVMe SSD 时，利用其高并发与优于随机写的顺序带宽。已满 slab 的比例达到阈值且 slab file 仍有空间时，后台线程按 SlabID 将相邻 slab 分组：目标地址连续则整组顺序写入，以降低系统调用开销；否则退回按 slab 的并行随机写。</p><p>迁往 HDD 时，侧重其远高于随机 I/O 的顺序带宽：顺序读出 slab，按时间序列归组后写入 MemTable，并在本次迁移结束前刷盘，避免 MemTable 在内存中堆积。</p><p>早迁移采用较低阈值，使数据提前分布到各层，避免快设备写满后阻塞插入。</p><p>懒刷新则推迟回收已迁出的空间：数据仍留在原快设备上供查询使用，直至该空间被新数据覆盖，才更新 TreeSeries 的树索引。关闭懒刷新后，近期查询延迟升高 7.2%–10.9%，长期查询延迟升高 27.4%–31.7%。</p><p>相对全量置于 SSD 的 LSM-tree，插入吞吐高 3.37–3.40 倍，SSD 写入量仅为前者的 21.4%–24.8%。相对上层在 SSD、下层在 HDD 的分层 LSM-tree，插入吞吐高 4.69–5.67 倍。SSD 上的合并直接限制插入吞吐；HDD 上的合并只影响迁移，其影响再由早迁移削弱。</p><p><strong>元数据驱动的并行 WAL</strong></p><p>全局 WAL 在单锁上同步，会限制并发写入；简单地拆成多个 WAL，又引入随机 I/O 与跨组顺序问题。性能监控以追加新样本为主，不同时间序列之间无事务依赖，因而样本日志无需维持全局顺序。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048351720" alt="" title="" loading="lazy"/></p><p>元数据驱动的并行 WAL</p><p>PromTCS 将日志分为序列日志与样本日志。</p><p>序列日志仅一组，记录时间序列的标签与 ID，供恢复时重建元数据。样本远多于元数据，是写入路径上 I/O 与同步的主要开销，故按 MetricID 取模分至多个日志组（实验中为 5 组，以平衡 CPU 与 I/O）。</p><p>每组拥有独立的内存环形缓冲区、磁盘目录与组提交线程，组间互不阻塞，也无需跨组保序。</p><p>分组键取 MetricID，使同一指标的样本聚集；同一指标的数值更接近，压缩效率更高。相对按 MetricID 与 SourceID 分组，真实数据上压缩效率最高提升 36.2%。</p><p>可靠性按时间序列校验：chunk 写入 TreeSeries 之前，以单调递增的样本序号确认其中最后一条日志已经落盘。</p><p>样本持久化到 SSD 后，对应样本日志即可清理；序列日志体积小，且恢复时需要，故予以保留。</p><p>宕机恢复时，先由序列日志重建元数据索引，再按日志目录并行重放。各目录中的时间序列互不依赖，重放无需同步。</p><p>TreeSeries 与 HDD 上的 LSM-tree 只读取少量元数据，开销远小于日志重放。相对 Prometheus tsdb 的全局 WAL，插入吞吐提高 42.7%–69.7%。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000047978757" alt="图片" title="图片" loading="lazy"/></p><p>立即试用 OceanBase 企业版，体验国产数据库能力<a href="https://link.segmentfault.com/?enc=%2BlKEQ6tT7weesCnKTSMSFA%3D%3D.w3x%2FN5DtpszCfn1NWY49uV3awrMHYzciUntRRHNLcrf%2FRR12nDPGHfTRPyqCEfnV11MCDaQVDGIUZuaVE8DkBgEGRD7Zq1p206SvNE1RGBjCOex13%2Bga0NwYZJgzMfTS0wL220camSnfa0yk%2BC7IfsDxiK0pLrjy8LxVnZlT8lU%3D" rel="nofollow" target="_blank">180 天免费试用，零门槛开通</a></p>]]></description></item><item>    <title><![CDATA[spring-abac：属性化授权（ABAC）微服务拆解 erishen ]]></title>    <link>https://segmentfault.com/a/1190000048350926</link>    <guid>https://segmentfault.com/a/1190000048350926</guid>    <pubDate>2026-10-14 11:14:08</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>spring-abac 与同目录的 spring-rbac 是<strong>一对对照实验</strong>（<a href="https://link.segmentfault.com/?enc=gY1z0nc2Mh0OXV3gOgxIaQ%3D%3D.yiVIXl3NtcHQhynnWY03N0btf4vBlFGgDI3akcC6iVY%3D" rel="nofollow" target="_blank">spring-rbac 项目文章</a>）：两套几乎一样的微服务骨架（Spring Boot 3.2.5 + Spring Cloud 2023.0.3 + Next.js），唯一差异在授权模型。</p><p>这篇文章主要回答三个问题：</p><ol><li><strong>ABAC 比 RBAC 多解决了什么？</strong></li><li><strong>属性、策略和裁决如何落到微服务？</strong></li><li><strong>这套授权模型如何延伸到 Agent 的工具调用？</strong></li></ol><pre><code>RBAC：  user ──belongs to──&gt; role ──has──&gt; permission ──&gt; can access?
 ABAC：  (subject, resource, environment) ──policy expression──&gt; PERMIT / DENY</code></pre><p>RBAC 问"你是什么角色"，ABAC 问"你是<strong>谁</strong>（属性）、想碰<strong>什么</strong>（资源属性）、在<strong>什么环境</strong>下"。属性化授权能表达 RBAC 表达不了的东西：</p><ul><li>同一角色在不同密级、地域、时段下得出不同裁决；</li><li>例外可以用一条高优先级 DENY 直接表达，不需要发明新角色；</li><li>改属性即改权限，策略与代码解耦。</li></ul><p>权限系统的演化，本质上是把授权从<strong>静态的关系配置</strong>推向<strong>动态的属性求值</strong>。RBAC 把权限折叠进角色，隐含假设是"人少、角色少、场景稳定"；当部门、密级、属地、时段开始叠加，角色矩阵就会笛卡尔积爆炸——每加一个维度，就要手工合成一批新角色。ABAC 并不消灭复杂度，它把复杂度从"组合角色"转移到"组合条件"：后者的表达力来自策略语言，可以组合、可以热更新、可以由非工程师维护。换句话说，RBAC 问"你是谁"，ABAC 问"此时此刻，你、资源与环境是什么"——把"身份"从授权的主角降级为属性之一，正是这套系统想演示的转变。</p><h2>四个组件与九个子服务</h2><p>ABAC 标准组件与项目服务的对应关系：</p><table><thead><tr><th>组件</th><th>服务</th><th>职责</th></tr></thead><tbody><tr><td><strong>PAP</strong> 策略管理</td><td>abac-service</td><td><code>/api/policies</code> CRUD，策略四要素：作用域 / SpEL 条件 / 效果 / 优先级</td></tr><tr><td><strong>PEP</strong> 策略执行点</td><td>gateway-service</td><td>JWT 校验、动作映射、问 PDP、注入属性头、发射审计</td></tr><tr><td><strong>PDP</strong> 策略决策点</td><td>abac-service</td><td>策略筛选、SpEL 求值、deny-override 合并、PIP 回源</td></tr><tr><td><strong>PIP</strong> 属性提供点</td><td>auth + document + gateway</td><td>主体属性（JWT）、资源属性（回源接口）、环境属性（请求上下文）</td></tr></tbody></table><p>其余服务：eureka-server（注册中心）、config-server（配置中心）、audit-service（append-only 审计）、risk-service（交易风控）、agent-service（Agent 前置校验）、web（Next.js BFF，<code>/api/*</code> rewrite 到网关）。</p><h2>属性从哪来</h2><p>策略读三类属性，各有可信来源：</p><p><strong>主体属性 <code>subject.*</code></strong> —— 登录时由 auth-service 把 <code>department / clearance / region / title</code> 快照进 JWT 的 <code>attrs</code>，网关解析后随裁决请求一起发给 PDP。属性随令牌走，避免 PDP 每次回查身份服务；代价是属性是<strong>快照</strong>——改属性后旧 token 仍带旧值直到过期（默认 24h），目标用户重新登录才生效。</p><p><strong>资源属性 <code>resource.*</code></strong> —— PDP 只有资源 id 时，经 <strong>PIP</strong> 回源 <code>document-service /internal/attributes/{id}</code> 补齐密级、部门等特征。回源失败按 <code>app.pip-fail-closed = true</code> 处理："拿不到属性就不知道该不该放行，那就别放行"。</p><p><strong>环境属性 <code>env.*</code></strong> —— 网关每次请求实时生成 <code>hour / dayOfWeek / ip</code>，随裁决请求带给 PDP。</p><h3>信任边界：属性不允许自报</h3><p>属性是策略的唯一输入，属性源必须可信。项目走过一次弯路：注册接口最初接受客户端提交 <code>clearance / title</code>，等于任何人都能注册成 <code>clearance=5, title=admin</code>——直接击穿整个 ABAC。安全审查后修复并加了回归测试：</p><ul><li><code>POST /api/register</code> 只收账号密码，新账号一律落为<strong>默认低权限</strong>（ENG / clearance 1 / CN / engineer）；</li><li>属性修改仅 admin：网关策略 <code>USR-60</code>（USER/UPDATE 仅 admin）是第一道，auth-service 业务层再校验调用者 <code>title == 'admin'</code> 是第二道——内网直连绕过网关也改不了；</li><li>内部接口的写防伪头 <code>X-Internal-Audit</code> 从硬编码改为环境变量 <code>APP_INTERNAL_SECRET</code>，网关与 audit-service 从配置中心取同一个值。</li></ul><h2>策略与求值</h2><p>策略存在 H2，四个要素：<strong>作用域</strong>（资源类型 + 动作）、<strong>SpEL 条件</strong>、<strong>效果</strong>、<strong>优先级</strong>。</p><pre><code>DOC-100  DENY   DOCUMENT / DELETE    env.hour &lt; 9 || env.hour &gt;= 18        priority 100
 DOC-95   DENY   DOCUMENT / READ      resource.classification == 'CONFIDENTIAL'
                                       &amp;&amp; subject.region != 'CN'            priority 95
@@ -1725,226 +1820,4 @@ names:
 ├── test
 │   ├── images
 │   └── labels
-└── data.yaml</code></pre><p>各数据集作用如下：</p><ul><li><strong>train/images &amp; labels</strong>：训练集图像与标签，用于模型参数学习与特征提取；</li><li><strong>valid/images &amp; labels</strong>：验证集图像与标签，用于超参数调优、早停监控及防止过拟合；</li><li><strong>test/images &amp; labels</strong>：测试集图像与标签，用于最终模型性能评估与泛化能力测试。</li></ul><p>标注文件为同名.txt格式，每行格式为<code>类别索引 x_center y_center width height</code>，坐标均为归一化值，配套data.yaml已配置好类别名称与数量，可直接适配YOLO系列等目标检测框架。</p><h3>五、数据集核心优势</h3><h4>1. 专注洁净区PPE合规检测</h4><p>本数据集以无菌环境人员防护装备穿戴合规性检测为核心任务，所有图像聚焦于医院手术室、制药洁净厂房、食品加工车间等高洁净度场景。类别设计贴合PPE合规管理实际需求，六类装备从头部到脚部形成完整的穿戴合规检测体系，更利于训练出针对无菌环境的高精度检测模型。</p><h4>2. 完整的PPE六件套覆盖</h4><p>从头到脚的完整穿戴合规检测：</p><ul><li><strong>头部防护</strong>：发网（包裹头发）、护目镜（眼部防护）</li><li><strong>面部防护</strong>：口罩（口鼻防护）</li><li><strong>躯干防护</strong>：防护服（全身防护）</li><li><strong>手部防护</strong>：手套（无菌操作）</li><li><strong>足部防护</strong>：鞋套（防止污染）</li></ul><p>完整覆盖洁净区人员准入的PPE穿戴要求，为合规校验提供全面的目标检测基础。</p><h4>3. 丰富的穿戴组合与场景</h4><p>数据覆盖多种实际穿戴状态：</p><ul><li><strong>完整穿戴</strong>：全部六件装备齐全</li><li><strong>部分缺失</strong>：缺少个别装备（如未戴发网、未穿鞋套等）</li><li><strong>不同人员</strong>：不同体形、站位的穿戴差异</li><li><strong>不同朝向</strong>：正面、侧面、背面的人员姿态</li><li><strong>多人同框</strong>：同一画面多人穿着的密集检测场景</li></ul><p>贴近真实洁净区入口与车间监控视角。</p><h4>4. 多样的拍摄条件</h4><p>数据覆盖：</p><ul><li><strong>光照条件</strong>：室内均匀照明、不同区域亮度差异</li><li><strong>拍摄角度</strong>：监控视角、更衣通道视角、不同高度</li><li><strong>遮挡情况</strong>：多人同框时的部分遮挡</li><li><strong>背景环境</strong>：洁净室走廊、更衣间、车间入口等</li></ul><p>能够有效增强模型在真实洁净区环境中的鲁棒性。</p><h4>5. 高质量人工标注</h4><p>所有图像均经过人工精准标注：</p><ul><li>六类防护用品边界框贴合实际穿戴部位</li><li>多目标同框场景标注完整</li><li>类别定义明确、无混淆</li><li>满足高精度检测模型训练需求</li></ul><p>有效保证模型训练质量。</p><h4>6. 即用型数据组织</h4><p>标准目录结构+中文类别配置，无需复杂预处理，可直接用于模型训练，降低使用门槛。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048350496" alt="在这里插入图片描述" title="在这里插入图片描述" loading="lazy"/></p><h3>六、适用场景</h3><h4>医院手术室、ICU等区域医护人员着装合规检测</h4><p>在手术室、ICU入口自动检测医护人员PPE穿戴完整性，防止防护缺失导致的感染风险。</p><h4>制药洁净厂房、GMP车间人员进出合规校验</h4><p>在制药车间更衣通道自动校验人员穿戴是否合规，保障药品生产环境洁净度。</p><h4>食品加工车间卫生规范自动监管</h4><p>在食品加工车间入口自动检测人员卫生防护装备穿戴情况，保障食品安全。</p><h4>实验室生物安全防护监督</h4><p>在生物实验室、P2/P3实验室入口检测人员生物安全防护穿戴合规性。</p><h4>安全生产智能监控</h4><p>集成于洁净区安全监控系统，实现PPE穿戴的自动检测、缺失告警与数据留痕。</p><h4>教学科研</h4><p>用于多目标检测 算法 研究与调优、安全合规检测系统开发等科研场景。</p><h3>七、适用研究方向</h3><p>本数据集可广泛应用于以下研究领域：</p><ul><li>人员防护装备（PPE）检测研究（6类）</li><li>多类别目标检测研究</li><li>穿戴合规性自动审核研究</li><li>洁净区安全智能监控研究</li><li>工业卫生与生物安全视觉研究</li><li>YOLO系列模型优化研究</li><li>轻量化检测模型与边缘部署研究</li><li>域适应与跨场景泛化研究</li></ul><h3>八、总结</h3><p><strong>无菌防护装备检测数据集</strong>包含<strong>约4000张高质量标注图像</strong>，采用标准 YOLO格式 构建，专注于无菌环境人员防护装备穿戴合规性的检测任务。数据集覆盖防护服、手套、护目镜、发网、口罩、鞋套6类核心PPE目标，从头到脚形成完整的穿戴合规检测体系，具有类别完整、场景真实、标注精准等特点，可广泛应用于医院手术室、制药洁净厂房、食品加工车间、实验室等场景的安全合规监管，是开展PPE穿戴检测算法研发与洁净区智能安全管理系统建设的优质数据资源。</p>]]></description></item><item>    <title><![CDATA[基于 YOLO11 的三类可回收物视觉识别系统：从模型到 Streamlit 全流程实战 风筝 ]]></title>    <link>https://segmentfault.com/a/1190000048350510</link>    <guid>https://segmentfault.com/a/1190000048350510</guid>    <pubDate>2026-10-14 00:03:52</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <h2>基于 YOLO11 的三类可回收物视觉识别系统：从模型到 Streamlit 全流程实战</h2><blockquote>关键词：YOLO11、可回收物识别、垃圾分类、智能回收柜、Streamlit、目标检测、Ultralytics</blockquote><h3>一、背景</h3><h4>1.1 行业痛点</h4><p>「垃圾分类」喊了很多年，落到社区投放点、校园回收驿站和小区智能回收柜上，真正卡脖子的问题其实非常工程化：</p><ul><li><strong>居民投错率高</strong>：金属、纸张、塑料三类可回收物的形态千变万化（易拉罐、扁的金属盒、揉皱的纸团、泡沫塑料、PET 瓶、塑料袋…），靠人眼贴标签管理，错投比例长期在 20% 以上。</li><li><strong>回收柜需要无人值守</strong>：智能回收柜、积分回收一体机要做到「投进去就给积分」，本质上需要一套能在低功耗终端上跑实时识别的视觉模型。</li><li><strong>运营侧缺数据</strong>：哪类可回收物投放最多、哪个时段、哪个点位价值最高？没有视觉感知，运营完全是黑盒。</li><li><p><strong>传统重模型部署难</strong>：把 YOLOv8x、Mask R-CNN 这类大模型塞进 ARM 边缘盒子或者 Jetson Nano，往往算力不够 / 帧率拉胯，最终落回「拍照上传云端识别」的笨办法。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048350512" alt="在这里插入图片描述" title="在这里插入图片描述"/></p></li></ul><p>把 目标检测 器轻量化到 <strong>YOLO11n</strong> 这一档（参数量约 2.6 M、 CPU 也能实时），再封进一个开箱即用的 Streamlit 单页应用，就能让社区智能投放点、校园回收驿站、回收柜厂商<strong>用一份 yaml + 一份 best.pt</strong> 完成视觉识别能力的快速接入。本项目就是这条路线下的一份完整工程样板：基于 YOLO11n，识别<strong>金属、纸张、塑料</strong>三大类可回收物。</p><h4>视频演示与源码下载</h4><blockquote><a href="https://www.bilibili.com/video/BV1gmEA6CEbL" target="_blank">https://www.bilibili.com/video/BV1gmEA6CEbL</a></blockquote><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048343701" alt="在这里插入图片描述" title="在这里插入图片描述" loading="lazy"/></p><p>包含： 📦完整项目源码 📦 预训练 模型权重</p><p>🗂️ 数据集</p><h4>1.2 项目运行效果</h4><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048350513" alt="Web 界面总览" title="Web 界面总览" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048350514" alt="单图检测效果" title="单图检测效果" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048350515" alt="在这里插入图片描述" title="在这里插入图片描述" loading="lazy"/></p><h4>1.3 项目介绍</h4><p><strong>核心创新点：</strong></p><table><thead><tr><th>维度</th><th>设计</th></tr></thead><tbody><tr><td>类目设计</td><td>聚焦 <strong>金属 / 纸张 / 塑料</strong> 三类高价值可回收物，不做精细子类，降低误判压力</td></tr><tr><td>模型选型</td><td>YOLO11n，参数量约 2.6 M，CPU 实时、边缘盒子（Jetson / RK3588）友好</td></tr><tr><td>部署形态</td><td>Streamlit 单页应用 + 本地 best.pt，零数据库、零中间件，开箱即用</td></tr><tr><td>输入兼容</td><td>图片 / 批量图片（含 zip）/ 视频 / 摄像头 4 种输入复用同一推理引擎</td></tr><tr><td>主题封装</td><td>暖青 + 亮黄主色调，呼应"环卫 / 回收"行业视觉，一份 <code>project.yaml</code> 统一品牌</td></tr></tbody></table><p><strong>功能概览：</strong></p><ul><li>♻️ <strong>单图检测</strong>：拖拽上传 → 实时返回带框图 + 类别 / 置信度 / 坐标明细</li><li>📚 <strong>批量检测</strong>：单次最多 200 张，输出汇总表 + 类别分布柱状图 + zip 打包下载</li><li>🎬 <strong>视频检测</strong>：mp4 / avi / mov / mkv，逐帧推理后落盘新视频，便于回收柜监控录像离线复盘</li><li>📷 <strong>摄像头实时检测</strong>：可对接回收柜内置相机 / 投放点顶视相机，做实时投放感知</li></ul><p><strong>3 类可回收物</strong>：金属可回收物 🥫、纸张可回收物 📦、塑料可回收物 🧴。</p><p><strong>技术栈：</strong></p><table><thead><tr><th>层</th><th>选型</th></tr></thead><tbody><tr><td>模型框架</td><td>Ultralytics 8.3 + PyTorch</td></tr><tr><td>视觉算法</td><td>YOLO11n（Anchor-Free，C2f Backbone，Decoupled Head + DFL）</td></tr><tr><td>Web 前端</td><td>Streamlit 1.35 + 自定义 HTML 主题（暖青 #0f766e + 亮黄 #fde047）</td></tr><tr><td>视频 / 图像</td><td>OpenCV、imageio-ffmpeg</td></tr><tr><td>数据可视化</td><td>Plotly / Streamlit 原生 chart</td></tr><tr><td>配置管理</td><td>单一 <code>configs/project.yaml</code>，行业话术 / UI / 推理阈值统一收口</td></tr></tbody></table><h3>二、设计框架</h3><h4>2.1 系统架构</h4><pre><code>            ┌──────────────────────────────────────────┐
-            │      Streamlit Web 前端（单页 SPA）       │
-            │  · 三类图鉴 / 单图 / 批量 / 视频 / 摄像头   │
-            │  · 侧栏 · 阈值 · 类别筛选 · 模型缓存       │
-            └────────────────────┬─────────────────────┘
-                                 │ Python 调用
-                                 ▼
-            ┌──────────────────────────────────────────┐
-            │   推理服务层（infer_image_path 等）       │
-            │  · bytes / Path / frame → tensor          │
-            │  · 推理结果 → 标注图 + DataFrame          │
-            └────────────────────┬─────────────────────┘
-                                 │
-                                 ▼
-            ┌──────────────────────────────────────────┐
-            │    YOLO11n 推理引擎（model/best.pt）      │
-            │  Backbone (C2f+SPPF) → Neck (FPN/PAN)     │
-            │   → Decoupled Head（DFL + cls × 3）       │
-            └──────────────────────────────────────────┘</code></pre><h4>2.2 YOLO11 网络结构</h4><pre><code>输入 640×640×3
-   │
-   ▼
-[Backbone]
-  Conv → C2f → Conv → C2f → Conv → C2f → Conv → C2f → SPPF
-   │
-   ▼
-[Neck]   FPN 上采样 + PAN 下采样：P3 / P4 / P5 三级金字塔
-   │
-   ▼
-[Head]  Decoupled Head（cls 头 / reg 头解耦）
-        回归头采用 DFL（Distribution Focal Loss）
-        Anchor-Free，输出 (cx, cy, w, h, cls × 3)
-   │
-   ▼
-[NMS]    iou=0.7, conf=0.25  → 最终检测框</code></pre><h4>2.3 检测流程</h4><pre><code>投放点 / 回收柜相机帧
-        │
-        ▼
-   Letterbox 640×640 + RGB
-        │
-        ▼
-    YOLO11n forward
-        │
-        ▼
-   Detect Head 输出 (cls × 3)
-        │
-        ▼
-   conf 过滤 + NMS
-        │
-        ▼
-result.plot() 画框 + 类别 + 置信度
-        │
-        ▼
-Streamlit 双列展示 + DataFrame + 类别分布图</code></pre><h3>三、代码结构（核心 50 行 + 解析）</h3><p>项目目录：</p><pre><code>三类可回收物识别/
-├── app/streamlit_app.py        # Web 入口
-├── configs/project.yaml         # 行业话术 / UI / 训练 / 推理参数
-├── model/best.pt                # 训练好的 YOLO11n 权重
-├── scripts/                     # train / validate / export 等
-├── data/dataset/                # 训练 / 验证 / 测试集
-└── 三类可回收垃圾检测数据集/    # 原始数据集（含训练 / 验证 / 测试切分）</code></pre><p>最核心的 50 行——<strong>模型加载 + 单图推理 + Streamlit 单图 Tab</strong>：</p><pre><code class="python"># === 1. 模型加载（带 streamlit 资源缓存，避免每次刷新重载）=============
-@st.cache_resource(show_spinner=False)
-def load_model(model_path: str) -&gt; YOLO:
-    return YOLO(model_path)
-
-# === 2. 单图推理：路径 → 标注图 + 检测明细 DataFrame ===================
-def infer_image_path(model: YOLO, image_path: Path, conf: float):
-    result = model.predict(str(image_path), conf=conf, verbose=False)[0]
-    annotated = result.plot()                         # BGR ndarray，已画框
-    rows = []
-    if result.boxes is not None:
-        for box in result.boxes:
-            cls_id = int(box.cls.item())
-            x1, y1, x2, y2 = [float(v) for v in box.xyxy[0].tolist()]
-            rows.append({
-                "class_id": cls_id,
-                "class_name": result.names[cls_id],   # eg. "金属可回收物"
-                "confidence": round(float(box.conf.item()), 4),
-                "x1": round(x1, 1), "y1": round(y1, 1),
-                "x2": round(x2, 1), "y2": round(y2, 1),
-            })
-    # BGR → RGB 给 Streamlit；rows 转 DataFrame 给表格组件
-    return annotated[:, :, ::-1], pd.DataFrame(rows)
-
-# === 3. bytes → 临时文件 → 复用同一函数 ================================
-def run_image_inference(model: YOLO, image_bytes: bytes, conf: float, suffix=".jpg"):
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as f:
-        f.write(image_bytes); tmp = Path(f.name)
-    try:
-        return infer_image_path(model, tmp, conf)
-    finally:
-        tmp.unlink(missing_ok=True)
-
-# === 4. Streamlit 单图 Tab：上传 → 推理 → 双列展示 =====================
-model = load_model(str(MODEL_PATH))
-uploaded = st.file_uploader("上传一张包含可回收物的图片", type=IMAGE_UPLOAD_TYPES)
-conf = st.sidebar.slider("置信度阈值", 0.05, 0.95, DEFAULT_CONF, 0.01)
-
-if uploaded is not None:
-    annotated, df = run_image_inference(model, uploaded.getvalue(), conf,
-                                        suffix=Path(uploaded.name).suffix)
-    col1, col2 = st.columns(2)
-    col1.image(uploaded, caption="原图")
-    col2.image(annotated, caption="检测结果（带类别标签）")
-    st.dataframe(detections_to_display(df))
-    render_detection_analysis(df)</code></pre><p><strong>5 段解析：</strong></p><ol><li><code>@st.cache_resource</code> 把 <code>YOLO(model_path)</code> 的耗时锁在第一次访问，之后所有 session 共享同一份模型实例，避免每次切换 Tab 都重载（这对回收柜内置相机长时间运行尤其友好——一次加载、长期使用）。</li><li><code>result.plot()</code> 直接返回带颜色框 + 类别 + 置信度的 <code>BGR ndarray</code>，自动按 <code>class_id</code> 上色，金属 / 纸张 / 塑料三类一目了然，方便在投放点屏幕上直接展示给居民。</li><li>把每个 <code>box</code> 的 <code>cls / conf / xyxy</code> 拍成 <code>dict</code>，再拼成 <code>DataFrame</code>——后续表格、CSV 下载、类别分布柱状图、视频时间线全部复用同一份结构。运营侧拉数据时直接 <code>to_csv</code> 即可。</li><li><code>bytes → tempfile → infer_image_path</code> 这层薄壳让"前端上传"、“批量解 zip”、"视频抽帧"三种来源都复用同一个推理函数，新接一个数据源时不用重写推理逻辑。</li><li>Streamlit 的 <code>cache_resource + file_uploader + dataframe</code> 组合，让一个产品级可回收物识别页面只需 11 行代码——这是 Streamlit 在 AI 应用快速出活的关键，特别适合给回收柜厂商做"内嵌大屏"或"管理后台"。</li></ol><h3>四、训练效果</h3><p>模型在自建的「三类可回收垃圾检测数据集」（约 2800 张实拍图像，金属 / 纸张 / 塑料三类）上完成 YOLO11n 训练并保存 <code>best.pt</code>。在测试集上检测效果良好，可稳定识别金属、纸张、塑料三类典型可回收物，已能满足社区智能投放点、校园回收驿站、智能回收柜等场景的初筛 / 计数 / 引导投放等使用需要。</p><p>从单图检测样例（上文「项目运行效果」截图）可以看到：在不同光照、不同摆放姿态、不同颜色背景下，模型都能给出框 + 类别 + 置信度，配合 Streamlit 前端实时呈现给居民和运营方。</p><h3>五、项目总结</h3><p><strong>做对了什么：</strong></p><ul><li>把可回收物识别<strong>收敛到金属/纸张/塑料三大类</strong>，避免了"几十个细分子类"带来的标注成本爆炸和类间混淆，更贴合社区投放点、回收柜的实际计费 / 计数颗粒度；</li><li>用 YOLO11n 这种<strong>轻量级 Anchor-Free 检测器</strong>作为底座，CPU 也能实时，算力预算压到回收柜内置 ARM 处理器一档；</li><li>用一份 <code>project.yaml</code> 把"行业话术 / UI 主题色 / 类别映射 / 训练超参 / 推理阈值"全部收口，迁移到「四类可回收物」「六类生活垃圾」等场景只需替换数据集与重新训练；</li><li>单图、批量、视频、摄像头四种输入复用同一个 <code>infer_image_path</code>，后期接 RTSP 投放点摄像头流时只需把"摄像头帧"喂进来即可。</li></ul><p><strong>还能怎么做：</strong></p><ul><li>在数据集层面持续补充<strong>强光 / 逆光 / 多物堆叠 / 透明塑料</strong>等难样本，把"塑料瓶 vs 玻璃瓶"、"金属罐 vs 喷漆纸罐"这类高度相似的样本判别力进一步拉开；</li><li>接入<strong>重量传感器 + 视觉识别双路投票</strong>，回收柜场景中能显著降低单路视觉的误判（视觉看到塑料 + 称重判断为玻璃 → 触发人工复核）；</li><li>把检测结果 + 时间戳 + 点位 ID 推送到运营后台，做「点位画像」「时段画像」「品类增长曲线」，让回收业务真正变成数据驱动的精细化运营。</li></ul><p><strong>一句话总结</strong>：YOLO11 + Streamlit 让"社区可回收物视觉识别"从一个研究课题变成了"一份 yaml + 一份 best.pt + 一份 streamlit\_app.py"的工程化标准动作，本文给出了一份可以直接 fork 落地的样板。</p>]]></description></item><item>    <title><![CDATA[基于 YOLO11 的六类生活垃圾视觉分类系统：从模型到 Streamlit 全流程实战 风筝 ]]></title>    <link>https://segmentfault.com/a/1190000048350523</link>    <guid>https://segmentfault.com/a/1190000048350523</guid>    <pubDate>2026-10-14 00:02:52</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <h2>基于 YOLO11 的六类生活垃圾 视觉 分类系统：从模型到 Streamlit 全流程实战</h2><blockquote>关键词：YOLO11、生活垃圾分类、智能督导、社区投放点、Streamlit、目标检测、Ultralytics</blockquote><h3>一、背景</h3><h4>1.1 行业痛点</h4><p>「生活垃圾分类」推行多年，落到社区投放点、智能督导亭、中型分拣线上的真实痛点其实非常工程化：</p><ul><li><strong>居民投错率高</strong>：纸箱、玻璃、金属、厨余、纸张、塑料这 6 类相互混淆，靠人眼贴标签管理，错投比例长期在 25% 以上；</li><li><strong>督导员效率低</strong>：一个投放点配 1~2 个督导员，每人每天面对几百次投放，眼到嘴到，疲劳即漏判；</li><li><strong>分拣线分流难</strong>：中型分拣线如果只能识别"干 / 湿"两类，后续机械臂或人工二次分拣的成本依然居高不下；</li><li><p><strong>运营缺数据</strong>：哪类垃圾投放最多、哪个时段、哪个点位投错率最高？没有视觉感知，运营完全是黑盒。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048350525" alt="在这里插入图片描述" title="在这里插入图片描述"/></p><p>把"6 类生活垃圾识别"做成一个轻量级目标检测任务，让模型在投放点顶视相机、督导亭 IPC、中型分拣线相机这些低算力设备上实时跑起来，就能让社区运营、督导考评、分拣调度同时受益。本项目就是这条路线下的完整落点：基于 YOLO11n + Streamlit，识别<strong>纸箱、玻璃、金属、厨余有机物、纸张、塑料</strong>这 6 大类生活垃圾。</p></li></ul><h4>视频演示与 源码 下载</h4><blockquote><a href="https://www.bilibili.com/video/BV125EA6NEnP" target="_blank">https://www.bilibili.com/video/BV125EA6NEnP</a></blockquote><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048343701" alt="在这里插入图片描述" title="在这里插入图片描述" loading="lazy"/></p><p>包含： 📦完整项目源码</p><p>📦 预训练 模型权重</p><p>🗂️数据集</p><h4>1.2 项目运行效果</h4><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048350526" alt="Web 界面总览" title="Web 界面总览" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048350527" alt="单图检测效果" title="单图检测效果" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048350528" alt="在这里插入图片描述" title="在这里插入图片描述" loading="lazy"/></p><h4>1.3 项目介绍</h4><p><strong>核心创新点：</strong></p><table><thead><tr><th>维度</th><th>设计</th></tr></thead><tbody><tr><td>类目设计</td><td><strong>6 类</strong>生活垃圾全覆盖，含厨余有机物等湿垃圾，干湿混合场景适配</td></tr><tr><td>模型选型</td><td>YOLO11n，参数量约 2.6 M，CPU 实时、督导亭 IPC / 边缘盒子友好</td></tr><tr><td>部署形态</td><td>Streamlit 单页应用 + 本地 best.pt，零数据库、零中间件</td></tr><tr><td>输入兼容</td><td>图片 / 批量图片（含 zip）/ 视频 / 摄像头 4 种输入复用同一推理引擎</td></tr><tr><td>主题封装</td><td>深绿 + 橙黄主色调（#166534 + #f97316），呼应"环保 / 督导"行业感</td></tr></tbody></table><p><strong>功能概览：</strong></p><ul><li>🗑️ <strong>单图检测</strong>：拖拽上传 → 实时返回带框图 + 类别 / 置信度 / 坐标明细</li><li>📚 <strong>批量检测</strong>：单次最多 200 张，输出汇总表 + 类别分布柱状图 + zip 打包下载</li><li>🎬 <strong>视频检测</strong>：mp4 / avi / mov / mkv，逐帧推理后落盘新视频，便于督导回看</li><li>📷 <strong>摄像头实时检测</strong>：可对接投放点顶视相机 / 督导亭 IPC / 分拣线相机</li></ul><p><strong>6 类生活垃圾</strong>：纸箱 📦、玻璃 🍾、金属 🥫、厨余有机物 🥦、纸张 📄、塑料 🧴。</p><p><strong>技术栈：</strong></p><table><thead><tr><th>层</th><th>选型</th></tr></thead><tbody><tr><td>模型框架</td><td>Ultralytics 8.3 + PyTorch</td></tr><tr><td>视觉算法</td><td>YOLO11n（Anchor-Free，C2f Backbone，Decoupled Head + DFL）</td></tr><tr><td>Web 前端</td><td>Streamlit 1.35 + 自定义 HTML 主题</td></tr><tr><td>视频 / 图像</td><td>OpenCV、imageio-ffmpeg</td></tr><tr><td>数据可视化</td><td>Plotly / Streamlit 原生 chart</td></tr><tr><td>配置管理</td><td>单一 <code>configs/project.yaml</code>，行业话术 / UI / 推理阈值统一收口</td></tr></tbody></table><h3>二、设计框架</h3><h4>2.1 系统架构</h4><pre><code>            ┌──────────────────────────────────────────┐
-            │      Streamlit Web 前端（单页 SPA）       │
-            │  · 6 类图鉴 / 单图 / 批量 / 视频 / 摄像头   │
-            │  · 侧栏 · 阈值 · 类别筛选 · 模型缓存       │
-            └────────────────────┬─────────────────────┘
-                                 │ Python 调用
-                                 ▼
-            ┌──────────────────────────────────────────┐
-            │   推理服务层（infer_image_path 等）       │
-            │  · bytes / Path / frame → tensor          │
-            │  · 推理结果 → 标注图 + DataFrame          │
-            └────────────────────┬─────────────────────┘
-                                 │
-                                 ▼
-            ┌──────────────────────────────────────────┐
-            │    YOLO11n 推理引擎（model/best.pt）      │
-            │  Backbone (C2f+SPPF) → Neck (FPN/PAN)     │
-            │   → Decoupled Head（DFL + cls × 6）       │
-            └──────────────────────────────────────────┘</code></pre><h4>2.2 YOLO11 网络结构</h4><pre><code>输入 640×640×3
-   │
-   ▼
-[Backbone]
-  Conv → C2f → Conv → C2f → Conv → C2f → Conv → C2f → SPPF
-   │
-   ▼
-[Neck]   FPN 上采样 + PAN 下采样：P3 / P4 / P5 三级金字塔
-   │
-   ▼
-[Head]  Decoupled Head（cls 头 / reg 头解耦）
-        回归头采用 DFL（Distribution Focal Loss）
-        Anchor-Free，输出 (cx, cy, w, h, cls × 6)
-   │
-   ▼
-[NMS]    iou=0.7, conf=0.25  → 最终检测框</code></pre><h4>2.3 检测流程</h4><pre><code>投放点 / 督导亭相机帧
-        │
-        ▼
-   Letterbox 640×640 + RGB
-        │
-        ▼
-    YOLO11n forward
-        │
-        ▼
-   Detect Head 输出 (cls × 6)
-        │
-        ▼
-   conf 过滤 + NMS
-        │
-        ▼
-result.plot() 画框 + 类别 + 置信度
-        │
-        ▼
-Streamlit 双列展示 + DataFrame + 类别分布图</code></pre><h3>三、代码结构（核心 50 行 + 解析）</h3><p>项目目录：</p><pre><code>六类生活垃圾分类/
-├── app/streamlit_app.py        # Web 入口
-├── configs/project.yaml         # 行业话术 / UI / 训练 / 推理参数
-├── model/best.pt                # 训练好的 YOLO11n 权重
-├── scripts/                     # train / validate / export 等
-├── data/dataset/                # 训练 / 验证 / 测试集
-└── 六类生活垃圾检测数据集/      # 原始数据集（含训练 / 验证 / 测试切分）</code></pre><p>最核心的 50 行——<strong>模型加载 + 单图推理 + Streamlit 单图 Tab</strong>：</p><pre><code class="python"># === 1. 模型加载（带 streamlit 资源缓存，避免每次刷新重载）=============
-@st.cache_resource(show_spinner=False)
-def load_model(model_path: str) -&gt; YOLO:
-    return YOLO(model_path)
-
-# === 2. 单图推理：路径 → 标注图 + 检测明细 DataFrame ===================
-def infer_image_path(model: YOLO, image_path: Path, conf: float):
-    result = model.predict(str(image_path), conf=conf, verbose=False)[0]
-    annotated = result.plot()                         # BGR ndarray，已画框
-    rows = []
-    if result.boxes is not None:
-        for box in result.boxes:
-            cls_id = int(box.cls.item())
-            x1, y1, x2, y2 = [float(v) for v in box.xyxy[0].tolist()]
-            rows.append({
-                "class_id": cls_id,
-                "class_name": result.names[cls_id],   # eg. "厨余有机物"
-                "confidence": round(float(box.conf.item()), 4),
-                "x1": round(x1, 1), "y1": round(y1, 1),
-                "x2": round(x2, 1), "y2": round(y2, 1),
-            })
-    return annotated[:, :, ::-1], pd.DataFrame(rows)
-
-# === 3. bytes → 临时文件 → 复用同一函数 ================================
-def run_image_inference(model: YOLO, image_bytes: bytes, conf: float, suffix=".jpg"):
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as f:
-        f.write(image_bytes); tmp = Path(f.name)
-    try:
-        return infer_image_path(model, tmp, conf)
-    finally:
-        tmp.unlink(missing_ok=True)
-
-# === 4. Streamlit 单图 Tab：上传 → 推理 → 双列展示 =====================
-model = load_model(str(MODEL_PATH))
-uploaded = st.file_uploader("上传一张待识别的生活垃圾图片", type=IMAGE_UPLOAD_TYPES)
-conf = st.sidebar.slider("置信度阈值", 0.05, 0.95, DEFAULT_CONF, 0.01)
-
-if uploaded is not None:
-    annotated, df = run_image_inference(model, uploaded.getvalue(), conf,
-                                        suffix=Path(uploaded.name).suffix)
-    col1, col2 = st.columns(2)
-    col1.image(uploaded, caption="原图")
-    col2.image(annotated, caption="检测结果（带垃圾类别标签）")
-    st.dataframe(detections_to_display(df))
-    render_detection_analysis(df)</code></pre><p><strong>5 段解析：</strong></p><ol><li><code>@st.cache_resource</code> 把 <code>YOLO(model_path)</code> 的耗时锁在第一次访问，督导亭多终端 session 共享同一份模型实例，避免每次切换 Tab 都重载。</li><li><code>result.plot()</code> 直接返回带颜色框 + 类别 + 置信度的 <code>BGR ndarray</code>，6 类垃圾自动 6 种颜色，便于在投放点屏幕上直接展示给居民。</li><li>把每个 <code>box</code> 的 <code>cls / conf / xyxy</code> 拍成 <code>dict</code> 再拼成 <code>DataFrame</code>——后续表格、CSV 下载、类别分布柱状图、视频时间线全部复用同一份结构，运营拉数据时直接 <code>to_csv</code>。</li><li><code>bytes → tempfile → infer_image_path</code> 这层薄壳让"前端上传 / 批量解 zip / 视频抽帧 / 摄像头帧"四种来源都复用同一个推理函数，新接 RTSP 督导亭流时不用重写推理逻辑。</li><li>Streamlit 的 <code>cache_resource + file_uploader + dataframe</code> 组合，让一个产品级垃圾分类页面只需 11 行代码——非常适合给环卫公司做"督导大屏"或"运营后台"。</li></ol><h3>四、训练效果</h3><p>模型在自建的「六类生活垃圾检测数据集」（约 2500 张实拍图像，6 类生活垃圾）上完成 YOLO11n 训练并保存 <code>best.pt</code>。在测试集上检测效果良好，可稳定识别纸箱、玻璃、金属、厨余有机物、纸张、塑料这六类典型生活垃圾，已能满足社区投放点、智能督导亭、中型分拣线等场景的初筛 / 督导考评 / 类别统计使用需要。</p><p>从单图检测样例（上文「项目运行效果」截图）可以看到：在不同光照、不同摆放姿态、不同混合堆叠程度下，模型都能给出框 + 类别 + 置信度，配合 Streamlit 前端实时呈现给居民和督导员。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048350529" alt="在这里插入图片描述" title="在这里插入图片描述" loading="lazy"/></p><h3>五、项目总结</h3><p><strong>做对了什么：</strong></p><ul><li>把垃圾分类<strong>收敛到 6 大类</strong>，覆盖可回收物 + 厨余湿垃圾，比"四分法"更细但又比"几十个子类"更易标注与训练；</li><li>用 YOLO11n 轻量底座，<strong>督导亭 IPC、ARM 边缘盒子也能实时跑</strong>，不需要 GPU；</li><li>一份 <code>project.yaml</code> 把"行业话术 / UI 主题色 / 类别映射 / 推理阈值"全部收口，迁移到「四分类 / 八分类」等地方标准只需替换数据集；</li><li>单图、批量、视频、摄像头四种输入复用同一个 <code>infer_image_path</code>，后期接 RTSP 投放点摄像头流时只需把"摄像头帧"喂进来即可。</li></ul><p><strong>还能怎么做：</strong></p><ul><li>在数据集层面持续补充<strong>强光 / 逆光 / 厨余湿料堆叠 / 透明塑料</strong>等难样本，把"湿厨余 vs 纸张"、"玻璃瓶 vs 透明塑料瓶"这类高度相似样本的判别力进一步拉开；</li><li>接入<strong>重量传感器 + 视觉双路投票</strong>，督导亭场景中能显著降低单路视觉的误判（视觉判塑料 + 称重判玻璃 → 触发督导员复核）；</li><li>把检测结果 + 时间戳 + 点位 ID 推送到运营后台，做「点位画像 / 时段画像 / 投错率排行榜」，让垃圾分类督导从"靠人监督"变成"数据驱动"。</li></ul><p><strong>一句话总结</strong>：YOLO11 + Streamlit 让"社区生活垃圾视觉分类"从一个研究课题变成了"一份 yaml + 一份 best.pt + 一份 streamlit\_app.py"的工程化标准动作，本文给出了一份可以直接 fork 落地的样板。</p>]]></description></item><item>    <title><![CDATA[你以为的比特币区块高度，99%的人都理解错了 倔强的桔子 ]]></title>    <link>https://segmentfault.com/a/1190000048350290</link>    <guid>https://segmentfault.com/a/1190000048350290</guid>    <pubDate>2026-10-14 00:02:01</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p><strong>摘要：</strong>比特币区块高度，看似简单的一个数字，却藏着无数人的误解。有人以为它是区块的“编号”，有人以为它代表“时间”，还有人以为它和“难度”直接挂钩。今天，我们就来彻底拆解这个被99%的人误解的概念，让你一次看透比特币的底层逻辑。</p><h2>一、先问一句：你真的懂区块高度吗？</h2><p>打开任何一个区块链浏览器，你都会看到“区块高度”这个数字。比如“区块高度 800,000”，看起来就像是一个简单的序号。但问题来了——<strong>这个数字到底代表什么？</strong></p><p>很多人脱口而出：“就是第800,000个区块呗！”</p><p>对，但也不全对。这个回答只答对了一半，而另一半，恰恰是99%的人理解错的地方。</p><blockquote>区块高度 ≠ 区块的“出生编号”，它更像是一条链上的“里程碑刻度”。</blockquote><h2>二、区块高度的真正定义</h2><p>在比特币网络中，区块高度（Block Height）指的是<strong>从创世区块（高度0）开始，到当前区块为止，已经链接的区块数量</strong>。</p><p>换句话说：</p><ul><li>创世区块的高度是 <strong>0</strong>，不是 1。</li><li>每挖出一个新区块，高度就 +1。</li><li>高度代表的是“链的长度”，而不是“区块的编号”。</li></ul><p>这里就出现了第一个误区：<strong>很多人以为创世区块是“第1个区块”，所以高度应该是1。</strong>但实际上，它的高度是0。这个“0”不是随便定的，它意味着比特币的链是从“零”开始生长的，而不是从“一”开始计数的。</p><h2>三、为什么说99%的人都理解错了？</h2><p>我们总结了最常见的三大误解，看看你中了几个：</p><table><thead><tr><th>误解</th><th>错误认知</th><th>真相</th></tr></thead><tbody><tr><td>误解一</td><td>区块高度 = 区块编号</td><td>高度是链上区块的累计数量，不是编号</td></tr><tr><td>误解二</td><td>高度越高 = 区块越“新”</td><td>高度只代表链长，不代表时间先后（分叉时可能高度相同）</td></tr><tr><td>误解三</td><td>高度决定挖矿难度</td><td>难度由全网算力决定，与高度无直接关系</td></tr></tbody></table><p>看到这里，你是不是已经开始怀疑自己了？别急，我们一个个拆开讲。</p><h2>四、误解一：区块高度是“编号”？</h2><p>很多人把区块高度当成“身份证号”，觉得每个区块都有一个唯一的编号。但真相是：<strong>高度只是一个“位置标记”，同一个高度上，可能同时存在多个不同的区块。</strong></p><p>这就是比特币的<strong>分叉（Fork）</strong>现象。</p><p>当两个矿工几乎同时挖出区块时，网络上会出现两个高度相同的区块。此时，链上会出现“临时分叉”。最终，只有被更多算力确认的那条链会胜出，另一个区块会被“孤立”。</p><p>所以，<strong>高度相同 ≠ 区块相同</strong>。高度只是一个“层数”，而不是“唯一编号”。</p><h2>五、误解二：高度越高，区块越“新”？</h2><p>这个误解非常普遍。很多人看到“区块高度 800,000”，就以为它比“区块高度 799,999”更新。在正常情况下，确实如此。</p><p>但在分叉发生时，情况就不同了：</p><ul><li>链 A 的高度是 800,000，链 B 的高度也是 800,000。</li><li>两条链上的区块内容可能完全不同。</li><li>哪条链“更正确”，取决于哪条链累积了更多的工作量证明（PoW）。</li></ul><p>所以，<strong>高度只能说明“链有多长”，不能说明“区块有多新”</strong>。真正决定“新旧”的，是区块的时间戳和链的累积工作量。</p><h2>六、误解三：高度决定挖矿难度？</h2><p>这个误解在矿工圈子里尤其常见。有人以为“区块高度越高，挖矿难度越大”。</p><p>真相是：<strong>挖矿难度与区块高度没有直接关系。</strong></p><p>难度调整的依据是<strong>全网算力（Hashrate）</strong>和<strong>出块时间</strong>。比特币网络每 2016 个区块（约两周）调整一次难度，目标是让平均出块时间保持在 10 分钟左右。</p><p>如果全网算力暴涨，出块速度变快，难度就会上调；反之则下调。高度只是“触发调整的计数器”，而不是“难度的决定者”。</p><h2>七、区块高度到底有什么用？</h2><p>既然高度不是编号、不代表时间、不决定难度，那它到底有什么用？</p><p>其实，区块高度是比特币网络中最基础的“坐标系统”：</p><ul><li><strong>定位区块</strong>：通过高度，可以快速在链上定位到某个区块。</li><li><strong>验证链长</strong>：高度可以直观反映链的长度和同步进度。</li><li><strong>触发规则</strong>：很多协议规则（如难度调整、减半）都以高度为触发条件。</li><li><strong>分叉判断</strong>：节点通过比较高度和累积工作量，决定哪条链是主链。</li></ul><p>简单来说，区块高度就是比特币世界的“里程碑”，它记录着链走了多远，而不是“这块石头叫什么名字”。</p><h2>八、看懂区块高度</h2><p>为了让你彻底理解：</p><ul><li>创世区块高度为 0。</li><li>每个新区块链接到前一个区块，高度 +1。</li><li>分叉时，两个区块可能共享同一个高度。</li><li>最终，累积工作量更大的链成为主链。</li></ul><h2>九、用代码验证一下</h2><p>光说不练假把式。我们用 Python 简单验证一下区块高度的概念：</p><pre><code class="python"># 模拟比特币区块高度计算
-class Block:
-    def __init__(self, height, prev_hash):
-        self.height = height
-        self.prev_hash = prev_hash
-创世区块
-genesis = Block(0, "0" * 64)
-print(f"创世区块高度: {genesis.height}")
-模拟挖出 3 个新区块
-blocks = [genesis]
-for i in range(1, 4):
-new_block = Block(i, blocks[-1].prev_hash)
-blocks.append(new_block)
-print(f"新区块高度: {new_block.height}")
-输出当前链高度
-print(f"当前链高度: {blocks[-1].height}")</code></pre><p>运行结果：</p><pre><code class="bash">创世区块高度: 0
-新区块高度: 1
-新区块高度: 2
-新区块高度: 3
-当前链高度: 3</code></pre><p>看到了吗？高度从 0 开始，每加一个区块就 +1。这就是区块高度的本质。</p><h2>十、总结：别再被“高度”骗了</h2><p>最后，我们用一句话总结：</p><blockquote><strong>区块高度是比特币链的“里程表”，不是“编号簿”。</strong></blockquote><p>它记录的是链的长度，而不是区块的身份。理解了这一点，你就已经超越了99%的人。</p><p>如果你觉得这篇文章对你有帮助，欢迎点赞、收藏、转发，让更多人走出这个误区！</p><p>评论区聊聊：<strong>你之前是怎么理解区块高度的？</strong></p>]]></description></item>  </channel></rss>
+└── data.yaml</code></pre><p>各数据集作用如下：</p><ul><li><strong>train/images &amp; labels</strong>：训练集图像与标签，用于模型参数学习与特征提取；</li><li><strong>valid/images &amp; labels</strong>：验证集图像与标签，用于超参数调优、早停监控及防止过拟合；</li><li><strong>test/images &amp; labels</strong>：测试集图像与标签，用于最终模型性能评估与泛化能力测试。</li></ul><p>标注文件为同名.txt格式，每行格式为<code>类别索引 x_center y_center width height</code>，坐标均为归一化值，配套data.yaml已配置好类别名称与数量，可直接适配YOLO系列等目标检测框架。</p><h3>五、数据集核心优势</h3><h4>1. 专注洁净区PPE合规检测</h4><p>本数据集以无菌环境人员防护装备穿戴合规性检测为核心任务，所有图像聚焦于医院手术室、制药洁净厂房、食品加工车间等高洁净度场景。类别设计贴合PPE合规管理实际需求，六类装备从头部到脚部形成完整的穿戴合规检测体系，更利于训练出针对无菌环境的高精度检测模型。</p><h4>2. 完整的PPE六件套覆盖</h4><p>从头到脚的完整穿戴合规检测：</p><ul><li><strong>头部防护</strong>：发网（包裹头发）、护目镜（眼部防护）</li><li><strong>面部防护</strong>：口罩（口鼻防护）</li><li><strong>躯干防护</strong>：防护服（全身防护）</li><li><strong>手部防护</strong>：手套（无菌操作）</li><li><strong>足部防护</strong>：鞋套（防止污染）</li></ul><p>完整覆盖洁净区人员准入的PPE穿戴要求，为合规校验提供全面的目标检测基础。</p><h4>3. 丰富的穿戴组合与场景</h4><p>数据覆盖多种实际穿戴状态：</p><ul><li><strong>完整穿戴</strong>：全部六件装备齐全</li><li><strong>部分缺失</strong>：缺少个别装备（如未戴发网、未穿鞋套等）</li><li><strong>不同人员</strong>：不同体形、站位的穿戴差异</li><li><strong>不同朝向</strong>：正面、侧面、背面的人员姿态</li><li><strong>多人同框</strong>：同一画面多人穿着的密集检测场景</li></ul><p>贴近真实洁净区入口与车间监控视角。</p><h4>4. 多样的拍摄条件</h4><p>数据覆盖：</p><ul><li><strong>光照条件</strong>：室内均匀照明、不同区域亮度差异</li><li><strong>拍摄角度</strong>：监控视角、更衣通道视角、不同高度</li><li><strong>遮挡情况</strong>：多人同框时的部分遮挡</li><li><strong>背景环境</strong>：洁净室走廊、更衣间、车间入口等</li></ul><p>能够有效增强模型在真实洁净区环境中的鲁棒性。</p><h4>5. 高质量人工标注</h4><p>所有图像均经过人工精准标注：</p><ul><li>六类防护用品边界框贴合实际穿戴部位</li><li>多目标同框场景标注完整</li><li>类别定义明确、无混淆</li><li>满足高精度检测模型训练需求</li></ul><p>有效保证模型训练质量。</p><h4>6. 即用型数据组织</h4><p>标准目录结构+中文类别配置，无需复杂预处理，可直接用于模型训练，降低使用门槛。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048350496" alt="在这里插入图片描述" title="在这里插入图片描述" loading="lazy"/></p><h3>六、适用场景</h3><h4>医院手术室、ICU等区域医护人员着装合规检测</h4><p>在手术室、ICU入口自动检测医护人员PPE穿戴完整性，防止防护缺失导致的感染风险。</p><h4>制药洁净厂房、GMP车间人员进出合规校验</h4><p>在制药车间更衣通道自动校验人员穿戴是否合规，保障药品生产环境洁净度。</p><h4>食品加工车间卫生规范自动监管</h4><p>在食品加工车间入口自动检测人员卫生防护装备穿戴情况，保障食品安全。</p><h4>实验室生物安全防护监督</h4><p>在生物实验室、P2/P3实验室入口检测人员生物安全防护穿戴合规性。</p><h4>安全生产智能监控</h4><p>集成于洁净区安全监控系统，实现PPE穿戴的自动检测、缺失告警与数据留痕。</p><h4>教学科研</h4><p>用于多目标检测 算法 研究与调优、安全合规检测系统开发等科研场景。</p><h3>七、适用研究方向</h3><p>本数据集可广泛应用于以下研究领域：</p><ul><li>人员防护装备（PPE）检测研究（6类）</li><li>多类别目标检测研究</li><li>穿戴合规性自动审核研究</li><li>洁净区安全智能监控研究</li><li>工业卫生与生物安全视觉研究</li><li>YOLO系列模型优化研究</li><li>轻量化检测模型与边缘部署研究</li><li>域适应与跨场景泛化研究</li></ul><h3>八、总结</h3><p><strong>无菌防护装备检测数据集</strong>包含<strong>约4000张高质量标注图像</strong>，采用标准 YOLO格式 构建，专注于无菌环境人员防护装备穿戴合规性的检测任务。数据集覆盖防护服、手套、护目镜、发网、口罩、鞋套6类核心PPE目标，从头到脚形成完整的穿戴合规检测体系，具有类别完整、场景真实、标注精准等特点，可广泛应用于医院手术室、制药洁净厂房、食品加工车间、实验室等场景的安全合规监管，是开展PPE穿戴检测算法研发与洁净区智能安全管理系统建设的优质数据资源。</p>]]></description></item>  </channel></rss>
