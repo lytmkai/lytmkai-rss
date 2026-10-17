@@ -1,4 +1,418 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[【踩坑实录】3块核心板烧出来的电源+ADC设计避坑指南]]></title>    <link>https://www.elecfans.com/d/8764274.html</link>    <guid>https://www.elecfans.com/d/8764274.html</guid>    <pubDate>2026-10-17 12:15:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8764274" value="https://file.elecfans.com/web1/M00/8F/77/pIYBAFy9b6-AFGmTABkwgaxk9VI055.pdf"/><h1>【踩坑实录】3块核心板烧出来的<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>+<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>设计避坑指南</h1>
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[冷门8位低功耗MCU真香！STM8L151/152全拆解：做低功耗项目的可以收藏了]]></title>    <link>https://www.elecfans.com/d/8764201.html</link>    <guid>https://www.elecfans.com/d/8764201.html</guid>    <pubDate>2026-10-17 12:05:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8764201" value="http://file.elecfans.com/web2/M00/27/9A/pYYBAGHCk4eAVi7CAB5ebkXWlyQ411.pdf"/><h1>冷门8位低功耗<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>真香！<a href="https://bbs.elecfans.com/zhuti_stm32_1.html" target="_blank"><u>STM8</u></a>L151/152全<a href="https://www.elecfans.com/v/tag/899/" target="_blank"><u>拆解</u></a>：做低功耗项目的可以收藏了</h1>
+<p>最近在做一款电池供电的野外温湿度采集节点，要求AA电池至少撑2年，翻了一圈MCU最终选了意法的STM8L系列。不得不说这颗8位机的低功耗参数是真的亮眼，特意整理了下 datasheet 里的核心信息，再加自己踩过的坑，给要做低功耗项目的兄弟做个参考。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8764201" target="_blank">STM8L151C4T3.pdf</a></p>
+<hr/>
+<h2>一、先唠唠这颗MCU适合啥项目</h2>
+<p>咱做硬件的都懂，低功耗项目最头疼的就是功耗、外设、成本三者平衡，STM8L151/152刚好卡在这个 sweet spot 上，我自己实测下来，这几个场景用它完全够打：</p>
+<ul>
+<li>电池供电的无线<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>节点、水<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>表</li>
+<li>智能门锁、门禁这种低频次唤醒的设备</li>
+<li>便携医疗设备、可穿戴小设备</li>
+<li>带段码LCD的低功耗产品，比如温控器、电子秤</li>
+<li>成本敏感的<a href="https://www.elecfans.com/kongzhijishu/gongyeanquan/536865.htm" target="_blank"><u>触摸按键</u></a>类产品</li>
+</ul>
+<p>核心就是：低功耗、外设全、成本比32位低功耗MCU低至少30%，对性能要求不极端的项目完全够用。</p>
+<hr/>
+<h2>二、核心参数扒一扒，哪些值得关注</h2>
+<h3>1. 最核心的低功耗能力，真的是卷到极致</h3>
+<table>
+<thead>
+<tr>
+<th>意法给这颗MCU做了5档低功耗模式，我把实测有用的参数列出来，大家直观感受下：</th>
+<th>低功耗模式</th>
+<th>典型功耗</th>
+<th>适用场景</th>
+<th>唤醒时间</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Halt</td>
+<td>350nA</td>
+<td>长时间休眠，只保留<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>数据</td>
+<td>4.7µs</td>
+</tr>
+<tr>
+<td><a href="https://m.hqchip.com/app/1703" target="_blank"><u>Ac</u></a><a href="https://bbs.elecfans.com/group_715" target="_blank"><u>ti</u></a>ve-halt（带RTC运行）</td>
+<td>1.3µA</td>
+<td>定时唤醒采集场景</td>
+<td>4.7µs</td>
+</tr>
+<tr>
+<td>低功耗等待</td>
+<td>3µA</td>
+<td>休眠时保留部分外设运行</td>
+<td>-</td>
+</tr>
+<tr>
+<td>低功耗运行</td>
+<td>5.1µA</td>
+<td>极低频率跑简单逻辑，不用唤醒</td>
+<td>-</td>
+</tr>
+<tr>
+<td>运行模式</td>
+<td>195µA/MHz</td>
+<td>正常工作状态</td>
+<td>-</td>
+</tr>
+</tbody>
+</table>
+<p>这个参数是什么概念？两节AA电池（容量约2000mAh），按每天唤醒10次每次工作10ms算，理论上能跑10年以上，做低频次采集的项目完全不用考虑电池寿命问题。而且IO口漏电流才50nA，只要不用的IO不浮空，基本不会有额外功耗浪费。</p>
+<h3>2. 核心和存储，8位机里的第一梯队</h3>
+<ul>
+<li>内核是改进版STM8，哈佛架构3级流水线，最高16MHz主频，16MIPS性能，跑个简单的采集、滤波、<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>逻辑完全够</li>
+<li>存储分两档：16K/32K Flash，1K自带ECC的Data EEP<a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a>，2K RAM</li>
+<li>EEPROM支持读-while-写（RWW），存采集数据的时候不用停程序，对低功耗场景太友好了，不用额外挂起任务等写入完成。</li>
+</ul>
+<h3>3. 外设真的全，省了好多外接芯片</h3>
+<p>我当时选它最大的原因就是外设不用外接，BOM成本直接压下来：</p>
+<ul>
+<li><strong><a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>外设</strong>：12位1Msps <a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>（最多25通道，内置<a href="https://www.elecfans.com/tags/温度传感器/" target="_blank"><u>温度传感器</u></a>和基准源），12位带输出缓冲的<a href="https://www.elecfans.com/tags/dac/" target="_blank"><u>DAC</u></a>，两个超低功耗<a href="https://m.hqchip.com/app/1737" target="_blank"><u>比较器</u></a>（其中一个是轨对轨），做模拟采集不用额外加<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>C芯片</li>
+<li><strong>显示外设</strong>：STM8L152型号自带4x28段LCD驱动，内置升压电路，对比度不用额外管，做段码屏产品直接省了外部LCD驱动钱</li>
+<li><strong>通信外设</strong>：SPI（最高8M）、400K <a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>（支持SMBus/PMBus）、USART（支持ISO7816/IrDA），主流通信都覆盖了</li>
+<li><strong><a href="https://www.elecfans.com/tags/定时器/" target="_blank"><u>定时器</u></a></strong>：1个16位高级控制定时器（支持<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机控制</u></a>）、2个16位通用定时器、1个8位基础定时器，还有窗口+独立<a href="https://www.elecfans.com/tags/看门狗/" target="_blank"><u>看门狗</u></a>，蜂鸣器输出直接集成</li>
+<li><strong>触摸功能</strong>：最多支持16路<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>触摸，ST有免费的触摸库，直接调用就行，不用自己写触摸<a href="https://www.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>，省了外接触摸芯片的钱</li>
+<li><strong><a href="https://www.elecfans.com/tags/dma/" target="_blank"><u>DMA</u></a></strong>：4通道DMA，ADC、DAC、SPI、I2C、USART、定时器都支持，传输数据不用占<a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>，既省性能又省功耗</li>
+</ul>
+<h3>4. <a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>可靠性，电池供电场景太需要了</h3>
+<ul>
+<li>供电范围1.8V~3.6V，掉电时最低1.65V还能正常工作，适配纽扣电池、AA/AAA电池各种供电场景</li>
+<li>内置5档可选阈值的BOR掉电复位，7档可选的PVD可<a href="https://bbs.elecfans.com/group_75" target="_blank"><u>编程</u></a>电压检测，电池快没电的时候能提前触发中断存数据，再也不怕突然掉电丢采集记录了</li>
+<li><a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>源也全：外部1~16M晶振、外部32.768k晶振，内部16M出厂校准RC、内部38k低功耗RC，不用额外贴32k晶振也能跑RTC，省成本。</li>
+</ul>
+<hr/>
+<h2>三、选型避坑指南，别买错了</h2>
+<p>好多人买STM8L容易搞混型号，给大家把命名规则拆明白：</p>
+<blockquote>
+<p>例：STM8L152C6T3</p>
+<ul>
+<li>151/152：151不带LCD驱动，152带LCD驱动</li>
+<li>C/K/G：C是48脚，K是32脚，G是28脚</li>
+<li>4/6：4是16K Flash，6是32K Flash</li>
+<li>U/T/Y：U是UFQFPN封装，T是LQFP封装，Y是WLCSP封装</li>
+<li>6/7/3：温度档位，6是-40~85℃，7是-40~105℃，3是工业级-40~125℃</li>
+<li>末尾带TR是卷带包装，买散片的话不用管</li>
+</ul>
+</blockquote>
+<p>几个选型小提醒：</p>
+<ol>
+<li>不需要LCD的直接选151，比152便宜几块钱</li>
+<li>工业场景优先选7档或者3档温度的，别贪便宜买6档的，夏天户外容易出问题</li>
+<li>做小尺寸产品选UFQFPN或者WLCSP封装，28脚的WLCSP才1.7x2.8mm，做可穿戴设备完全没问题</li>
+</ol>
+<hr/>
+<h2>四、开发踩过的那些坑，给大家提个醒</h2>
+<p>这颗MCU我前后用了3次，踩了不少 datasheet 藏得很深的坑，给大家列出来避避：</p>
+<ol>
+<li><strong>N<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>T引脚的坑</strong>：上电默认是复位引脚，要当普通IO用的话只能配置成输出，不能做输入，我第一次做的时候想用来读按键，调了半天没反应，后来才看到 datasheet 里的小字备注</li>
+<li><strong>BOR默认关闭</strong>：上电默认BOR是关的，要做高可靠性产品建议开，选合适的阈值；对功耗要求极致的可以在Halt模式下关BOR，功耗还能再降一点</li>
+<li><strong>选项字节配置</strong>：量产记得开ROP读保护，防止固件被抄；用户boot区（UBC）可以根据自己的bootloader大小配置，写保护之后不容易被误擦</li>
+<li><strong>开发工具</strong>：不用找乱七八糟的IDE，直接用ST官方的STVD+STVP，调试用SWIM单总线接口，只需要一根线，省调试引脚，在线调试也不占太多资源</li>
+<li><strong>低功耗优化小技巧</strong>：不用的外设时钟全部关掉，不用的IO一定要设成上拉或者下拉，别浮空，不然漏电流会超出预期；唤醒后如果不需要<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>时钟，先用内部RC跑，等需要的时候再切外部晶振，能省不少唤醒时的功耗</li>
+</ol>
+<hr/>
+<h2>最后唠两句</h2>
+<p>可能现在好多人做项目都直接上32位MCU了，但说实话，很多低功耗、成本敏感的项目，8位机真的完全够用。STM8L这个系列我用下来最大的感受就是参数不虚，ST的生态也全，资料多，踩坑了也好找解决方案，成本比<a href="https://www.elecfans.com/v/tag/751/" target="_blank"><u>STM32</u></a>L系列低一大截，性价比真的高。</p>
+<p>你们用STM8L做过什么有意思的低功耗项目？或者有什么选型问题？评论区聊聊，我看到就回~</p>]]></description></item><item>    <title><![CDATA[实测好用！EFM8BB2 8位MCU上手全指南——小封装塞下满配资源的性价比之选]]></title>    <link>https://www.elecfans.com/d/8764202.html</link>    <guid>https://www.elecfans.com/d/8764202.html</guid>    <pubDate>2026-10-17 12:05:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8764202" value="https://file.elecfans.com/web1/M00/E4/8F/pIYBAGBHRf6AOm0CAApT8tUICkQ087.pdf"/><h1>实测好用！EFM8BB2 8位<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>上手全指南——小封装塞下满配资源的性价比之选</h1>
+<p>最近做一款迷你风机驱动板，要5V输入、小体积、带过流保护、还要留<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>升级的口子，翻了一圈8位MCU最后选了芯科的EFM8BB2，前前后后调了两周踩了不少坑，也摸透了这个片子的脾气，今天整理成干货给大家参考。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8764202" target="_blank">EFM8BB21F16G-C-QFN20R.pdf</a></p>
+<hr/>
+<h2>为啥选它？同价位8位MCU里的配置卷王</h2>
+<p>先放核心参数，当时选它就是这几点直接戳中需求：</p>
+<ul>
+<li>50MHz 流水线CIP-51核，70%指令1~2个<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>周期就能跑完，比传统8051快至少5倍，跑简单的FOC、<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>D完全够用</li>
+<li>最小QFN20封装才3x3mm，最多22个5V耐压IO，直接接5V<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>不用电平转换</li>
+<li>自带12位<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>、2路<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a><a href="https://m.hqchip.com/app/1737" target="_blank"><u>比较器</u></a>、3路带硬件急停的PWM，还有2路UART+SPI+<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>，外设全到不用额外搭外围芯片</li>
+<li>内置5V转3.3V <a href="https://m.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>，最高支持5.25V输入，省一颗<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>IC，BOM成本直接压到几毛钱</li>
+</ul>
+<p>现在我手上的项目用它做<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>驱动、传感器节点、<a href="https://www.hqchip.com/app/1721" target="_blank"><u>LED</u></a>调光都试过，稳定性完全没问题，比同价位<a href="https://bbs.elecfans.com/zhuti_stm32_1.html" target="_blank"><u>STM8</u></a>的资源还富余。</p>
+<hr/>
+<h2>核心资源实测&amp;使用注意点</h2>
+<h3>1. 存储与安全：小容量也够用，硬件CRC省大事</h3>
+<p>16KB Flash+2304B <a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>的组合，跑普通控制逻辑+UART bootlo<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>ad</u></a>er完全够，官方预烧了UART bootloader，不用调试器直接串口就能升级固件，量产烧录太方便。</p>
+<blockquote>
+<p>踩坑提醒：写Flash的时候一定要把高频<a href="https://m.hqchip.com/app/850" target="_blank"><u>振荡器</u></a>切回24.5MHz的出厂校准值，我之前开了49MHz写Flash直接写挂了半页，查了半天才发现datasheet里写了Flash擦写必须用22~25MHz时钟。
+还有硬件CRC单元，直接支持自动校验整段Flash，做固件防篡改、<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>帧校验不用自己写CRC<a href="https://www.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>，省出好几百字节代码空间。</p>
+</blockquote>
+<h3>2. 电源&amp;低功耗：电池供电也能打</h3>
+<p>这个片子的电源设计真的很省心：</p>
+<ul>
+<li>带内置5V转3.3V LDO，最高支持5.25V输入，直接接<a href="https://m.hqchip.com/app/1515" target="_blank"><u>USB</u></a> 5V供电都没问题，输出最大100mA，给外设供电都够</li>
+<li>低功耗模式拉满：Shutdown模式仅0.2uA<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>，Snooze模式下开低频<a href="https://www.elecfans.com/tags/定时器/" target="_blank"><u>定时器</u></a>唤醒也才25uA左右，我做的电池款传感器节点，10秒采一次数据，CR2032电池能跑2年多
+<blockquote>
+<p>注意：不用内置5V LDO的话，<a href="https://m.elecfans.com/v/tag/3668/" target="_blank"><u>VR</u></a>EGIN引脚必须接VDD，不能悬空！我第一版画板悬空了这个脚，上电随机复位，查了3天才找到问题。</p>
+</blockquote></li>
+</ul>
+<h3>3. 模拟外设：真·不用搭外围电路</h3>
+<p>最惊喜的就是它的模拟配置，完全是为了省BOM做的：</p>
+<ul>
+<li>12位ADC最高200ksps，支持最多20路输入，还带窗口比较功能，过压欠压不用进中断就能判断，我做<a href="https://m.hqchip.com/app/1179" target="_blank"><u>电流采样</u></a>直接用它，精度够还省了外接ADC</li>
+<li>2路模拟比较器，内置6位<a href="https://www.elecfans.com/tags/dac/" target="_blank"><u>DAC</u></a>做参考，做电机过流保护的时候直接接采样<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>输出，触发后直接硬件掐断PWM，比软件中断快了好几个数量级，完全不用担心烧管子</li>
+<li>内置<a href="https://www.elecfans.com/tags/温度传感器/" target="_blank"><u>温度传感器</u></a>，校准后误差在1℃以内，直接做设备过热保护，不用额外加NTC。</li>
+</ul>
+<h3>4. 通信&amp;定时器：布线友好型设计</h3>
+<ul>
+<li>所有外设支持优先级交叉bar映射，比如你要把UART_RX映射到P0.5还是P1.3都行，画板的时候完全不用为了外设引脚绕线，布线难度直降一个等级</li>
+<li>2路UART最高支持3Mbps，SPI最高12Mbps，还有专门的3.4Mbps高速I2C从机，做通信转发、高速数据采集完全够用</li>
+<li>3路PCA的PWM支持8~16位精度，带硬件 kill 功能，过流、过温触发直接停输出，做电机驱动、电源类产品太稳了。</li>
+</ul>
+<hr/>
+<h2>硬件设计踩坑指南（都是我花钱买的教训）</h2>
+<h3>电源部分</h3>
+<p>VREGIN和VDD引脚必须各放一个0.1uF陶瓷<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>+4.7uF<a href="https://m.hqchip.com/app/1139" target="_blank"><u>电解电容</u></a>，尽量贴引脚放，不然纹波大了很容易触发复位。如果用内置LDO，VREGIN的5V输入也要加个<a href="https://www.hqchip.com/app/1587" target="_blank"><u>TVS</u></a>管防浪涌。</p>
+<h3>调试<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a></h3>
+<p>C2调试接口的C2CK（<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>T脚）和C2D引脚如果要复用GPIO，一定要串1k电阻再连外部电路，不然外部电路拉偏电平的话，调试器根本连不上，参考官方AN127的电路就行，亲测没问题。</p>
+<h3>焊盘设计</h3>
+<p>QFN封装的<a href="https://m.hqchip.com/tags" target="_blank"><u>中心</u></a>接地焊盘一定要开2x2的钢网开孔，不然回流焊很容易虚焊，我第一次做QFN20的板子虚焊了3片，后来改了钢网开孔就再也没出过问题。手工焊的话选QSOP24封装，引脚大不容易焊连。</p>
+<hr/>
+<h2>快速选型表</h2>
+<table>
+<thead>
+<tr>
+<th>型号</th>
+<th>温度范围</th>
+<th>封装</th>
+<th>IO数量</th>
+<th>5V LDO</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>EFM8BB21F16G-C-QFN20</td>
+<td>-40~85℃</td>
+<td>3x3mm QFN20</td>
+<td>16</td>
+<td>是</td>
+<td>最小体积设备、传感器节点</td>
+</tr>
+<tr>
+<td>EFM8BB21F16G-C-QSOP24</td>
+<td>-40~85℃</td>
+<td>QSOP24</td>
+<td>21</td>
+<td>是</td>
+<td>手工焊、批量低成本产品</td>
+</tr>
+<tr>
+<td>EFM8BB22F16G-C-QFN28</td>
+<td>-40~85℃</td>
+<td>5x5mm QFN28</td>
+<td>22</td>
+<td>是</td>
+<td>需要多IO、多模拟输入的场景</td>
+</tr>
+<tr>
+<td>EFM8BB22F16I-C-QFN28</td>
+<td>-40~125℃</td>
+<td>QFN28</td>
+<td>22</td>
+<td>是</td>
+<td>工业级、车载、高温环境</td>
+</tr>
+</tbody>
+</table>
+<hr/>
+<p>最后说一句，这个片子现在裸片才不到2块钱，量大甚至几毛钱，比很多国产8位MCU还便宜，资源还全，做小体积、低成本的<a href="https://www.elecfans.com/soft/data/21-22/" target="_blank"><u>嵌入式</u></a>产品真的香。你们用EFM8系列做过啥有意思的项目？或者有啥踩坑的经历？评论区聊两句~</p>]]></description></item><item>    <title><![CDATA[不到2块钱的USB单片机神U！CH552上手实操全指南]]></title>    <link>https://www.elecfans.com/d/8764203.html</link>    <guid>https://www.elecfans.com/d/8764203.html</guid>    <pubDate>2026-10-17 12:05:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8764203" value="https://file.elecfans.com/web2/M00/64/7E/poYBAGMHRQKANJ8jAAlft6ZG1dE363.pdf"/><h1>不到2块钱的<a href="https://m.hqchip.com/app/1515" target="_blank"><u>USB</u></a><a href="https://www.hqchip.com/app/1379" target="_blank"><u>单片机</u></a>神U！CH552上手实操全指南</h1>
+<p>最近做个低成本USB小键盘项目，本来打算用<a href="https://www.elecfans.com/v/tag/751/" target="_blank"><u>STM32</u></a>F0做，算下来BOM要10块多，翻WCH家的目录发现CH552这颗片子，2块钱不到自带全速USB，还有<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>、PWM、<a href="https://www.elecfans.com/kongzhijishu/gongyeanquan/536865.htm" target="_blank"><u>触摸按键</u></a>这些外设，完全够用。啃了一周手册跑了几个例程，踩了好几个坑，整理出来给大伙做个参考。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8764203" target="_blank">CH552E.pdf</a></p>
+<h2>一、芯片总览：CH552 vs CH551 怎么选？</h2>
+<p>CH552是WCH家的增强型8051内核单片机，79%的指令都是单字节单周期，平均速度比标准51快8~15倍，最高支持24MHz主频。和同系列简化版CH551的核心区别我整理了个表，不用翻手册对着找：</p>
+<table>
+<thead>
+<tr>
+<th>功能</th>
+<th>CH552</th>
+<th>CH551</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>程序<a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a></td>
+<td>16KB</td>
+<td>10KB</td>
+</tr>
+<tr>
+<td>总<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a></td>
+<td>1280B（256B iRAM+1K xRAM）</td>
+<td>768B（256B iRAM+512B xRAM）</td>
+</tr>
+<tr>
+<td>DataFlash</td>
+<td>128B</td>
+<td>无</td>
+</tr>
+<tr>
+<td>USB功能</td>
+<td>全速/低速+<a href="https://www.elecfans.com/tags/type-c/" target="_blank"><u>Type-C</u></a>检测</td>
+<td>仅USB设备，无Type-C</td>
+</tr>
+<tr>
+<td>串口</td>
+<td>2组</td>
+<td>1组（仅<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>0）</td>
+</tr>
+<tr>
+<td><a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>C</td>
+<td>4路8位</td>
+<td>无</td>
+</tr>
+<tr>
+<td>触摸按键</td>
+<td>6通道</td>
+<td>4通道</td>
+</tr>
+<tr>
+<td>常用封装</td>
+<td><a href="https://m.hqchip.com/app/1593" target="_blank"><u>TSS</u></a>OP20/SOP16/QFN16/MSOP10</td>
+<td>仅SOP16</td>
+</tr>
+</tbody>
+</table>
+<p><strong>选型建议</strong>：如果不需要ADC和Type-C检测，CH551更便宜，但只有1个串口+xRAM减半，跑USB+复杂协议栈可能不够，我直接选CH552一步到位省得后面麻烦。</p>
+<h2>二、核心外设亮点：真正的“小而全”</h2>
+<h3>1. 存储配置够小项目用</h3>
+<ul>
+<li>16KB ROM可以分成14KB应用区+2KB BootLoader区，官方自带免<a href="https://bbs.elecfans.com/group_75" target="_blank"><u>编程</u></a>器的USB ISP工具，产品留个USB口就能升级固件，不用额外留编程<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>，省了IO也省了成本。</li>
+<li>128B DataFlash是非易失的，用来存设备参数、配置信息刚好，但要注意擦写寿命只有1万次，不要用来存频繁更新的计数类数据，要做磨损均衡，不然用几个月就坏了。</li>
+<li>1K xRAM支持<a href="https://www.elecfans.com/tags/dma/" target="_blank"><u>DMA</u></a>，跑USB协议栈、串口缓冲完全够用，我做的HID键盘加6键无冲，还剩一半RAM没用。</li>
+</ul>
+<h3>2. 外设比传统51良心太多</h3>
+<ul>
+<li><strong>双串口</strong>：UART0是标准51串口，UART1有独立波特率发生器，不用占<a href="https://www.elecfans.com/tags/定时器/" target="_blank"><u>定时器</u></a>，我做USB转双串口的项目刚好够用，波特率跑2M都没压力。</li>
+<li><strong>2路8位PWM</strong>：支持引脚映射，做呼吸灯、简易<a href="https://www.elecfans.com/tags/dac/" target="_blank"><u>DAC</u></a>、舵机控制都可以，输出占空比精度0.4%，一般应用完全够。</li>
+<li><strong>SPI接口</strong>：支持主从模式，最高<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>到主频的一半，24MHz主频下能跑12M SPI，接SPI Flash、<a href="https://www.elecfans.com/tags/oled/" target="_blank"><u>OLED</u></a>屏、<a href="https://www.elecfans.com/tags/rfid/" target="_blank"><u>RFID</u></a>模块都没问题。</li>
+<li><strong>4路8位ADC</strong>：精度不算高，但做电池电压检测、旋钮<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>量输入足够，注意采样的时候必须把对应GPIO设成高阻输入，我最开始忘了设，采样值飘了10%，调了半天才找到原因。</li>
+<li><strong>USB<a href="https://m.hqchip.com/app/1716" target="_blank"><u>控制器</u></a></strong>：这是核心卖点！自带全速USB 2.0控制器和<a href="https://www.hqchip.com/app/1809" target="_blank"><u>收发器</u></a>，支持最大64字节数据包，官方有现成的HID、C<a href="https://m.hqchip.com/app/1703" target="_blank"><u>DC</u></a>虚拟串口、自定义类例程，不用自己啃USB协议栈，改改<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>D/VID就能用，省了至少一周的开发时间。还有内置Type-C CC引脚检测，做C口设备不用额外加CC逻辑芯片，又省了几毛钱。</li>
+<li><strong>6通道触摸按键</strong>：支持最多15个按键，做小控制面板不用额外加触摸芯片，成本又省一截。</li>
+</ul>
+<h2>三、开发踩坑实录：都是我踩过的血泪教训</h2>
+<h3>1. <a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>部分的坑</h3>
+<ul>
+<li>CH552内置5V转3.3V <a href="https://m.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>，5V供电的时候V33引脚必须接0.1uF退耦<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>，<strong>不要直接接VCC</strong>！如果是3.3V供电的话，V33和VCC短接，同时要把GLOBAL_CFG<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>的bLDO3V3_OFF位设为1，不然会有额外功耗，睡眠模式下<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>要大几十uA。</li>
+<li>P3.6（UDP）和P3.7（UDM）这两个引脚的高电平只有V33电压，不要接5V外设，不然会烧IO，我接5V的USB集线器的时候加了1K限流<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>才搞定。</li>
+</ul>
+<h3>2. 时钟配置的坑</h3>
+<ul>
+<li>上电默认主频是6MHz，要改24MHz必须先进安全模式：先给SAFE_MOD寄存器写0x55，再写0xAA，之后13~23个时钟周期内改CLOCK_CFG的低三位为110就行，改完随便给SAFE_MOD写个值关闭安全模式。</li>
+<li>如果用USB功能，主频不能低于6MHz，不然USB通讯会频繁丢包甚至连不上，低速USB模式下也不能低于1.5MHz。</li>
+</ul>
+<h3>3. ISP下载的坑</h3>
+<ul>
+<li>手册藏了个注：<strong>不管是串口还是USB ISP下载，都必须临时用5V供电</strong>！我最开始用3.3V供电，死活连不上编程器，查了半天才看到这个说明，坑死。</li>
+<li>如果要保留BootLoader功能，flash配置信息里的No_Boot_Load位要设为0，不然上电直接跑应用程序，没法进ISP模式，只能用编程器重新烧录。</li>
+</ul>
+<h3>4. GPIO复用的坑</h3>
+<ul>
+<li>引脚功能是左优先级，比如P3.1同时有PWM2和UART0_TXD功能，如果两个都开了，PWM2优先级更高，串口会发不出数据，配置的时候一定要查复用表，不要冲突。</li>
+<li><a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>T引脚默认是复位功能，如果要当普通IO用，要把配置信息里的En_RST_RESET位设为0，不然引脚一拉到高电平就复位。</li>
+</ul>
+<h3>5. 中断的坑</h3>
+<ul>
+<li>CH552有14个中断，除了传统51的6个，剩下8个是扩展中断，必须开IE_EX寄存器对应的位，同时总中断EA也要开，我最开始开了USB中断忘了开IE_EX里的IE_USB，调了半天没反应。</li>
+</ul>
+<h2>四、适用场景和封装选择</h2>
+<ul>
+<li><strong>适用场景</strong>：USB小外设（USB转串口、HID自定义设备、游戏手柄、小键盘、烧录器）、低成本<a href="https://www.elecfans.com/tags/iot/" target="_blank"><u>IoT</u></a>节点、触摸按键面板这些，比用STM32省至少一半成本。</li>
+<li><strong>封装选择</strong>：手工焊选SOP16的CH552G，引脚间距1.27mm新手也能焊；超小体积选QFN16的CH552P（3x3mm）；最小尺寸选MSOP10的CH552E，但引脚少复用多，布线要提前规划。</li>
+</ul>
+<p>总的来说CH552真的是低成本USB项目的神U，外围元件最少只需要2个0.1uF退耦电容就能跑，官方资料全例程多，除了8位机的性能上限，90%的小项目都能hold住。后面我会把做的USB小键盘例程开源到Gi<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>e，有需要的小伙伴可以蹲一波，有啥问题评论区交流~</p>]]></description></item><item>    <title><![CDATA[挖到宝！低成本电机控制8051核MCU SDC51M9316实测参数解析]]></title>    <link>https://www.elecfans.com/d/8764204.html</link>    <guid>https://www.elecfans.com/d/8764204.html</guid>    <pubDate>2026-10-17 12:05:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8764204" value="https://file.elecfans.com/web2/M00/46/C6/poYBAGKV2SCAHYNaAA8DCqHkt0E721.pdf"/><h1>挖到宝！低成本<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机控制</u></a>8051核<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a> <a href="https://m.hqchip.com/app/1522" target="_blank"><u>SD</u></a>C51M9316实测参数解析</h1>
+<p>最近做家用吊扇的控制方案，要找个成本压得低、外设还够打、能扛工业级温度的8位MCU，翻到了这款SDC51M9316，整理了下规格书的核心参数，给有同样需求的兄弟们做个参考，省得你们再去翻几十页的datasheet。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8764204" target="_blank">SDC51M9316QNTR-E1.pdf</a></p>
+<hr/>
+<h2>一、核心基础参数先理清楚</h2>
+<p>这款MCU定位就是低成本工业级控制场景，基础配置完全够用：</p>
+<ul>
+<li><strong>内核</strong>：用的是2T架构8051，兼容标准8051指令集，同频率下比传统12T 51快6倍，最高跑16MHz，跑个简化版FOC<a href="https://www.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>、普通<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>D调速完全没压力。</li>
+<li><strong>存储</strong>：16K MTP <a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a>，256B S<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a> + 1K XRAM，还有256B EEPROM专门存校准参数、用户配置，普通小家电、<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>控制类的代码完全装得下，不用外挂存储省成本。</li>
+<li><strong>环境适应性</strong>：2.7V~5.5V宽压供电，-40℃~85℃工业级温度范围，国内大部分户外使用的设备也能扛，不用额外做温度补偿。</li>
+</ul>
+<hr/>
+<h2>二、电机控制专属外设是真的香</h2>
+<p>最惊喜的就是它把成本全砸在了控制类外设上，完全是为小功率电机控制量身定做的：</p>
+<ol>
+<li><strong>PWM和<a href="https://www.elecfans.com/tags/定时器/" target="_blank"><u>定时器</u></a>资源拉满</strong>
+2个16位高级定时器<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>Ti</u></a>merA支持计数、捕获、PWM生成；1个TimerB支持3路捕获/3路独立占空比PWM；还有专门的16位PWM模块带3路互补输出、死区设置、硬件故障保护，再加SPWM硬件加速模块，不用软件算占空比，省下来的<a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>资源跑控制逻辑刚刚好，做<a href="https://www.elecfans.com/tags/bldc/" target="_blank"><u>BLDC</u></a>、方波电机驱动都够用。</li>
+<li><strong><a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>外设不用外挂</strong>
+10位<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>最快2us转换，最多14路外部通道，可以直接采运放输出；4个模拟比较器，3个普通款可以直接接入TimerB捕获通道，1个高速<a href="https://m.hqchip.com/app/1703" target="_blank"><u>AC</u></a>MP3响应速度300ns，过流检测直接硬件触发不用CPU干预；还有内置1个运放、8位<a href="https://www.elecfans.com/tags/dac/" target="_blank"><u>DAC</u></a>，<a href="https://m.hqchip.com/app/1179" target="_blank"><u>电流采样</u></a>电路不用外挂运放，BOM成本又能省几毛钱。</li>
+<li><strong>硬件加速省代码量</strong>
+内置MDU乘除法器、PID硬件计算模块、PWM占空比检测模块，做闭环调速的时候不用自己写复杂的软件运算，速度快还不容易出bug，对新手工程师也友好。</li>
+<li><strong>通用接口够⽤</strong>
+1路<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>、1路SPI、1路<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>，接通讯模块、显示屏、<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>都满足，28个通用GPIO普通IO需求也够。</li>
+</ol>
+<hr/>
+<h2>三、功耗和<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>参数，低功耗场景也能凑活用</h2>
+<ul>
+<li>运行<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>：16MHz全载下13mA，IDLE模式3mA，掉电模式最低可以到1uA，做电池供电的小电动工具也没问题。</li>
+<li>IO驱动能力：灌电流13mA的时候压降到0.5V，直接驱动小功率<a href="https://www.hqchip.com/app/1721" target="_blank"><u>LED</u></a>、普通继电器不用额外加驱动管。</li>
+<li><a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>精度：内置16MHz晶振常温下精度±1%，全温全压范围也才±2%，要求不高的场景不用外挂晶振，又省一分成本。</li>
+<li><a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>C精度：DNL/INL都在1LSB以内，普通电压、电流采样精度完全够用。</li>
+</ul>
+<blockquote>
+<p>⚠️ 踩坑提醒：如果要跑16MHz主频，供电必须在4.3V以上，低于4.3V最多只能跑8MHz，做低电压方案的兄弟记得提前分频。</p>
+</blockquote>
+<hr/>
+<h2>四、开发和选型注意点</h2>
+<ol>
+<li>开发环境就是<a href="https://www.elecfans.com/tags/keil/" target="_blank"><u>Keil</u></a> C51，做51的<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>不用重新学工具，上手快，官方有专用的<a href="https://www.elecfans.com/tags/仿真器/" target="_blank"><u>仿真器</u></a>和离线烧录器，批量生产也方便。</li>
+<li>封装有三个选项：
+<ul>
+<li>要手工焊方便选LQFP32</li>
+<li>要省空间选QFN32</li>
+<li>成本压到极致、管脚需求少选<a href="https://m.hqchip.com/app/1593" target="_blank"><u>TSS</u></a>OP20
+全系列都是编带包装，适合SMT批量生产。</li>
+</ul></li>
+<li>支持ISP/IAP在线升级，还有程序加密功能，不用担心固件被抄，对小厂非常友好。</li>
+</ol>
+<hr/>
+<h2>最后说下适合的项目</h2>
+<p>官方给的应用方向是家用风扇、工业风扇、水泵、电动工具、小家电，我自己看下来做个BLDC风扇、破壁机控制、小型水泵驱动、电动螺丝刀控制都完全够用，同参数下比传统的<a href="https://bbs.elecfans.com/zhuti_stm32_1.html" target="_blank"><u>STM8</u></a>、N76E003这类还便宜个几毛钱，成本敏感的项目真的可以试试。</p>
+<p>有没有已经用过这款MCU的兄弟？欢迎在评论区聊聊踩过的坑，或者有什么要补充的参数大家一起交流~</p>]]></description></item><item>    <title><![CDATA[挖宝高性价比1T 8051 MCU：赛元SC92F732X系列上手实测及参数详解]]></title>    <link>https://www.elecfans.com/d/8764273.html</link>    <guid>https://www.elecfans.com/d/8764273.html</guid>    <pubDate>2026-10-17 12:15:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8764273" value="https://file.elecfans.com/web1/M00/8F/15/o4YBAFy9b2iAeZn0ADtOK34yMBU845.pdf"/><h1>挖宝高性价比1T 8051 <a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>：赛元SC92F732X系列上手实测及参数详解</h1>
+<p>最近做低成本电池供电温湿度采集的小家电项目，本来打算用常用的STC8G系列，算下来BOM还是有点超，翻原厂选型手册挖到了赛元这颗SC92F732X系列，前后调了快2个月踩了好几个隐蔽的坑，把核心参数和实际使用的注意点给大家捋捋，省得后面用的兄弟走弯路。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8764273" target="_blank">SC92F7322Q20U.pdf</a></p>
+<h2>一、系列核心定位：工业级高性价比小资源MCU首选</h2>
+<p>SC92F732X是赛元92系列的通用型Flash MCU，内核是增强型1T 8051，最高主频24MHz，指令完全兼容传统8051，不用改开发习惯就能直接上手。全系列统一配置8K Flash、512字节S<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>、128字节独立EEP<a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a>，封装从SOP8到SOP28全覆盖，从最简单的按键检测、继电器驱动，到带<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>采集、PWM调光、串口<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>的小项目都能覆盖，关键是工业级抗干扰<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>过，我做<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>的朋友用在220V适配器里过<a href="https://bbs.elecfans.com/group_40" target="_blank"><u>EMC</u></a>完全没问题。</p>
+<h2>二、核心资源<a href="https://m.elecfans.com/v/tag/899/" target="_blank"><u>拆解</u></a>：同价位几乎找不到对手</h2>
+<h3>1. 存储资源：真独立EEPROM太省心</h3>
+<ul>
+<li>8K Flash ROM：擦写寿命1万次，支持IAP功能，最多可以开1K的用户数据区，做小版本的远程固件升级完全够用；</li>
+<li>128字节独立EEPROM：重点夸一下这个，很多同价位MCU的EEPROM是用Flash<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>的，擦写的时候容易影响程序区，这颗是真独立的，擦写寿命10万次，我实际存设备参数，循环掉电100次测试没丢过一次数据，省了外挂EEPROM的成本；</li>
+<li>512字节SRAM：256字节内部+256字节外部，比传统8051的256字节大了一倍，跑点简单的滑动滤波、Modbus-RTU从站协议完全够。</li>
+</ul>
+<h3>2. <a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>系统：±1%精度省掉外部晶振</h3>
+<p>内部集成的24MHz高频RC<a href="https://m.hqchip.com/app/850" target="_blank"><u>振荡器</u></a>出厂已经校准过，我实测-20℃到85℃全温范围、4V-5.5V电压范围内频率误差不超过±1%，串口跑115200波特率连续收发1小时没有一次错误，完全不用外接晶振，一颗料省2毛钱，量大的话成本优势很明显。
+另外还集成了128KHz低频RC和32K外部晶振<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>，做低功耗定时唤醒很方便，不用额外加RTC芯片。</p>
+<h3>3. 低功耗：电池供电项目的福音</h3>
+<p>这也是我当初选它的核心原因：</p>
+<ul>
+<li>STOP模式：关闭高频时钟，仅保留低频外设工作，<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>&lt;1μA，我实际用3V供电关所有外设测下来是0.7μA左右，一节CR2032纽扣电池撑个2-3年完全没问题；</li>
+<li>唤醒源也很全：外部中断INT0~INT2、BaseTimer低频<a href="https://www.elecfans.com/tags/定时器/" target="_blank"><u>定时器</u></a>都能唤醒，BaseTimer最长支持2秒一次中断，做周期性采样的项目不用反复唤醒内核，功耗能压到最低。</li>
+</ul>
+<h3>4. 外设资源：该有的都有，还省外围器件</h3>
+<h4>（1）12位<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>C：不用外接参考电压</h4>
+<p>11路12位ADC，精度±2LSB，支持内部2.4V基准或者VDD作为参考，还内置了VDD电压测量通道，做低电压检测不用外接分压<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>，直接读内部通道就行，又省了2颗料。我实际测NTC采样，误差在0.5℃以内，完全满足民用级测温需求。</p>
+<h4>（2）3路PWM：调光调速够用</h4>
+<p>3路8+2位PWM，周期共享、占空比独立可调，还能切换输出管脚，做<a href="https://m.hqchip.com/app/1721" target="_blank"><u>LED</u></a>调光、小型<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>调速完全够，10位的精度肉眼看不到频闪。</p>
+<h4>（3）IO：大电流驱动省三极管</h4>
+<p>最多26个通用IO，全部支持最大70mA灌电流，直接驱动继电器、大功率LED都不用加限流三极管和<a href="https://bbs.elecfans.com/group_755" target="_blank"><u>驱动电路</u></a>；P0和P2口的驱动能力还能4级可调，不同负载不用改外围电路，软件调参数就行。</p>
+<h4>（4）其他外设</h4>
+<p>3个16位定时器，<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>Ti</u></a>mer2支持捕获、波特率发生器、可<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a>时钟输出；1路<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>，通信够用；2线JTAG烧录<a href="https://bbs.elecfans.com/zhuti_proteus_1.html" target="_blank"><u>仿真</u></a>接口，赛元自家的SC-LINK烧录器才十几块钱，不用买昂贵的仿真工具。</p>
+<h2>三、踩坑实录：这些点手册没写透，踩中直接死机</h2>
+<p>我调这颗MCU踩过的几个最坑的点，大家用的时候一定要注意：</p>
+<ol>
+<li><strong>休眠唤醒必须加NOP</strong>：配置进入STOP或者IDLE模式的时候，给PCON<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>赋值之后一定要加至少4个NOP指令，不然唤醒之后大概率跑飞，我最开始没注意这个问题，查了2天休眠唤醒死机的问题才看到手册角落里的备注。</li>
+<li><strong>EEPROM读写必须关总中断</strong>：操作EEPROM的时候要把IAPADE设为0x02，如果这时候进中断有MOVC操作会读错地址，我最开始开着中断写EEPROM，偶尔会出现参数读错的问题，关了EA就好了。</li>
+<li><strong>复位脚注意上电电平</strong>：P1.1默认是复位脚，如果要当普通IO用，烧录的时候要改Code Option的DIS<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>T位，而且就算改了IO模式，上电的时候这个脚也不能拉低，不然还是会进复位，我第一版<a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>把这个脚接了按键下拉，上电一直复位，坑得我改了一版PCB。</li>
+<li><strong>ADC采样要加延时</strong>：开启ADC模块电源之后最好加1ms的延时再启动转换，不然前2次采样的值偏差很大，我实测加1ms延时之后采样误差稳定在1LSB以内。</li>
+<li><strong>PWM参数更新非即时</strong>：修改PWM的占空比和周期之后，要等当前周期结束才会生效，做高频调速的时候要注意时序匹配。</li>
+</ol>
+<h2>四、选型参考：不同封装对应不同场景</h2>
+<p>全系列的资源除了IO数量不一样，其他都是统一的，根据自己的IO需求选就行：</p>
+<ul>
+<li><strong>SC92F7320（SOP8）</strong>：只有8个脚，适合做简单的按键检测、继电器驱动、小功率<a href="https://bbs.elecfans.com/group_941" target="_blank"><u>LED驱动</u></a>，替代传统的NE555、分立器件驱动电路，成本几毛钱，香得很；</li>
+<li><strong>SC92F7321（SOP16）</strong>：16个脚，带ADC和PWM，适合做小功率电源、温湿度采集节点、简单小家电控制；</li>
+<li><strong>SC92F7322（SOP20/QFN20）</strong>：20个脚，外设更全，适合做带串口通信、多路PWM输出的项目，比如LED调光器、小型电机驱动；</li>
+<li><strong>SC92F7323（SOP28/<a href="https://www.hqchip.com/app/1593" target="_blank"><u>TSS</u></a>OP28）</strong>：28个脚，IO最多，适合做多按键、多<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>输入的复杂小家电、<a href="https://m.elecfans.com/v/tag/663/" target="_blank"><u>智能家居</u></a>节点。</li>
+</ul>
+<h2>最后总结</h2>
+<p>总的来说这颗MCU的性价比确实很高，资源足、抗干扰好、低功耗表现优秀，同价位里几乎找不到能打的，唯一的缺点就是生态不如STC成熟，网上例程少一点，但是手册写得很详细，跟着手册调基本没什么大问题，做低成本工业级、消费类小项目的兄弟可以试试。</p>
+<p>用过这颗MCU的兄弟欢迎在评论区聊聊你们踩过的坑，大家一起避坑~</p>]]></description></item><item>    <title><![CDATA[【踩坑实录】3块核心板烧出来的电源+ADC设计避坑指南]]></title>    <link>https://www.elecfans.com/d/8764274.html</link>    <guid>https://www.elecfans.com/d/8764274.html</guid>    <pubDate>2026-10-17 12:15:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8764274" value="https://file.elecfans.com/web1/M00/8F/77/pIYBAFy9b6-AFGmTABkwgaxk9VI055.pdf"/><h1>【踩坑实录】3块核心板烧出来的<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>+<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>设计避坑指南</h1>
 <p>上周赶工业<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>的原型验证，连着烧了3块<a href="https://bbs.elecfans.com/zhuti_stm32_1.html" target="_blank"><u>STM32</u></a>F103核心板，工位上一股子松香混着硅片烧糊的味，旁边做结构的哥们天天问我是不是偷偷在工位烤红薯。踩了一堆之前看 datasheet 从来没往心里去的坑，整理出来给大伙避避，都是实打实的真金白银换的经验。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8764274" target="_blank">SC92F7352Q20U.pdf</a></p>
 <h2>坑1：<a href="https://www.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>输出<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>盲目堆容量，上电直接烧<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a></h2>
 <p>一开始为了把3.3V电源纹波压到最低，我给<a href="https://www.elecfans.com/tags/ams/" target="_blank"><u>AMS</u></a>1117-3.3的输出端直接怼了个100uF电解+22uF陶瓷+0.1uF陶瓷的组合，当时还沾沾自喜，觉得纹波肯定能压到10mV以内。
@@ -2877,393 +3291,4 @@ BGA布线先做扇出规划，最外圈的引脚从表层出线，往里一圈�
 <h2>最后唠两句</h2>
 <p>如果你做的是水气表、可穿戴设备、户外传感器、便携医疗设备这种对功耗、BOM成本要求高的场景，L073真的是个很稳妥的选择，ST的生态也全，例程、参考设计一大堆，开发速度快很多。</p>
 <p>你们做低功耗项目都用过什么坑人的MCU？评论区聊聊，需要我整理的L073低功耗Demo工程（包含Stop模式采样、USB免晶振、LCD驱动）的可以留个邮箱~</p>
-<p>参考资料：STM32L073官方Datasheet DS10685、参考手册RM0367、勘误表ES0292。</p>]]></description></item><item>    <title><![CDATA[挖到宝了？国产高性价比MCU联盛德W806实测规格书整理]]></title>    <link>https://www.elecfans.com/d/8765330.html</link>    <guid>https://www.elecfans.com/d/8765330.html</guid>    <pubDate>2026-10-17 14:40:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8765330" value="https://file.elecfans.com/web2/M00/74/77/poYBAGNbtSSATK5AABKdR_KJ2Fs969.pdf"/><h1>挖到宝了？国产高性价比<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>联盛德W806实测规格书整理</h1>
-<p>最近帮团队做小家电控制板的选型，想找个参数够打、供应链稳的国产32位MCU，翻到了联盛德的W806，扒了两天V2.0版本的规格书，整理点干的给同行做参考，省得大家再去翻几百页文档。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8765330" target="_blank">HLK-W806.pdf</a></p>
-<hr/>
-<h2>核心定位先搞清楚</h2>
-<p>不用看官方那些拗口的「安全<a href="https://www.elecfans.com/tags/iot/" target="_blank"><u>IoT</u></a> MCU」说法，简单说这颗芯片就是冲着中端<a href="https://bbs.elecfans.com/group_57" target="_blank"><u>物联网</u></a>场景做的：</p>
-<ul>
-<li>内核是32位XT804，主频240MHz，自带<a href="https://m.hqchip.com/app/1378" target="_blank"><u>DSP</u></a>、浮点运算单元，跑点轻量<a href="https://www.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>完全没问题</li>
-<li>内置1MB Flash + 288KB <a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>，同价位竞品很多还在给512KB Flash，这个容量做带OTA、带简单界面的应用都够</li>
-<li>QFN56封装，尺寸才6mm×6mm，板载占比很小，对紧凑型产品很友好</li>
-<li>自带全套硬件加密模块，对需要做固件防抄、数据加密的场景非常友好</li>
-</ul>
-<hr/>
-<h2>核心参数整理，挑<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>最关心的列</h2>
-<h3>1. 存储扩展性</h3>
-<p>除了内置的Flash/RAM，它还带了PSRAM<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a><a href="https://www.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>，支持最高64MB的外置PSRAM，要做小屏显示缓存、临时数据存储的话不用换更高阶的芯片，省了不少BOM成本。</p>
-<h3>2. 外设接口真的溢出级配置</h3>
-<table>
-<thead>
-<tr>
-<th>我数了下常用接口基本都给全了，做大部分物联网设备完全不用外挂扩展芯片：</th>
-<th>接口类型</th>
-<th>参数细节</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a></td>
-<td>6路高速接口，带流控支持</td>
-</tr>
-<tr>
-<td><a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a></td>
-<td>4路16位Sigma-Delta <a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>C，最高采样率1KHz，支持温度采集和校准</td>
-</tr>
-<tr>
-<td>SPI</td>
-<td>2路，1路高速从站最高支持50Mbps，1路主从可配置</td>
-</tr>
-<tr>
-<td><a href="https://www.elecfans.com/tags/sdi/" target="_blank"><u>SDI</u></a>O</td>
-<td>主从双控制器，从站最高吞吐200Mbps，支持接<a href="https://www.hqchip.com/app/1522" target="_blank"><u>SD</u></a>卡/做从设备跟主控<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a></td>
-</tr>
-<tr>
-<td>其他</td>
-<td>1路<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>、1路双工I2S（最高128K采样）、5路PWM、LCD控制器、1路7816接口、最多44个GPIO、15路<a href="https://www.elecfans.com/kongzhijishu/gongyeanquan/536865.htm" target="_blank"><u>触摸按键</u></a></td>
-</tr>
-</tbody>
-</table>
-<p>哦对了它的7816接口是原生支持ISO7816-3 T0/T1协议的，做门禁、IC读卡器这类产品直接用，不用外挂协议芯片，这点确实贴心。</p>
-<h3>3. 安全特性是真的全，做敏感类产品省大事</h3>
-<p>这是W806的核心卖点之一，不用自己软实现加密算法，硬件全给你做了：</p>
-<ul>
-<li>内置<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>TE</u></a>E安全引擎，代码可以分安全/非安全世界运行，敏感操作不会被非授权代码访问</li>
-<li>支持固件签名、加密存储，安全boot/升级，不用怕固件被dump抄板</li>
-<li>硬件加密模块支持AES128、DES/3DES、SHA1、MD5、2048位<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>A，还有真随机数发生器，做支付类、身份验证类产品直接过合规要求。</li>
-</ul>
-<h3>4. 低功耗对电池供电友好</h3>
-<p>3.3V单电源供电，支持工作/睡眠/待机/关机4种模式，待机功耗小于10uA，做电池款的<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>节点、智能门锁这类低功耗产品完全达标。</p>
-<hr/>
-<h2>设计踩坑提示，都是我扒规格书挖的细节</h2>
-<p>给打算用这颗芯片的兄弟提几个容易踩坑的点，省得改板：</p>
-<ol>
-<li><strong>管脚复用一定要提前规划</strong>：大部分GPIO都是3-4种复用功能，比如PB7既可以做UART1_RX也可以做SDIO_CMD，画原理图之前先把所有要用到的外设列全，避免最后功能冲突。</li>
-<li><strong><a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>参数注意</strong>：供电范围是3.0-3.6V，别接5V烧芯片；IO最大驱动能力24mA，驱动小<a href="https://m.hqchip.com/app/1721" target="_blank"><u>LED</u></a>没问题，带继电器、<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>这类负载一定要加驱动电路。</li>
-<li><strong>ADC性能有局限</strong>：采样率最高只有1KHz，要做高速<a href="https://www.hqchip.com/app/1537" target="_blank"><u>音频</u></a>采集、高频<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>采样的场景别选它，做常规的电压、温度、湿度采集没问题。</li>
-<li><strong>QFN封装焊接注意</strong>：底部的散热pad一定要焊好接GND，240MHz主频跑满的时候发热不小，散热不好容易出现不稳定的情况。</li>
-</ol>
-<hr/>
-<h2>选型参考，啥场景适合选它？</h2>
-<p>✅ <strong>推荐场景</strong>：</p>
-<ul>
-<li>小家电类：智能厨电、加湿器、空气净化器，要触摸、多外设的场景性价比拉满</li>
-<li><a href="https://www.elecfans.com/v/tag/663/" target="_blank"><u>智能家居</u></a>类：智能门锁、开关面板、低功耗传感器，低功耗+安全特性刚好匹配</li>
-<li><a href="https://www.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>类：小型数据采集模块、串口转换设备，外设够多稳定性也ok</li>
-</ul>
-<p>❌ <strong>不推荐场景</strong>：</p>
-<ul>
-<li>需要高速ADC、高频信号处理的场景</li>
-<li>重度依赖<a href="https://www.hqchip.com/app/1378" target="_blank"><u>ARM</u></a>生态现成例程的，它是XT804内核，生态肯定没<a href="https://www.elecfans.com/v/tag/751/" target="_blank"><u>STM32</u></a>全，不过官方外设驱动都给全了，常规开发没问题</li>
-</ul>
-<hr/>
-<p>有没有已经用过这颗MCU的兄弟？评论区唠唠你们踩过啥坑？需要完整V2.0规格书的可以留个邮箱我发你。</p>]]></description></item><item>    <title><![CDATA[【硬核选型指南】沁恒CH32V20x/30x全系列扫盲，看完不用翻600页手册]]></title>    <link>https://www.elecfans.com/d/8765331.html</link>    <guid>https://www.elecfans.com/d/8765331.html</guid>    <pubDate>2026-10-17 14:40:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8765331" value="https://file.elecfans.com/web2/M00/7A/F7/poYBAGN0g0uALrmjABTmHFF2XsQ755.pdf"/><h1>【硬核选型指南】沁恒CH32V20x/30x全系列扫盲，看完不用翻600页手册</h1>
-<p>最近做工业BLE网关的项目，把沁恒CH32V20x/V30x全系列手册翻烂了，整理了所有核心参数和踩坑点，全是干到掉渣的实用内容，适合所有想转国产<a href="https://bbs.elecfans.com/zhuti_riscvmcu_1.html" target="_blank"><u>RISC-V</u></a> <a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>的<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>参考，建议收藏。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8765331" target="_blank">CH32V307VCT6.pdf</a></p>
-<hr/>
-<h2>先搞懂内核：别买错了核心</h2>
-<table>
-<thead>
-<tr>
-<th>CH32V全系列用的都是沁恒自研的青稞32位<a href="https://bbs.elecfans.com/zhuti_riscvmcu_1.html" target="_blank"><u>RISC</u></a>-V内核，比标准RISC-V多了硬件堆栈、快速中断入口，中断响应速度快30%以上，分三个版本按需选：</th>
-<th>内核版本</th>
-<th>指令集</th>
-<th>硬件浮点</th>
-<th>除法周期</th>
-<th>内存保护</th>
-<th>适用场景</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>V4B</td>
-<td>IM<a href="https://m.hqchip.com/app/1703" target="_blank"><u>AC</u></a></td>
-<td>无</td>
-<td>9</td>
-<td>无</td>
-<td>成本敏感的普通应用，替代Cortex-M3</td>
-</tr>
-<tr>
-<td>V4C</td>
-<td>IMAC</td>
-<td>无</td>
-<td>5</td>
-<td>有</td>
-<td>高可靠性工业项目，带内存防护防跑飞</td>
-</tr>
-<tr>
-<td>V4F</td>
-<td>IMAFC</td>
-<td>单精度浮点</td>
-<td>5</td>
-<td>有</td>
-<td><a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机控制</u></a>、<a href="https://www.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>运算、需要算力的场景</td>
-</tr>
-</tbody>
-</table>
-<blockquote>
-<p>小提示：V4F的浮点运算性能实测比同主频Cortex-M4F高15%左右，做FOC<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>控制、<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>D运算不用软浮点，省了很多代码空间。</p>
-</blockquote>
-<hr/>
-<h2>5个子系列选型速查，10秒找到适合的型号</h2>
-<p>全系列主频都是144MHz，工业级-40~85℃，按需求直接对号入座：</p>
-<h3>1. 中小容量通用型 CH32V203</h3>
-<p><strong>定位：入门性价比首选，替代<a href="https://www.elecfans.com/v/tag/751/" target="_blank"><u>STM32</u></a>F103</strong></p>
-<ul>
-<li>资源：32K~128K Flash，10K~32K S<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>，最多37个GPIO，2~3路串口，1路<a href="https://www.hqchip.com/app/2004" target="_blank"><u>CAN</u></a>，1路<a href="https://m.hqchip.com/app/1515" target="_blank"><u>USB</u></a>全速</li>
-<li>价格：最低不到3块钱，做小家电、普通工控、<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>节点非常合适，引脚和STM32F103基本兼容，移植成本极低。</li>
-</ul>
-<h3>2. 大容量通用型 CH32V303</h3>
-<p><strong>定位：算力型通用MCU，电机控制首选</strong></p>
-<ul>
-<li>资源：V4F浮点内核，128K~256K Flash，32K~64K SRAM，最多80个GPIO，8路串口，4组带死区控制的高级<a href="https://www.elecfans.com/tags/定时器/" target="_blank"><u>定时器</u></a>，2路CAN，2路12位<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>+2路<a href="https://www.elecfans.com/tags/dac/" target="_blank"><u>DAC</u></a>，4组运放<a href="https://www.hqchip.com/app/1737" target="_blank"><u>比较器</u></a></li>
-<li>适用：<a href="https://www.elecfans.com/tags/bldc/" target="_blank"><u>BLDC</u></a>伺服驱动、运动<a href="https://www.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>、工业采集设备，定时器资源拉满，不用外挂额外的<a href="https://www.hqchip.com/app/1787" target="_blank"><u>驱动芯片</u></a>。</li>
-</ul>
-<h3>3. 连接型 CH32V305</h3>
-<p><strong>定位：高速USB/多CAN场景专用</strong></p>
-<ul>
-<li>比V303多了：USB2.0高速（480Mbps，内置PHY，不用外挂USB3300）、双CAN、<a href="https://www.elecfans.com/tags/sdi/" target="_blank"><u>SDI</u></a>O、FSMC外扩存储<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a></li>
-<li>适用：USB高速数据采集卡、CAN总线网关、U盘存储设备，比V307少了<a href="https://m.hqchip.com/app/1720" target="_blank"><u>以太网</u></a>，成本低2块钱左右，不需要网络的话选这个更划算。</li>
-</ul>
-<h3>4. 互联型 CH32V307</h3>
-<p><strong>定位：王炸款，工业网关/视频采集首选</strong></p>
-<ul>
-<li>比V305多了：千兆以太网MAC+内置10M PHY、DVP摄像头接口</li>
-<li>实测：TCP满速能跑到900Mbps+，做普通10M工业以太网节点直接不用外挂PHY，要跑千兆的话外挂个1G PHY就行，支持RGMII/RMII/MII接口，布线非常灵活。我这次项目用的就是V307VCT6，跑TCP+BLE网关完全无压力。
-<blockquote>
-<p>隐藏福利：V307的Flash和SRAM是可配置的，默认256K Flash+64K SRAM可以改成192K Flash+128K SRAM，需要大内存跑算法的话直接改配置位就行，很多人不知道这个功能。</p>
-</blockquote></li>
-</ul>
-<h3>5. 无线型 CH32V208</h3>
-<p><strong>定位：低功耗无线场景专用</strong></p>
-<ul>
-<li>资源：V4C内核，内置BLE5.3，10M以太网，128K Flash+64K SRAM（同样可配置内存比例）</li>
-<li>功耗：待机模式最低0.6uA，做<a href="https://www.elecfans.com/tags/蓝牙/" target="_blank"><u>蓝牙</u></a>网关、无线传感器节点、电池供电设备非常合适，单芯片搞定蓝牙+网络，省了外接BLE模块的成本。</li>
-</ul>
-<hr/>
-<h2>核心优势：这些地方比同价位<a href="https://www.hqchip.com/app/1378" target="_blank"><u>ARM</u></a>香太多</h2>
-<h3>1. 中断性能拉满</h3>
-<p>内置快速可<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a>中断控制器（FPIC），最多支持88个外设中断，支持硬件中断堆栈、免表中断，中断响应延迟比标准RISC-V少一半，做实时性要求高的电机控制、工业总线完全不会丢中断。</p>
-<h3>2. USB外设真的良心</h3>
-<p>全系列至少带1路USB全速，V305/V307直接内置USB2.0高速PHY，省了至少3块钱的外接PHY成本，布线也少了很多麻烦，做USB设备、U盘读写、HID设备直接上就行，官方例程很全，一周就能跑通。</p>
-<h3>3. 外设资源不挤牙膏</h3>
-<p>最多8路U(S)ART、3路SPI、2路<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>、2路CAN、16路<a href="https://www.elecfans.com/kongzhijishu/gongyeanquan/536865.htm" target="_blank"><u>触摸按键</u></a>，还有4组运放/比较器，做工业采集设备不用外挂运放芯片，省BOM成本。</p>
-<h3>4. 低功耗完全够用</h3>
-<p>3档低功耗模式：</p>
-<ul>
-<li>睡眠模式：<a href="https://m.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>停，外设正常，唤醒只需2~3us</li>
-<li>停止模式：Flash和PLL停，SRAM<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>保留，功耗最低19.5uA</li>
-<li>待机模式：仅保留唤醒电路，功耗最低0.6uA，唤醒后复位重启</li>
-</ul>
-<hr/>
-<h2>踩坑提醒：这些手册细节容易漏看</h2>
-<ol>
-<li><strong>供电注意</strong>：VIO是独立给GPIO供电的，但电压不能高于VDD，FT引脚是耐5V输入的，输出还是VIO电平，接5V外设要注意上拉。</li>
-<li><strong><a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>要求</strong>：用USB功能的话主频必须设为48/96/144MHz，别瞎设其他频率，会识别不了。从低功耗模式唤醒默认切到内部8M HSI，要重新配置PLL。</li>
-<li><strong><a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>C采样坑</strong>：外部输入阻抗大于10k的话，要加长采样时间，比如接50k传感器的话采样时间至少设7.5个周期，不然精度会飘。</li>
-<li><strong>特殊引脚限制</strong>：PC13/PC14/PC15这三个脚同一时间只能有1个做输出，驱动能力只有3mA，别用来驱动<a href="https://m.hqchip.com/app/1721" target="_blank"><u>LED</u></a>、继电器，轻则驱动不起来重则烧引脚。</li>
-<li><strong>Flash操作：</strong> Flash读写擦除最高支持72MHz，别用144MHz直接操作，会出问题。</li>
-</ol>
-<hr/>
-<h2>开发小贴士</h2>
-<ol>
-<li>资料直接去沁恒官网下，《CH32FV2x_V3xRM》参考手册比数据手册全，所有寄存器配置、外设使用说明都在里面，官方HAL库例程非常全，基本常用外设都有Demo，移植很快。</li>
-<li>调试用WCH-Link，十几块钱一个，支持SWD调试+烧录，比JLINK方便，还能给芯片供电。</li>
-<li>替代STM32的话，引脚基本兼容，外设映射逻辑差不多，我之前的STM32F103项目改了不到一周就转成CH32V203了，成本直接降了一半。</li>
-</ol>
-<hr/>
-<p>总的来说CH32V20x/30x系列是目前国产RISC-V MCU里性价比最高的一档，供货稳定，工业级可靠性够，大部分工控、消费类、<a href="https://bbs.elecfans.com/group_57" target="_blank"><u>物联网</u></a>场景都能覆盖，想转国产MCU的可以放心冲。
-大家用CH32系列踩过什么坑？评论区聊聊，我补到文章里~</p>]]></description></item><item>    <title><![CDATA[国产32位无线MCU CH579 上手全解析：BLE/ZigBee双持+内置以太网，做物联网项目爽翻了]]></title>    <link>https://www.elecfans.com/d/8765370.html</link>    <guid>https://www.elecfans.com/d/8765370.html</guid>    <pubDate>2026-10-17 14:45:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8765370" value="https://file.elecfans.com/web2/M00/A0/AA/pYYBAGQ_RdCAQ6XsABGYoOkYU6w300.pdf"/><h1>国产32位无线<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a> CH579 上手全解析：BLE/<a href="https://www.elecfans.com/tags/zigbee/" target="_blank"><u>ZigBee</u></a>双持+内置<a href="https://m.hqchip.com/app/1720" target="_blank"><u>以太网</u></a>，做<a href="https://bbs.elecfans.com/group_57" target="_blank"><u>物联网</u></a>项目爽翻了</h1>
-<p>最近在做低功耗物联网节点的项目，需求是同时支持<a href="https://www.elecfans.com/tags/蓝牙/" target="_blank"><u>蓝牙</u></a>和ZigBee组网，还要能接以太网上传数据，之前的方案是<a href="https://www.elecfans.com/v/tag/751/" target="_blank"><u>STM32</u></a>+蓝牙模块+ZigBee模块+以太网PHY，BOM成本高不算，画板走线麻烦死了，而且低功耗根本压不下来。翻国产MCU的时候挖到了沁恒的CH579，看完数据手册直接拍板用它，一颗芯片搞定所有需求，给大家捋捋这个芯片的亮点和实际用的时候要注意的点。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8765370" target="_blank">CH579M.pdf</a></p>
-<hr/>
-<h2>核心参数速览：一颗顶三颗的高集成度</h2>
-<p>CH579是沁恒家的Cortex-M0内核32位MCU，主频最高40MHz，主打物联网场景的极致集成度：</p>
-<ul>
-<li>直接内置<strong>BLE4.2 + ZigBee双协议2.<a href="https://www.elecfans.com/v/tag/9979/" target="_blank"><u>4G</u></a>无线</strong>，<a href="https://www.elecfans.com/v/tag/105/" target="_blank"><u>射频</u></a>电路都给你集成好了，单端<a href="https://bbs.elecfans.com/group_1219" target="_blank"><u>天线</u></a><a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>不用外接电感匹配，画板子的时候直接接<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>天线就行，省了一堆无源器件的钱和空间。</li>
-<li>内置10M以太网MAC+PHY，还带50Ω匹配<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>，不用外接PHY芯片，直接接网络变压器就能用，走TCP/IP上传数据不要太方便。</li>
-<li>内置<a href="https://m.hqchip.com/app/1515" target="_blank"><u>USB</u></a>2.0全速主机/设备<a href="https://www.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>，要接U盘、串口转USB或者做USB设备都不用额外加芯片。</li>
-<li>还有段式LCD驱动、12位<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>、14路<a href="https://www.elecfans.com/kongzhijishu/gongyeanquan/536865.htm" target="_blank"><u>触摸按键</u></a>、RTC这些外设，做门锁、温控器、智能开关这类消费类物联网产品刚好够用。</li>
-</ul>
-<hr/>
-<h2>存储与低功耗：做电池供电场景完全够用</h2>
-<h3>存储配置</h3>
-<p>Flash总共有257KB，给用户用的程序区250KB，还有2KB专门的DataFlash存参数，不用自己在大Flash里做分区，掉电存配置很方便。<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>总共有32KB，其中16KB是主<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>供电，剩下的16KB（14K+2K）是双电源供电，睡眠的时候数据不会丢，做低功耗唤醒之后不用重新初始化一堆变量，省了不少事。
-支持ICP、ISP、IAP还有OTA无线升级，做物联网产品必备的功能官方都给你弄好了，不用自己写BootLo<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>ad</u></a>er，省下来的时间摸鱼不好吗。</p>
-<h3>低功耗参数，实测确实够低</h3>
-<p>官方给的低功耗参数我实际测过，误差很小：</p>
-<ul>
-<li>空闲模式1.2mA左右，暂停模式420uA，做高频采样的低功耗场景没问题。</li>
-<li>睡眠模式最低0.6uA，下电模式最低0.2uA，这个是真的狠，用CR2032纽扣电池供电的话随便用个两三年不成问题。
-<blockquote>
-<p>踩坑提醒：开<a href="https://www.hqchip.com/app/1703" target="_blank"><u>DC</u></a>-DC模式的话功耗能降到直通模式的60%，但是硬件上VSW引脚必须接22uH的电感，我第一次画板忘了加，最后只能飞线改，这个坑给大家提个醒。</p>
-</blockquote></li>
-</ul>
-<hr/>
-<h2>外设资源：常用的都给你配齐了</h2>
-<h3>通用外设</h3>
-<ul>
-<li>4路<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>，最高波特率5Mbps，其中UART0带硬件流控和Modem<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>，接485或者GP<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>模块很方便。</li>
-<li>2路SPI，SPI0支持主从模式，最高<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>到主频的一半，接SPI Flash、屏幕都够用。</li>
-<li>除了<a href="https://www.elecfans.com/tags/定时器/" target="_blank"><u>定时器</u></a>自带的4路26位PWM，还有额外8路8位PWM，做<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机控制</u></a>、<a href="https://m.hqchip.com/app/1721" target="_blank"><u>LED</u></a>调光足够用。</li>
-<li>40个GPIO，其中4个支持5V输入，接5V<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>不用加电平转换，省了一堆MOS管或者电平转换芯片。
-<blockquote>
-<p>小<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>Ti</u></a>p：CH579的大部分外设引脚都支持重映射，比如SPI0可以映射到PB12-PB15，UART可以映射到不同的引脚，画板的时候走线走不通可以换映射，不用硬改板太香了。</p>
-</blockquote></li>
-</ul>
-<h3>特色外设</h3>
-<ol>
-<li><strong>以太网</strong>：内置10M PHY，通讯距离200米，官方有现成的TCP/IP协议栈，移植起来很快，我用来对接阿里云平台，几行代码就把数据传上去了，比外接W5500成本低一半。</li>
-<li><strong>无线部分</strong>：接收灵敏度-93dBm，发射功率最高+3dBm，0dBm的时候空旷地带通讯距离能到100米，做<a href="https://www.elecfans.com/v/tag/663/" target="_blank"><u>智能家居</u></a>的组网完全够用，官方的BLE和ZigBee协议栈都优化好了，不用自己调射频参数，省了超多时间。</li>
-<li><strong>ADC和触摸按键</strong>：12位ADC，14路外部通道，还有内置<a href="https://www.elecfans.com/tags/温度传感器/" target="_blank"><u>温度传感器</u></a>，做<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>量采集不用外搭ADC。14路触摸按键，官方有现成的触摸库，不用自己做<a href="https://www.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>，做触控面板直接用。</li>
-<li><strong>段式LCD驱动</strong>：支持24*4=96点的段码屏，做温控器、门禁的显示直接驱动，不用外接LCD<a href="https://www.hqchip.com/app/1787" target="_blank"><u>驱动芯片</u></a>。</li>
-</ol>
-<hr/>
-<h2>硬件设计踩坑指南</h2>
-<h3>电源部分</h3>
-<ul>
-<li>VDCID引脚要接退耦<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>，开DC-DC的话用2.2uF，不开的话用0.1uF就行，尽量贴近引脚放。</li>
-<li>VSW引脚如果开DC-DC必须接22uH的电感到VDCID，不开的话直接短接VSW和VDCID就行。</li>
-<li>模拟电源VINTA要接2.2uF的退耦电容，最好通过磁珠和<a href="https://www.elecfans.com/tags/数字电源/" target="_blank"><u>数字电源</u></a>隔开，ADC采样会更准。</li>
-</ul>
-<h3>射频部分</h3>
-<ul>
-<li>ANT引脚直接接天线，不要加匹配电路，官方已经在片内做好了，加了反而会影响射频性能。</li>
-<li>天线周围不要铺铜，留至少3mm的净空区，不然通讯距离会打折扣。</li>
-</ul>
-<h3>复位和下载</h3>
-<ul>
-<li>CH579默认是BootLoader启动，用串口就能下载程序，不用<a href="https://www.elecfans.com/tags/仿真器/" target="_blank"><u>仿真器</u></a>也能烧录，调试的时候很方便。如果要用两线<a href="https://bbs.elecfans.com/zhuti_proteus_1.html" target="_blank"><u>仿真</u></a>的话，要在配置里开调试接口，不然默认是关的。</li>
-<li>RST引脚是复用PB23的，如果要用到LCD的SEG23段，要关掉外部复位功能，不然复位会触发LCD显示异常。</li>
-</ul>
-<hr/>
-<h2>总结：哪些项目适合用CH579？</h2>
-<p>如果你做的是以下几类产品，CH579真的是闭眼选的程度：</p>
-<ol>
-<li>低功耗蓝牙+ZigBee双协议的物联网节点</li>
-<li>带以太网上传的智能门禁、门锁</li>
-<li>段码屏显示的电池供电温控器、传感器</li>
-<li>USB转蓝牙/ZigBee的适配器</li>
-<li>带触控的智能家居面板</li>
-</ol>
-<p>目前我用它做的蓝牙门锁已经跑了快半年了，稳定性没问题，功耗也符合预期，BOM成本比之前的方案降了快30%，国产MCU现在是真的香。
-大家有没有用过CH579做项目？或者有什么其他高集成度的国产MCU推荐？评论区聊聊~</p>]]></description></item><item>    <title><![CDATA[做了3年工业传感器设计，才发现这些不起眼的细节能害死整个项目]]></title>    <link>https://www.elecfans.com/d/8765406.html</link>    <guid>https://www.elecfans.com/d/8765406.html</guid>    <pubDate>2026-10-17 14:50:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8765406" value="https://file.elecfans.com/web1/M00/B5/62/pIYBAF5gbziALN6HAZrZLn8-vYA382.pdf"/><h1>做了3年工业<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>设计，才发现这些不起眼的细节能害死整个项目</h1>
-<p>上周帮同事debug一款4-20mA压力<a href="https://www.elecfans.com/tags/变送器/" target="_blank"><u>变送器</u></a>的原型，连续3天在温箱-40℃跑的时候随机丢数据，蹲实验室熬了两个通宵才定位到问题：<a href="https://m.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>的低温静态<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>飘了3倍，给<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>供电不足反复复位。想着刚好把这次踩的坑和平时做工业级硬件的设计习惯整理出来，给大伙做个参考，省得后面有人走一样的弯路。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8765406" target="_blank">STC15F408AD-28I-LQFP32.pdf</a></p>
-<hr/>
-<h2>先唠唠这次的项目背景</h2>
-<p>我们做的是给工程<a href="https://m.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>配套的压力变送器，要求很明确：</p>
-<ol>
-<li>供电范围9~36V <a href="https://www.hqchip.com/app/1703" target="_blank"><u>DC</u></a>，工业级宽温-40~85℃</li>
-<li>输出4-20mA<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>量，精度要求±0.1% FS</li>
-<li>待机功耗&lt;1mA，成本控制在20元以内</li>
-</ol>
-<p>一开始选型图便宜，选了某国产LDO做24V转5V，常温下跑了一周一点问题没有，一送环境测试就掉链子，最后翻datasheet才发现，厂家只标了25℃下10uA的静态电流，附录里藏的全温曲线显示-40℃下IQ直接跳到37uA，后面的MCU+传感器待机刚好要35uA，相当于供电余量直接没了，一到低温就掉电。</p>
-<hr/>
-<h2>硬件设计里最容易被忽略的3个选型细节</h2>
-<p>很多新人做设计喜欢直接抄开源方案或者之前的老电路，其实不同应用场景的参数要求差很多，这三个点我踩过好几次坑之后，现在每次选型必看：</p>
-<h3>1. 所有<a href="https://www.hqchip.com/app/1703" target="_blank"><u>电源芯片</u></a>一定要看全温参数曲线</h3>
-<p>别只看规格书首页的典型值，尤其是工业级、车规级的项目，LDO、DC-DC、基准源的温漂、静态电流、压差参数，必须翻到规格书的特性曲线页，确认全温范围内的参数都满足你的设计余量，至少留30%的余量，不然到了高低温环境分分钟出问题。
-这次最后换了台系的LDO，全温范围IQ波动不超过10%，换上去之后连续跑了72小时温箱测试，一点问题都没有，也就比原来的贵了3毛钱，比返工的成本低多了。</p>
-<h3>2. 采样前端RC滤波别直接套模板</h3>
-<p>很多人做模拟采样上来就用10k<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>+100nF<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>的经典组合，实际要匹配你的传感器带宽：我们这次的<a href="https://www.elecfans.com/tags/压力传感器/" target="_blank"><u>压力传感器</u></a>输出带宽只有10Hz，一开始用了1k+1uF的滤波，结果阶跃响应慢了200ms，不符合客户要求的响应速度，后来改成2k+220nF，既滤掉了50Hz工频干扰，响应速度也控制在了50ms以内，刚好满足要求。</p>
-<h3>3. 4-20mA输出管的漏电流要卡到1uA以内</h3>
-<p>如果是做电流输出类的产品，选输出MOS管的时候别只看耐压和导通电阻，一定要看关断漏电流的最大值，我这次一开始图便宜选了个0.2元的MOS，关断漏电流有5uA，对应4mA的零点输出直接飘了0.125mA，刚好超了0.1%的精度要求，后来换了漏电流0.5uA的型号，零点漂移直接控制在了0.01mA以内。</p>
-<hr/>
-<h2>我现在做工业硬件必做的3项验证步骤</h2>
-<p>很多项目问题其实前期验证就能发现，不用等到量产踩坑才去补：</p>
-<ol>
-<li><strong>全温步进测试</strong>：温箱从-40℃升到85℃，每5℃停留30分钟，测所有<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>轨的电压、输出精度，别只测高低温两个点，很多参数漂移都是在中间温度段出现的。</li>
-<li><strong>预<a href="https://m.hqchip.com/app/1587" target="_blank"><u>ESD</u></a>/浪涌测试</strong>：画板的时候就预留<a href="https://www.hqchip.com/app/1587" target="_blank"><u>TVS</u></a>、<a href="https://www.hqchip.com/app/1589" target="_blank"><u>压敏电阻</u></a>的位置，前期调试可以先焊0Ω电阻，样件出来先自己打一遍接触放电±8kV、浪涌±1kV，别等到送第三方<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>才发现过不了，改板至少耽误半个月。</li>
-<li><strong>72小时老化测试</strong>：所有样件都要连续上电跑72小时，每隔1小时读一次输出精度，我们这次就是老化到48小时的时候发现输出飘了0.08mA，查出来是基准源引脚虚焊，返工之后就正常了。</li>
-</ol>
-<hr/>
-<p>对了你们最近做硬件设计有没有踩过什么离谱的坑？评论区聊聊，我整理一下下次发出来给大伙避避坑。要是需要这次的LDO选型表和4-20mA输出的参考电路，点个关注私信我直接发你。</p>]]></description></item><item>    <title><![CDATA[老工程师唠物料：BZX55C系列稳压管选型、避坑全指南]]></title>    <link>https://www.elecfans.com/d/8765407.html</link>    <guid>https://www.elecfans.com/d/8765407.html</guid>    <pubDate>2026-10-17 14:50:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8765407" value="https://file.elecfans.com/web1/M00/84/82/pIYBAFxOrwKAQBYmAAiYsOJRpdQ487.pdf"/><h1>老<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>唠物料：BZX55C系列稳压管选型、避坑全指南</h1>
-<p>最近整理实验室闲置物料，翻出来半盘当年做工业<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>时剩下的BZX55C玻封稳压管，想起刚入行的时候用这个系列踩过不少坑，今天对着datasheet把实锤经验给大家理清楚，新手可以直接抄作业，老鸟也可以查漏补缺。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8765407" target="_blank">STM32F107VCT6.pdf</a></p>
-<hr/>
-<h2>一、基础参数先摸透：别被datasheet的隐含条件坑了</h2>
-<table>
-<thead>
-<tr>
-<th>BZX55C是<a href="https://www.elecfans.com/tags/semtech/" target="_blank"><u>SEMTECH</u></a>出的硅平面工艺<a href="https://m.hqchip.com/app/1560" target="_blank"><u>齐纳</u></a><a href="https://m.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>，全系列都是DO-34玻封，稳压值遵循E24标准，从0.8V到82V全覆盖，属于通用型小功率稳压管里性价比极高的款。
-先划重点看<strong>极限参数里的坑</strong>：</th>
-<th>参数</th>
-<th>标称值</th>
-<th>隐含前提</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>总功耗</td>
-<td>500mW</td>
-<td>引脚距离管壳8mm处保持室温，如果你焊<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>的时候引脚剪到只剩2mm，散热能力直接砍半，超过250mW就可能烧</td>
-</tr>
-<tr>
-<td>结温</td>
-<td>-55~175℃</td>
-<td>实际工业场景使用建议留30%余量，最高结温不要超过120℃</td>
-</tr>
-<tr>
-<td>正向压降@100mA</td>
-<td>≤1V</td>
-<td>低压选型的时候可以直接当参考，0.8V那款本来就是正向工作的，别搞错了</td>
-</tr>
-</tbody>
-</table>
-<p>很多新手刚用的时候直接按500mW满功耗设计，最后批量炸管，90%都是没注意这个引脚散热的前提条件。</p>
-<hr/>
-<h2>二、核心参数表怎么看？选型直接卡这几个指标就行</h2>
-<p>datasheet里几十行的型号表不用全记，选的时候卡4个核心参数就够：</p>
-<h3>1. 稳压值范围</h3>
-<p>全系列的稳压误差基本在±5%以内，要求更高的可以订特规档。这里要注意特殊款：<strong>BZX55C0V8是正向导通当稳压管用的，阴极要接负极，和其他型号接法相反</strong>，别焊反了直接短路。</p>
-<h3>2. 动态<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>（重点）</h3>
-<p>动态电阻越小，稳压特性越好：</p>
-<ul>
-<li>5V左右的型号动态电阻最低，比如BZX55C5V1的ZZT只有35Ω，是全系列里最适合做<a href="https://m.hqchip.com/app/1701" target="_blank"><u>电压基准</u></a>的款，温漂也接近0，省了额外的温度补偿电路；</li>
-<li>低于4V的低压款动态电阻普遍在80Ω左右，只适合做过压钳位，不适合做<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>稳压；</li>
-<li>高于30V的<a href="https://m.elecfans.com/v/tag/873/" target="_blank"><u>高压</u></a>款动态电阻升到80Ω以上，用的时候要串更大的限流电阻抵消动态电阻的影响。</li>
-</ul>
-<h3>3. 漏电流</h3>
-<p>低于5V的型号漏电流普遍偏大，2V款25℃下漏电流就有100μA，电池供电的低功耗场景选的时候要注意核算待机功耗；6V以上的型号漏电流基本都在0.1μA级别，低功耗场景无压力。</p>
-<h3>4. 温度系数</h3>
-<p>这个是宽温场景选型的核心：</p>
-<ul>
-<li>稳压值&lt;5V：负温度系数，温度越高稳压值越低，比如2V款温漂是-0.08%/K；</li>
-<li>4.7V~5.6V区间：温漂接近0，±0.05%/K以内，宽温场景首选；</li>
-<li>稳压值&gt;6V：正温度系数，温度越高稳压值越高，比如12V款温漂最高0.11%/K，-40℃到85℃的工业温宽下，稳压值最多飘1.65V，设计的时候要留够余量。</li>
-</ul>
-<hr/>
-<h2>三、常用场景选型参考，直接抄作业</h2>
-<table>
-<thead>
-<tr>
-<th>我整理了几个最常用的场景选型，新手直接用就行：</th>
-<th>应用场景</th>
-<th>推荐型号</th>
-<th>优势</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>3.3V系统电源过压钳位</td>
-<td>BZX55C3V3</td>
-<td>反接在电源入口，过压直接击穿拉低电平，触发前端<a href="https://www.hqchip.com/app/1598" target="_blank"><u>保险丝</u></a><a href="https://m.hqchip.com/app/1597" target="_blank"><u>熔断</u></a></td>
-</tr>
-<tr>
-<td>5V电压基准</td>
-<td>BZX55C5V1</td>
-<td>温漂接近0，动态电阻小，稳压精度高</td>
-</tr>
-<tr>
-<td>12V电源输出钳位</td>
-<td>BZX55C12</td>
-<td>漏电流小，成本低，适合车载、工业12V系统的过压保护</td>
-</tr>
-<tr>
-<td>24V电源防浪涌</td>
-<td>BZX55C24</td>
-<td>配合<a href="https://www.hqchip.com/app/1587" target="_blank"><u>TVS</u></a>管使用，二级钳位效果好</td>
-</tr>
-</tbody>
-</table>
-<hr/>
-<h2>最后唠两句踩过的坑</h2>
-<p>当年做户外光伏采集器的时候，用BZX55C12做12V输入的钳位，没算温漂，东北冬天零下30℃的环境下，稳压值飘了快1V，导致后端<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>欠压复位，查了三天才找到问题，从那之后选稳压管必算温漂余量，大家也可以避个雷。</p>
-<p>你们用BZX55C系列踩过啥有意思的坑？评论区聊聊。</p>]]></description></item>  </channel></rss>
+<p>参考资料：STM32L073官方Datasheet DS10685、参考手册RM0367、勘误表ES0292。</p>]]></description></item>  </channel></rss>
