@@ -1,4 +1,951 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[HVY 系列高压引脚多层瓷介电容器结构与性能分析]]></title>    <link>https://www.elecfans.com/d/8789063.html</link>    <guid>https://www.elecfans.com/d/8789063.html</guid>    <pubDate>2026-10-19 15:57:00</pubDate>    <description><![CDATA[<p>
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[老料新用：TMS320C54V90嵌入式Modem设计踩坑指南]]></title>    <link>https://www.elecfans.com/d/8789060.html</link>    <guid>https://www.elecfans.com/d/8789060.html</guid>    <pubDate>2026-10-19 15:55:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8789060" value="https://file.elecfans.com/web2/M00/82/3E/poYBAGOUXT2Ac2VUABTyVdE1rIE758.pdf"/><h1>老料新用：TMS320C54V90<a href="https://www.elecfans.com/soft/data/21-22/" target="_blank"><u>嵌入式</u></a>Modem设计踩坑指南</h1>
+<p>最近接了个工业存量设备改造的活，要给十年前的公用POS机加远程拨号备份功能，翻物料库翻到了<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>TI</u></a>这款2003年的老<a href="https://www.hqchip.com/app/1378" target="_blank"><u>DSP</u></a>——TMS320C54V90，别看是二十年前的产品，做嵌入式V.90拨号是真的省心：双芯片方案（DSP+Si3016硅DAA）省了传统的电话隔离变压器，Modem协议栈全固化在片内<a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a>，不用自己啃V.90协议写固件，短平快项目首选。
+第一次用这款芯片的时候踩了不下5个硬件坑，光调试H<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a><a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>就耗了3天，这次项目做顺了整理下干货，给同样搞老设备维护、嵌入式拨号设计的兄弟们避避坑。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8789060" target="_blank">TMS320C54V90AGGU.pdf</a></p>
+<hr/>
+<h2>一、先搞清楚这芯片能干啥？</h2>
+<p>这款本质是专门做Modem优化的C54x核DSP，主打就是高集成，不用外挂任何存储就能跑完整的拨号功能：</p>
+<ul>
+<li>速率覆盖300bps~56Kbps，全兼容V.90/V.34等所有常见电话网调制协议，还支持V.17类传真、来电显示，工业抄表、POS、远程运维场景全覆盖</li>
+<li>片内带40K×16bit双口<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a> + 128K×16bit ROM，所有Modem<a href="https://www.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>、AT指令解析、纠错压缩全在ROM里，不用额外刷固件，上电就能用</li>
+<li>接口二选一：要么用自带的<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>（支持自动波特率，最高230400bps）接主机，要么用8位HPI并口接嵌入式<a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>，速率更高</li>
+<li>自带电话线过压保护、并机检测功能，甚至支持并机继电器控制，公用设备场景不用额外加外围电路</li>
+<li>最香的是集成了无变压器硅DAA，和配套的Si3016线侧芯片搭起来，比传统Modem方案少了变压器、<a href="https://www.elecfans.com/yuanqijian/guangou/" target="_blank"><u>光耦</u></a>、继电器好几个大件，BOM成本直接砍半，<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>面积也能缩30%</li>
+</ul>
+<p>现在这款是NRND状态（不推荐新设计），但存量供货很稳，拆机件也多，老设备改造用它比重新选新方案省至少2周的开发时间。</p>
+<hr/>
+<h2>二、硬件设计必看的3个致命坑</h2>
+<p>datasheet写的很细，但很多坑藏在角落，我第一次打样全踩中了：</p>
+<h3>1. <a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>上电顺序必看</h3>
+<p>这款三路供电要求真的严，错一点直接不工作：</p>
+<ul>
+<li>内核CVDD：1.5V ±0.15V，IO DVDD：3.3V±0.3V，DAA驱动C1A5V：5V±0.25V</li>
+<li>✅ 强制要求：上电时C1A5V必须比DVDD低至少0.5V，不然DAA驱动直接锁死，我第一次样板就是5V先上电，焊了3块全不能拨号，查了2天才找到问题，不想加复杂上电时序的话，直接在5V通路串个<a href="https://www.hqchip.com/app/1558" target="_blank"><u>肖特基</u></a><a href="https://www.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>（datasheet推荐的MA2Q735就行）就能解决</li>
+<li>休眠模式下待机电流只有3.5mA，电池供电的便携设备也能用</li>
+</ul>
+<h3>2. 接口选择：UART简单，HPI要注意时序</h3>
+<p>如果是低速场景直接用UART就行，上电默认自动波特率，HD0~HD7默认复用成<a href="https://m.hqchip.com/app/1809" target="_blank"><u>RS232</u></a>控制<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>（DTR/CTS这些），和普通Modem用法一模一样，没什么坑。
+如果要高速传数据选HPI并口，这部分坑最多：</p>
+<ul>
+<li>初始化顺序不能乱：先写HPIC<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>设置BOB位（字节序，0是首字节高8位，1是首字节低8位），再写HPIA地址寄存器，最后读写数据，不然读出来的字节全是反的</li>
+<li>HPI的HRDY信号一定要接，不要用<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>时序硬等，DSP内部<a href="https://www.elecfans.com/tags/dma/" target="_blank"><u>DMA</u></a>和HPI抢总线的时候，访问时间会从10个<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>涨到18个，不接HRDY大概率会丢包</li>
+<li>给大家放个亲测能用的HPI初始化代码片段：
+<pre><code class="language-c">// 初始化HPI，BOB位设为0（首字节高8位）
+hpi_wri<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>_reg(HPIC_<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>DR, 0x0000); 
+// 设置HPI地址为共享内存起始地址0x1000
+hpi_write_reg(HPIA_ADDR, 0x1000);
+// 发送初始化同步命令
+hpi_write_data(0x0005);
+// 等待DSP返回0x1234确认进入初始化模式
+while(hpi_read_data() != 0x1234);</code></pre></li>
+</ul>
+<h3>3. 安规设计提前做，不然<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>过不了</h3>
+<p>因为直接接电话线，安规要求一点不能省：</p>
+<ul>
+<li>安全隔离带：TNV（电话线侧）和SELV（数字侧）之间至少留3mm的净空，只有C1、C4、C24、C25这四个Y2<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>能跨隔离带，其他走线绝对不能跨</li>
+<li>TIP/RNG入口先放275V的<a href="https://m.hqchip.com/app/1587" target="_blank"><u>TVS</u></a>（SMP100-270LC就行），再放磁珠，最后进Si3016，过浪涌测试的时候能保芯片不死</li>
+<li>隔离电容必须用Y2认证的，耐压至少3KV，不要用普通陶瓷电容凑合，雷击测试必炸</li>
+</ul>
+<hr/>
+<h2>三、固件调试的几个实用技巧</h2>
+<p>这款的AT指令是标准Hayes集，只说几个容易踩坑的点：</p>
+<ol>
+<li><strong>国家代码一定要先配置</strong>：上电第一个AT指令就发<code>AT*Y162K=CC</code>，CC是对应国家的代码，中国是86，美国是1，欧洲用21，这个指令会自动调整DAA的阻抗、拨号参数，不配置的话大概率在国内线路上连不上，或者掉线率极高</li>
+<li><strong>来电显示配置分区域</strong>：国内用<code>+VCDT=0</code>（第一声铃后发CID），欧洲大部分是<code>+VCDT=1</code>，法国是<code>+VCDT=2</code>，英国是<code>+VCDT=3</code>，设置错了收不到来电显示</li>
+<li><strong>连接质量查ATI6</strong>：拨号成功后发+++切回命令模式，发ATI6能看连接的SNR、线路衰减、往返延迟，SNR低于40dB的话建议用AT&amp;G指令降速率，稳定性提升特别明显</li>
+<li><strong>参数存在外挂EEPROM里</strong>：配置好的参数用AT&amp;W存到外挂的<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a> EEPROM里，上电自动加载，不用每次都发一堆指令初始化</li>
+</ol>
+<hr/>
+<h2>四、Layout的血泪教训，错一个直接返工</h2>
+<p>DAA部分的Layout要求非常严，画错了要么连不上线，要么过不了<a href="https://bbs.elecfans.com/group_40" target="_blank"><u>EMC</u></a>/安规：</p>
+<ol>
+<li><strong>C1A到C1B的走线是重中之重</strong>：DSP的C1A引脚到Si3016的C1B引脚的走线必须小于25mm，全程走表层，不能打过孔，走线下面不能有地平面/电源平面，不然负载电容超过10pF就会导致DAA<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>丢包，我第一次走线长了32mm，拨号成功率只有30%，改短之后直接100%成功</li>
+<li><strong>Si3016周边的环路要最小</strong>：C6、C16到U2引脚3、9、10的环路要尽量短，C12、C13到引脚1、15、16的走线不要和大电流走线平行，不然模拟性能会变差，掉线率飙升</li>
+<li><strong>TIP/RING走线要等长，阻抗匹配</strong>：从<a href="https://m.hqchip.com/app/1523" target="_blank"><u>RJ11</u></a>到Si3016引脚5、6的两根走线长度差不能超过5mm，全程走20mil宽，不要走直角，减小阻抗不连续</li>
+<li><strong>Q4的散热要留够</strong>：DAA的功率管Q4最大耗散0.5W，要在正反面各留100mm²的铜皮，用过孔连接散热，夏天高温的时候如果散热不够，会导致过流保护触发，直接断线</li>
+<li><strong>IGND不要铺地平面</strong>：Si3016的IGND引脚用20mil的单独走线连，不要铺平面，避免和数字地之间的<a href="https://www.elecfans.com/tags/耦合/" target="_blank"><u>耦合</u></a>干扰</li>
+</ol>
+<hr/>
+<h2>最后碎碎念</h2>
+<p>虽然这款芯片是老料，但对于嵌入式拨号、工业远程运维这些场景真的是神器，尤其是老设备改造，不用改太多结构就能塞进去，稳定性比很多新出的软Modem方案好太多。
+我把这次项目用的参考设计、BOM表、HPI驱动代码整理好了，需要的兄弟可以评论区留邮箱，看到就发。
+如果你们用这款芯片有什么其他坑，也欢迎评论区交流，大家一起避坑~</p>
+<hr/>
+<p><em>本文章基于TI官方SP<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>165F datasheet整理，所有经验均来自实际项目测试，亲测有效</em></p>]]></description></item><item>    <title><![CDATA[实战干货：TI TMS320C54V90 嵌入式V.90 Modem方案踩坑&设计全指南]]></title>    <link>https://www.elecfans.com/d/8789100.html</link>    <guid>https://www.elecfans.com/d/8789100.html</guid>    <pubDate>2026-10-19 16:00:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8789100" value="https://file.elecfans.com/web2/M00/82/C6/pYYBAGOUWuCAfyxsABcOE-AbMVY695.pdf"/><h1>实战干货：<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>TI</u></a> TMS320C54V90 <a href="https://www.elecfans.com/soft/data/21-22/" target="_blank"><u>嵌入式</u></a>V.90 Modem方案踩坑&amp;设计全指南</h1>
+<p><a href="https://www.hqchip.com/tags" target="_blank"><u>标签</u></a>：#嵌入式硬件 #工业<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a> #Modem设计 #TI <a href="https://www.hqchip.com/app/1378" target="_blank"><u>DSP</u></a> #PSTN拨号</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8789100" target="_blank">TMS320C54V90BPGE.pdf</a></p>
+<p>最近做工业远程抄表的项目，需要加个PSTN拨号链路做兜底通信，翻了一圈方案最后定了TI的TMS320C54V90，两芯片搞定全功能V.90 Modem，省了传统方案的大个隔离变压器、一堆<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>外围，BOM成本砍了近30%，板面积也缩了一半。踩了一圈坑，把整理的实用设计要点放出来，给有需要的兄弟省点时间，不用自己啃几百页的datasheet了。</p>
+<hr/>
+<h2>为什么选这个方案？核心优势说人话</h2>
+<p>做过嵌入式Modem的都懂，传统的Modem模块要么是外挂一堆模拟器件的分离方案，要么是集成模块贵得要死，这个方案可以说是性价比拉满：</p>
+<ol>
+<li><strong>真·两芯片搞定全功能</strong>：就一个TMS320C54V90 DSP + 一个Si3016硅DAA，不需要隔离变压器、不需要继电器、不需要<a href="https://www.elecfans.com/yuanqijian/guangou/" target="_blank"><u>光耦</u></a>，所有调制解调、错误控制、压缩、DAA功能全固件实现，TI的成熟<a href="https://www.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>，兼容性和稳定性不用自己踩坑，全球电信<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>都过了，自己做产品过入网省了大几十万的认证费。</li>
+<li><strong>全制式覆盖</strong>：速率从300bps到56Kbps全支持，V.90、V.34、V.32bis到最老的Bell 103/212全兼容，还自带V.17/V.29传真、来电显示、V.42错误控制、V.42bis压缩，甚至并行电话检测、继电器控制都做进去了，几乎你能想到的Modem功能都有。</li>
+<li><strong><a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>灵活低功耗</strong>：自带<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>串口和8位H<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>并口，接低速<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>用串口，接高速主机用并口，IDLE3待机电流才3.5mA，便携式设备、电池供电的抄表终端也能用。</li>
+<li><strong>不需要外挂存储</strong>：片上带40K×16双口<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a> + 128K×16 <a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a>，固件全固化在ROM里，上电就干活，不用额外烧写Flash，也不怕固件丢。</li>
+</ol>
+<hr/>
+<h2>核心硬件参数（挑有用的列）</h2>
+<p>DSP本身是C54x架构的16位定点DSP，两种主频可选：</p>
+<ul>
+<li>117.96MIPS（8.5ns指令周期）：适合高吞吐量场景</li>
+<li>58.98MIPS（17ns指令周期）：功耗更低，普通场景足够用
+封装两种：144脚LQFP（PGE后缀，手工焊也没问题，适合小批量打样）和144脚BGA（GGU后缀，适合高密度布板）。</li>
+</ul>
+<hr/>
+<h2>硬件设计踩坑重点（都是亲测踩过的雷）</h2>
+<h3>1. <a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>设计第一坑：上电时序要注意</h3>
+<p>这个芯片有三路电源需求：</p>
+<ul>
+<li>内核：1.5V</li>
+<li>IO和DAA：3.3V</li>
+<li>C1A驱动：5V
+⚠️ 重点警告：上电时<strong>C1A5V必须比3.3V IO电压高至少0.5V</strong>，不然DAA链路直接挂，我第一次打样没注意上电顺序，DAA死活连不上，查了3天才找到问题。如果系统没有5V，直接套用官方的5V charge泵电路就行，外围就几个阻容件，不复杂。
+如果不用DAA的5V供电，记得加个<a href="https://www.hqchip.com/app/1558" target="_blank"><u>肖特基</u></a><a href="https://www.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>从3.3V拉到C1A5V引脚，保证上电时序满足要求。</li>
+</ul>
+<h3>2. DAA布局是灵魂，错了直接没法用</h3>
+<p>硅DAA比传统变压器DAA对布局敏感很多，这部分别乱改，照着官方指南来：</p>
+<ul>
+<li>✅ Si3016尽量靠近<a href="https://m.hqchip.com/app/1523" target="_blank"><u>RJ11</u></a>接口，DSP尽量靠近Si3016，DSP的C1A引脚到Si3016的C1B引脚的走线长度不能超过25mm，<strong>全程不能打过孔</strong>，走线底下不能铺地、不能走电源平面，不然寄生<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>超过10pF的阈值，链路会随机丢包甚至直接连不上。</li>
+<li>✅ 电话线侧的IGND不要铺平面，用20mil以上的粗走线走单点接地，TIP/RING的保护器件（<a href="https://www.hqchip.com/app/1589" target="_blank"><u>压敏电阻</u></a>RV1、EMI电容C24/C25、磁珠FB1/FB2）必须紧挨着RJ11放，TIP和RING的走线要对称，长度差不要超过100mil。</li>
+<li>✅ 安全间距必留：电话线侧（TNV）和系统侧（SELV）的爬电距离至少留3mm，我第一次打样留了2mm，打<a href="https://www.elecfans.com/v/tag/873/" target="_blank"><u>高压</u></a>测试直接打火，过UL/CE认证必卡这一项，别省这点空间。</li>
+<li>✅ Q4（BCP56）要留10×10mm的散热焊盘，上下层多打过孔散热，最坏情况功耗0.5W，散热不够会触发过热保护，通话10分钟就断。</li>
+</ul>
+<h3>3. 接口选择：串口简单，HPI高速</h3>
+<p>用HPIENA引脚在上电时选接口模式：</p>
+<ul>
+<li>拉低是串口模式：默认 autobaud，支持300bps~230400bps，RTS/CTS、XON/XOFF流控全支持，外接个MAX3232电平转换就能直接用，调试、低速场景首选，不用写复杂驱动。</li>
+<li>拉高是HPI并口模式：8位并行接口，最高吞吐量能到160Mbps，接嵌入式<a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>、ISA总线都很方便，官方有现成的ISA总线映射参考，老工业设备升级直接套用就行。⚠️ 注意16位HPI模式下没有自带的双向中断，需要自己加IO做中断或者用轮询模式，别写驱动的时候才发现。</li>
+</ul>
+<hr/>
+<h2>软件调试要点，少走弯路</h2>
+<p>这个方案最爽的就是软件不用自己搞协议，所有调制解调、协议栈全固化了，直接发AT指令就行：</p>
+<ol>
+<li><strong>上电第一件事配国家代码</strong>：指令是<code>AT*Y162K=XX</code>，中国区填86，配了之后会自动调整线路阻抗、拨号参数、铃流检测阈值，我一开始忘了配，国内电话线拨号10次有8次失败，改了之后一次就通。配置会自动存在外接EEPROM里，不用每次上电都发。</li>
+<li>AT指令是标准的Hayes指令集，以前玩过Modem的直接上手，扩展指令支持传真、来电显示、并行电话控制，需要啥直接查datasheet的指令表就行，不用自己写协议。</li>
+<li>HPI驱动照着官方的初始化流程写就行，共享内存用circular buffer加valid标志位同步，没有复杂的锁机制，新手也能很快调通。如果要做低延迟，开HINT中断就行，三种中断触发条件：接收缓存满半、发送缓存空半、超时刷缓存，按需配就行。</li>
+<li>外接EEPROM用AT&amp;W存配置，ATZ读，上电自动加载，不用每次上电都发一串配置指令，省了很多事。</li>
+</ol>
+<hr/>
+<h2>实测性能</h2>
+<p>我自己在模拟工业电话线环境下测的：</p>
+<ul>
+<li>V.90模式下实际吞吐量稳定在52Kbps左右，和普通台式机PCI Modem性能差不多</li>
+<li>SNR≥50dB就能跑满56K，普通市话线路都能满足，SNR≥30dB就能稳定跑33.6K</li>
+<li>连续72小时大流量传输没断过连，掉线重连时间不超过3秒，工业场景够用</li>
+</ul>
+<hr/>
+<h2>适用场景&amp;总结</h2>
+<p>这个方案特别适合：嵌入式远程抄表、POS机、机顶盒、工控设备远程维护、老式工业系统PSTN接口升级，只要需要走公用电话网拨号的场景，都比传统Modem方案省成本、省空间，稳定性也高。</p>
+<p>最后把最容易踩的坑列个清单，照着避就行：</p>
+<ol>
+<li>上电必须保证C1A5V比3.3V高至少0.5V</li>
+<li>C1A到C1B的走线≤25mm，无过孔，底下禁铺平面</li>
+<li>TNV和SELV侧爬电距离≥3mm</li>
+<li>上电先配国家代码，再做其他配置</li>
+<li>Q4必须留足够的散热焊盘</li>
+</ol>
+<p>有需要完整参考设计BOM、原理图的可以留个言，我发你。</p>]]></description></item><item>    <title><![CDATA[加速度传感器不是“一个型号走天下”：PCB凭什么适配多类测试]]></title>    <link>https://www.elecfans.com/d/8789103.html</link>    <guid>https://www.elecfans.com/d/8789103.html</guid>    <pubDate>2026-10-19 16:03:00</pubDate>    <description><![CDATA[<p>
+	在振动测试、<a href="https://m.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>状态监测、产品可靠性验证以及科研试验中，加速度<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>的精度、稳定性和环境适应性，直接影响测量数据的可信度。对于需要长期采集振动、冲击、运动或低频<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>的项目，<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a> <a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>Pi</u></a>ezotronics（以下简称“PCB”）是值得重点考虑的加速度传感器品牌。<br/>
+	一、PCB加速度传感器介绍<br/>
+	PCB是专注于振动、冲击、压力、力、应变及声学测量的传感器品牌，目前为Amphenol Corpora<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>ti</u></a>on的全资子公司。其加速度传感器产品覆盖ICP®/IEPE压电式、电荷输出式、<a href="https://m.elecfans.com/v/tag/7888/" target="_blank"><u>MEMS</u></a>以及变<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>式等多种技术路线，可分别满足高频振动、瞬态冲击、低频运动、高温环境和长期结构监测等不同需求。<br/>
+	PCB的产品范围较广，动态测量范围可达1 µg至200,000 g，频率响应覆盖0～60 kHz；部分产品可适应-240～760℃的极端温度环境。具体参数会因测量原理、灵敏度、量程、安装方式和防护等级而不同，实际选型时应以对应型号的数据手册为准。<br/>
+	例如：<br/>
+	ICP®压电加速度传感器：适合常规振动、冲击和动态信号测试，可与恒流源或兼容的数据采集系统配合使用；<br/>
+	电荷输出式传感器：不含内置信号调理电路，更适合高温及特殊测试环境；<br/>
+	VC MEMS传感器：可测量低至0 Hz的低频运动和长时信号，适用于道路载荷、乘坐舒适性及结构监测；<br/>
+	微型三轴传感器：体积小、附加质量低，适合有限空间、轻质结构和多通道模态测试。<br/>
+	此外，PCB校准<a href="https://m.hqchip.com/tags" target="_blank"><u>中心</u></a>具备ISO 17025认可资质，传感器通常附带可溯源至美国国家标准与技术研究院（NIST）的校准证书。这对实验室计量、质量体系审核及高可信数据采集而言，是一项比较实用的保障。<br/>
+	二、为什么选择PCB<br/>
+	1. 产品覆盖全面，便于按测试需求选型<br/>
+	加速度传感器并不存在“一个型号适用所有场景”的情况。测量低频车身运动、高频结构振动、瞬态冲击、高温部件或微弱振动时，对传感器的灵敏度、量程、频率响应和安装方式要求各不相同。<br/>
+	PCB提供单轴、三轴、通用型、微型、高灵敏度、高频、高温及低频MEMS等多种产品，能够根据被测对象、安装位置和采集系统搭建完整的测量链。对于多通道试验或跨项目应用，这种产品完整性有助于降低反复更换品牌、重新适配采集系统所带来的时间成本。<br/>
+	2. 测量性能稳定，适合高要求试验<br/>
+	PCB传感器的优势并不只是参数范围宽，更在于产品长期形成了较完整的工程化设计，包括低噪声输出、较宽的工作温度范围、密封壳体、基座隔离、差分输出及<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>TE</u></a>DS识别等选项。<br/>
+	例如，部分VC MEMS系列可提供±2～±200 g量程、0～1,500 Hz频率响应，以及单端或差分输出，适用于低频振动、航空航天测试和道路载荷采集。对于模态分析、NVH测试和科研试验，传感器自身的重复性、横向灵敏度、安装谐振及温度稳定性，都会对最终结果产生影响，因此不能只比较标称灵敏度。<br/>
+	3. 兼顾研发测试与工业监测<br/>
+	PCB既可用于研发阶段的产品验证，也可用于生产线末端测试、设备状态监测和长期结构健康监测。其应用场景包括结构振动、跌落冲击、环境试验、产品质量控制、路面载荷数据采集以及基础设施振动监测等。<br/>
+	这意味着，同一项目从样机试验、设计验证到量产质量控制，可以在相同或相近的测量体系下推进，有利于保持数据口径一致，也便于与数据采集系统、信号调理器、线缆及分析软件进行配套。<br/>
+	4. 技术资料与服务体系较完整<br/>
+	对于工程用户而言，传感器选型往往还需要考虑安装方式、线缆布置、接地隔离、采集通道、校准周期及售后<a href="https://m.elecfans.com/v/tag/1215/" target="_blank"><u>维修</u></a>。PCB提供产品数据表、安装指南、应用说明和工程技术支持，其全球分销与服务网络也为不同地区用户提供支持。<br/>
+	不过，进口传感器的最终采购体验很大程度还取决于本地渠道。原厂资料是否齐全、供货渠道是否正规、库存与交期是否明确、能否提供校准文件及后续维修，都是项目落地时不能忽略的环节。<br/>
+	三、PCB加速度传感器的典型应用场景<br/>
+	1. 汽车与轨道交通测试<br/>
+	在汽车研发中，加速度传感器常用于动力总成NVH、车身及悬架振动、制动与转向测试、道路载荷数据采集、乘坐舒适性评价和整车耐久性试验。轨道车辆同样可利用加速度数据评估运行平稳性、车体振动及关键部件疲劳载荷。<br/>
+	对于低频运动和长时间路试，可选择VC MEMS传感器；对于空间受限的零部件或轻质结构，则可优先考虑微型、低质量的单轴或三轴ICP®传感器，以降低附加质量对测量结果的影响。<br/>
+	2. 航空航天与国防试验<br/>
+	航空航天领域经常涉及飞行振动、起落架冲击、结构模态、环境可靠性及高冲击测试。此类项目通常对传感器的重量、密封性、温度适应性、抗冲击能力和数据重复性提出更高要求。<br/>
+	PCB的微型三轴、电荷输出及高温型号，可适应狭小空间、较高温度和瞬态冲击等复杂条件，因此也被应用于动力系统、小型涡轮、卫星环境试验及热真空振动测试等场景。<br/>
+	3. 工业设备状态监测与故障诊断<br/>
+	旋转机械、风机、泵、<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>、齿轮箱和机床在运行过程中会产生特征振动。通过合理布置加速度传感器，可以采集振动趋势、异常冲击和频谱变化，为轴承磨损、转子不平衡、齿轮损伤及结构松动等问题提供判断依据。<br/>
+	需要明确的是，加速度传感器本身是测量设备，不能替代完整的预测性维护系统。若要形成设备健康管理能力，还需要配套的数据采集、分析软件、报警阈值和运维流程。<br/>
+	4. 建筑、桥梁与基础设施监测<br/>
+	对于桥梁、建筑、历史建筑、大型设备和精密仪器基础，低频微振动监测可用于评估交通、施工、机械运行或地震活动对结构的影响。PCB的部分高灵敏度地震型ICP®传感器可实现0.17 Hz起的低频响应，并支持单轴或三轴长期安装。<br/>
+	这类项目除了关注传感器灵敏度，还应同步考虑安装刚性、环境防护、供电方式、数据采样周期及长期校准安排。<br/>
+	5. 电子产品、包装与消费类产品测试<br/>
+	<a href="https://m.elecfans.com/v/tag/107/" target="_blank"><u>手机</u></a>、<a href="https://www.elecfans.com/v/tag/1247/" target="_blank"><u>电脑</u></a>、家电、<a href="https://www.hqchip.com/gongsi.html" target="_blank"><u>半导体</u></a>设备、包装运输件及<a href="https://www.elecfans.com/v/tag/4854/" target="_blank"><u>光学</u></a>仪器，也可能面临跌落、运输振动、工作振动或环境应力筛选。PCB传感器可用于产品鉴定、包装跌落、可靠性验证及生产线末端测试。<br/>
+	尤其是轻型产品或精密光学部件，传感器质量不能明显改变被测对象的动态特性，因此选型时需要同时评估传感器重量、安装方式和频率范围。<br/>
+	四、把工况参数与PCB型号准确对应，是采购前的关键一步<br/>
+	需要提醒的是，PCB的产品线极宽，测量原理、灵敏度、量程、频率响应、安装方式、输出<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>、温度等级及防护配置差异很大，选错型号的概率不低。特别是低频运动、高温冲击、微型结构模态和长周期监测等场景，仅凭“加速度传感器”这一通用名称，往往无法直接确定合适产品。<br/>
+	在实际选型或采购时，可关注具备原厂授权的渠道，例如邦盟，其授权资质可通过PCB官方渠道核实。通过授权渠道不仅能确保原厂正品追溯，也便于在选型阶段直接对接原厂技术资源，把工况参数和对应型号对齐。<br/>
+	PCB——复杂振动与冲击测试中，你值得拥有的加速度传感器。当频率、温度、空间和测量精度这几道限制同时收紧，常规传感器开始难以兼顾时，PCB用较完整的产品体系与工程化设计给出了一个不必反复试错的选项。测点越苛刻，它越值得出现在你的选型清单里。<br/><br/>
+	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[踩坑分享：军品级浮点DSP SM320C6713-EP系列硬件设计全指南]]></title>    <link>https://www.elecfans.com/d/8789139.html</link>    <guid>https://www.elecfans.com/d/8789139.html</guid>    <pubDate>2026-10-19 16:05:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8789139" value="https://file.elecfans.com/web2/M00/82/3D/poYBAGOUWvuAJuxdABdUWttAF4s049.pdf"/><h1>踩坑分享：军品级浮点<a href="https://www.hqchip.com/app/1378" target="_blank"><u>DSP</u></a> SM320C6713-EP系列硬件设计全指南</h1>
+<p>最近手上有个机载多通道<a href="https://m.hqchip.com/app/1537" target="_blank"><u>音频</u></a>处理的项目，要求-55~125℃宽温、长生命周期、高可靠性，翻了一圈<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>TI</u></a>的EP（增强型产品，面向国防/航空航天/医疗领域）系列DSP，最终定了SM320C6713B-EP。啃了三天原厂datasheet，把硬件设计最关心的点、容易踩的坑都整理出来了，给做同类型项目的兄弟省点时间。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8789139" target="_blank">SM32C6713BGDPS20EP.pdf</a></p>
+<hr/>
+<h2>为什么选这颗料？</h2>
+<p>做军工/工业项目选芯片，第一怕停产，第二怕生态差，第三怕性能不够。这颗刚好全踩中痛点：</p>
+<ol>
+<li><strong>可靠性拉满</strong>：EP系列是受控基线，单一晶圆厂、单一封测厂，支持 ex<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>nded 生命周期和产品变更通知，完全不用担心量产到一半物料停产，这点对长周期项目太重要了。</li>
+<li><strong>生态成熟</strong>：C67x是TI经典浮点DSP架构，CCS开发工具链、DSP/B<a href="https://www.elecfans.com/tags/ios/" target="_blank"><u>IOS</u></a>实时系统、参考设计全齐，开发门槛比冷门架构低太多，不用从零踩生态的坑。</li>
+<li><strong>性能刚好够用</strong>：面向多通道<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>处理、音频处理做了外设优化，不用外扩一堆<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>芯片，省BOM省<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>面积。</li>
+</ol>
+<hr/>
+<h2>核心性能：做16路音频还剩30%算力</h2>
+<p>别扯干参数，说点实际项目能用的：</p>
+<ul>
+<li>算力方面分200/300MHz两个版本：300MHz版本能跑到2400MIPS、1800MFLOPS，双乘加单元每秒600MM<a href="https://www.hqchip.com/app/1703" target="_blank"><u>AC</u></a>S，我做16路192kHz/24bit音频加FFT、FIR滤波、动态范围压缩处理，算力还剩30%左右，完全够用。</li>
+<li>内存架构很友好：L1P 4KB指令缓存、L1D 4KB数据缓存，L2总共256KB，其中64KB可配成缓存/<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>，剩下192KB固定RAM，中规模算法不用外挂SRAM就能跑。</li>
+<li>外设全是为音频优化的：2路McASP（每路8个串行数据引脚，支持I2S/TDM/DIT输出，最多支持16路192k立体声输出，做多通道功放、音频矩阵不用外扩Codec接口），2路McBSP（支持S<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>/AC97），2路<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>，16路GPIO，16通道EDMA，还有16位HPI接口可以和<a href="https://m.hqchip.com/app/1378" target="_blank"><u>ARM</u></a>做高速<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>，32位EMIF直接挂<a href="https://m.hqchip.com/app/1522" target="_blank"><u>SD</u></a>RAM/Flash/SBSRAM，最大支持512MB外部寻址，扩展性完全够。</li>
+</ul>
+<hr/>
+<h2>硬件设计必看：这些坑我已经踩过了</h2>
+<h3>1. 引脚复用：先画功能矩阵再画原理图！</h3>
+<p>这颗的引脚复用做的有点绕，很多外设共用引脚，配置错了根本跑不起来，我一开始没仔细看，把McASP0和McBSP0的引脚搞混了，调了两天音频没输出，给大家划重点：</p>
+<ul>
+<li><strong>复位硬配置</strong>：HD14引脚的电平决定HPI和McASP1+GPIO的选择：默认HD14内部上拉，HPI启用，McASP1和GP[15:8]这些GPIO都用不了；如果不用HPI，一定要给HD14加外部下拉<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>，才能用McASP1和额外的GPIO。</li>
+<li><strong>软件软配置</strong>：靠DEVCFG<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>切换McBSP、McASP、I2C的引脚：
+<ul>
+<li>MCBSP0DIS写1：禁用McBSP0，释放AHCLKR0/ACLKR0等引脚给McASP0用</li>
+<li>MCBSP1DIS写1：禁用McBSP1，释放SCL1/SDA1给I2C1，同时释放AXR0[5:7]给McASP0用</li>
+<li>TOUT0SEL/TOUT1SEL写1：把<a href="https://www.elecfans.com/tags/定时器/" target="_blank"><u>定时器</u></a>输出引脚切给McASP0用，适合需要更多McASP数据引脚的场景。
+官方给了6种参考配置，我用的最多的是「双McASP+双I2C+GPIO」：HD14下拉，MCBSP0DIS=1，MCBSP1DIS=1，两路McASP都拉满，适合多通道音频项目。</li>
+</ul></li>
+</ul>
+<h3>2. <a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>设计：别小看时序和去耦</h3>
+<p>这颗是双电源：200MHz版本核电压1.26V，300MHz版本1.4V，IO电压统一3.3V。
+官方说没有强制电源时序要求，但为了避免总线冲突，<strong>强烈建议核电压先上电，后上IO电压，断电反过来</strong>。如果用双路<a href="https://www.hqchip.com/app/1703" target="_blank"><u>电源芯片</u></a>，直接选带时序控制的，省得加额外电路；如果是单电源方案，加个<a href="https://www.hqchip.com/app/1558" target="_blank"><u>肖特基</u></a><a href="https://www.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>把核电压钳到IO电压上就行，datasheet里有参考电路。
+去耦<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>一定要放够：核心电源旁边至少放30个0402/0603的100nF陶瓷电容，越近越好，最远不要超过1.25cm，IO电源也放30个，不然电源噪声会直接搞崩音频信噪比。还有272球BGA的<a href="https://m.hqchip.com/tags" target="_blank"><u>中心</u></a>散热焊盘一定要焊到地平面上，既是电地也是散热，这颗满负载功耗大概1.5W左右，散热做好了宽温下不会出问题。</p>
+<h3>3. <a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>和PLL：算清楚分频比再写固件</h3>
+<p>外部输入时钟CLKIN推荐用10~50MHz的低抖动有源晶振，音频项目对时钟抖动特别敏感，别省这几块钱。
+PLL最大输出600MHz，分频给各个模块的时候<strong>一定要注意SYSCLK2必须是SYSCLK1的一半</strong>，比如<a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>跑200MHz，SYSCLK2外设总线就得是100MHz，这个分频比错了所有外设时序全乱。其他时钟域：</p>
+<ul>
+<li>SYSCLK3给EMIF，最大100MHz，可以选内部PLL分频或者外部ECLKIN输入</li>
+<li>CLKOUT3可以分频输出给外部Codec当主时钟，省一个晶振。
+PLL锁时间典型值187.5us，固件切换PLL配置的时候一定要等够锁时间再切，不然直接跑飞。</li>
+</ul>
+<h3>4. Boot模式：根据项目需求选</h3>
+<p>复位时HD[4:3]引脚的电平决定boot模式：</p>
+<ul>
+<li>00：HPI/<a href="https://bbs.elecfans.com/zhuti_proteus_1.html" target="_blank"><u>仿真</u></a>boot，适合调试阶段，或者有主ARM给DSP加载固件的场景</li>
+<li>01/10/11：分别对应8/16/32位<a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a> boot，我用的是32位Flash boot，启动速度最快。
+还有HD8引脚决定大小端，默认上拉是小端，和大部分外设兼容，不用改。C6713B还有个HD12引脚控制EMIF大端模式下的字节对齐，用大端模式的话记得拉低，8/16位数据会统一放在ED[7:0]，不用额外做字节交换，很方便。</li>
+</ul>
+<h3>5. 调试注意事项：JTAG别漏电阻</h3>
+<p>这颗JTAG的TRST引脚内部有下拉，默认是复位状态，调试器必须能主动拉TRST高才能正常连接。量产产品不用JTAG的话，TRST直接下拉就行，EMU引脚全部留空不要接任何东西。
+还有复位时序坑：外部RESET引脚至少要拉低100ns，而且HD[14,8,4:3]这些boot配置引脚的电平，在RESET上升沿前后要保持至少2个CPU周期的建立保持时间，不然配置不生效，我一开始就是复位时间不够，每次上电boot模式都是随机的，踩了大半天坑。</p>
+<hr/>
+<h2>关键外设设计提示</h2>
+<h3>McASP（<a href="https://www.hqchip.com/app/1537" target="_blank"><u>音频接口</u></a>）</h3>
+<p>每路McASP支持8个串行数据引脚，每个可配成发送/接收，支持2~32个TDM时隙，还支持DIT模式直接输出S/PDIF/AES3信号，不用外加编码芯片。做专业音频的话，记得把AMUTE引脚接Codec的静音脚，McASP检测到时钟错误、数据underrun的时候会自动拉静音，避免爆音烧喇叭。
+两路McASP的时钟可以独立配置，支持不同采样率，适合做异步采样率转换的项目。</p>
+<h3>EMIF（外部存储接口）</h3>
+<p>32位EMIF支持无缝挂SDRAM、SBSRAM、Flash、SRAM，最大100MHz。<strong>所有EMIF输出信号都要串33Ω终端电阻</strong>，不然信号过冲会导致SDRAM读写错误。我用的是128MB 32位SDRAM挂在CE0空间，100MHz跑完全稳定。</p>
+<h3>I2C接口</h3>
+<p>两路I2C，一路挂Codec、<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>，另一路可以和其他<a href="https://www.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>通信。注意I2C的SCL/SDA引脚没有内部上拉，<strong>一定要外部加4.7kΩ上拉电阻</strong>，不然通讯不了。</p>
+<hr/>
+<h2>选型和参考资源</h2>
+<table>
+<thead>
+<tr>
+<th>现在量产的型号三个，按需选：</th>
+<th>型号</th>
+<th>主频</th>
+<th>核电压</th>
+<th>工作温度</th>
+<th>封装</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SM32C6713BGDPA20EP</td>
+<td>200MHz</td>
+<td>1.26V</td>
+<td>-40~105℃</td>
+<td>272BGA</td>
+</tr>
+<tr>
+<td>SM32C6713BGDPS20EP</td>
+<td>200MHz</td>
+<td>1.26V</td>
+<td>-55~105℃</td>
+<td>272BGA</td>
+</tr>
+<tr>
+<td>SM32C6713BGDPM30EP</td>
+<td>300MHz</td>
+<td>1.4V</td>
+<td>-55~125℃</td>
+<td>272BGA</td>
+</tr>
+</tbody>
+</table>
+<p>需要军级<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>的可以选对应的V62/04603系列，有QML认证。
+开发资源直接找TI官方：</p>
+<ul>
+<li>开发板：TMS320C6713EVM</li>
+<li>核心参考手册：SPRU189（CPU指令集）、SPRU190（外设参考）、SPRU041（McASP参考）</li>
+<li><a href="https://www.elecfans.com/tags/仿真器/" target="_blank"><u>仿真器</u></a>：XDS100/XDS200都支持。</li>
+</ul>
+<hr/>
+<h2>最后说两句</h2>
+<p>这颗确实是工业/军品级多通道信号处理、音频处理的神U，性能够、可靠性高、生态完善，唯一的缺点就是272球BGA引脚密，Layout的时候要注意过孔和阻抗控制，还有引脚复用一定要先理清楚再画原理图，别像我一样改了两次板。
+大家有做同类型项目的，遇到什么问题可以在评论区留言，我踩过的坑都能给你解答~</p>]]></description></item><item>    <title><![CDATA[干货丨低功耗音频DSP首选：TMS320C5514 设计实战指南]]></title>    <link>https://www.elecfans.com/d/8789140.html</link>    <guid>https://www.elecfans.com/d/8789140.html</guid>    <pubDate>2026-10-19 16:05:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8789140" value="https://file.elecfans.com/web2/M00/82/3C/poYBAGOUWcWAEfSGABEJo28WLSM322.pdf"/><h1>干货丨低功耗<a href="https://m.hqchip.com/app/1537" target="_blank"><u>音频</u></a><a href="https://www.hqchip.com/app/1378" target="_blank"><u>DSP</u></a>首选：TMS320C5514 设计实战指南</h1>
+<p>最近帮客户做一款主动降噪耳机的方案，选了一圈DSP最后定了<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>TI</u></a>的TMS320C5514——属于C55x系列的经典老炮，2013年量产至今供货稳得一批，低功耗表现和音频外设配置完全踩中便携音频、工业语音类项目的需求点，今天把整理的核心参数、硬件设计坑点分享出来，做同类项目的可以直接参考。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8789140" target="_blank">TMS320C5514AZCH10.pdf</a></p>
+<p><em>（原档是TI官方的SP<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>646G手册，需要全版的直接去TI官网搜编号就行，这里只挑<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>最关心的干货讲）</em></p>
+<hr/>
+<h2>一、核心性能：够用就是最好的</h2>
+<p>作为一款定位低功耗的定点DSP，它的性能完全能覆盖绝大多数中端音频/<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>处理场景，不用盲目追更高端的型号加成本：</p>
+<ul>
+<li>主频可选60/75/100/120MHz，对应1.05V/1.3V内核电压，单周期最快8.33ns</li>
+<li>双M<a href="https://www.hqchip.com/app/1703" target="_blank"><u>AC</u></a>单元，峰值算力240MMACS，跑个32阶FIR、ANC<a href="https://www.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>、<a href="https://www.elecfans.com/tags/语音识别/" target="_blank"><u>语音识别</u></a>前端处理毫无压力</li>
+<li>双ALU+3读2写内部总线，单周期最多做4次16位数据读+2次写，配合16路独立<a href="https://www.elecfans.com/tags/dma/" target="_blank"><u>DMA</u></a>，数据搬移完全不用占<a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>资源</li>
+<li>和全系列C55x器件软件兼容，老项目升级直接移代码就行</li>
+</ul>
+<p><em>划重点：如果你的项目是音频类、不需要浮点运算，这款的性能够用到爆，还比同性能的新DSP便宜至少30%</em></p>
+<hr/>
+<h2>二、存储配置：内置+外扩灵活搭配</h2>
+<p>片上存储刚好够大多数嵌入式场景用，不够也能直接外扩，不用加胶合逻辑：</p>
+<ul>
+<li>内置256KB零等待<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>：64KB双访问DARAM（单周期2次读写）+192KB单访问SARAM，跑算法的Buffer、临时变量完全够放</li>
+<li>128KB内置<a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a>，自带Bootlo<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>ad</u></a>er，支持多种启动模式不用额外加boot芯片</li>
+<li>外部EMIF<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>最大支持4M×16位的<a href="https://m.hqchip.com/app/1522" target="_blank"><u>SD</u></a>RAM/mS<a href="https://www.elecfans.com/tags/dram/" target="_blank"><u>DRAM</u></a>，还要存固件、录音数据的话直接挂NAND/NOR Flash就行，支持1/4bit ECC校验，省了外接ECC芯片的钱</li>
+</ul>
+<hr/>
+<h2>三、外设清单：专为音频/低功耗场景优化</h2>
+<table>
+<thead>
+<tr>
+<th>这款的外设真的是把音频类需要的接口拉满了，不用额外挂扩展芯片砍BOM成本：</th>
+<th>外设类型</th>
+<th>配置</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://www.hqchip.com/app/1537" target="_blank"><u>音频接口</u></a></td>
+<td>4路独立I2S，全双工双声道</td>
+<td>多麦拾音、多声道输出、Codec直连</td>
+</tr>
+<tr>
+<td>存储接口</td>
+<td>2路MMC/SD、EMIF支持NAND/NOR/SDRAM</td>
+<td>本地录音存储、固件升级</td>
+</tr>
+<tr>
+<td>通用接口</td>
+<td>1路<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>（带流控）、1路SPI（4个片选）、1路<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a></td>
+<td>接<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>、调试、外设扩展</td>
+</tr>
+<tr>
+<td><a href="https://m.hqchip.com/app/1515" target="_blank"><u>USB</u></a></td>
+<td>内置2.0高速PHY，仅设备模式</td>
+<td>连PC传数据、USB声卡类应用</td>
+</tr>
+<tr>
+<td>其他</td>
+<td>3路32位<a href="https://www.elecfans.com/tags/定时器/" target="_blank"><u>定时器</u></a>（1路可配<a href="https://www.elecfans.com/tags/看门狗/" target="_blank"><u>看门狗</u></a>）、RTC独立供电、最多26个GPIO</td>
+<td>低功耗唤醒、普通IO控制</td>
+</tr>
+</tbody>
+</table>
+<p><em>亲测4路I2S做4麦阵列拾音+双声道降噪输出刚好，不用额外加USB转I2S的芯片，太爽了</em></p>
+<hr/>
+<h2>四、<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>&amp;低功耗设计：这才是这款DSP的核心卖点</h2>
+<p>做便携设备的最关心功耗，C5514的电源架构真的给硬件工程师省了太多事：</p>
+<h3>1、内置3个<a href="https://www.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>，电源BOM直接砍半</h3>
+<ul>
+<li>DSP_LDO：输出1.05V/1.3V可选，最大250mA，直接给内核供电</li>
+<li>ANA_LDO：输出1.3V，给PLL和<a href="https://m.hqchip.com/app/1731" target="_blank"><u>电源管理</u></a>电路供电，最大4mA</li>
+<li>USB_LDO：输出1.3V，给USB核和PHY供电，最大25mA</li>
+<li>所有LDO的输入只有一个LDOI引脚，支持1.8-3.6V输入，直接用系统的3.3V供电就行，不用额外做多路<a href="https://www.hqchip.com/app/1703" target="_blank"><u>DC</u></a>DC</li>
+</ul>
+<h3>2、低功耗模式拉满</h3>
+<ul>
+<li>9个独立电源域，不用的外设、核心可以单独关电</li>
+<li>RTC独立电源域，关核心只留RTC的话功耗可以做到微安级，用RTC闹钟或者WAKEUP引脚就能唤醒</li>
+<li>支持IDLE低功耗模式，唤醒响应时间最快30.5μs，做便携式设备的待机功能完全够用</li>
+</ul>
+<h3>❗ 踩坑警告（我第一次画板踩过的）</h3>
+<p><strong>RTC的核心电源CV<a href="https://www.hqchip.com/app/1729" target="_blank"><u>DDR</u></a>TC必须外部供电！哪怕你不用RTC功能也必须给这个脚供电，内部3个LDO都供不了它，不然芯片直接起不来，我当时查了半天才在手册的犄角旮旯找到这个说明，血的教训</strong></p>
+<hr/>
+<h2>五、硬件设计必看避坑点</h2>
+<h3>1、引脚复用配置</h3>
+<p>绝大多数外设引脚都是复用的，通过<code>EBSR</code><a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>配置功能，比如同一个引脚可以配成SPI、I2S、UART或者GPIO。调试的时候如果外设没反应，先查EBSR的配置对不对，别上来就怪硬件焊错了。
+<em>注意：默认的MODE0是保留的，必须配成MODE1-6才能正常用外设</em></p>
+<h3>2、电源测序</h3>
+<p>如果用USB功能，上电顺序必须是：USB 1.3V核电源 → USB 3.3V PHY电源 → VBUS，不然USB识别不了。如果不用USB，直接把USB的所有电源引脚接地就行。</p>
+<h3>3、EMIF速率限制</h3>
+<ul>
+<li>当EMIF的IO电源DV_DDEMIF是1.8V的时候，SDCLK最高只能到50MHz，必须配置成SYSCLK/2</li>
+<li>3.3V/2.5V供电的时候，1.05V内核最高60MHz，1.3V内核最高100MHz，别超，不然内存访问必出错</li>
+</ul>
+<h3>4、JTAG设计</h3>
+<p>TRST引脚必须加外部下拉<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>，不然<a href="https://www.elecfans.com/tags/仿真器/" target="_blank"><u>仿真器</u></a>大概率连不上；JTAG走线超过6英寸的话，TCK/TMS/TDI都要加缓冲，不然容易出<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>错误。</p>
+<h3>5、其他细节</h3>
+<ul>
+<li>I2C的SDA/SCL必须加外部上拉，内部的上拉驱动能力不够</li>
+<li>所有LDO输出必须加推荐的去耦电容：DSP_LDO 5-10μF，ANA_LDO/USB_LDO 1μF左右，不然电源不稳定容易跑飞</li>
+<li>不用的引脚如果是高阻态的话，要么接上下拉要么配成输出，避免浮空漏电流</li>
+</ul>
+<hr/>
+<h2>六、典型适用场景</h2>
+<p>这款DSP我目前测下来，最适合这些项目，性价比直接拉满：</p>
+<ol>
+<li>无线音频设备：ANC耳机、对讲、<a href="https://www.elecfans.com/tags/蓝牙/" target="_blank"><u>蓝牙</u></a>音箱、会议麦克风</li>
+<li>便携医疗设备：听诊器、心电监护前端、助听器</li>
+<li><a href="https://www.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>：语音识别门禁、故障声纹检测、指纹锁</li>
+<li>低功耗语音类产品：录音笔、智能语音玩具</li>
+</ol>
+<p><em>如果需要浮点运算、更高主频的话可以看同系列的C5515、C5535， <a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>pi</u></a>n to pin兼容，硬件不用改直接换芯片就行</em></p>
+<hr/>
+<h2>最后说两句</h2>
+<p>这款DSP虽然是10年前的产品，但架不住生态完善、供货稳定、成本低，TI的CCS开发环境例程也全，新手入门也不难。我们目前批量用了快2年了，没出过什么问题，对成本敏感的低功耗音频/信号处理项目真的可以闭眼选。</p>
+<p>你们用C55x系列DSP踩过什么坑？评论区聊一聊~</p>]]></description></item><item>    <title><![CDATA[低功耗DSP首选：TMS320C5517硬件设计踩坑指南+核心参数梳理]]></title>    <link>https://www.elecfans.com/d/8789141.html</link>    <guid>https://www.elecfans.com/d/8789141.html</guid>    <pubDate>2026-10-19 16:05:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8789141" value="https://file.elecfans.com/web2/M00/71/88/pYYBAGNOk8-AQKKHABXDC1ZYZ_o259.pdf"/><h1>低功耗<a href="https://www.hqchip.com/app/1378" target="_blank"><u>DSP</u></a>首选：TMS320C5517硬件设计踩坑指南+核心参数梳理</h1>
+<p>最近在做一款便携生物电信号采集+分析的手持设备项目，选了<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>TI</u></a>的C5517这款定点DSP，前前后后啃了半个月datasheet，画板+调板也踩了不少低级坑，今天整理下核心要点和避坑指南，给要用这款芯片的兄弟萌省点时间。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8789141" target="_blank">TMS320C5517AZCH20.pdf</a></p>
+<p>先说说为啥选它：主打低功耗，待机功耗μA级，还有硬件FFT加速器，外设全到离谱，做数字对讲机、主动降噪耳机、便携医疗、低功耗<a href="https://www.elecfans.com/tags/语音识别/" target="_blank"><u>语音识别</u></a>这类产品简直是量身定做，价格也不算贵，性价比拉满。</p>
+<hr/>
+<h2>一、核心性能亮点（为啥选它？）</h2>
+<p>这款属于TI C5000系列的定点DSP，核心架构是C55x，几个最实用的点：</p>
+<ol>
+<li><strong>算力够，功耗够低</strong>：最高200MHz主频，双MAC单元，单周期能做两次17×17乘法+32位加法，做普通<a href="https://m.hqchip.com/app/1537" target="_blank"><u>音频</u></a><a href="https://www.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>、小点数<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>处理完全够用。1.05V核心电压下跑75MHz的时候功耗不到10mW，待机更是只有μA级，便携设备刚需。</li>
+<li><strong>自带FFT硬件加速器</strong>：支持8~1024点实/复数FFT，不用自己手搓优化FFT代码了！之前用另一款M4做1024点FFT要跑1ms多，这个硬件加速不到10μs就搞定，还不占<a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>资源，做频域分析、降噪算法的朋友懂这有多香。</li>
+<li><strong>内存够大</strong>：64KB DA<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a> + 256KB SARAM + 128KB <a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a>，不用外挂SRAM就能跑大部分算法，小项目甚至可以把所有代码和数据都放片内，稳定性更高。</li>
+<li><strong>外设全到溢出</strong>：3路I2S、2路<a href="https://m.hqchip.com/app/1522" target="_blank"><u>SD</u></a>/MMC<a href="https://www.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>、S<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>、<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>、<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>、<a href="https://m.hqchip.com/app/1515" target="_blank"><u>USB</u></a>2.0 Device、10位SAR <a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>、最多26个GPIO，还有16位UHPI主机<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>，基本不用外扩接口芯片，BOM成本直接降一截。</li>
+</ol>
+<hr/>
+<h2>二、硬件设计核心避坑（重灾区！）</h2>
+<h3>2.1 引脚复用：先定功能再画板，不然后悔死</h3>
+<p>这款芯片为了塞下这么多外设，引脚复用做的非常“极致”，所有复用逻辑全靠<code>Ex<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>rnal Bus Selection Register (EBSR)</code>控制，<strong>硬件设计之前必须先把所有要用的功能列出来，对着4.3节的复用表核对有没有冲突</strong>，别光看引脚名就拉线。</p>
+<blockquote>
+<p>【踩过的坑】之前想同时用3路I2S+UHPI+2路SD卡，核对复用表才发现I2S2/I2S3和UHPI、SPI是共用引脚的，最后只能砍了UHPI功能，改了需求才搞定。</p>
+</blockquote>
+<p>几个常用的复用组提前给大家列出来：</p>
+<ul>
+<li>组1：UHPI、SPI、UART、I2S2、I2S3、GPIO[31:27,20:12] 共用，最多只能选2~3个功能用</li>
+<li>组2：MMC1、McSPI、GPIO[11:6] 共用，要SD卡就不能用McSPI，自己取舍</li>
+<li>组3：MMC0、I2S0、McBSP、GPIO[5:0] 共用，要接Codec用I2S0就不能用MMC0</li>
+<li>组4：EMIF高地址线EM_A[20:15]和GPIO[26:21]共用，刚好这几个还是启动配置引脚，要大地址空间EMIF就少6个GPIO，自己权衡。</li>
+</ul>
+<h3>2.2 <a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>设计：90%的启动失败都是这里出问题</h3>
+<p>这部分是重中之重，我同事之前画第一版的时候就是没注意细节，焊完板芯片怎么都起不来，查了3天：</p>
+<h4>【敲黑板1：RTC域电源必须外部供！】</h4>
+<p>哪怕你不用RTC功能，<strong><code>CV_<a href="https://www.hqchip.com/app/1729" target="_blank"><u>DDR</u></a>TC</code>引脚也必须由外部电源供电，内部3个<a href="https://www.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>都没法给它供电</strong>，悬空或者接内部LDO直接开不了机。如果不用RTC，把RTC_XI接CV_DDRTC，RTC_XO接地就行，不然RTC<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>访问不了，启动的时候会卡死。</p>
+<h4>【敲黑板2：三个内部LDO的用法】</h4>
+<p>芯片自带三个LDO，用法有讲究：</p>
+<ul>
+<li><strong>DSP_LDO</strong>：给核心CV_DD供电，输出1.05V/1.3V可选，最大输出250mA。如果要跑200MHz需要1.4V核心电压，这个LDO供不了，必须用外部电源给CV_DD供电，同时把<code>DSP_LDO_EN</code>引脚拉高禁用内部LDO。输出必须接5~10μF的去耦<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>，别省，电容小了纹波大，跑高频容易莫名死机。</li>
+<li><strong>ANA_LDO</strong>：给SAR <a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>C和<a href="https://m.hqchip.com/app/1731" target="_blank"><u>电源管理</u></a>电路供电，输出1.3V最大4mA，输出接1μF去耦电容，如果ADC精度要求高的话，建议这个输出只给VDDA_ANA引脚供电，别带其他负载。</li>
+<li><strong>USB_LDO</strong>：给USB核心供电，输出1.3V最大25mA，不用USB的话可以关掉，输出接1~2μF去耦电容。</li>
+</ul>
+<h4>【敲黑板3：电源和复位注意事项】</h4>
+<ul>
+<li>芯片没有强制电源上下电顺序，但是<strong>外部复位信号<code>RESET</code>必须要等所有电源都稳定之后再拉高</strong>，至少留10ms的延时，不然会出现偶发启动失败，批量生产的时候哭都来不及。</li>
+<li>所有电源引脚的去耦电容必须尽量靠近引脚，0402封装的0.1μF陶瓷电容每个电源脚配一个，再放几个10μF的<a href="https://www.hqchip.com/app/395" target="_blank"><u>钽电容</u></a>做 bulk 滤波。</li>
+<li><code>BG_CAP</code>引脚必须接1个0.1μF的电容到<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>地，这个是内部带隙基准的滤波电容，接错了内部LDO、ADC都工作不正常。</li>
+</ul>
+<h3>2.3 <a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>设计：别乱接</h3>
+<p>时钟源有两个选择，靠<code>CLK_SEL</code>引脚选择，这个引脚必须固定接高或者接低，不能热切换：</p>
+<ul>
+<li><code>CLK_SEL=0</code>：用内部USB<a href="https://www.hqchip.com/app/850" target="_blank"><u>振荡器</u></a>，外部接12M晶振到USB_MXI/USB_MXO，此时USB_LDO强制打开不能关，适合要用USB的场景。</li>
+<li><code>CLK_SEL=1</code>：用外部时钟输入到CLKIN引脚，支持11.2896M、12M、12.288M、16.8M、19.2M几个标准频率，不用USB的话选这个更灵活，还能关USB_LDO省功耗。
+<blockquote>
+<p>注意：不用的时钟输入引脚要接地，别悬空。如果用外部晶振，负载电容要按晶腾 datasheet 选，USB的12M晶振负载电容一般是18~22pF，RTC的32.768k晶振选12.5pF负载的就行。</p>
+</blockquote></li>
+</ul>
+<hr/>
+<h2>三、常用外设使用要点</h2>
+<h3>3.1 EMIF外扩存储器</h3>
+<p>支持SRAM、NOR、NAND、S<a href="https://www.elecfans.com/tags/dram/" target="_blank"><u>DRAM</u></a>/mSDRAM，几个关键限制：</p>
+<ul>
+<li>16位数据总线，地址线最多21位，支持4个异步片选+2个SDRAM片选。</li>
+<li>SDRAM最高频率限制：当DV_DDEMIF是3.3/2.75V的时候最高100MHz，是1.8V的时候只能到50MHz，别超频，不然读写出错。</li>
+<li>NAND支持1bit/4bit ECC校验，不用自己做ECC算法，省了不少事。</li>
+</ul>
+<h3>3.2 音频/<a href="https://m.elecfans.com/v/tag/13179/" target="_blank"><u>通信接口</u></a></h3>
+<ul>
+<li>3路I2S全双工，支持8~32位数据宽度，接多通道Codec很方便，I2S主模式最高时钟可以到50MHz，支持96K/24bit音频完全没问题。</li>
+<li>2路SD/MMC控制器，最高支持50MHz时钟，支持SDHC卡，做记录仪、音频播放器可以插两张卡，一张存固件一张存数据。</li>
+<li>UART带硬件流控，最高波特率支持到3M，调试、接外部模块都够用。</li>
+<li>USB2.0 Device模式，驱动TI已经写好了，做USB音频、U盘功能直接用，不用自己改。</li>
+</ul>
+<hr/>
+<h2>四、启动模式调试要点</h2>
+<p>启动模式是上电的时候锁存<code>EM_A[20:15]</code>引脚的电平决定的，支持的启动方式非常全：NOR、NAND、SPI Flash、SD卡、I2C EEPROM、UART、USB、UHPI都支持。</p>
+<ul>
+<li>调试阶段建议选UART或者USB启动，直接用TI的烧录工具下载固件，不用拆芯片刷Flash，效率高很多。</li>
+<li>量产推荐用SPI Flash或者SD卡启动，成本低，量产方便。</li>
+<li>如果用UHPI启动，外部主机必须等上电后至少200ms（内部BG_CAP稳定时间）再发数据，不然会<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>失败。
+<blockquote>
+<p>注意：启动引脚默认是GPIO输入，要用上拉/下拉<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>固定电平，别悬空，不然每次启动模式都随机。</p>
+</blockquote></li>
+</ul>
+<hr/>
+<h2>五、调试小技巧</h2>
+<ol>
+<li>JTAG接口的<code>TRST</code>引脚必须接外部10k下拉电阻，不然<a href="https://www.elecfans.com/tags/仿真器/" target="_blank"><u>仿真器</u></a>经常连不上，别问我怎么知道的。</li>
+<li>默认CLKOUT引脚是关的，调试的时候可以打开，配置成输出内核时钟或者外设时钟，用<a href="https://m.elecfans.com/v/tag/577/" target="_blank"><u>示波器</u></a>测一下就知道时钟有没有跑对，比读寄存器方便多了。</li>
+<li>所有不用的引脚，如果是输出功能的就配置成高阻，输入功能的就接固定电平，别悬空，不然会增加功耗，还可能引入干扰。</li>
+</ol>
+<hr/>
+<h2>总结</h2>
+<p>这款C5517绝对是低功耗信号处理、音频类项目的首选芯片，性能够、功耗低、外设全，唯一的缺点就是引脚复用太复杂，电源部分的坑不少，只要避开上面说的这些问题，开发起来还是非常顺的。
+我把整理的复用核对表、电源设计checklist放在评论区了，需要的自取，大家用这款芯片的时候还踩过什么坑，评论区聊聊一起避坑~</p>
+<blockquote>
+<p>本文参考TI官方SP<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>727C版本datasheet，所有参数以官方最新文档为准。</p>
+</blockquote>]]></description></item><item>    <title><![CDATA[老DSP考古：TI TMS320C6201——20年前的1600MIPS性能怪兽，现在还能打吗？]]></title>    <link>https://www.elecfans.com/d/8789184.html</link>    <guid>https://www.elecfans.com/d/8789184.html</guid>    <pubDate>2026-10-19 16:10:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8789184" value="https://file.elecfans.com/web2/M00/82/C7/pYYBAGOUXQqAIG_2ABJ_byVY5Ug821.pdf"/><h1>老<a href="https://www.hqchip.com/app/1378" target="_blank"><u>DSP</u></a>考古：<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>TI</u></a> TMS320C6201——20年前的1600MIPS性能怪兽，现在还能打吗？</h1>
+<p>周末收拾实验室储物箱，翻出来一块积灰的C6000开发板，主控就是今天要聊的主角——TI TMS320C6201。这玩意我刚上大学的时候还被导师当宝贝，现在二手平台几十块就能淘到，翻了下它的datasheet才反应过来，这2004年就量产的老DSP，当年可是妥妥的性能怪兽，放今天做个小型项目也完全够用。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8789184" target="_blank">TMS320C6201GJC200.pdf</a></p>
+<hr/>
+<h2>核心性能：当年同价位没一个能打</h2>
+<p>先放几个硬参数，懂行的一眼就知道分量：</p>
+<ul>
+<li>200MHz主频，单指令周期5ns，单周期最多并行跑8条32位指令，算力拉满1600MIPS</li>
+<li>2个16位乘法器，单周期能跑2次MAC操作，峰值4亿次MAC/s</li>
+<li>当年做8路G.729语音编码、低分辨率实时图像处理都是常规操作，性能富余到能顺便跑个系统控制逻辑，比同期的<a href="https://www.hqchip.com/app/1378" target="_blank"><u>ARM</u></a>9不知道强到哪去。</li>
+</ul>
+<blockquote>
+<p>有没有当年用过这款DSP做项目的老哥？评论区聊聊你当年用它跑过什么应用？</p>
+</blockquote>
+<h2>架构放到今天也不过时</h2>
+<p>C6201用的是TI自研的VelociTI VLIW架构，这也是C6000系列能火20年的根基：</p>
+<h3>1. 8个独立功能单元，并行拉满</h3>
+<p>6个32/40位ALU+2个16位乘法器，搭配32个32位通用<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>，分成A、B两组，组内寄存器可以自由访问，跨组也能通过专用总线交互。
+和其他死板的VLIW架构不一样，它支持可变长度执行包：不需要8个单元都塞满指令才执行，用指令的最低位标记是否和下一条并行，代码体积比同期同性能DSP小30%左右，这一点当年真的救了很多片内存储不够的项目。</p>
+<h3>2. Lo<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>ad</u></a>-Store架构，<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a>逻辑清晰</h3>
+<p>所有运算都只操作寄存器，内存读写全靠专门的.D地址单元，支持线性/循环寻址，地址生成不占ALU资源，跑<a href="https://m.hqchip.com/app/1381" target="_blank"><u>数字信号</u></a>处理<a href="https://m.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>的时候效率特别高。唯一的坑就是新手写<a href="https://www.elecfans.com/v/tag/3195/" target="_blank"><u>汇编</u></a>的时候很容易忘加载数据，调试半天找不出问题，踩过坑的都懂。</p>
+<hr/>
+<h2>片上资源：外设全到能省一堆外接芯片</h2>
+<p>当年TI做外设是真的良心，C6201几乎把常用的<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>都集成了，不用画一堆 glue <a href="https://www.elecfans.com/tags/Cirrus logic/" target="_blank"><u>logic</u></a>：</p>
+<h3>1. 片上内存</h3>
+<p>1Mbit S<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>对半分：512Kbit做程序缓存/内存，512Kbit做双块数据内存，两个数据块可以独立访问，不用抢总线，做实时<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>处理的时候数据吞吐完全不卡。</p>
+<h3>2. 接口全到离谱</h3>
+<ul>
+<li>32位EMIF接口：无缝接SRAM、EP<a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a>、<a href="https://m.hqchip.com/app/1522" target="_blank"><u>SD</u></a>RAM、SBSRAM，不用额外加逻辑芯片，布线省事很多</li>
+<li>4通道<a href="https://www.elecfans.com/tags/dma/" target="_blank"><u>DMA</u></a>+辅助通道，不用占<a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>资源就能跑外设和内存的数据搬运</li>
+<li>16位H<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>主机接口，能直接被<a href="https://bbs.elecfans.com/zhuti_1184_1.html" target="_blank"><u>上位机</u></a>访问整个内存空间，做调试或者和主控<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>特别方便</li>
+<li>2个McBSP串口：直接接T1/E1帧器、<a href="https://m.hqchip.com/app/1703" target="_blank"><u>AC</u></a>97 codec，还兼容SPI，做<a href="https://www.hqchip.com/app/1537" target="_blank"><u>音频</u></a>、通信类项目不用额外加接口芯片</li>
+<li>2个32位通用<a href="https://www.elecfans.com/tags/定时器/" target="_blank"><u>定时器</u></a>、JTAG调试接口，常规控制需求全满足</li>
+</ul>
+<hr/>
+<h2>硬件设计踩坑指南，都是当年花钱买的教训</h2>
+<p>这款DSP其实设计难度不高，我当年第一次画BGA板就是用的它，踩过的几个坑给大家提个醒：</p>
+<h3>1. <a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>设计别偷懒</h3>
+<ul>
+<li>核心1.8V，IO3.3V，官方说不用严格排序，但实测核心比IO早100ms上电最稳，不然有时候启动会莫名总线冲突卡死，加个廉价的电源时序芯片就能解决</li>
+<li>核心上电瞬间峰值<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>能到2A以上，<a href="https://www.hqchip.com/app/1703" target="_blank"><u>电源芯片</u></a>裕量留够，别刚够1.5A就往上怼，大概率出问题</li>
+<li>核心、IO、地三个平面分开铺，多放低ESR的0.1uF去耦电容，靠近引脚放，别堆在一边
+<h3>2. PLL布线要抠细节</h3></li>
+<li>PLL的外围滤波<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a><a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>一定要紧紧贴在PLLF、PLLG引脚旁边，走线越短越好，尽量不要打过孔，我当年第一次画把滤波元件放了3cm远，<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>飘得离谱，折腾了一周才查出来问题</li>
+<li>200MHz版本PLLFREQ要配001b，别选错范围，不然时钟不稳</li>
+<li>PLL的供电要和IO的3.3V同平面，别和其他<a href="https://www.hqchip.com/app/1703" target="_blank"><u>开关电源</u></a>的供电走一起，避免纹波干扰
+<h3>3. 时序约束别乱改</h3>
+<p>datasheet里给的各类接口的setup/hold时间都是实测值，别为了布线随便改：</p></li>
+<li>SDRAM的控制信号走线长度尽量和SDCLK等长，误差控制在5mm以内</li>
+<li>JTAG的TCK信号尽量走短，最长别超过20cm，不然容易连不上仿真器</li>
+<li>所有时序的参考电平都是1.5V，做信号完整性<a href="https://bbs.elecfans.com/zhuti_proteus_1.html" target="_blank"><u>仿真</u></a>的时候别搞错参考点</li>
+</ul>
+<hr/>
+<h2>散热完全不用愁</h2>
+<p>C6201有两个352引脚BGA封装可选：大的GJC是35x35mm，小的GJL是27x27mm，都是带散热 slug 的增强封装：</p>
+<ul>
+<li>满负载功耗也就1.4W左右，GJC封装0风速下结到空气热阻才11.31℃/W，满负载温升才15℃左右，根本不用加散热片，夏天室温35℃跑一天也不烫</li>
+<li>对尺寸有要求的选GJL就行，热阻也才14.2℃/W，完全够用</li>
+</ul>
+<hr/>
+<h2>最后总结</h2>
+<p>这货虽然是20多年前的产品，但是架构放到现在都不过时，TI的资料全得离谱，当年的CCS开发环境现在还能找到资源，二手开发板几十块就能淘到，想入门DSP、练手手写汇编优化、做个小型音频处理/<a href="https://m.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>项目，性价比直接拉满。
+毕竟几十块钱就能体验当年上万块的旗舰DSP，还要什么自行车？</p>
+<blockquote>
+<p>最近打算用这块积灰的开发板做个离线<a href="https://www.elecfans.com/tags/语音识别/" target="_blank"><u>语音识别</u></a>小玩意，感兴趣的可以蹲个后续~</p>
+</blockquote>]]></description></item><item>    <title><![CDATA[老DSP还香吗？TMS320C6201硬件设计踩坑总结]]></title>    <link>https://www.elecfans.com/d/8789185.html</link>    <guid>https://www.elecfans.com/d/8789185.html</guid>    <pubDate>2026-10-19 16:10:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8789185" value="https://file.elecfans.com/web2/M00/82/3E/poYBAGOUXR6AMzTCABBtam3g-Wo274.pdf"/><h1>老<a href="https://www.hqchip.com/app/1378" target="_blank"><u>DSP</u></a>还香吗？TMS320C6201硬件设计踩坑总结</h1>
+<p>最近翻旧项目仓库，翻到了2010年做多路语音网关时画的C6201核心板，这颗97年首发的<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>TI</u></a> C6000系列定点DSP，放到今天性能肯定打不过新出的款，但工业、<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>领域的老项目维护、停产替换还经常能碰到它。今天把当年调试踩过的坑和核心设计要点整理出来，给需要的兄弟避避坑。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8789185" target="_blank">TMS320C6201GJL200.pdf</a></p>
+<hr/>
+<h2>先唠核心性能：当年的性能怪兽现在依然能打</h2>
+<p>作为C6000系列的早期量产型号，C6201的规格放在当年真的是降维打击：</p>
+<ul>
+<li>200MHz主频，5ns单指令周期，VelociTI VLIW架构单周期跑8条32位指令，合计1600MIPS，我当年用它跑8路E1语音编码+回声消除，<a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>占用率还不到30%。</li>
+<li>内核8个独立功能单元：6个32/40位ALU+2个16位乘法器，单周期能出2个M<a href="https://m.hqchip.com/app/1703" target="_blank"><u>AC</u></a>结果，合计466MMACS，做数字滤波、FFT这种运算基本不用特意抠<a href="https://www.elecfans.com/v/tag/3195/" target="_blank"><u>汇编</u></a>优化。</li>
+<li>特意提一下VLIW的可变长度执行包设计：同期其他家的VLIW DSP每次必须取满8条指令，空操作也占空间，C6201可以把多条指令打包成不同长度的执行包，代码密度能高30%左右，当年片内存储金贵，这个特性帮我省了不少外扩Flash的钱。</li>
+</ul>
+<hr/>
+<h2>外设配置：全是工业场景实用的配置，不用额外粘逻辑</h2>
+<p>TI当年做工业级DSP的思路真的很实在，外设全是实际项目里高频用到的，而且都做了无缝适配：</p>
+<h3>1. 存储系统</h3>
+<p>片上自带1Mbit S<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>，对半分成512Kbit程序空间（可配成缓存）+512Kbit双访问数据RAM，双口数据RAM是真的爽，两个运算单元可以同时访问不同块，没有总线冲突，比外挂SRAM延迟低太多。
+外扩用32位EMIF<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>，无缝接异步SRAM/EP<a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a>、同步<a href="https://m.hqchip.com/app/1522" target="_blank"><u>SD</u></a>RAM/SBSRAM，我当年外挂了2M 16位SDRAM做数据缓冲，不用加任何<a href="https://bbs.elecfans.com/zhuti_fpga_1.html" target="_blank"><u>CPLD</u></a>逻辑，配好EMIF的时序<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>直接就能用。</p>
+<h3>2. <a href="https://m.elecfans.com/v/tag/13179/" target="_blank"><u>通信接口</u></a></h3>
+<p>两个McBSP多通道缓冲串口是真的万能：直接对接T1/E1帧<a href="https://m.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>、支持ST-Bus交换、单口最多256通道，还兼容AC97、S<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>协议，我当年一个口接8路E1、另一个口接SPI Flash存固件，省了好几个接口芯片。
+还有16位HPI主机接口，外部主机可以直接访问DSP的整个内存空间，当年和<a href="https://www.hqchip.com/app/1378" target="_blank"><u>ARM</u></a>9做数据交互，速率比SPI快了快10倍，也不用做复杂的握手逻辑。</p>
+<h3>3. 其他实用配置</h3>
+<p>4通道<a href="https://www.elecfans.com/tags/dma/" target="_blank"><u>DMA</u></a>加辅助通道，McBSP、HPI的数据传输不用占CPU资源；两个32位通用<a href="https://www.elecfans.com/tags/定时器/" target="_blank"><u>定时器</u></a>、JTAG边界扫描这些常规配置就不说了，TI的XDS<a href="https://www.elecfans.com/tags/仿真器/" target="_blank"><u>仿真器</u></a>调C6000是真的稳，从来没出过连不上、丢固件的问题。</p>
+<hr/>
+<h2>重点来了：硬件设计必踩的几个坑，我当年全踩过</h2>
+<p>别光看参数好看，这颗DSP的设计细节没注意的话，分分钟让你调半个月找不到问题：</p>
+<h3>1. <a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>设计：官方说不要求上电顺序，真信你就输了</h3>
+<p>C6201是1.8V内核、3.3V I/O供电，datasheet里说不需要严格的上电顺序，但我当年踩过大坑：如果I/O先上电超过2秒，内核的瞬时<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>会飘到2A以上，轻则板子电源保护，重则直接烧片子。
+后来的解决方案是要么用双路同步<a href="https://www.hqchip.com/app/1703" target="_blank"><u>电源芯片</u></a>（比如TI自家的TPS563xx系列），要么让内核比I/O早上电、晚断电，就再也没出过问题。另外电源布局一定要注意：核心、I/O、GND要分开做电源平面，去耦电容尽量靠近引脚，尤其是PLL的电源要单独加EMI滤波，不然<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>jit<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>r超标，McBSP接E1会随机丢包。</p>
+<h3>2. PLL配置：外围元件和走线真的不能乱改</h3>
+<p>如果用x4倍频模式，PLL的外围滤波元件必须严格按datasheet给的参数来：R1=60.4Ω，C1=27nF，C2=560pF，而且所有PLL元件要放在板子正面靠近引脚的位置，走线尽量短、少打过孔。我当年为了布线方便把PLL元件放背面，结果锁相时间直接飙到200us以上，有时候还锁不住主频，改到正面就全好了。
+另外PLLFREQ引脚的配置别搞错：200MHz主频要设成001b，133MHz设000b，错了主频上不去还容易跑飞。</p>
+<h3>3. 复位设计：x4模式复位脉宽一定要够</h3>
+<p>x4倍频模式下，上电复位的脉宽至少要250us，等PLL完全稳定了再释放复位，我一开始贪便宜用RC复位电路，冷启动有30%的概率启动失败，换了200ms的专用复位IC之后再也没出过问题。</p>
+<h3>4. 常用接口时序参数，记下来省得翻datasheet</h3>
+<table>
+<thead>
+<tr>
+<th>接口类型</th>
+<th>关键参数（200MHz主频下）</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>异步SRAM</td>
+<td>读数据建立4ns，保持0.8ns</td>
+<td>10ns及以上的SRAM随便接，慢的话配EMIF等待周期就行</td>
+</tr>
+<tr>
+<td>SDRAM</td>
+<td>SDCLK100MHz，数据建立0.5ns，保持3ns</td>
+<td>选CL2的普通SDRAM就能适配</td>
+</tr>
+<tr>
+<td>McBSP SPI模式</td>
+<td>主模式最大100Mbps，从模式CLKGDV设为1</td>
+<td>从模式必须让CLKG等于主频的一半，不然数据错位</td>
+</tr>
+</tbody>
+</table>
+<hr/>
+<h2>最后唠两句选型和散热</h2>
+<p>C6201有两个BGA封装：27x27mm的GJC封装热阻11.31℃/W，35x35mm的GJL封装热阻14.2℃/W，满负载总功耗不到1.5W，加个小散热片就够，不用风扇。选型的时候注意后缀带A的是工业级（-40~105℃），不带的是商业级（0~90℃），工业户外项目一定要选A版本，不然冬天低温启动容易失败。</p>
+<p>说实在的，这颗DSP虽然是二十多年前的产品了，但TI的文档和生态是真的完善，当年开发的时候碰到的问题，翻官方应用笔记基本都能找到解决方案。现在新出的DSP性能是强，但很多文档写得云里雾里，遇到问题连个参考设计都找不到，也是挺头疼的。</p>
+<p>你们当年有没有用过C6000系列的DSP？评论区聊聊你踩过的坑~</p>]]></description></item><item>    <title><![CDATA[光电开关选型5 个误区，Gap 槽宽当探测距离最常见]]></title>    <link>https://www.elecfans.com/d/8789186.html</link>    <guid>https://www.elecfans.com/d/8789186.html</guid>    <pubDate>2026-10-19 16:10:00</pubDate>    <description><![CDATA[<p>
+	<br/>
+	做<a href="https://m.hqchip.com/app/2010" target="_blank"><u>光电开关</u></a>，被问最多的一句话是：这个型号能检测多少毫米？</p>
+<p>
+	Gap 不是探测距离，是结构上发射端与接收端的槽宽间距。 实际能检测多远，取决于<a href="https://bbs.elecfans.com/zhuti_dianlu_1.html" target="_blank"><u>电路设计</u></a>、目标物反射率、环境光强度。<br/>
+	客户问「能不能检测 X mm」，必须同时问三个条件：用什么光源、目标物什么颜色、环境光多强。脱离条件谈距离，得到的数字没法用来选型。</p>
+<p>
+	<img src="https://file1.elecfans.com/web3/M00/80/35/wKgZPGrVz--AeF7iALUG6lkZsjA650.png" alt="wKgZPGrVz--AeF7iALUG6lkZsjA650.png"/></p>
+<p>
+	<br/>
+	-两个真正决定稳定性的参数<br/>
+	Gap 槽宽决定结构选型，按能给的空间选，不按想要的距离选：<br/>
+	Gap 1mm：极紧凑结构、精密装配，弱<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>档<br/>
+	Gap 2mm：通用主流<br/>
+	Gap 3mm：检出 3mm 内物体<br/>
+	Gap 4mm：大缝隙<br/>
+	Gap 5mm：最大缝隙、最远距离<br/>
+	Ic(on) 决定灵敏度与抗干扰的平衡。规律是相反的两个方向：Ic(on) 越大信号越强，但接收端对环境光也越敏感。</p>
+<p>
+	常见两档：0.5mA 与 1mA。1mA 信号最强，同时最怕环境光；0.5mA 信号弱一点，抗干扰裕量更大。把增益拉到最大不是最优解，调到刚好够用，多出来的留给噪声余量。</p>
+<p>
+	五个误区<br/>
+	误区一：把 Gap 当探测距离。 最高频错误。Gap 是结构尺寸，不是光学性能指标。<br/>
+	误区二：Ic(on) 越大越好。 信号和噪声一起放大，稳定性反而下降。<br/>
+	误区三：只看槽宽，不看环境光。 对射式信噪比高的前提是环境光可控。工位阳光直射或紧邻大功率光源，槽宽再大也补不回来。接收管在可见光上也有响应，白光环境同样会引入干扰。<br/>
+	误区四：拿反射式去测透明物体和液体。 玻璃瓶、亚克力这类半透明目标，反射式容易漏检；液体液位受液体颜色和浑浊度影响大。这两种场景应该用对射式。<br/>
+	误区五：反射式不区分目标物颜色。 反射式检测距离随颜色大幅变化，浅色最远、深色最近。目标物颜色不确定时，反射式本身就不是合适的选择。<br/>
+	选型前先问清三件事<br/>
+	被检测物是什么？材质、颜色、是否透明。<br/>
+	安装方式是单面反射还是双面对射？<br/>
+	工作环境是否有强光或<a href="https://www.elecfans.com/tags/红外/" target="_blank"><u>红外</u></a>干扰源？<br/>
+	这三个问题答不出来，选型无从谈起。<br/>
+	建议：<br/>
+	不透明物体、只能单面安装、结构紧凑，用反射式，布线简单成本低。<br/>
+	透明或半透明物体、液体液位、距离远、环境光强，用对射式。<br/>
+	确定结构之后，按 Gap 选档位，按 Ic(on) 平衡灵敏度与环境光裕量。两步分清楚，剩下的交给电路和安装。<br/>
+	如需该类器件的完整规格书、样品或选型支持，可见官网 www.zgy-<a href="https://www.hqchip.com/app/1721" target="_blank"><u>led</u></a>.com 资料下载专区。<br/><br/>
+	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[老项目维护翻到宝：TI经典定点DSP TMS320C6202/02B硬核拆解，附踩坑实录]]></title>    <link>https://www.elecfans.com/d/8789226.html</link>    <guid>https://www.elecfans.com/d/8789226.html</guid>    <pubDate>2026-10-19 16:15:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8789226" value="https://file.elecfans.com/web2/M00/82/C7/pYYBAGOUXOGAHeWnACU9rtWGH0Q158.pdf"/><h1>老项目维护翻到宝：<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>TI</u></a>经典定点<a href="https://www.hqchip.com/app/1378" target="_blank"><u>DSP</u></a> TMS320C6202/02B硬核<a href="https://m.elecfans.com/v/tag/899/" target="_blank"><u>拆解</u></a>，附踩坑实录</h1>
+<p>最近帮客户维护2010年前后的工控多通道采集项目，翻出来当年TI这款C62x系列的定点DSP，不得不说老器件的手册是真的厚，硬货也真的多。很多刚入行的<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>可能没接触过这款当年的<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>处理“神U”，今天就唠唠它的核心能力，还有当年做设计踩过的那些坑，全是实战干货。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8789226" target="_blank">TMS320C6202BGNY250.pdf</a></p>
+<hr/>
+<h2>核心性能：当年靠VLIW架构打遍多通道市场</h2>
+<table>
+<thead>
+<tr>
+<th>C6202和C6202B属于TI C6000平台的早期定点款，放到2000年前后，性能是真的能打：</th>
+<th>型号</th>
+<th>工艺</th>
+<th>内核电压</th>
+<th>最高主频</th>
+<th>算力</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>C6202</td>
+<td>0.18μm 5层金属</td>
+<td>1.8V</td>
+<td>250MHz</td>
+<td>2000MIPS</td>
+</tr>
+<tr>
+<td>C6202B</td>
+<td>0.15μm 5层金属</td>
+<td>1.5V</td>
+<td>300MHz</td>
+<td>2400MIPS</td>
+</tr>
+</tbody>
+</table>
+<p>核心用的是VelociTI VLIW架构，8个完全独立的功能单元：6个32/40位ALU + 2个16位乘法器，单周期能跑8条32位指令，还支持指令打包压缩代码体积。当年做多通道语音编码、电力信号实时分析的项目，靠这个架构能做到单芯片同时处理16路以上的并行信号，算力是真的够。</p>
+<p>片上内存也给的很足：总共3Mbit S<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>，2Mbit是程序空间（其中128K可以配成缓存），1Mbit是双访问数据RAM，拆成两个独立的64KB块，<a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>和<a href="https://www.elecfans.com/tags/dma/" target="_blank"><u>DMA</u></a>同时访问不会抢总线，对实时性要求高的场景简直香的一批。</p>
+<hr/>
+<h2>外设配置：几乎不用外加逻辑，布线省一半功夫</h2>
+<p>这款DSP当年能卖爆，很大原因是外设给的全，而且都是工业场景刚需，无缝对接不需要额外的电平转换/逻辑芯片：</p>
+<h3>1. 32位EMIF外部存储器<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a></h3>
+<p>直接连<a href="https://m.hqchip.com/app/1522" target="_blank"><u>SD</u></a>RAM/SBSRAM、异步SRAM/EP<a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a>，不需要 glue <a href="https://www.elecfans.com/tags/Cirrus logic/" target="_blank"><u>logic</u></a>，最大支持52MB外部寻址空间。当年我们做项目直接挂1片32位SDRAM + 1片No<a href="https://bbs.elecfans.com/group_65" target="_blank"><u>rF</u></a>lash，布线省了好多空间。</p>
+<h3>2. 4通道DMA+辅助通道</h3>
+<p>完全独立于CPU工作，McBSP、EMIF的数据搬移全程不用占内核资源，我们当年做16路<a href="https://www.hqchip.com/app/1537" target="_blank"><u>音频</u></a>采集，McBSP收的PCM数据直接DMA丢内存，CPU只负责做<a href="https://m.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>，延迟能压到微秒级。</p>
+<h3>3. 3路McBSP多通道缓冲串口</h3>
+<p>这个是真的灵魂外设：直接对接T1/E1帧、MVIP/SCSA<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>总线、<a href="https://m.hqchip.com/app/1703" target="_blank"><u>AC</u></a>97音频，还兼容SPI，单路最多支持256通道。当年做通信网关项目，3路McBSP同时接E1链路、SPI Flash、<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>采样芯片，不用外加任何串口扩展，BOM成本直接砍了几十块。</p>
+<h3>4. 32位XBus扩展总线</h3>
+<p>支持主从模式，无缝接PCI桥、通用<a href="https://www.hqchip.com/app/1379" target="_blank"><u>单片机</u></a>总线、同步FIFO，做从设备的时候<a href="https://bbs.elecfans.com/zhuti_1184_1.html" target="_blank"><u>上位机</u></a>可以直接访问DSP的内存空间，数据交互效率比串口/网口高太多了。</p>
+<hr/>
+<h2>硬件设计踩坑实录：这些雷我帮你踩过了</h2>
+<p>光看参数没用，实际做板子的时候这些点不注意，轻则启动失败，重则调试卡好几天：</p>
+<h3>▶ <a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>时序：官方说不用严格顺序，实际还是要优先给内核上电</h3>
+<p>手册里说内核和IO可以同时上电，但我第一版设计的时候试过，偶尔会出现启动失败，总线有 con<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>ntion的情况。后来改成内核比IO早100ms上电，掉电的时候IO先掉，问题直接解决。
+另外PLL的滤波电路一定要严格按手册来：R1、C1、C2尽量靠近PLLF/PLLG引脚，走线尽量短，不要过孔，不然<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>jitter太大，McBSP传128通道以上的数据的时候容易丢包。</p>
+<h3>▶ JTAG调试：TRST一定要外加1k上拉</h3>
+<p>这款DSP的TRST引脚是内部下拉的，默认JTAG口处于复位状态。如果你的JTAG链上还有其他器件，而且调试器不会主动驱动TRST拉高的话，肯定扫不到DSP的JTAG设备。我当年为了这个问题卡了两天，最后加了个1k上拉<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>就好了，TI的<a href="https://www.elecfans.com/tags/仿真器/" target="_blank"><u>仿真器</u></a>不用这个电阻，但第三方调试器基本都要加。</p>
+<h3>▶ 引脚兼容是真的香，做设计留余量能省大功夫</h3>
+<p>C6202的GLS 384脚封装和C6204的GLW封装引脚兼容，C6202B的GNZ/GNY封装和C6203B兼容。当年我们做项目的时候预留了内存升级的空间，后来客户要求提升算力加缓存，直接换C6203B，<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>一点没改，省了至少3个月的开发周期。</p>
+<h3>▶ 散热别偷懒：满负载功耗真的不低</h3>
+<p>250MHz的C6202满负载的时候内核<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>接近1A，一定要做完整的电源平面，多打地孔。GJL封装无风冷的热阻是14.2℃/W，算下来壳温最多到90℃，户外工业场景一定要选工业级的GNZA版本，支持-40~105℃工作温度，稳的多。</p>
+<hr/>
+<h2>选型建议</h2>
+<p>如果是老项目维护，优先选还在ACTIVE状态的型号，比如<code>TMS320C6202BGNZ300</code>，NRND的型号就不要碰了，备货很难。如果是新设计的话，这款确实比较老了，但如果你的算法都是在C62x平台上跑的，移植成本低，对实时性要求高，还是可以考虑的。</p>
+<p>最后问下有没有当年用过这款DSP的兄弟？你们做项目的时候踩过什么奇葩坑？评论区唠唠~</p>]]></description></item><item>    <title><![CDATA[当年的DSP性能卷王！TMS320C6202/C6202B硬件设计踩坑全指南]]></title>    <link>https://www.elecfans.com/d/8789227.html</link>    <guid>https://www.elecfans.com/d/8789227.html</guid>    <pubDate>2026-10-19 16:15:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8789227" value="https://file1.elecfans.com/web2/M00/B4/E4/wKgZomVxhGuAXM5bACU75n5GR04690.pdf"/><h1>当年的<a href="https://www.hqchip.com/app/1378" target="_blank"><u>DSP</u></a>性能卷王！TMS320C6202/C6202B硬件设计踩坑全指南</h1>
+<p>最近翻08年做的多通道工业振动采集项目老资料，翻到了当年<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>TI</u></a>的C6202 datasheet，好家伙这颗DSP在2000年初可是高速<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>处理赛道的香饽饽，现在虽然C6000系列出了一堆新货，但老项目维护、成本敏感的小规模多通道处理场景，这货还能打。
+今天就把我当年踩过的坑、核心设计要点整理出来，给需要的弟兄们避避坑，需要最小系统原理图、基础Bootlo<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>ad</u></a>er的可以评论区留邮箱，我抽空发。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8789227" target="_blank">TMS320C6202BZNY300.pdf</a></p>
+<hr/>
+<h2>一、核心性能：20年前的2400MIPS怪兽，现在还够用</h2>
+<table>
+<thead>
+<tr>
+<th>C6202/02B是TI C62x 定点DSP系列的经典款，用的是TI自研的VelociTI超长指令字（VLIW）架构，单周期能跑8条32位指令，算力放到现在做个16路250ksps的振动信号FFT、多通道<a href="https://www.hqchip.com/app/1537" target="_blank"><u>音频</u></a>处理完全没问题，核心参数给大家摘了最实用的：</th>
+<th>参数</th>
+<th>C6202</th>
+<th>C6202B</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>主频</td>
+<td>200/250MHz</td>
+<td>250/300MHz</td>
+</tr>
+<tr>
+<td>峰值算力</td>
+<td>1600/2000MIPS</td>
+<td>2000/2400MIPS</td>
+</tr>
+<tr>
+<td>核心电压</td>
+<td>1.8V</td>
+<td>1.5V</td>
+</tr>
+<tr>
+<td>I/O电压</td>
+<td>统一3.3V</td>
+</tr>
+<tr>
+<td>片上S<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a></td>
+<td>256KB程序RAM + 128KB数据RAM</td>
+</tr>
+<tr>
+<td>核心资源</td>
+<td>6个ALU + 2个16位乘法器，32个32位通用<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>⚠️ 踩坑预警：我当年第一次画C6202B的板，没注意尾号B的核心电压是1.5V，直接抄了C6202的1.8V<a href="https://www.elecfans.com/soft/data/4-5/" target="_blank"><u>电源电路</u></a>，点不亮查了3天，血的教训！选型一定要看清楚尾号！</p>
+</blockquote>
+<p>另外TI做的引脚兼容真的良心：C6202/02B/03B/04这几个型号引脚基本兼容，我当年验证阶段用C6202，后来需要更大内存直接换C6203B，<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>一点没改，只换固件就行，省了至少2周的改板时间。</p>
+<hr/>
+<h2>二、硬件设计核心要点：这些坑我都替你们踩过了</h2>
+<h3>1. <a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>&amp;<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>：最容易出问题的两个模块</h3>
+<h4>电源部分</h4>
+<ul>
+<li>没有强制上电时序，但推荐核电压先上、I/O后上，否则刚上电的时候容易出现总线竞争，挂在总线上的外设可能被锁死。</li>
+<li>C6202/02B刚上电的瞬间核<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>会冲到2A以上，<a href="https://www.hqchip.com/app/1703" target="_blank"><u>电源芯片</u></a>至少留30%的余量，我当年用的LMZ10500（5A输出）完全够用，没出过电源掉压的问题。</li>
+<li>电源平面要分开，核、I/O、地各走一个平面，所有电源引脚就近加0.1uF去耦电容，别省。</li>
+</ul>
+<h4>时钟&amp;PLL部分</h4>
+<ul>
+<li>
+<table>
+<thead>
+<tr>
+<th>所有内部时钟都由CLKIN输入倍频产生，不同封装的CLKMODE引脚差异很大，给大家整理了常用倍频的配置：</th>
+<th>封装</th>
+<th>支持倍频</th>
+<th>配置（CLKMODE2/1/0）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>C6202 GJL</td>
+<td>x1/x4</td>
+<td>000=x1，001=x4</td>
+</tr>
+<tr>
+<td>C6202B GNZ</td>
+<td>x1/x4/x8/x10</td>
+<td>000=x1，001=x4，100=x8，101=x10</td>
+</tr>
+<tr>
+<td>C6202B GNY</td>
+<td>全倍频x1~x11</td>
+<td>按datasheet配就行</td>
+</tr>
+</tbody>
+</table>
+</li>
+<li>PLL滤波电路（PLLF/PLLG/PLLV的外围R、C）一定要放在离芯片1cm以内的地方，走线别超过5mm，不然时钟jit<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>r太大，McBSP传数据容易误码，我当年试过把滤波<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>放背面，McBSP接AD的误码率直接飙到1%，改到正面就好了。</li>
+<li>复位时序注意：PLL没稳定之前复位要保持至少250us，不然芯片初始化会失败，程序跑飞都找不到原因。</li>
+</ul>
+<h3>2. 外设设计：几个常用<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>的注意事项</h3>
+<h4>EMIF（外部存储器接口）</h4>
+<p>32位宽，无缝接<a href="https://m.hqchip.com/app/1522" target="_blank"><u>SD</u></a>RAM/SBSRAM，异步SRAM、EP<a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a>也能直接连，不需要额外逻辑。我当年接了两片16位的SDRAM拼成32位，给大家提两个要点：</p>
+<ul>
+<li>上电时的BOOTMODE配置（就是XD[4:0]引脚的电平）决定了内存映射是MAP0还是MAP1，要和程序的链接脚本对应上，不然程序永远跑飞。</li>
+<li>SDRAM的时序参数要按<a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>主频配，250MHz主频下SDRAM的CAS latency设为2就够，设高了浪费带宽。</li>
+</ul>
+<h4>McBSP（多通道缓冲串口）</h4>
+<p>三个独立串口，直接接T1/E1 frame<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>rs</u></a>、<a href="https://m.hqchip.com/app/1703" target="_blank"><u>AC</u></a>97 codec、SPI设备都可以，最高支持100Mbps：</p>
+<ul>
+<li>做SPI用的时候一定要注意时钟相位配置，CLKSTP和CLKXP的组合别写错，我当年SPI接FLASH读错ID，查了半天就是相位配反了。</li>
+<li>要做多通道TDM传输的话，每个McBSP最多支持256个通道，做程控交换、多通道音频采集巨方便。</li>
+</ul>
+<h4>扩展总线（XBus）</h4>
+<p>要做PCI<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>的弟兄们狂喜，这个口直接无缝接PLX的PCI9054桥片，我当年用它做PCI数据上传，没加额外<a href="https://bbs.elecfans.com/zhuti_fpga_1.html" target="_blank"><u>CPLD</u></a>逻辑就搞定了，比用EMIF接省了好多资源。</p>
+<h3>3. JTAG调试注意事项</h3>
+<ul>
+<li>如果你板上JTAG链还挂了<a href="https://bbs.elecfans.com/zhuti_fpga_1.html" target="_blank"><u>FPGA</u></a>之类的其他设备，一定要给TRST引脚加1k上拉<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>！这颗DSP的TRST内部是下拉的，第三方JTAG工具如果不主动驱动TRST，会一直处于复位状态，<a href="https://www.elecfans.com/tags/仿真器/" target="_blank"><u>仿真器</u></a>根本连不上，我当年和FPGA共用JTAG链，卡了一周才找到这个问题。</li>
+<li>TI的XDS510<a href="https://bbs.elecfans.com/zhuti_proteus_1.html" target="_blank"><u>仿真</u></a>器就能支持，新版CCS也能兼容，不用找老版本的CCS2.0，省了好多装环境的麻烦。</li>
+</ul>
+<hr/>
+<h2>三、选型速查表&amp;供货情况</h2>
+<table>
+<thead>
+<tr>
+<th>列几个最常用的型号，大家选型直接对照就行：</th>
+<th>型号</th>
+<th>主频</th>
+<th>封装</th>
+<th>温级</th>
+<th>供货状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>TMS320C6202GJL250</td>
+<td>250MHz</td>
+<td>352脚BGA</td>
+<td>商业级0~90℃</td>
+<td>生命周期尾期，老项目维护可以用</td>
+</tr>
+<tr>
+<td>TMS320C6202BGNZ300</td>
+<td>300MHz</td>
+<td>352脚BGA</td>
+<td>商业级0~90℃</td>
+<td>在产，新设计可选</td>
+</tr>
+<tr>
+<td>TMS320C6202BGNZA250</td>
+<td>250MHz</td>
+<td>352脚BGA</td>
+<td>工业级-40~105℃</td>
+<td>在产，工业场景推荐</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>散热提示：GJL封装热阻低，满负载跑250MHz不加散热片没问题，GLS/GNY封装满负载最好加个小散热片，夏天工业现场容易过热复位。</p>
+</blockquote>
+<hr/>
+<h2>最后唠两句</h2>
+<p>当年用这颗DSP做项目的时候，资料还没现在这么全，踩了一堆坑，现在回头看，TI这颗DSP的稳定性是真的好，我当年做的那批设备在工业现场跑了15年，现在还没回来返修的。
+有没有弟兄们当年也用过这颗DSP？评论区聊聊你们用它做过啥项目，踩过啥有意思的坑？需要我整理的最小系统原理图、Bootloader代码的留个邮箱就行，我抽空发。</p>]]></description></item><item>    <title><![CDATA[老项目复盘：TI C6202/C6202B DSP硬件设计的那些踩坑经验]]></title>    <link>https://www.elecfans.com/d/8789228.html</link>    <guid>https://www.elecfans.com/d/8789228.html</guid>    <pubDate>2026-10-19 16:15:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8789228" value="https://file.elecfans.com/web2/M00/82/C7/pYYBAGOUXKyALtLNACMJ1gYuV6M251.pdf"/><h1>老项目复盘：<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>TI</u></a> C6202/C6202B <a href="https://www.hqchip.com/app/1378" target="_blank"><u>DSP</u></a>硬件设计的那些踩坑经验</h1>
+<p>最近整理实验室的旧项目资料，翻到2010年做的16路E1语音网关项目，核心就是TI的TMS320C6202B，当年为了调这块DSP，熬了好几个通宵，踩的坑现在想起来还记忆犹新。虽然现在新设计基本都用C66x、<a href="https://bbs.elecfans.com/zhuti_riscvmcu_1.html" target="_blank"><u>RISC-V</u></a>多核甚至异构SoC了，但这款经典定点DSP的硬件设计逻辑、时序计算思路，放到今天依然有参考价值，今天就掏出来跟大家唠唠。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8789228" target="_blank">TMS320C6202BZNZ250.pdf</a></p>
+<p>这款DSP是TI C6000系列的早期定点款，1999年首发、2004年最后一次改版，最高300MHz主频、2400MIPS的算力，在当年属于性能第一梯队的产品，多路语音编码、小型基站基带、工业实时控制场景都爱用它，现在很多服役超过10年的老工业设备里还能看到它的身影。</p>
+<hr/>
+<h2>一、选型必看：别被引脚兼容坑了</h2>
+<p>当年选这款芯片最看重的就是同系列引脚兼容的特性，本来想做一版硬件兼容多个配置，结果上来就踩了个大坑：</p>
+<blockquote>
+<p>C6202、C6202B、C6203B、C6204这四个型号引脚完全兼容，但内部资源差很多：</p>
+<ul>
+<li>想要3个McBSP（接E1 frame<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>rs</u></a>必需）就不能选C6204，它只有2个，我们第一次打板图便宜选了C6204，回来发现少一个串口，直接浪费了2周时间改板</li>
+<li>C6202是0.18μm工艺，内核1.8V，最高主频250MHz；C6202B是0.15μm工艺，内核1.5V，最高到300MHz，两者<a href="https://www.elecfans.com/soft/data/4-5/" target="_blank"><u>电源电路</u></a>不能直接共用，别想着焊上去才发现电压不对</li>
+<li>封装分352脚（GJL/GNZ）和384脚（GLS/GNY）两种，384脚的散热更好，工业级应用建议选这个，我们当年商用款用352脚，工业款换384脚加个小散热片，-40℃到85℃跑了几千小时没出问题</li>
+</ul>
+</blockquote>
+<p>另外型号后缀带A的是工业温级（-40~105℃），别拿商用款往工业现场装，夏天高温必挂，别问我怎么知道的。</p>
+<hr/>
+<h2>二、核心<a href="https://bbs.elecfans.com/zhuti_dianlu_1.html" target="_blank"><u>电路设计</u></a>：这几个地方翻车率最高</h2>
+<h3>1. <a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>电路：别信“无需上电顺序”的鬼话</h3>
+<p>手册里虽然写了“不强制要求电源顺序”，但我们实测如果IO先上电、内核晚2秒以上供电，有概率烧片子，连续废了2颗样片之后才找到原因：</p>
+<ul>
+<li>最优方案是<strong>内核先上电、IO后上电，掉电反过来</strong>，或者用双路同步<a href="https://www.hqchip.com/app/1703" target="_blank"><u>电源芯片</u></a>，当年我们用的TPS70345，正好输出1.8V/3.3V，带时序控制，非常省心</li>
+<li>小批量试产不想换电源的可以加个<a href="https://m.hqchip.com/app/1558" target="_blank"><u>肖特基</u></a><a href="https://www.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>把内核和IO电源钳位一下，实测也能用，但大批量不建议</li>
+<li>功耗留够余量：250MHz的C6202内核+外设总<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>大概1A左右，300MHz的C6202B也有800mA，电源电路至少留30%的余量，别卡着额定电流选<a href="https://m.hqchip.com/app/1700" target="_blank"><u>LDO</u></a></li>
+</ul>
+<h3>2. PLL<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>：布局不对直接导致<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>丢包</h3>
+<p>PLL时钟是我们当年踩坑最多的地方，前前后后调了快3周才搞定：</p>
+<ul>
+<li>首先注意<strong>不同封装的CLKMODE引脚不一样</strong>：352脚GJL封装的C6202根本没有CLKMODE1/2，只能选x1和x4倍频，当年有个实习生没看封装引脚定义，直接按通用C62x的电路接，搞了一周时钟都出不来，最后查datasheet才发现引脚是NC的</li>
+<li>外部PLL滤波电路的阻容必须按手册给的值选：C6202和C6202B的R1、C1、C2参数不一样，直接抄手册里的表就行，我们实测用表中值的话，时钟jit<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>r在100ps以内，完全满足E1接口的同步要求</li>
+<li>布局要求非常严：PLLF、PLLG引脚的阻容必须放在芯片旁边，走线长度控制在5mm以内，过孔不超过2个，远离高速<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>和电源走线，我们第一次布局把PLL滤波<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>放去了板边，结果McBSP传E1数据每小时丢几帧，改完布局直接解决</li>
+</ul>
+<h3>3. 复位+JTAG：小细节搞崩整个调试流程</h3>
+<ul>
+<li>复位脉冲宽度要够：如果用PLL倍频的话，复位脉冲至少要250μs，等PLL锁定之后再撤复位，别搞个10μs的复位就完事，不然大概率上电起不来</li>
+<li>JTAG的TRST引脚必须加1k上拉：手册说内部有下拉，但如果DSP和<a href="https://bbs.elecfans.com/zhuti_fpga_1.html" target="_blank"><u>FPGA</u></a>、其他<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>共JTAG扫描链的话，不加的话每次烧写其他设备的时候DSP会被意外复位，我们当年和Xilinx FPGA做在一个扫描链里，卡了3天最后加个上拉就好了</li>
+</ul>
+<hr/>
+<h2>三、外设接口设计：用好自带的免胶合逻辑，省掉一堆<a href="https://bbs.elecfans.com/zhuti_fpga_1.html" target="_blank"><u>CPLD</u></a></h2>
+<p>C6202的外设接口设计非常友好，大部分常用接口都可以直接接外部器件，不用额外逻辑转换：</p>
+<h3>1. EMIF存储器接口</h3>
+<ul>
+<li>接<a href="https://m.hqchip.com/app/1522" target="_blank"><u>SD</u></a><a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>/SBSRAM直接连就行：字节使能BE[3:0]可以直接接SDRAM的SDQM引脚，省掉逻辑转换，我们当年傻兮兮用CPLD转了一次，后来发现完全多此一举</li>
+<li>时序参数按CLKOUT2算：EMIF的参考时钟是CLKOUT2，也就是<a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>主频的一半，算时序的时候别搞错了，异步SRAM的读/写等待周期要留至少1个周期的余量，不同厂商的SRAM速度差很多，别卡着最小值配</li>
+<li>外部空间有52MB，接个16MB SDRAM+8MB NOR Flash完全够用</li>
+</ul>
+<h3>2. McBSP串口：真正的万能接口</h3>
+<p>这三个多通道缓冲串口是真的好用，我们项目里一个接E1 framer、一个接<a href="https://m.hqchip.com/app/1703" target="_blank"><u>AC</u></a>97 codec、一个接SPI Flash，全给搞定了：</p>
+<ul>
+<li>最高速率100Mbps，支持T1/E1、MVIP、ST-Bus等标准总线，接E1 framers不用额外逻辑，直接连</li>
+<li>做SPI主机的时候注意数据延迟配置：一开始我们接SPI Flash，XDATDLY配成0，读出来全是错的，改成1之后就正常了</li>
+<li>不用的McBSP可以直接关时钟，在P<a href="https://www.hqchip.com/app/1703" target="_blank"><u>DC</u></a>TL<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>里配置就行，能降个几十mW的功耗，对电池供电的设备挺有用</li>
+</ul>
+<h3>3. XBus扩展总线</h3>
+<p>当年我们用来接PLX9054 PCI桥片，几乎不用额外逻辑，直接连线就能用，比H<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>接口速度快多了，唯一要注意的是：<strong>Boot模式是复位时采样XD[4:0]引脚的上下拉状态</strong>，别接错了不然上电会从XBus启动，不认板上的Flash。</p>
+<hr/>
+<h2>四、散热和可靠性</h2>
+<p>手册里的热阻参数非常实在，直接照着算就行：</p>
+<ul>
+<li>352脚GJL封装的RθJA是14.2℃/W，250MHz的C6202满负载功耗大概2W，温升不到30℃，商用场景不用加散热片</li>
+<li>384脚GLS/GNY封装的热阻更低，工业级应用加个10mm高的小散热片，跑85℃环温完全没问题</li>
+</ul>
+<p>如果是做工业级产品，建议直接选384脚的工业级型号，贵不了几块钱，稳定性高很多。</p>
+<hr/>
+<h2>最后唠两句</h2>
+<p>现在新设计可能很少有人用这款老DSP了，但当年调试它踩的坑、总结的思路，不管是用新DSP还是FPGA、MCU，都是通用的：别跳过封装引脚定义直接看通用手册、时序留余量、电源和时钟是硬件稳定的核心。</p>
+<p>大家有没有用过C6000系列的老DSP？遇到过什么奇葩坑？评论区聊聊~</p>
+<h1>硬件设计 #DSP #<a href="https://m.elecfans.com/v/tag/232/" target="_blank"><u>嵌入式开发</u></a> #TI #踩坑复盘</h1>]]></description></item><item>    <title><![CDATA[HVY 系列高压引脚多层瓷介电容器结构与性能分析]]></title>    <link>https://www.elecfans.com/d/8789063.html</link>    <guid>https://www.elecfans.com/d/8789063.html</guid>    <pubDate>2026-10-19 15:57:00</pubDate>    <description><![CDATA[<p>
 	高可靠<a href="https://www.elecfans.com/v/tag/873/" target="_blank"><u>高压</u></a>引脚多层瓷介<a href="https://www.hqchip.com/app/855" target="_blank"><u>电容器</u></a>国产化替代<br/>
 	成都容瓷电子 HVY 系列高压引脚<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>技术解析<br/>
 	1 引言<br/>
@@ -2594,830 +3541,4 @@ PINMUX<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄�
 	结语</p>
 <p>
 	综上，户用光储防逆流解决方案紧扣不同家庭场景的核心痛点，以差异化的产品型号、准确的功能适配及可靠的技术保障，为独栋住宅、光伏改造、阳台微储等各类用户提供全流程能源优化支撑，既筑牢电网安全防线，又提高用户能源收益。<br/><br/>
-	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[CC-Link转Modbus TCP协议转换：三菱QJ61BT11对接WinCC SCADA方案]]></title>    <link>https://www.elecfans.com/d/8789633.html</link>    <guid>https://www.elecfans.com/d/8789633.html</guid>    <pubDate>2026-10-19 17:02:00</pubDate>    <description><![CDATA[<p>
-	一、应用场景</p>
-<p>
-	汽车白车身焊装是汽车制造四大工艺之一，焊装车间的 SCADA监控能力直接影响生产管理和质量追溯水平。某自主品牌汽车企业在重庆的乘用车生产基地中，其焊装车间采用了三菱（Mitsubishi）Q系列 <a href="https://www.elecfans.com/v/tag/323/" target="_blank"><u>PLC</u></a>作为主控制器，通过 QJ61BT11 CC-Link主站模块构建 CC-Link现场总线网络，负责焊接机器人、夹具控制台、输送线等核心设备的协调控制，生产节拍为 60JPH。</p>
-<p>
-	然而，该焊装车间的厂级监控和数据采集由<a href="https://www.elecfans.com/tags/西门子/" target="_blank"><u>西门子</u></a> WinCC SCADA系统承担，运行在独立的监控服务器上，负责全厂工艺参数的集中监控、趋势记录、报警管理和报表生成。WinCC支持 Modbus TCP协议，通过工业<a href="https://m.hqchip.com/app/1720" target="_blank"><u>以太网</u></a>与现场设备进行数据交互。三菱 Q系列 PLC运行在 CC-Link网络，WinCC SCADA运行在 Modbus TCP网络，两套系统之间无法直接通讯，导致焊装车间的生产数据无法上传至 SCADA系统进行集中监控。</p>
-<p>
-	在汽车制造向工业 4.0和智能制造转型的背景下，焊装车间需要实现生产数据的集中监控、历史趋势记录和质量数据追溯。如何实现三菱 QJ61BT11的 CC-Link网络与 WinCC SCADA的 Modbus TCP网络之间的可靠数据互通，成为该焊装车间智慧化升级的关键需求。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/60/F8/wKgZPGoQCTGAPIOsAACcmGDYWQI406.png" alt="wKgZPGoQCTGAPIOsAACcmGDYWQI406.png"/></p>
-<p>
-	二、协议转换网关功能简介</p>
-<p>
-	塔讯 TX131-RE-CCS/OMB配置为 CC-Link从站 + Modbus TCP从站双从站模式。Q系列 PLC（CC-Link主站）将生产数据写入网关，WinCC SCADA（Modbus TCP主站 /客户端）主动连接网关读取数据。 核心功能：CC-Link从站兼容、Modbus TCP从站（支持 8个客户端同时连接，最多 512个<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>）、大容量数据映射、双向透明数据传输、工业级可靠性。</p>
-<p>
-	三、系统结构拓扑图</p>
-<p>
-	汽车焊装车间 SCADA监控 CC-Link转 Modbus TCP拓扑图 系统拓扑：Q系列 + QJ61BT11（CC-Link 主站）→ TX131网关（双从站）→ WinCC SCADA（Modbus TCP主站）。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/80/42/wKgZO2rV3J2AUmJaAACpPAbzJiw875.png" alt="wKgZO2rV3J2AUmJaAACpPAbzJiw875.png"/></p>
-<p>
-	四、项目痛点</p>
-<p>
-	生产数据无法集中监控：焊装线产量、设备状态、焊接参数等数据只能在本地操作站查看，WinCC无法获取，厂级管理人员无法实时掌握车间运行状态。</p>
-<p>
-	历史趋势记录缺失：工艺参数历史趋势不完整，运行分析和故障追溯缺乏数据支撑。</p>
-<p>
-	质量数据无法追溯：焊接电流、电压、压力等关键质量参数无法关联车身 VIN码进行追溯，不符合 IATF 16949要求。</p>
-<p>
-	报警管理分散：设备故障只能本地报警，无法集中管理和推送，异常响应时间长。</p>
-<p>
-	系统集成困难：CC-Link与 Modbus TCP协议不兼容，OPC服务器方案成本高（约 6万元）且稳定性差。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/80/42/wKgZO2rV3J2ACETYAACrDNbBBHA768.png" alt="wKgZO2rV3J2ACETYAACrDNbBBHA768.png"/></p>
-<p>
-	五、解决方案</p>
-<p>
-	针对汽车焊装车间三菱Q系列CC-Link总线与WinCC SCADA系统协议异构、生产数据孤岛、焊接质量参数无法追溯、报警分散等痛点，摒弃成本高昂、稳定性差的传统 OPC服务器方案，选用<strong>塔讯TX131-RE-CCS/OMB双从站协议转换网关</strong>，搭建CC-Link与Modbus TCP双向异构通讯架构。网关采用<strong>CC-Link从站+Modbus TCP从站</strong>双从站工作模式，两侧网络各自独立运行，不改动原有三菱PLC控制逻辑、不影响焊装<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>与夹具的原有联锁安全程序，无损完成现场产线与上位SCADA系统对接，兼顾汽车产线高安全性、高可靠性要求，同时满足 IATF16949质量追溯规范。详细方案如下：</p>
-<p>
-	<strong>1.整体架构搭建</strong></p>
-<p>
-	搭建「三菱Q系列PLC+QJ61BT11（CC-Link主站）—TX131双从站网关 —WinCC SCADA（Modbus TCP主站）」三级通讯架构。网关作为独立中间数据节点，CC-Link侧作为从站接入三菱现场总线，Modbus TCP侧作为从站接入车间工业以太网。网关独立完成两种协议的解析、数据映射、协议转换与双向转发，实现现场设备生产数据向上位SCADA上传、SCADA调度指令向下下发的双向透明传输，两套网络互不干扰，保障焊装产线原有设备安全联锁不受通讯改造影响。</p>
-<p>
-	<strong>2.硬件部署与参数固化</strong></p>
-<p>
-	<strong>TX131-RE-CCS/OMB</strong>网关安装于焊装线<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>柜DIN导轨，满足汽车车间强电磁干扰、粉尘、温度波动的工业现场环境。完成硬件接线与参数固化配置：网关CC-Link从站地址设置06，提前排查总线原有站点，避免站号冲突；以太网IP：[192.168.6.20](192.168.6.20)，子网掩码 [255.255.255.0](255.255.255.0)，Modbus TCP通讯<a href="https://www.hqchip.com/app/1808" target="_blank"><u>端口</u></a> 502，匹配WinCC驱动参数。CC-Link总线采用屏蔽双绞线规范接线，做好单点接地；以太网接入车间工业<a href="https://www.elecfans.com/v/tag/1392/" target="_blank"><u>交换机</u></a>，做好网络隔离，杜绝机器人启停带来的电磁干扰，保障通讯链路稳定。</p>
-<p>
-	<strong>3.精细化双向数据映射规划</strong></p>
-<p>
-	结合焊装工艺、质量追溯、SCADA报表与报警需求，梳理80个交互点位，划分上行采集与下行指令通道，在网关配置软件内完成寄存器一对一绑定，映射关系固化，避免数据错位、丢包，满足IATF16949质量数据采集规范。 （1）下位上传数据（Q系列PLC→WinCC SCADA，64点位）：包含生产线实时产量、机器人运行状态、夹具夹紧<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>、焊接电流、焊接电压、焊接压力、车身VIN码、故障代码、报警类型、设备运行时长、节拍信息等工艺与质量数据，映射至Modbus TCP保持寄存器，供WinCC周期性读取，用于画面监控、趋势曲线存储、报警记录、质量报表与VIN码绑定追溯。 （2）上位下发指令（WinCC SCADA→Q系列PLC，16点位）：远程启停指令、生产线调度信号、故障复位指令、批次生产参数下发、产线模式切换信号等，映射至CC-Link远程输入寄存器，由Q系列PLC读取执行，实现中控室对焊装产线远程调度管控。</p>
-<p>
-	<strong>4.双侧系统组态配置</strong></p>
-<p>
-	（1）三菱Q系列PLC侧：GX Works软件导入TX131网关配套G<a href="https://www.hqchip.com/app/1522" target="_blank"><u>SD</u></a>文件，扫描识别CC-Link从站设备，绑定从站站号06，配置总线通讯速率、数据刷新周期，下载组态参数至Q系列PLC。组态仅新增CC-Link从站读写逻辑，<strong>不修改原有机器人、夹具安全联锁程序</strong>，保障焊装产线安全。 （2）WinCC SCADA侧：在WinCC中添加Modbus TCP通讯驱动，填入网关IP地址 [192.168.6.20](192.168.6.20)、端口 502，建立客户端连接；配置寄存器变量，关联监控画面、趋势曲线、报警消息、生产报表，设置通讯超时、断线重连机制，断线自动报警，保证SCADA系统稳定采集。</p>
-<p>
-	<strong>5.闭环应用控制逻辑</strong></p>
-<p>
-	产线运行时，三菱Q系列PLC周期性采集焊接机器人、夹具、输送线设备数据，写入TX131网关；网关完成CC-Link协议解析，转换为Modbus TCP标准数据，WinCC SCADA作为Modbus客户端轮询读取数据，实时展示车间状态、自动存储工艺历史曲线、触发设备报警，将焊接参数与车身VIN码绑定存入数据库，实现质量追溯。同时，中控WinCC下发调度、复位等指令，经网关协议转换后送入Q系列PLC，实现上位系统对焊装产线的远程调度，形成「现场采集 -协议转换 - SCADA监控 -指令下发」的闭环数据链路。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/80/3A/wKgZPGrV3J6ADe82AACbIn5onoo437.png" alt="wKgZPGrV3J6ADe82AACbIn5onoo437.png"/></p>
-<p>
-	六、实施过程</p>
-<p>
-	本项目严格遵循现场勘查→实验室预调试→现场停产安装→在线联调→试运行验收标准化工业项目流程，利用车间停产窗口期施工，最大限度降低对汽车焊装生产的影响，分五个阶段落地实施：</p>
-<p>
-	<strong>第一阶段：现场勘查与点位梳理</strong></p>
-<p>
-	技术工程师进驻重庆乘用车焊装基地，对接电气、工艺、质量部门。勘查三菱Q系列PLC+QJ61BT11 CC-Link总线架构、现有站点分布、机器人安全联锁逻辑；调研WinCC SCADA服务器、网络架构、监控画面、报表、质量追溯需求。结合IATF16949质量体系要求，梳理产量、焊接工艺参数、VIN码、故障报警、远程控制五大类数据，最终确定80个双向交互点位，定义每个点位数据类型、读写方向、寄存器地址，输出点位映射表与SCADA画面需求清单；同时核查电气柜安装空间、总线布线、接地条件，评估现场电磁干扰风险，形成完整实施方案。</p>
-<p>
-	<strong>第二阶段：实验室<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>联调</strong></p>
-<p>
-	为规避现场调试风险，在实验室搭建一比一模拟测试平台，搭载同款三菱Q系列PLC、TX131网关与WinCC SCADA。依据点位映射表配置网关双从站参数，完成CC-Link从站组态、Modbus TCP寄存器映射，导入GSD文件完成三菱侧组态，配置WinCC Modbus驱动与变量。全量测试80个点位双向读写，验证数据准确性、通讯延迟、断线重连、大数据连续传输稳定性，优化数据刷新周期，提前解决寄存器偏移、协议解析异常等潜在问题，验证方案满足汽车产线质量追溯的数据采集要求，形成成熟配置文件。</p>
-<p>
-	<strong>第三阶段：现场硬件安装与接线</strong></p>
-<p>
-	利用车间周末停产窗口实施硬件施工，避免占用生产节拍。将TX131网关固定在电气柜DIN导轨，完成接地处理；敷设CC-Link屏蔽总线接入QJ61BT11主站模块，单独布线接入车间工业以太网交换机。接线完成后开展通断、绝缘测试，通电自检，确认CC-Link、以太网通讯指示灯正常，排查线路干扰隐患，硬件链路验收合格，为在线调试做好准备。</p>
-<p>
-	<strong>第四阶段：现场在线联调与点位验证</strong></p>
-<p>
-	下载三菱Q系列CC-Link从站组态程序，固化参数；在WinCC中激活Modbus TCP通讯链路，建立与网关连接。逐一对全部80个点位进行点对点测试，验证上行：产量采集、机器人状态、焊接电流电压、VIN码上传、故障报警；验证下行：远程启停、故障复位、调度指令下发。同步开发调试WinCC监控画面、趋势曲线、报警弹窗、生产报表。调试中修正寄存器偏移，校验VIN码等字符串数据传输，全部点位通讯正常、数据准确，双向通讯链路打通。</p>
-<p>
-	<strong>第五阶段：全线试运行与优化验收</strong></p>
-<p>
-	系统接入焊装产线连续试运行，持续监测通讯状态、数据准确率、链路稳定性，实时监控焊接参数采集、VIN码绑定、报警推送功能。试运行期间通讯成功率稳定99.9%，双向数据延迟≤500ms，满足60JPH生产节拍下的数据采集与追溯需求。<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>持续优化报警阈值、数据存储周期，校验历史趋势记录完整性，核对质量追溯报表，确保符合IATF16949审核标准。试运行期间无通讯中断、无产线安全异常，各项指标全部达标，项目完成验收交付。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/80/3A/wKgZPGrV3J2AbawdAACrDNbBBHA791.png" alt="wKgZPGrV3J2AbawdAACrDNbBBHA791.png"/></p>
-<p>
-	七、应用效果</p>
-<p>
-	1.全厂数据集中监控：64 个生产参数实时上传 WinCC，厂级管理人员在中控室掌握焊装车间运行状态，监控效率提升 75%。</p>
-<p>
-	2.历史趋势完整记录：工艺参数历史趋势自动记录，故障定位时间从平均 2小时缩短至 15分钟。</p>
-<p>
-	3.质量数据完整追溯：焊接参数关联 VIN码自动记录，满足 IATF 16949追溯要求，客户审核零观察项。</p>
-<p>
-	4.报警集中管理：设备故障在 WinCC集中报警推送，异常响应时间从平均 30分钟缩短至 3分钟。</p>
-<p>
-	5.改造投资经济：网关方案约 1.8万元，远低于 OPC方案 6 万元，回报约 3个月。</p>
-<p>
-	八、项目实施前后效果对比</p>
-<table><thead><tr><th style="border-bottom:1pt solid #DEE0E3;border-left:1pt solid #DEE0E3;border-right:1pt solid #DEE0E3;border-top:1pt solid #DEE0E3;padding:4.8pt;">
-				<strong>对比维度</strong></th>
-			<th style="border-bottom:1pt solid #DEE0E3;border-left:1pt none #DEE0E3;border-right:1pt solid #DEE0E3;border-top:1pt solid #DEE0E3;padding:4.8pt;">
-				<strong>实施前</strong></th>
-			<th style="border-bottom:1pt solid #DEE0E3;border-left:1pt none #DEE0E3;border-right:1pt solid #DEE0E3;border-top:1pt solid #DEE0E3;padding:4.8pt;">
-				<strong>实施后</strong></th>
-			<th style="border-bottom:1pt solid #DEE0E3;border-left:1pt none #DEE0E3;border-right:1pt solid #DEE0E3;border-top:1pt solid #DEE0E3;padding:4.8pt;width:107.95pt;">
-				<strong>改善幅度</strong></th>
-		</tr></thead><tbody><tr><td style="border-bottom:1pt solid #DEE0E3;border-left:1pt solid #DEE0E3;border-right:1pt solid #DEE0E3;border-top:1pt none #DEE0E3;padding:4.8pt;">
-				生产监控方式</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;">
-				本地操作站分散</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;">
-				Win CC集中监控</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;width:107.95pt;">
-				效率提升 75%</td>
-		</tr><tr><td style="border-bottom:1pt solid #DEE0E3;border-left:1pt solid #DEE0E3;border-right:1pt solid #DEE0E3;border-top:1pt none #DEE0E3;padding:4.8pt;">
-				历史趋势记录</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;">
-				不完整</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;">
-				完整自动记录</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;width:107.95pt;">
-				从缺失到完整</td>
-		</tr><tr><td style="border-bottom:1pt solid #DEE0E3;border-left:1pt solid #DEE0E3;border-right:1pt solid #DEE0E3;border-top:1pt none #DEE0E3;padding:4.8pt;">
-				故障定位时间</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;">
-				平均 2小时</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;">
-				平均 15分钟</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;width:107.95pt;">
-				缩短 87.5%</td>
-		</tr><tr><td style="border-bottom:1pt solid #DEE0E3;border-left:1pt solid #DEE0E3;border-right:1pt solid #DEE0E3;border-top:1pt none #DEE0E3;padding:4.8pt;">
-				质量数据追溯</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;">
-				不完整</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;">
-				VIN 码关联完整</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;width:107.95pt;">
-				满足 IATF要求</td>
-		</tr><tr><td style="border-bottom:1pt solid #DEE0E3;border-left:1pt solid #DEE0E3;border-right:1pt solid #DEE0E3;border-top:1pt none #DEE0E3;padding:4.8pt;">
-				异常响应时间</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;">
-				平均 30分钟</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;">
-				平均 3分钟</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;width:107.95pt;">
-				缩短 90%</td>
-		</tr><tr><td style="border-bottom:1pt solid #DEE0E3;border-left:1pt solid #DEE0E3;border-right:1pt solid #DEE0E3;border-top:1pt none #DEE0E3;padding:4.8pt;">
-				数据刷新周期</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;">
-				人工记录</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;">
-				≤500ms</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;width:107.95pt;">
-				实时性提升</td>
-		</tr><tr><td style="border-bottom:1pt solid #DEE0E3;border-left:1pt solid #DEE0E3;border-right:1pt solid #DEE0E3;border-top:1pt none #DEE0E3;padding:4.8pt;">
-				通讯成功率</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;">
-				无互联</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;">
-				99.9%</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;width:107.95pt;">
-				从无到有</td>
-		</tr><tr><td style="border-bottom:1pt solid #DEE0E3;border-left:1pt solid #DEE0E3;border-right:1pt solid #DEE0E3;border-top:1pt none #DEE0E3;padding:4.8pt;">
-				改造成本</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;">
-				OPC 约 6万元</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;">
-				网关约 1.8万元</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;width:107.95pt;">
-				节省 70%</td>
-		</tr><tr><td style="border-bottom:1pt solid #DEE0E3;border-left:1pt solid #DEE0E3;border-right:1pt solid #DEE0E3;border-top:1pt none #DEE0E3;padding:4.8pt;width:94.3pt;">
-				投资回报周期</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;width:107.9pt;">
-				—</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;width:114.6pt;">
-				约 3个月</td>
-			<td style="border-bottom:1pt solid #DEE0E3;border-left:none;border-right:1pt solid #DEE0E3;border-top:none;padding:4.8pt;width:107.95pt;">
-				—</td>
-		</tr></tbody></table><p>
-	九、总结</p>
-<p>
-	本案例通过塔讯 TX131-RE-CCS/OMB协议转换网关，成功实现了三菱 QJ61BT11（CC-Link主站）与 WinCC SCADA（Modbus TCP主站）之间的异构总线协议互联。网关以 CC-Link从站 + Modbus TCP从站的双从站模式，实现了焊装车间生产数据的集中监控、历史趋势记录和质量数据追溯。TX131-RE-CCS/OMB作为一款可靠的智能网关和<a href="https://bbs.elecfans.com/group_57" target="_blank"><u>物联网</u></a>关，为汽车制造车间的 SCADA系统集成和智慧化升级提供了经济高效的互联解决方案。</p>
-<p>
-	<br/>
-	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[德力西电气重磅亮相第140届广交会]]></title>    <link>https://www.elecfans.com/d/8789673.html</link>    <guid>https://www.elecfans.com/d/8789673.html</guid>    <pubDate>2026-10-19 17:04:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	2026年10月15日，中国进出口<a href="https://www.hqchip.com/ask/" target="_blank"><u>商品</u></a>交易会（广交会）迎来创办70周年的重要历史节点，第140届广交会秋季展正式启幕，中国品牌正以全新姿态彰显出海高质量发展新气象。</p>
-<p style="text-indent:2em;">
-	作为中国低压<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>行业的领军企业，德力西电气延续"Making It Happen"品牌主题，携全场景产品矩阵与多项行业解决方案重磅亮相，并面向全球持续招募代理商及合作伙伴。</p>
-<p style="text-indent:2em;">
-	产品矩阵，全景呈现</p>
-<p style="text-indent:2em;">
-	此次参展，德力西电气携多事业部解决方案及工具展台集中呈现，覆盖从主配电、终端配电到<a href="https://m.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>，从电能管理、<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>到家居电气、电气辅材及五金工具的全场景产品矩阵，以“新质生产力”实践回应全球客商对智能、绿色用电的多元需求，吸引众多海外采购商驻足交流。代表性产品线包括：</p>
-<p style="text-indent:2em;">
-	工具：手动+电动+测量</p>
-<p style="text-indent:2em;">
-	德力西电气工具携手动工具、电动工具及测量工具首次正式亮相，以“The right tool for every task”为主题，并在现场设置工具试用区：其精美的设计与可靠的品质吸引了众多客户驻足体验。</p>
-<p style="text-indent:2em;">
-	C<a href="https://www.hqchip.com/app/1703" target="_blank"><u>DC</u></a>8 系列交流接触器：</p>
-<p style="text-indent:2em;">
-	广泛应用于 3C、锂电、电梯、物流与机床等高端装备制造行业，凭借平衡性<a href="https://m.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>设计、三面防尘结构与紧凑化尺寸等多项创新技术实现突破，为复杂工况下的可靠控制提供核心支撑。</p>
-<p style="text-indent:2em;">
-	WD 776 系列墙壁开关：</p>
-<p style="text-indent:2em;">
-	以超薄肤感工艺、多色可选与 CE <a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>，兼顾美学与品质，让用电终端更贴合现代人居对细节与质感的追求。</p>
-<p style="text-indent:2em;">
-	轨道插座与<a href="https://www.hqchip.com/app/1718" target="_blank"><u>转换器</u></a>：</p>
-<p style="text-indent:2em;">
-	兼容英标、欧标等多国标准，支持分控开关与 <a href="https://www.hqchip.com/app/1515" target="_blank"><u>USB</u></a> / <a href="https://www.elecfans.com/tags/type-c/" target="_blank"><u>Type-C</u></a> 直充，可自由组合、灵活适配，让安全用电无界融入日常与出行。</p>
-<p style="text-indent:2em;">
-	高性能矢量 H500 系列<a href="https://m.elecfans.com/v/tag/2471/" target="_blank"><u>变频器</u></a>：</p>
-<p style="text-indent:2em;">
-	斩获 2025 德国 iF 设计奖与 CIIF <a href="https://www.elecfans.com/v/tag/633/" target="_blank"><u>工业自动化</u></a>奖双料大奖，精准定位中高端市场，以卓越性能重新定义工业驱动；更与 H300、H80 等系列共同构成覆盖高、中、入门级的变频器产品矩阵，适配不同规模的智造升级场景。</p>
-<p style="text-indent:2em;">
-	户内高压真空断路器VS1（ZN63A）：</p>
-<p style="text-indent:2em;">
-	VS1(ZN63A)户内真空断路器，采用真空灭弧技术。相比传统油/SF6断路器，无燃爆风险、环保无污染；结构紧凑，适配KYN28中置柜。开断稳定、支持频繁操作，免维护、寿命长，是12kV配电优选保护设备。</p>
-<p style="text-indent:2em;">
-	从核心元件到成套系统，德力西电气正用一条自主可控的产品链，为工业自动化的升级持续供给底层动力。</p>
-<p style="text-indent:2em;">
-	全球布局，一体协同</p>
-<p style="text-indent:2em;">
-	自2023年首秀广交会以来，德力西电气已连续四年亮相这一全球贸易盛会。从第139届春季展以全场景产品矩阵赢得全球客商关注，到第140届秋季展再启新篇，每一步都是德力西电气从“产品出海”迈向“品牌出海”的生动注脚。</p>
-<p style="text-indent:2em;">
-	在“赓续七秩开放薪火，勇担贸易强国使命”的新时代号召下，本届广交会是德力西电气深化国际布局、链接全球伙伴的关键舞台。</p>
-<p style="text-indent:2em;">
-	身处双循环新发展格局与中国制造加速出海的时代语境，德力西电气面向全球市场，持续携手全球合作伙伴，把“Making It Happen”的品牌信念落到跨国协作的实际动作上，让中国低压电气的智造能力真正扎根当地、服务当地。</p>
-<p style="text-indent:2em;">
-	依托覆盖全球 80 多个国家和地区的成熟业务网络，德力西电气以一体化形象连接海外客商，旨在与更多全球伙伴建立长期战略合作。</p>
-<p style="text-indent:2em;">
-	今年，德力西电气出任中国新质制造业出海联盟理事单位，正是这一全球化征程中更具战略意义的一步。</p>
-<p style="text-indent:2em;">
-	深耕出海，共赴新程</p>
-<p style="text-indent:2em;">
-	立足中国，拥抱世界。德力西电气始终以“创新者、变革者、领航者”的姿态，深刻诠释“Making It Happen”的品牌使命，将可靠、智能、绿色的电气解决方案带向全球舞台用中国智造作为产业跃迁的可靠支点，共绘可持续发展的全球新图景。</p>]]></description></item><item>    <title><![CDATA[手持无线吸尘器无刷马达驱动板设计要点：高转速与电池供电-艾毕胜电子]]></title>    <link>https://www.elecfans.com/d/8789670.html</link>    <guid>https://www.elecfans.com/d/8789670.html</guid>    <pubDate>2026-10-19 17:05:00</pubDate>    <description><![CDATA[<p>
-	"电池供电" 这四个字，把手持无线吸尘器驱动板的所有设计约束都改写了一遍。插电式吸尘器的驱动板可以默认有一个稳定的市电母线，手持机型却要在一块小小的电池包上干活：电压随电量波动、大电流下内阻压降明显、还要在有限的重量和体积里塞进高转速<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>的全部功率。本文按四个核心约束，讲这类驱动板的设计取舍。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/80/40/wKgZO2rV1_GAH0-0AADJlPkSuIw071.png" alt="wKgZO2rV1_GAH0-0AADJlPkSuIw071.png"/>艾毕胜电子吸尘器无刷马达驱动</p>
-<p>
-	约束一：电压范围宽，低压大<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a></p>
-<p>
-	电池供电首先意味着母线电压不是恒定值。满电时一个电压，快耗尽时又掉下来，整个工作电压范围可能宽达百分之几十。驱动板的所有电路 —— 从预驱供电、<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a> <a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>到换相逻辑 —— 都必须在这个宽范围内稳定工作。</p>
-<p>
-	更棘手的是低压大电流。电压掉下来，要维持同样的输出功率，电流就得上去。大电流对母线走线、采样回路、功率管导通电阻都提出了更高要求。导通电阻哪怕只小一点点，在大电流下省下的损耗都很可观。因此手持机型的功率管选型，对导通电阻的敏感度比插电机型更高。低压保护阈值的设置也要仔细，既要把电量尽量用出来，又不能让电机在电压过低时勉强硬转，反而效率低下还发热。</p>
-<p>
-	电池供电还带来一个特殊问题：电池组本身有内阻，大电流放电时端电压会明显下跌。用户开最高吸力，瞬间大电流把电压拉下来，驱动板看到的母线电压和电池开路电压是两回事。这意味着低压保护不能只看静态电压，要考虑大电流下的动态压降，否则会在正常使用中误触发欠压保护，表现为 "电量明明还够，机器却突然停了"。设计时要<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>电池实际放电曲线，把保护阈值放在动态电压的真实落点上。</p>
-<p>
-	约束二：高转速意味着高开关频率</p>
-<p>
-	手持吸尘器为了在小体积电机里榨出足够吸力，普遍走高转速路线。转速上去了，电机的反电动势频率、换相频率都跟着上升，这对驱动板是连锁考验。</p>
-<p>
-	开关频率升高，功率管的开关损耗成比例增加，发热和效率压力都变大。<a href="https://www.hqchip.com/app/1715" target="_blank"><u>栅极驱动</u></a>能力、死区时间、自举供电都要按高频重新核算，否则高转速下上桥臂驱动不足、开关不完全，板子会异常发热。高转速还要求位置反馈跟上，六步换相的粗糙粒度在高速下表现不佳，更精细的换相甚至正弦驱动成为刚需，这也是高分辨率位置反馈在这类机型上越来越受重视的原因。</p>
-<p>
-	高转速还对位置检测的实时性提出挑战。转速越高，每毫秒转子转过的角度越大，换相决策留给 MCU 的时间窗口越窄。低速时一个换相点可以从容计算，高速时必须在极短时间内完成采样、判断、输出。这既考验 MCU 的运算裕量，也考验位置<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>的干净程度。信号路上多一点噪声，高速下就可能错过换相点，表现为高速失步或转速波动。因此手持机型的位置反馈电路，布线和滤波都要比普通机型更讲究。</p>
-<p>
-	约束三：续航与发热的平衡</p>
-<p>
-	电池供电的产品，每一份损耗都是从续航里扣的。驱动板的效率直接决定一次充电能用多久。效率优化因此不是锦上添花，而是核心指标：开关损耗、导通损耗、采样回路的损耗，每一处都要抠。</p>
-<p>
-	但效率和发热又纠缠在一起。手持机型没有插电机型那样的散热条件，板子紧贴电池和电机，散热空间局促。一边要压低损耗保续航，一边发热还散不出去，热设计的矛盾很尖锐。对策通常是：选用高效率的器件组合、合理设置开关频率、把发热器件布局在靠近散热路径的位置，同时用软件做功率管理 —— 高吸力模式短时使用，常规模式省电运行，让热与电都不长期顶在极限上。</p>
-<p>
-	功率管理的具体做法，是把吸力分成几档，不同档位对应不同转速和功率上限。高档位用于床褥、缝隙等重清洁场景，短时爆发；常规档位覆盖日常地面清洁，续航优先。这种分档不仅是用户体验设计，也是热设计和电池保护的延伸 —— 让系统在不同工况下都工作在合理区间。固件里还要做电池状态联动：电量充足时放开功率，电量偏低时主动降功率保稳定，避免低电压下勉强满功率运行。</p>
-<p>
-	约束四：重量与体积</p>
-<p>
-	手持产品还有一个独特约束：板子本身的重量和体积用户能直接感知。驱动板不能做太大太重，否则机身头重脚轻，举久了累。这反过来推动设计集成化：用单芯片方案压缩板子面积，把电源、预驱、控制集成进一颗芯片，外围只留必要的功率器件。器件布局要紧凑，但紧凑又不能牺牲散热，这是手持机型 <a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a> 布局的独特难题。</p>
-<p>
-	结论：取舍清单</p>
-<p>
-	把四个约束合起来看，手持无线吸尘器驱动板的设计取舍很清楚：器件选型偏向低压大电流与低导通损耗，开关频率在效率与高频需求间折中，热设计结合软件功率管理，板级设计追求紧凑集成。每一项取舍都围绕同一个目标 —— 在电池有限的能量和体积里，把吸力和续航同时做到用户满意。这也是为什么同类驱动板，手持机型的设计难度往往高于插电机型。</p>
-<p>
-	最后补充一个跨维度的取舍：噪声。手持机型离用户的手和耳朵都很近，电机和驱动板的噪声直接影响使用体验。在高转速下控制噪声，不能靠单纯降转速牺牲吸力，而要靠更精细的换相、更平滑的驱动波形。这又把位置反馈的精度问题拉了进来 —— 高转速加安静，两者叠加，对驱动板的控制精细度提出了比插电机型更高的要求。手持无线吸尘器看似只是把电源从墙上挪到电池里，实则把驱动板的每一个设计维度都重新收紧了一圈。做这类产品的驱动板，考验的不是单点性能，而是在电压、转速、热、体积、噪声多重约束下同时取舍的综合平衡能力。哪一项都不能单独拉满，必须让整板在所有维度上都落在产品目标的区间内。这正是手持无线吸尘器驱动板设计的核心难点与价值所在。本文来自深圳市艾毕胜电子有限公司，提供<strong>麦歌恩磁性<a href="https://www.elecfans.com/tags/编码器/" target="_blank"><u>编码器</u></a></strong>芯片和<strong>无刷马达驱动板</strong>定制服务<br/><br/>
-	审核编辑 黄宇<br/>
-	</p>]]></description></item><item>    <title><![CDATA[扫地机器人与手持吸尘器：无刷马达驱动板的差异化设计思路]]></title>    <link>https://www.elecfans.com/d/8789675.html</link>    <guid>https://www.elecfans.com/d/8789675.html</guid>    <pubDate>2026-10-19 17:09:00</pubDate>    <description><![CDATA[<p>
-	同样是无刷马达驱动板，装在扫地<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>上和装在手持吸尘器上，几乎是两种产品。一个安静地在地板上匀速巡航，一个在手里瞬间爆发吸力；一个要求长寿命低噪声，一个要求短时大功率。如果把这两类产品的驱动板当成同一种东西来设计，一定会在某个方面栽跟头。本文从工况、参数、控制、可靠性四个维度，对比两者的差异化设计思路。</p>
-<p>
-	<img src="https://file1.elecfans.com/web3/M00/80/40/wKgZO2rV1_GAH0-0AADJlPkSuIw071.png" alt="wKgZO2rV1_GAH0-0AADJlPkSuIw071.png"/>艾毕胜电子吸尘器无刷马达驱动板</p>
-<p>
-	工况画像的根本差异</p>
-<p>
-	先看两类产品的使用场景。手持吸尘器是间歇性大功率设备：用户按下开关，<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>立刻进入高转速大吸力模式，用几分钟就停。它追求的是峰值性能，热设计按短时工况考虑。</p>
-<p>
-	扫地机器人则是长时间巡航设备：电机低速持续运转几个小时，配合吸尘风机和边刷，它追求的是平稳、安静、长寿命。它的功率不大，但连续运行时间长得多，热是累积型的，噪声是用户最敏感的体验指标。</p>
-<p>
-	一个是短跑运动员，一个是马拉松选手，驱动板的设计目标自然不同。</p>
-<p>
-	再细看两者的电机特性。手持吸尘器电机转速动辄上万转甚至更高，靠高转速在小叶轮里产生<a href="https://www.elecfans.com/v/tag/873/" target="_blank"><u>高压</u></a>强吸力，<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>大但工作时间短。扫地机器人的吸尘风机转速温和得多，它要配合滚刷和边刷一起工作，电机长时间低负载运转。转速区间的差异，直接决定了功率器件的选型档位、开关频率的设置，甚至 <a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a> 运算资源的分配。用手持机型的高转速参数去套扫地机器人，板子会过设计、成本虚高；反过来用扫地机器人的低转速裕量做手持机型，又会在高速段顶不住。</p>
-<p>
-	关键参数对比</p>
-<table style="border-bottom:1px solid rgb(222,224,227);border-left:1px solid rgb(222,224,227);border-right:1px solid rgb(222,224,227);border-top:1px solid rgb(222,224,227);"><tbody><tr><td style="border-bottom:1px solid rgb(222,224,227);border-left:1px solid rgb(222,224,227);border-right:1px solid rgb(222,224,227);border-top:1px solid rgb(222,224,227);padding:9px 8px;vertical-align:top;width:200px;">
-				对比维度</td>
-			<td style="border-bottom:1px solid rgb(222,224,227);border-left:1px solid rgb(222,224,227);border-right:1px solid rgb(222,224,227);border-top:1px solid rgb(222,224,227);padding:9px 8px;vertical-align:top;width:200px;">
-				手持吸尘器驱动板</td>
-			<td style="border-bottom:1px solid rgb(222,224,227);border-left:1px solid rgb(222,224,227);border-right:1px solid rgb(222,224,227);border-top:1px solid rgb(222,224,227);padding:9px 8px;vertical-align:top;width:200px;">
-				扫地机器人驱动板</td>
-		</tr><tr><td style="border-bottom:1px solid rgb(222,224,227);border-left:1px solid rgb(222,224,227);border-right:1px solid rgb(222,224,227);border-top:1px solid rgb(222,224,227);padding:9px 8px;vertical-align:top;width:200px;">
-				运行模式</td>
-			<td style="border-bottom:1px solid rgb(222,224,227);border-left:1px solid rgb(222,224,227);border-right:1px solid rgb(222,224,227);border-top:1px solid rgb(222,224,227);padding:9px 8px;vertical-align:top;width:200px;">
-				短时大功率、峰值优先</td>
-			<td style="border-bottom:1px solid rgb(222,224,227);border-left:1px solid rgb(222,224,227);border-right:1px solid rgb(222,224,227);border-top:1px solid rgb(222,224,227);padding:9px 8px;vertical-align:top;width:200px;">
-				长时巡航、平稳优先</td>
-		</tr><tr><td style="border-bottom:1px solid rgb(222,224,227);border-left:1px solid rgb(222,224,227);border-right:1px solid rgb(222,224,227);border-top:1px solid rgb(222,224,227);padding:9px 8px;vertical-align:top;width:200px;">
-				转速区间</td>
-			<td style="border-bottom:1px solid rgb(222,224,227);border-left:1px solid rgb(222,224,227);border-right:1px solid rgb(222,224,227);border-top:1px solid rgb(222,224,227);padding:9px 8px;vertical-align:top;width:200px;">
-				高转速、快速拉满</td>
-			<td style="border-bottom:1px solid rgb(222,224,227);border-left:1px solid rgb(222,224,227);border-right:1px solid rgb(222,224,227);border-top:1px solid rgb(222,224,227);padding:9px 8px;vertical-align:top;width:200px;">
-				中低转速、持续稳定</td>
-		</tr><tr><td style="border-bottom:1px solid rgb(222,224,227);border-left:1px solid rgb(222,224,227);border-right:1px solid rgb(222,224,227);border-top:1px solid rgb(222,224,227);padding:9px 8px;vertical-align:top;width:200px;">
-				功率等级</td>
-			<td style="border-bottom:1px solid rgb(222,224,227);border-left:1px solid rgb(222,224,227);border-right:1px solid rgb(222,224,227);border-top:1px solid rgb(222,224,227);padding:9px 8px;vertical-align:top;width:200px;">
-				大电流、低压</td>
-			<td style="border-bottom:1px solid rgb(222,224,227);border-left:1px solid rgb(222,224,227);border-right:1px solid rgb(222,224,227);border-top:1px solid rgb(222,224,227);padding:9px 8px;vertical-align:top;width:200px;">
-				小功率、相对恒定</td>
-		</tr><tr><td style="border-bottom:1px solid rgb(222,224,227);border-left:1px solid rgb(222,224,227);border-right:1px solid rgb(222,224,227);border-top:1px solid rgb(222,224,227);padding:9px 8px;vertical-align:top;width:200px;">
-				噪声敏感度</td>
-			<td style="border-bottom:1px solid rgb(222,224,227);border-left:1px solid rgb(222,224,227);border-right:1px solid rgb(222,224,227);border-top:1px solid rgb(222,224,227);padding:9px 8px;vertical-align:top;width:200px;">
-				中等</td>
-			<td style="border-bottom:1px solid rgb(222,224,227);border-left:1px solid rgb(222,224,227);border-right:1px solid rgb(222,224,227);border-top:1px solid rgb(222,224,227);padding:9px 8px;vertical-align:top;width:200px;">
-				极高，用户对声音敏感</td>
-		</tr><tr><td style="border-bottom:1px solid rgb(222,224,227);border-left:1px solid rgb(222,224,227);border-right:1px solid rgb(222,224,227);border-top:1px solid rgb(222,224,227);padding:9px 8px;vertical-align:top;width:200px;">
-				热应力性质</td>
-			<td style="border-bottom:1px solid rgb(222,224,227);border-left:1px solid rgb(222,224,227);border-right:1px solid rgb(222,224,227);border-top:1px solid rgb(222,224,227);padding:9px 8px;vertical-align:top;width:200px;">
-				短时冲击型</td>
-			<td style="border-bottom:1px solid rgb(222,224,227);border-left:1px solid rgb(222,224,227);border-right:1px solid rgb(222,224,227);border-top:1px solid rgb(222,224,227);padding:9px 8px;vertical-align:top;width:200px;">
-				长时间累积型</td>
-		</tr><tr><td style="border-bottom:1px solid rgb(222,224,227);border-left:1px solid rgb(222,224,227);border-right:1px solid rgb(222,224,227);border-top:1px solid rgb(222,224,227);padding:9px 8px;vertical-align:top;width:200px;">
-				位置反馈需求</td>
-			<td style="border-bottom:1px solid rgb(222,224,227);border-left:1px solid rgb(222,224,227);border-right:1px solid rgb(222,224,227);border-top:1px solid rgb(222,224,227);padding:9px 8px;vertical-align:top;width:200px;">
-				高速精细换相</td>
-			<td style="border-bottom:1px solid rgb(222,224,227);border-left:1px solid rgb(222,224,227);border-right:1px solid rgb(222,224,227);border-top:1px solid rgb(222,224,227);padding:9px 8px;vertical-align:top;width:200px;">
-				低速平稳换相</td>
-		</tr></tbody></table><p>
-	控制策略的差异</p>
-<p>
-	手持机型的控制重点是响应速度：用户一开开关，电机要瞬间拉到高转速，吸力立刻到位。它考验的是启动过程的快速性和大电流下的稳定性。</p>
-<p>
-	扫地机器人的控制重点恰恰相反，是平稳与安静。它不需要爆发力，但需要长时间运行时转速波动小、转矩脉动小，因为任何脉动都会转化为噪声传到用户耳朵里。为了安静，它往往愿意在效率上做一点让步，选用更平滑的驱动方式，把换相做得更细腻。这也是为什么高分辨率位置反馈在扫地机器人上价值突出 —— 它直接服务于降噪。</p>
-<p>
-	控制上还有一个差异：负载变化的模式。手持吸尘器的负载主要来自风阻，用户改变吸头角度或碰到地毯，负载突变，控制要快速响应顶住转速。扫地机器人的负载则更平缓，它要在不同地面材质间巡航，驱动板更多是维持一个稳定的低噪声运行点，而不是频繁做动态调整。前者考验动态响应，后者考验稳态精度，控制算法的优化方向完全不同。</p>
-<p>
-	可靠性诉求的差异</p>
-<p>
-	手持机型的可靠性考验集中在短时大电流冲击：反复启停、瞬时堵转（吸进地毯）、电池电压波动。它的保护逻辑要响应快，应对突发应力。</p>
-<p>
-	扫地机器人的可靠性考验则是长时间累积：每天运行一两个小时，连续几年，焊点疲劳、<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>老化、电机磨损都是慢过程。它更看重降额设计和热余量，让器件在远低于极限的状态下工作，用时间换寿命。</p>
-<p>
-	还有一个隐性差异：振动与冲击环境。手持机型被用户举着、磕着、偶尔跌落，驱动板要抗<a href="https://m.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>冲击，接插件和器件固定要牢靠。扫地机器人安静地在地上跑，机械冲击小，但它会跟着整机被搬动、翻转，对板子的安装强度要求同样不低，只是性质不同。这些机械层面的差异，看似与电路无关，却会反过来影响器件选型和加固方式。</p>
-<p>
-	成本与集成的差异</p>
-<p>
-	手持机型因为体积和重量约束，对板级集成度要求高，愿意为紧凑买单。扫地机器人的驱动板安装空间相对宽裕，体积压力小一些，但它对成本更敏感 —— 扫地机器人走量，单板成本每降一点，整机毛利都很可观。</p>
-<p>
-	成本敏感度的差异，还影响选型策略。手持机型可以为集成度和性能买单，选用更贵的单芯片方案和高性能器件；扫地机器人则倾向于在满足降噪和寿命的前提下压成本，对器件单价更计较。同一个磁性<a href="https://www.elecfans.com/tags/编码器/" target="_blank"><u>编码器</u></a>方案，在手持机型上可能因为高转速精细换相的刚需而被选用，在扫地机器人上则要权衡它的降噪收益与成本，看是否值回票价。选型从来不是看参数好不好，而是看参数对这个产品的目标值不值钱。</p>
-<p>
-	小结</p>
-<p>
-	两类产品共用无刷马达驱动板这个技术底座，但设计重心完全不同：手持拼峰值性能与响应，扫地机器人拼平稳安静与长寿命。理解这种差异，才不会拿着一套方案去硬套两类产品，也才能在各自的产品目标下做出取舍正确的驱动板。</p>
-<p>
-	值得一提的是，两类产品的技术正在相互渗透。手持吸尘器为了缓解用户疲劳，开始追求更柔和的噪声表现；扫地机器人为了应对地毯清洁，也在尝试更强的瞬时吸力。边界模糊意味着驱动板设计不能再泾渭分明，而要在两种极端之间找到适配具体产品的中间点。无论如何，产品工况永远是驱动板设计的出发点，先看清产品怎么用，再决定板子怎么做，这个顺序不能颠倒。对做方案的团队来说，理解客户的产品使用场景，比单纯堆砌器件参数更能做出贴合需求的驱动板。把两类产品的差异想清楚，方案设计就不会跑偏，这也是驱动板定制服务最核心的功课。无论产品形态怎么演化，围绕工况做设计这条主线不会变。这也是这两类产品虽然共用无刷马达技术底座，却要在驱动板上做出不同取舍的根本原因。本文来自深圳市艾毕胜电子有限公司，提供<strong>麦歌恩磁性编码器芯片</strong>和<strong>无刷马达驱动板</strong>定制服务<br/><br/>
-	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[工业机器人电路：村田贴片电容适配型号]]></title>    <link>https://www.elecfans.com/d/8789676.html</link>    <guid>https://www.elecfans.com/d/8789676.html</guid>    <pubDate>2026-10-19 17:09:00</pubDate>    <description><![CDATA[<p>
-	<a href="https://m.elecfans.com/v/tag/144/" target="_blank"><u>工业机器人</u></a>是集伺服驱动、运动控制、<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>采集于一体的复杂工控设备，内部<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>滤波、信号去耦、电压稳压电路高度依赖贴片<a href="https://www.hqchip.com/app/398" target="_blank"><u>MLCC</u></a>。<a href="https://www.elecfans.com/tags/村田/" target="_blank"><u>村田</u></a>作为全球MLCC头部厂商，丰富的产品系列可以匹配工业机器人不同电路模块需求，很多机器人厂商在主控板、伺服驱动板、<a href="https://www.elecfans.com/tags/编码器/" target="_blank"><u>编码器</u></a>板大量采用村田<a href="https://m.hqchip.com/app/398" target="_blank"><u>贴片电容</u></a>。</p>
-<img src="https://file1.elecfans.com/web3/M00/11/63/wKgZO2f9_MmAD3TIAAP9B0CloJs849.png" alt="wKgZO2f9_MmAD3TIAAP9B0CloJs849.png"/><p>
-	工业<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>工作环境复杂，关节<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>频繁启停会产生强烈纹波与电磁干扰；机器人本体长期震动，基板容易发生微小形变；控制柜内部密闭高温，温度波动大。普通消费级贴片电容很容易出现容量衰减、基板应力开裂，轻则信号失真，重则伺服报错停机，因此机器人电路必须选用工业级高可靠MLCC。</p>
-<p>
-	村田GRM系列是工业场景通用主力型号，广泛用于机器人主控板芯片电源去耦，0402、0603小封装，X7R材质，温度特性稳定，容量范围广，用来抑制芯片电源噪声，保障主控<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>稳定运行。而机器人伺服驱动板电源输入滤波，推荐选用GRJ系列，该系列采用树脂外层电极，能有效缓冲电路板弯曲应力，降低震动环境下<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>开裂风险，非常适合机器人关节板这类长期承受<a href="https://m.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>震动的电路板。</p>
-<p>
-	针对大功率伺服母线滤波，可选用村田高纹波耐受系列MLCC，耐受大纹波<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>，抑制电机启停产生的<a href="https://www.elecfans.com/v/tag/873/" target="_blank"><u>高压</u></a>尖峰，保护功率器件。编码器微弱信号采集回路，对电容容量稳定性要求高，优先选用村田NP0材质电容，容量随温度变化极小，保证<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>信号精准采集。</p>
-<p>
-	选型时需要区分不同电路的核心需求：数字芯片就近去耦，优先小容量、小封装GRM；关节震动电路板，首选GRJ防应力开裂系列；大功率电源滤波，重点关注耐压、纹波电流参数。同时要注意MLCC直流偏置效应，高压下容量衰减问题，提前留足耐压余量。</p>
-<p>
-	村田贴片电容规格齐全，品控稳定，在国内外主流工业机器人品牌中已经经过大量项目验证。但工业机器人属于高可靠性设备，不建议直接套用<a href="https://www.elecfans.com/soft/data/39-96/" target="_blank"><u>消费电子</u></a>型号，需要结合温度、震动、电压应力做可靠性测试。</p>
-<p>
-	随着工业机器人不断向小型化、高负载、长寿命方向迭代，电路对电容体积、耐高温、抗震动能力提出更高要求。村田多系列MLCC方案，可以覆盖机器人从主控、伺服到编码器全板块<a href="https://bbs.elecfans.com/zhuti_dianlu_1.html" target="_blank"><u>电路设计</u></a>，为工业机器人稳定运行提供可靠的无源器件支撑。<br/><br/>
-	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[海辰储能亮相IGEM 2026马来西亚吉隆坡绿色环保科技展览会]]></title>    <link>https://www.elecfans.com/d/8789714.html</link>    <guid>https://www.elecfans.com/d/8789714.html</guid>    <pubDate>2026-10-19 17:10:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	10月7日至9日，2026马来西亚吉隆坡绿色环保科技展览会（IGEM 2026）在吉隆坡会展<a href="https://m.hqchip.com/tags" target="_blank"><u>中心</u></a>举行。海辰储能首次亮相展会，重点展示面向4小时长时储能场景的∞Power 6.25MWh储能系统及交流<a href="https://www.elecfans.com/tags/耦合/" target="_blank"><u>耦合</u></a>一体化储能解决方案，呈现适配区域电网特性与<a href="https://m.elecfans.com/v/tag/293/" target="_blank"><u>新能源</u></a>发展需求的核心产品及符合区域合规与<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>要求的解决方案。</p>
-<p style="text-indent:2em;">
-	随着马来西亚市场新能源装机规模持续增长，新能源消纳压力逐步加大，<a href="https://www.elecfans.com/v/tag/4675/" target="_blank"><u>电力系统</u></a>对储能放电时长、运行可靠性及多场景适配能力提出了更高要求。长时储能能够通过延长能源存储与释放时长，平抑新能源出力波动、提升电力系统调节能力，为区域新能源规模化发展和能源转型提供有力支撑。</p>
-<p style="text-indent:2em;">
-	作为海辰储能面向4小时长时储能场景的主力产品，∞Power 6.25MWh储能系统搭载全球首款∞Cell 1175Ah长时储能专用电池，电芯循环寿命超过11,000次，兼具高能量密度、高安全性与高可靠性，可有效支撑新能源大规模并网，助力电网稳定运行；在系统层面，其通过高集成架构与结构优化，能够实现体积利用率提升30%、标准容量提升56%，进一步提升空间利用效率与运输便利性，为不同项目场景提供更灵活的部署选择。</p>
-<p style="text-indent:2em;">
-	针对储能项目对系统集成与高效交付的需求，海辰储能同步推出交流耦合一体化储能解决方案，整体涵盖<a href="https://www.hqchip.com/app/1703" target="_blank"><u>DC</u></a>储能直流系统、PCS、EMS等核心设备。依托一体化集成能力，海辰储能可对上述设备进行打包交付，统一<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>标准与责任边界，减少多供应商、多责任界面带来的协调成本，提升项目交付效率与系统运行的一致性。</p>
-<p style="text-indent:2em;">
-	产品实力与交付能力也在海外市场得到进一步验证。2026年9月，山东菏泽基地首批∞Power 6.25MWh 4h长时储能系统预制舱发运海外。凭借持续提升的一体化产品实力与规模化交付能力，海辰储能在全球储能市场保持领先地位，根据InfoLink数据，2026年上半年，海辰储能全球储能电池出货量位居TOP2。</p>
-<p style="text-indent:2em;">
-	立足东南亚市场，海辰储能坚持<a href="https://m.elecfans.com/v/tag/222/" target="_blank"><u>产品方案</u></a>适配与本地服务并举，持续提升区域服务能力。依托完善的区域服务网络，公司可为当地项目提供涵盖前期咨询、方案定制、安装调试及运维保障的全周期一站式服务，推动一体化储能解决方案更好地适配当地电网标准与项目实际需求。</p>
-<p style="text-indent:2em;">
-	未来，海辰储能将持续推进全场景一体化储能解决方案的迭代升级，不断完善本地化服务体系，携手区域客户与合作伙伴推动储能创新应用落地，充分释放长时储能一体化方案与应用价值，助力东南亚构建更加灵活、高效、可持续的现代化能源体系。</p>]]></description></item><item>    <title><![CDATA[大华股份亮相2026中国工博会]]></title>    <link>https://www.elecfans.com/d/8789716.html</link>    <guid>https://www.elecfans.com/d/8789716.html</guid>    <pubDate>2026-10-19 17:11:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	10月12日-16日，2026中国国际工业博览会在上海举行。大华股份以“<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>赋能制造”为主题，携工业数智化全场景解决方案及智能设备集中亮相，全方位呈现AI与工业制造深度融合的创新成果和应用实践，释放工业新质生产力动能，与行业伙伴共探制造业数智化升级新路径。</p>
-<p style="text-indent:2em;">
-	01智赋产线 严把质量关</p>
-<p style="text-indent:2em;">
-	制造质量，贯穿每一道工序。大华将AI视觉与工业大模型技术融入生产环节，辅助识别操作偏差、追溯作业过程，让质量管控从“人防”走向“智防”，助力企业品质跃升。</p>
-<p style="text-indent:2em;">
-	AI-SOP：为产线装上“AI质量眼”</p>
-<p style="text-indent:2em;">
-	通过融合AI大模型技术，实时分析人工操作行为与工序时序，及时识别并预警跳步、漏工序、工具误用等操作偏差，减少返工与不良品风险。面对多型号产品、多类工位的柔性生产需求，相关能力可灵活适配，作业过程可查可溯，助力问题快速定位，为工艺改进提供依据。</p>
-<p style="text-indent:2em;">
-	智能前装：以视觉AI，赋能产业升级</p>
-<p style="text-indent:2em;">
-	依托大模型与视频物联平台的技术积累，大华在展会现场展示了面向智能前装市场的视觉传感、智能感知硬件<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>与AI开放能力，携手生态伙伴拓展具身智能导航避障巡检、无人零售柜、AI家电、配电柜等场景。通过产品、技术、营销与供应保障，助力伙伴将视觉AI融入更多产品，加快智能应用落地，推动制造产业转型升级。</p>
-<p style="text-indent:2em;">
-	02全域感知 护航安全生产</p>
-<p style="text-indent:2em;">
-	工业现场环境复杂多变，大华融合多类物联感知与大模型能力，让设备异常更早发现、作业风险及时预警、多系统协同联动，助力企业提升安全管理效率。</p>
-<p style="text-indent:2em;">
-	AI+安全生产：大模型助力智能巡检与作业管控</p>
-<p style="text-indent:2em;">
-	在智能巡检中，智能体联动多类感知设备，覆盖全厂巡检场景，自动完成表计读数，识别气体泄漏、温度异常等风险，减少人工重复巡查，让设备状态及时掌握、潜在隐患更早发现。在作业管控中，大模型联动多摄相机完成车间全景监测与细节抓拍，精准识别动火、高处等各类作业及人员合规行为，并通过轮巡研判辅助事件闭环处置，为企业生产筑牢安全屏障。</p>
-<p style="text-indent:2em;">
-	物联感知：适应多元复杂工况，精准捕捉异常</p>
-<p style="text-indent:2em;">
-	面对大模型在强腐蚀、粉尘、雨雾、大风、高温、逆光等复杂工况下落地的感知挑战，大华结合防爆、自清洁、<a href="https://m.elecfans.com/v/tag/4854/" target="_blank"><u>光学</u></a>透雾、<a href="https://www.elecfans.com/tags/陀螺仪/" target="_blank"><u>陀螺仪</u></a>防抖、夜视等技术，提升设备在复杂环境中的安全性与稳定性，为智能识别与研判提供可靠数据支撑。通过TDLAS 激光甲烷探测、声学成像、声纹 AI 工业听诊，快速捕捉燃气泄漏、局部放电、设备潜在故障等，全力守护化工、油气、电力等高风险行业生产安全。</p>
-<p style="text-indent:2em;">
-	安消电一体化：打造一站式数字管控平台</p>
-<p style="text-indent:2em;">
-	依托安消电一体化平台，大华融合安全、消防、配电、能耗、办公与运营等业务，打通系统壁垒，以一体化软硬能力，实现多场景统一管理与协同联动，让风险及时发现、事件高效处置、运营状态一屏掌握。同时，整合强弱电智能化建设与专业运维能力，贯通设计施工、技改升级、运维保障全链路，帮助企业降低建设与管理成本，提升运营效率。</p>
-<p style="text-indent:2em;">
-	03柔性制造 焕新生产效能</p>
-<p style="text-indent:2em;">
-	面对多品种、小批量、快切换的柔性生产趋势，大华将智能装备与数智化平台深度融合，驱动产线升级、全链数据贯通，让制造更高效、更智能。</p>
-<p style="text-indent:2em;">
-	1气密检测|微漏识别质量可控</p>
-<p style="text-indent:2em;">
-	防水与密封质量，往往取决于肉眼难以察觉的细微泄漏。大华气密性测试仪以0.01% FS测试精度、0.1Pa分辨率，精准捕捉产品内部的压力变化，让微小泄漏及时发现。设备支持多种测试模式，并可对接MES系统，实现参数自动下发与检测数据上传，让质量判断更准确、检测结果可追溯。</p>
-<p style="text-indent:2em;">
-	2智能防错|规范取料溯源提质</p>
-<p style="text-indent:2em;">
-	多型号混线生产时，容易出现错拿、漏拿。大华智能防错防呆设备融合AI视觉与柔性<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>，根据当前生产任务引导正确取料，并灵活适配不同检测区域与工位。结合MES系统与视频追溯能力，操作偏差及时发现、质量问题快速定位，让装配过程更加规范。</p>
-<p style="text-indent:2em;">
-	模块化产线|柔性升级数智提效</p>
-<p style="text-indent:2em;">
-	面对订单、产品与产能变化，大华柔性模块化产线可灵活配置、快速拼接与扩容，搭配<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>与视觉相机完成自动装配、自动测试，更好适配多品种生产。依托AIoT工厂管理平台，设备与生产数据实时贯通，运行状态集中呈现、异常情况及时预警，让产线调整更灵活、生产协同更高效。</p>
-<p style="text-indent:2em;">
-	4全景视觉点胶|精准作业智能稳定</p>
-<p style="text-indent:2em;">
-	从局部点胶到全景作业，从离线生产到在线协同，大华全景视觉点胶设备精准定位作业区域，以0.02mm重复精度、0.05mm定位精度，配合自动对针与胶重检测，减少位置偏差与胶量波动。生产过程同步融入视觉AI能力，实现关键环节可视、工艺过程可溯，让精密点胶质量更加稳定。</p>
-<p style="text-indent:2em;">
-	以AI大模型为牵引，大华持续推动智慧物联技术深入工业制造核心环节，让质量管控更精准、安全生产更主动、柔性制造更高效，为制造业数智化升级注入新动能。未来，大华股份将继续深耕工业细分场景，携手广大生态伙伴，共创新质生产力时代的制造新篇章！</p>]]></description></item><item>    <title><![CDATA[广汽集团重磅亮相2026巴黎国际车展]]></title>    <link>https://www.elecfans.com/d/8789754.html</link>    <guid>https://www.elecfans.com/d/8789754.html</guid>    <pubDate>2026-10-19 17:13:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	匠心工程，智造美好生活！10月12日，第91届巴黎国际车展在巴黎凡尔赛门展览<a href="https://m.hqchip.com/tags" target="_blank"><u>中心</u></a>启幕。广汽集团携旗下三大品牌产品序列<a href="https://m.elecfans.com/v/tag/293/" target="_blank"><u>新能源</u></a>车型重磅亮相，<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>ON UT C<a href="https://m.elecfans.com/v/tag/1004/" target="_blank"><u>ros</u></a>s迎来全球首秀。同时，广汽正式发布面向欧洲的品牌主张G<a href="https://m.hqchip.com/app/1703" target="_blank"><u>AC</u></a>.THE ENGINEE<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>，并宣布全球服务品牌GAC CARE+在欧洲首发，此举标志着广汽在欧洲迈入全链路本地化深耕的新阶段。</p>
-<p style="text-indent:2em;">
-	中国汽车工业协会副会长兼秘书长付炳锋，广州市工业和信息化局一级调研员粟新辉，法农集团总裁Richard André Bouligny，切尔西足球俱乐部商业总裁Todd Kline，巴黎车展主办方首席执行官Xavier Mayeur，广汽集团总经理閤先庆，广汽集团副总经理、广汽国际董事长陈家才，广汽国际总经理卫海岗，广汽集团首席设计官兼造型设计院院长张帆等领导嘉宾莅临现场，共同见证广汽集团布局欧洲进程中的这一历史性时刻。<a href="https://www.elecfans.com/tags/博世/" target="_blank"><u>博世</u></a>、米其林、法雷奥、采埃孚等全球顶级供应商合作伙伴及欧洲经销商合作伙伴亦到场参会，共话合作与发展。</p>
-<p style="text-indent:2em;">
-	全链路深耕欧洲</p>
-<p style="text-indent:2em;">
-	以匠心品质赢得欧洲信任</p>
-<p style="text-indent:2em;">
-	“作为百年汽车工业的发源地，欧洲，既是广汽最为看重的市场，更是广汽走向全球的品牌战略高地。”閤先庆在发言中道出了广汽对欧洲市场的战略定位。立足这一战略高地，广汽集团在本次巴黎车展推出面向欧洲的品牌主张——GAC.THE ENGINEERS，将工程技术实力转化为用户可感知的品牌价值，以工程师的严谨与匠心，回应欧洲市场对品质的高标准期待。</p>
-<p style="text-indent:2em;">
-	广汽自创立之初，便将对高品质的追求融入品牌基因。成立29年来，广汽累计研发投入超670亿元，拥有8500余人的研发团队，累计专利申请超2.5万项，每款新车均需历经“五高一山一尘”极端环境验证，累计等效测试里程超1300万公里，只为给全球用户带来高品质、高可靠、可信赖的出行体验。</p>
-<p style="text-indent:2em;">
-	研发设计方面，广汽米兰设计中心融合欧洲前瞻设计与国际审美，推动创新设计从米兰走向量产、服务全球。广汽欧洲研发中心计划于2027年建成启用，逐步组建超百人的本地<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>团队，实现“研发+设计”的全价值链本地化运营。</p>
-<p style="text-indent:2em;">
-	生产制造方面， AION V与AION UT已实现“欧洲制造”，且两款车型均取得Euro NCAP五星安全评级，真正做到“产于欧洲、验于欧洲，为欧洲匠心打造”。与此同时，广汽在荷兰鹿特丹设立零部件配送中心，建成覆盖全欧的高效物流网络，为用户提供更高效、更便捷的维保服务。</p>
-<p style="text-indent:2em;">
-	市场渠道方面，广汽在欧洲的渠道布局已覆盖30个国家，未来将聚焦英、德、法、意、西五大核心市场，携手合作伙伴持续完善渠道网络，计划年内在全欧建成超180家销售服务网点，让更多欧洲消费者近距离体验到广汽的产品与服务。</p>
-<p style="text-indent:2em;">
-	能源生态方面，广汽将构建涵盖“出行补能网络、家庭能源系统、循环电池生态”三大场景的绿色能源生态系统，积极践行欧洲ESG法规要求，深入推动“GLASS绿净计划”，以实际行动守护自然环境，推动产业可持续发展。</p>
-<p style="text-indent:2em;">
-	广汽全球服务品牌GAC CARE+正式发布</p>
-<p style="text-indent:2em;">
-	以全天候关怀服务欧洲</p>
-<p style="text-indent:2em;">
-	閤先庆在发言中强调：“广汽不仅提供高品质的汽车，更将统一的服务标准扎根当地。让用户在需要的时候，都能获得值得信赖的服务。”依托这一思路，广汽于本次车展正式推出全球服务品牌——GAC CARE+。该品牌以“Always There, Always Care”为服务理念，围绕“便捷服务、安心品质、用户关怀、智慧生态”四大维度，统筹全球统一服务标准与区域定制化服务，贯穿用户选车、购车、用车、养车全生命周期。</p>
-<p style="text-indent:2em;">
-	作为GAC CARE+全球首发市场，欧洲将率先落地该服务体系，实现从“基础服务保障”向“全周期价值服务”升级，为欧洲用户带来高品质、可信赖的出行体验。便捷服务层面，广汽集团携手安联世合，提供覆盖全欧的3年免费道路救援。依托鹿特丹零部件配送中心，零部件订单满足率超95%，平均36小时内快速发运；欧洲本土技术团队将同步提供专业支持，确保48小时内响应维保需求。</p>
-<p style="text-indent:2em;">
-	品质保障方面，提供整车8年/16万公里及动力电池8年/20万公里的超长质保，同时提供10年不限里程防锈及3年不限里程漆面质保。</p>
-<p style="text-indent:2em;">
-	用户关怀方面，广汽将率先在法国落地当地语言呼叫中心，并逐步覆盖全欧洲；持续为车辆提供OTA软件升级服务，并开展富有归属感的车主活动。</p>
-<p style="text-indent:2em;">
-	智慧生态方面，官方APP集成远程控车等功能，让用户足不出户即可解决大部分用车需求。广汽还为用户提供符合欧洲标准的家用充电设备，打通家庭补能场景，实现线上线下服务无缝衔接。</p>
-<p style="text-indent:2em;">
-	AION UT Cross全球首秀</p>
-<p style="text-indent:2em;">
-	以多元智趣产品适配欧洲生活</p>
-<p style="text-indent:2em;">
-	本次巴黎车展，广汽携旗下广汽传祺、埃安、广汽昊铂三大产品序列共6款明星车型亮相，产品覆盖BEV、PHEV、HEV全动力技术路线，涵盖轿车、SUV、MPV全品类。其中，为欧洲出行需求打造的AION UT Cross迎来全球首秀。</p>
-<p style="text-indent:2em;">
-	发布会上，卫海岗正式揭幕AION UT Cross，并表示：“一台车，装下你的全部生活！这就是AION UT Cross。”作为一款轻户外跨界纯电车，AION UT Cross兼具掀背车的灵活性、旅行车的大空间及SUV的强通过性，充分适配欧洲用户出行需求。</p>
-<p style="text-indent:2em;">
-	AION UT Cross由米兰设计中心主导开发，外观硬朗立体、内饰简洁实用，契合欧洲用户审美偏好。外观方面，新车新增专属Cross套件，搭配轮眉包围与车顶行李架，进一步强化力量感与多场景属性。</p>
-<p style="text-indent:2em;">
-	空间方面，新车拥有同级最长的2750mm轴距，后排空间媲美豪华中型车；后备厢容积440升，后排座椅放倒后可形成纯平空间，搭配24处灵活储物空间，可轻松装下行李箱、露营装备、冲浪板、自行车等，充分满足全家人多场景装载需求。</p>
-<p style="text-indent:2em;">
-	驾控方面，AION UT Cross针对欧洲路况升级底盘调校，配备225mm宽胎，滤震更细腻，行驶质感更高级。满载时仍有147mm离地间隙，既能从容应对城市道路，也能胜任郊外复杂路况。续航方面，新车WLTP续航里程达400公里，电量从30%快充至80%仅需24分钟。</p>
-<p style="text-indent:2em;">
-	安全方面，AION UT Cross车身高强度钢占比达71%，配备7个安全气囊，包括同级领先的2.1米V型腔体侧气帘，并搭载安全行驶超1600亿公里的弹匣电池，为全家提供全方位安全防护。</p>
-<p style="text-indent:2em;">
-	后续，广汽将导入更多全球战略车型，充分满足欧洲市场多元化需求，为欧洲用户的多样生活方式提供高品质的广汽出行解决方案。</p>
-<p style="text-indent:2em;">
-	广汽×切尔西</p>
-<p style="text-indent:2em;">
-	以足球为纽带拉近与欧洲用户距离</p>
-<p style="text-indent:2em;">
-	在欧洲，广汽以足球为纽带，打造贴合当地市场的品牌体验，持续拉近与欧洲用户的情感距离。此前，广汽已正式成为比利亚雷亚尔足球俱乐部官方汽车合作伙伴。</p>
-<p style="text-indent:2em;">
-	10月12日下午，广汽与切尔西足球俱乐部在广汽展台进行全球合作签约仪式。切尔西足球俱乐部首席执行官Todd Kline、商业合作总监Alex Smith、切尔西传奇球星克劳德・马克莱莱、广汽集团总经理閤先庆、广汽国际董事长陈家才、广汽国际总经理卫海岗、广汽国际欧洲区域中心总裁马海洋出席仪式。此次签约标志着广汽正式成为切尔西足球俱乐部“官方汽车合作伙伴”。</p>
-<p style="text-indent:2em;">
-	签约结束后，閤先庆与克劳德・马克莱莱互赠GS7车模与切尔西签名球衣作为纪念，并一起合影留念。马克莱莱还在现场与车主代表切磋颠球技艺；为身穿4号球衣的<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>“小球迷”签名。在体验广汽新能源车型时，马克莱莱对车辆在豪华、舒适、智能方面的表现赞不绝口。</p>
-<p style="text-indent:2em;">
-	值得一提的是，此次车展广汽展台设置六大主题展区，依托场景化、可视化的呈现方式和机器人迎宾互动服务，在吸引大批观众驻足体验的同时，系统展现广汽技术实力与体系化出海能力，传递广汽“立足欧洲、用户为本、绿色发展”的长期承诺。</p>
-<p style="text-indent:2em;">
-	从两年前“欧洲市场计划”发布，到如今研发、生产、渠道、生态全链路本地化布局落地，广汽正以全维体系化能力，在欧洲走出一条高质量出海之路。</p>
-<p style="text-indent:2em;">
-	面向未来，广汽集团将坚持长期主义，以工程师精神打磨产品与技术，以本地化深耕完善服务与生态，持续为欧洲用户创造智能、绿色、低碳的高品质出行体验，为欧洲的可持续发展贡献中国力量。</p>]]></description></item><item>    <title><![CDATA[PCBA加工中的SPI、AOI与X-Ray怎么选？从检测对象到适用边界解析]]></title>    <link>https://www.elecfans.com/d/8789717.html</link>    <guid>https://www.elecfans.com/d/8789717.html</guid>    <pubDate>2026-10-19 17:13:00</pubDate>    <description><![CDATA[<p>
-	在<a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>A加工过程中，锡膏印刷、<a href="https://www.hqchip.com/ic/0" target="_blank"><u>元器件</u></a>贴装和焊接质量都会影响电路板的制造结果。对于需要SMT贴片的电子产品，SPI、AOI和X-Ray是常见的检测手段，但三者的检测对象、适用场景和能力边界并不相同。</p>
-<p>
-	企业选择PCBA加工厂家时，不应只关注是否配备这些检测设备，还需要了解设备分别检查什么、能发现哪些问题，以及哪些项目仍需要通过<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>测试或功能测试确认。</p>
-<p>
-	伟锦科技是一家PCBA&amp;SMT贴片加工一站式制造厂家，提供PCBA包工包料、SMT贴片、DIP插件、后焊及相关组装服务。针对不同结构和封装的PCBA产品，可结合生产工艺与项目要求，评估相应的过程检测方式。</p>
-<p>
-	一、SPI、AOI与X-Ray分别检测什么？</p>
-<p>
-	三种设备主要针对不同的制造环节和缺陷类型，不能简单地认为其中一种可以替代另外两种。</p>
-<table><thead><tr><th>
-				检测设备</th>
-			<th>
-				主要检测对象</th>
-			<th>
-				常见应用环节</th>
-			<th>
-				主要作用</th>
-		</tr></thead><tbody><tr><td>
-				SPI锡膏检测</td>
-			<td>
-				PCB焊盘上的锡膏印刷情况</td>
-			<td>
-				锡膏印刷后、贴片前</td>
-			<td>
-				检查锡膏印刷量、面积、高度及分布等参数</td>
-		</tr><tr><td>
-				AOI自动光学检测</td>
-			<td>
-				元器件位置及可见焊接外观</td>
-			<td>
-				贴片后或回流焊后，具体取决于检测配置</td>
-			<td>
-				辅助发现漏件、偏移、极性异常及部分焊接外观问题</td>
-		</tr><tr><td>
-				X-Ray检测</td>
-			<td>
-				特定封装内部及遮挡区域的焊接结构</td>
-			<td>
-				通常用于回流焊后相关检测</td>
-			<td>
-				辅助检查BGA等封装的内部焊点及其他适用结构</td>
-		</tr></tbody></table><p>
-	需要注意，设备的实际检测能力与型号、程序设置、检测标准、器件结构和板件布局有关。表格中的用途是一般性说明，具体检测范围应以设备配置和项目要求为准。</p>
-<p>
-	二、SPI锡膏检测：为什么要在贴片前检查？</p>
-<p>
-	SMT贴片生产中，锡膏印刷是影响后续焊接质量的重要环节。锡膏过多、过少、偏移或分布异常，都可能增加后续焊接问题的风险。</p>
-<p>
-	SPI主要用于检查印刷后的锡膏状态，帮助生产人员及时发现印刷异常，并根据实际情况调整印刷工艺。</p>
-<p>
-	例如，某块工控控制板包含细间距芯片，如果焊盘上的锡膏印刷位置出现偏差，后续回流焊时就可能增加桥连或焊接异常的风险。通过SPI检查，可以在贴片和焊接之前发现部分印刷问题，减少异常继续流入后续工序。</p>
-<p>
-	SPI的主要价值包括：</p>
-<p>
-	检查锡膏印刷量和分布是否符合设定要求。</p>
-<p>
-	识别部分印刷偏移或异常区域。</p>
-<p>
-	为印刷工艺调整提供数据参考。</p>
-<p>
-	帮助生产过程及时发现印刷环节的问题。</p>
-<p>
-	但SPI检测的是锡膏印刷情况，并不直接判断最终焊点是否可靠，也不能替代回流焊后的焊接检测。</p>
-<p>
-	三、AOI自动光学检测：哪些问题可以发现？</p>
-<p>
-	AOI通过光学成像和检测程序，对板件上的元器件及可见焊接特征进行检查。根据设备配置与检测位置不同，可用于贴片后检查，也可用于回流焊后的外观检测。</p>
-<p>
-	常见检测项目包括：</p>
-<p>
-	元器件漏装或位置偏移。</p>
-<p>
-	部分器件的极性或方向异常。</p>
-<p>
-	元器件型号、外观与程序设定不匹配的情况。</p>
-<p>
-	部分可见焊接外观异常。</p>
-<p>
-	例如，<a href="https://bbs.elecfans.com/group_78" target="_blank"><u>汽车电子</u></a>控制板或<a href="https://m.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>板上可能存在多个方向要求不同的<a href="https://www.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>、<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>及<a href="https://www.hqchip.com/app/1515" target="_blank"><u>连接器</u></a>。AOI可以按照设定的检测规则辅助识别部分装配异常，降低单纯依靠人工目检的局限。</p>
-<p>
-	不过，AOI并不能检查所有隐藏焊点，也不能仅凭外观判断电路功能是否正常。对于焊点被器件遮挡、内部连接结构复杂的封装，需要根据具体风险评估其他检测方式。</p>
-<p>
-	另外，AOI的检测效果取决于程序设置、检测标准、器件外观和板件布局。对于特殊颜色、反光表面或结构差异较大的器件，通常需要结合实际情况设置检测条件。</p>
-<p>
-	四、X-Ray检测：哪些PCBA产品更值得关注？</p>
-<p>
-	X-Ray通过射线成像观察特定封装内部或被器件遮挡的焊接结构，常用于常规光学检测难以充分观察的部位。</p>
-<p>
-	对于采用BGA等封装的PCBA产品，焊点位于器件本体下方，常规AOI通常无法直接观察其全部焊接情况，因此可以根据产品结构、质量要求和风险评估X-Ray检测需求。</p>
-<p>
-	X-Ray可辅助观察的内容可能包括：</p>
-<p>
-	特定封装内部的焊点形态。</p>
-<p>
-	部分焊点的空洞或异常分布。</p>
-<p>
-	某些被器件遮挡的焊接连接情况。</p>
-<p>
-	但X-Ray并不是万能检测手段。不同封装结构、材料重叠和成像条件会影响检测效果，而且影像判断需要相应的检测标准和专业分析。某些缺陷即使能够在影像中观察到，也需要结合适用标准判断是否可接受。</p>
-<p>
-	是否需要X-Ray，应结合BGA等特殊封装的使用情况、焊点风险、产品要求和客户检验规范确定，而不是所有PCBA产品都必须采用同一种检测配置。</p>
-<p>
-	五、SPI、AOI与X-Ray应该怎样搭配？</p>
-<p>
-	合理的检测组合，应根据PCBA的封装结构、制造工艺、产品应用和验收要求确定。</p>
-<table><thead><tr><th>
-				产品或工艺特点</th>
-			<th>
-				可以重点考虑的检测方式</th>
-			<th>
-				需要注意的边界</th>
-		</tr></thead><tbody><tr><td>
-				常规SMT贴片板</td>
-			<td>
-				SPI、AOI</td>
-			<td>
-				仍需依据项目要求确定是否需要电气或功能测试</td>
-		</tr><tr><td>
-				细间距芯片较多的控制板</td>
-			<td>
-				SPI、AOI</td>
-			<td>
-				需结合焊盘设计、印刷效果和可见焊点情况评估</td>
-		</tr><tr><td>
-				含BGA等特殊封装的板件</td>
-			<td>
-				SPI、AOI，并评估X-Ray需求</td>
-			<td>
-				应根据封装结构及风险确定X-Ray范围</td>
-		</tr><tr><td>
-				插件器件较多的PCBA</td>
-			<td>
-				根据SMT部分配置SPI、AOI，并配合插件工序检验</td>
-			<td>
-				插件焊接还需相应的外观或其他检验</td>
-		</tr><tr><td>
-				需要验证电路功能的产品</td>
-			<td>
-				过程检测之外，增加约定的电气或功能测试</td>
-			<td>
-				具体测试范围取决于测试程序、治具和验收标准</td>
-		</tr></tbody></table><p>
-	从生产流程看，SPI主要帮助检查锡膏印刷，AOI主要用于可见装配与焊接特征检查，X-Ray则针对适用的内部焊接结构提供成像检测。三者可以互相补充，但并不意味着必须在每个项目中全部使用。</p>
-<p>
-	六、伟锦科技如何根据PCBA产品安排检测？</p>
-<p>
-	伟锦科技提供PCBA包工包料、SMT贴片、DIP插件、后焊及相关组装服务，并配备SPI、AOI等检测设备。具体生产流程和检测项目，需要结合客户提供的PCB资料、BOM、器件封装和检验要求确认。</p>
-<p>
-	在锡膏印刷后，可通过SPI检查锡膏印刷情况，辅助发现部分印刷异常；在相应贴片或焊接工序后，可采用AOI检查可见的装配及焊接外观问题。</p>
-<p>
-	如果产品使用BGA等不易直接观察内部焊点的封装，则可根据客户要求、产品结构和检测风险进一步确认X-Ray检测需求。具体是否实施、覆盖哪些区域以及采用何种判定标准，应在项目启动前明确。</p>
-<p>
-	对于汽车电子、工控电子、智能机器人及宠物电子等不同应用产品，检测方案也不宜一概而论。即使采用相似的SMT工艺，器件封装、使用环境、功能要求和客户验收规范仍可能不同。</p>
-<p>
-	选择PCBA加工厂家时，建议进一步确认以下内容：</p>
-<p>
-	是否能够根据产品资料说明各检测设备的适用范围。</p>
-<p>
-	是否明确过程检测项目与最终验收标准。</p>
-<p>
-	对特殊封装是否能够评估额外检测需求。</p>
-<p>
-	是否能够按约定执行异常处理，并提供所需的检测记录。</p>
-<p>
-	是否明确制造检测与电气、功能测试之间的责任边界。</p>
-<p>
-	七、为什么通过了SPI、AOI或X-Ray，仍可能需要功能测试？</p>
-<p>
-	SPI、AOI和X-Ray主要用于检查特定制造环节或焊接结构，不能单独证明整块PCBA的全部功能正常。</p>
-<p>
-	例如，一块<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>控制板通过AOI检测，只能说明在既定检测条件下，相关可见装配特征满足设定的判定规则；它并不能直接证明<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机控制</u></a>、<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>协议、<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>响应或软件逻辑完全符合设计要求。</p>
-<p>
-	如果项目需要进一步验证功能，应结合<a href="https://bbs.elecfans.com/zhuti_dianlu_1.html" target="_blank"><u>电路设计</u></a>和客户要求，确定是否需要：</p>
-<p>
-	电气参数测试。</p>
-<p>
-	通电检查。</p>
-<p>
-	指定接口或模块功能测试。</p>
-<p>
-	程序烧录及验证。</p>
-<p>
-	板级功能测试或整机联动测试。</p>
-<p>
-	这些测试的覆盖范围、测试条件和判定标准需要提前约定。尤其是整机测试，往往涉及<a href="https://m.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>结构、软件、线束和外部模块，不应默认包含在基础SMT贴片加工范围内。</p>
-<p>
-	八、常见问题 FAQ</p>
-<p>
-	<strong>Q1：SPI和AOI有什么区别？</strong></p>
-<p>
-	A：SPI主要检查锡膏印刷情况，AOI主要检查可见的元器件装配和部分焊接外观。两者对应不同生产环节，不能互相完全替代。</p>
-<p>
-	<strong>Q2：所有PCBA产品都需要做X-Ray吗？</strong></p>
-<p>
-	A：不需要。是否采用X-Ray，应根据BGA等特殊封装、产品结构、焊点风险及客户要求评估。对于没有相应检测需求的产品，不必机械地增加同一检测项目。</p>
-<p>
-	<strong>Q3：AOI能否检测出BGA内部的所有焊接问题？</strong></p>
-<p>
-	A：通常不能。BGA焊点位于器件本体下方，常规光学检测无法直接观察其全部内部焊点。可以根据项目需要评估X-Ray等检测方式，但其效果也受到结构和成像条件限制。</p>
-<p>
-	<strong>Q4：X-Ray检测通过后，是否可以不做功能测试？</strong></p>
-<p>
-	A：不能直接这样判断。X-Ray主要提供特定内部结构的影像信息，不等于电路功能已经验证。是否需要功能测试，应根据产品用途和验收标准确定。</p>
-<p>
-	<strong>Q5：选择PCBA加工厂家时，应该怎样确认检测能力？</strong></p>
-<p>
-	A：建议提供PCB资料、BOM、关键器件封装及检验要求，让厂家说明对应工序的检测方法、适用范围和判定标准，并明确是否需要额外的电气或功能测试。</p>
-<p>
-	九、总结</p>
-<p>
-	SPI、AOI与X-Ray分别针对锡膏印刷、可见装配及焊接特征、特定内部焊接结构提供检测支持。选择哪种设备、如何搭配，应该由产品结构、器件封装、工艺风险和验收要求共同决定，而不是简单地以设备数量判断PCBA加工能力。</p>
-<p>
-	伟锦科技作为PCBA&amp;SMT贴片加工一站式制造厂家，可根据项目资料和工艺要求，配合安排PCBA包工包料、SMT贴片、DIP插件、后焊及相应检测流程。企业在选择PCBA加工厂家时，建议重点确认检测范围、判定标准、异常处理机制以及功能测试责任，让检测方案真正匹配产品需求。<br/><br/>
-	审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[反射内存卡在工业控制与分布式系统中的应用]]></title>    <link>https://www.elecfans.com/d/8789755.html</link>    <guid>https://www.elecfans.com/d/8789755.html</guid>    <pubDate>2026-10-19 17:16:00</pubDate>    <description><![CDATA[<p>
-	<img src="https://file1.elecfans.com/web3/M00/80/42/wKgZO2rV3zyACDoQADua71-IfI4967.png" alt="wKgZO2rV3zyACDoQADua71-IfI4967.png"/>TH-CPCI-210</p>
-<p>
-	<strong>  </strong>一、工业实时控制的痛点<br/>
-	现代<a href="https://m.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>系统正在从单机控制走向分布式控制：多台<a href="https://www.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>、工作站、<a href="https://www.elecfans.com/v/tag/323/" target="_blank"><u>PLC</u></a> 需要实时共享数据，协同完成复杂的控制任务。然而传统工业<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>手段各有短板——<a href="https://www.hqchip.com/app/2004" target="_blank"><u>CAN</u></a> 总线数据率低（1Mbps 量级，响应时间 5~10ms）；PROFIBUS 速率不足 12Mbps、响应时间大于 10ms；工业<a href="https://m.hqchip.com/app/1720" target="_blank"><u>以太网</u></a>受 CSMA/CD 机制影响，无法保证传输延迟的确定性，最坏延迟可达 1~10ms。对需要微秒级同步的场合，这些总线都不够"硬实时"。反射内存网络则提供了另一种思路：把共享内存搬到网络上。<br/>
-	二、分布式<a href="https://m.elecfans.com/v/tag/949/" target="_blank"><u>数控</u></a>系统<br/>
-	在分布式数控（DNC）和多轴联动系统中，多个控制节点必须精确协同。反射内存的"全网共享内存"特性，让各节点以确定性的速率读写同一数据区，实现轴间同步与状态共享。相比传统现场总线，反射内存具有更高的带宽（可达 170MB/s）、更低的延迟和更强的确定性，特别适合多轴高速运动控制这类对时序敏感的场景。工程研究已验证反射内存技术在分布式数控系统中的应用可行性，为多节点实时数据交换提供了高性能通道。<br/>
-	三、<a href="https://www.elecfans.com/v/tag/4675/" target="_blank"><u>电力系统</u></a>与高速保护<br/>
-	电力系统对保护动作时间有严格要求。以核电站安全监控为例，反射内存网络可将紧急停机命令的传输时间从传统方式的 50ms 缩短到 0.8ms 量级。这种数量级的提升，对于毫秒必争的高速保护、故障录波、广域测量系统意义重大。反射内存的双环冗余能力，也满足了电力系统对通信链路高可靠性的要求。<br/>
-	四、多机冗余与容错系统<br/>
-	在需要高可用性的<a href="https://www.elecfans.com/v/tag/8966/" target="_blank"><u>控制系统</u></a>中，常采用"三冗余投票"（如航空电子的三余度架构）或主备冗余机制。多台计算机通过反射内存共享同一份实时数据，一致性由硬件保证，冗余表决逻辑只需读取共享区数据即可完成。相比软件同步方案，反射内存避免了节点间<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>偏移和数据不一致问题，让冗余系统的实现大为简化。<br/>
-	五、试验台架与多机协同测试<br/>
-	在大型装备试验中，台架测试往往由多台测控计算机分工协作：一台负责激励加载、一台负责数据采集、一台负责实时监控与显示。这些机器如果各自独立运行，数据交换的时序错乱会直接污染试验结果。反射内存网络让多台测控机共享同一份实时数据，采集、处理、显示在微秒级内同步推进，试验数据的一致性有了硬件级保障。例如在高速旋转机械、内燃机台架等需要<a href="https://m.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>同步测量的场合，反射内存配合高速数据采集卡，可构建强同步、低抖动的多通道测量系统，避免因各通道采样时刻不一致带来的测量误差。<br/>
-	六、与其他工业总线的选型对比</p>
-<table style="border-bottom:none;border-left:none;border-right:none;border-top:none;"><tbody><tr><td style="border-bottom:1pt solid;border-left:1pt solid;border-right:1pt solid;border-top:1pt solid;padding:0pt 5.4pt;vertical-align:top;width:144pt;">
-				<strong>网络类型</strong></td>
-			<td style="border-bottom:1pt solid;border-left:1pt solid;border-right:1pt solid;border-top:1pt solid;padding:0pt 5.4pt;vertical-align:top;width:144pt;">
-				<strong>带宽</strong></td>
-			<td style="border-bottom:1pt solid;border-left:1pt solid;border-right:1pt solid;border-top:1pt solid;padding:0pt 5.4pt;vertical-align:top;width:144pt;">
-				<strong>实时性</strong></td>
-		</tr><tr><td style="border-bottom:1pt solid;border-left:1pt solid;border-right:1pt solid;border-top:none;padding:0pt 5.4pt;vertical-align:top;width:144pt;">
-				CAN</td>
-			<td style="border-bottom:1pt solid;border-left:1pt solid;border-right:1pt solid;border-top:none;padding:0pt 5.4pt;vertical-align:top;width:144pt;">
-				1Mbps</td>
-			<td style="border-bottom:1pt solid;border-left:1pt solid;border-right:1pt solid;border-top:none;padding:0pt 5.4pt;vertical-align:top;width:144pt;">
-				响应 5~10ms，实时性有限</td>
-		</tr><tr><td style="border-bottom:1pt solid;border-left:1pt solid;border-right:1pt solid;border-top:none;padding:0pt 5.4pt;vertical-align:top;width:144pt;">
-				PROFIBUS</td>
-			<td style="border-bottom:1pt solid;border-left:1pt solid;border-right:1pt solid;border-top:none;padding:0pt 5.4pt;vertical-align:top;width:144pt;">
-				&lt;12Mbps</td>
-			<td style="border-bottom:1pt solid;border-left:1pt solid;border-right:1pt solid;border-top:none;padding:0pt 5.4pt;vertical-align:top;width:144pt;">
-				响应&gt;10ms</td>
-		</tr><tr><td style="border-bottom:1pt solid;border-left:1pt solid;border-right:1pt solid;border-top:none;padding:0pt 5.4pt;vertical-align:top;width:144pt;">
-				工业以太网</td>
-			<td style="border-bottom:1pt solid;border-left:1pt solid;border-right:1pt solid;border-top:none;padding:0pt 5.4pt;vertical-align:top;width:144pt;">
-				100Mbps~1Gbps</td>
-			<td style="border-bottom:1pt solid;border-left:1pt solid;border-right:1pt solid;border-top:none;padding:0pt 5.4pt;vertical-align:top;width:144pt;">
-				延迟 1~10ms，抖动大、确定性差</td>
-		</tr><tr><td style="border-bottom:1pt solid;border-left:1pt solid;border-right:1pt solid;border-top:none;padding:0pt 5.4pt;vertical-align:top;width:144pt;">
-				反射内存</td>
-			<td style="border-bottom:1pt solid;border-left:1pt solid;border-right:1pt solid;border-top:none;padding:0pt 5.4pt;vertical-align:top;width:144pt;">
-				最高约 170MB/s</td>
-			<td style="border-bottom:1pt solid;border-left:1pt solid;border-right:1pt solid;border-top:none;padding:0pt 5.4pt;vertical-align:top;width:144pt;">
-				微秒级、确定性上界</td>
-		</tr></tbody></table><p>
-	选择反射内存的典型判据包括：需要微秒级同步、要求延迟确定可预测、多异构节点强一致、<a href="https://m.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a> 资源紧张需要零拷贝通信。如果只是低速开关量、温湿度采集，CAN 或现场总线已足够，不必为成本买单。<br/>
-	七、应用中的注意事项<br/>
-	工业现场使用反射内存需注意：一是布线防护，光纤需避开强电磁干扰源，必要时采用屏蔽与铠装；二是供电可靠，为节点卡提供稳定供电，避免掉电引发环网中断；三是配置管理，Node ID、内存映射等需统一规划并记录在案；四是散热，机柜内保证通风，防止高温降速或误码。做到这几点，反射内存网络能在工业环境中长期稳定运行。<br/>
-	八、落地实施步骤建议<br/>
-	对准备在工业项目中引入反射内存的团队，建议按以下节奏推进：第一步，先搭建最小验证系统（两个节点 + 一张<a href="https://www.elecfans.com/v/tag/1392/" target="_blank"><u>交换机</u></a>或直连），验证基本通信与延迟指标；第二步，扩展为真实规模拓扑，逐节点加入并做全链路数据一致性测试；第三步，建立运行监控机制，周期性检查链路状态、节点心跳与误码情况；第四步，编写组网与排障文档，规范 Node ID、内存映射等配置管理。分步走能显著降低上线风险，也便于在早期发现问题。此外，建议在项目初期就与板卡厂商确认驱动对目标<a href="https://www.elecfans.com/v/tag/527/" target="_blank"><u>操作系统</u></a>与内核的兼容性，避免后期因驱动问题返工。需要提醒的是，实时网络的上线并非常态监控的结束，而是一个持续运维的开始——链路质量、光模块衰减、节点供电都会随运行时间缓慢劣化，只有把监控与巡检制度化，才能让"确定性"长期成立。<br/>
-	九、结语<br/>
-	从分布式数控、高速保护到多机冗余与同步测量，反射内存网络为工业控制提供了"微秒级确定性 + 全网一致"的通信底座。它不是要取代所有现场总线，而是在实时性要求最高的关键链路上，提供了传统工业通信难以企及的性能与可靠性。对从事高速运动控制、电力保护、高端测试装备的<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>而言，反射内存是值得掌握的一项核心技术。<br/><br/><br/><b>审核编辑 黄宇</b></p>]]></description></item><item>    <title><![CDATA[广立微亮相2026中国工博会国芯展]]></title>    <link>https://www.elecfans.com/d/8789756.html</link>    <guid>https://www.elecfans.com/d/8789756.html</guid>    <pubDate>2026-10-19 17:16:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	10月12日，第二十六届中国国际工业博览会在上海国家会展<a href="https://m.hqchip.com/tags" target="_blank"><u>中心</u></a>开幕。本届工博会首次单独设立<a href="https://www.elecfans.com/v/tag/123/" target="_blank"><u>集成电路</u></a>专题展（国芯展），集中展示我国芯片产业最新技术突破与产业化成果。广立微携全线创新产品重磅亮相，自主研发的Quan<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>Te</u></a>st-Y<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>良率感知大数据诊断分析平台，荣获2026“国芯展”创新成果奖。</p>
-<p style="text-indent:2em;">
-	本届“国芯展”创新成果奖由院士专家组与行业龙头企业技术总工组成联合评审团，围绕技术原创性、产业引领性、自主可控水平、量产落地价值四大维度严格遴选，覆盖设计、制造、封测、装备、材料全产业链。</p>
-<p align="center">
-	<img src="https://file1.elecfans.com/web3/M00/80/3B/wKgZPGrV4FeAKaPQAAHFlbfaNh8876.jpg" style="width:500px;height:333px;" alt="5cdd9768-c891-11f1-90a1-92fbcf53809c.jpg"/></p>
-<p style="text-indent:2em;">
-	广立微YAD平台从众多参评成果中脱颖而出，标志着公司在芯片良率提升领域的技术实力与产业化能力获得了行业权威的高度认可。</p>
-<p style="text-indent:2em;">
-	YAD平台：破解良率问题的国产利器</p>
-<p style="text-indent:2em;">
-	长期以来，良率一直是芯片厂商和晶圆代工厂的生命线。随着先进制程下设计与工艺复杂度不断提升，芯片良率问题已从单点缺陷演变为更多系统性、多源头、跨层级的复合特征。传统分析流程中，设计与制造数据分散、系统不互通，<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>在根因追溯、结果验证等环节效率低、周期长。</p>
-<p align="center">
-	<img src="https://file1.elecfans.com/web3/M00/80/3B/wKgZPGrV4FeAY0mgAAJC4YsSphU789.png" style="width:500px;height:252px;" alt="5d52bf70-c891-11f1-90a1-92fbcf53809c.png"/></p>
-<p style="text-indent:2em;">
-	YAD（Yield Aware Diagnosis）良率感知大数据诊断分析平台正是为破解这一行业痛点而生。作为一款专业良率分析与提升工具，YAD深耕于DFT（可测性设计）与良率分析领域，以 “DFT诊断技术+<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>智能分析”双核赋能，支持解析各类主流DFT诊断报告，并可与广立微DATAEXP大数据分析平台深度集成，联动YMS良率管理系统，将芯片设计规则、制造过程参数、在线测试（WAT/CP）数据、失效物理分析（PFA）结果等跨域数据流实时关联，构建起覆盖 “设计-制造-测试-分析”全链路数据的诊断图谱。</p>
-<p style="text-indent:2em;">
-	持续深耕，构建良率提升全链路能力</p>
-<p style="text-indent:2em;">
-	YAD的价值不止于单点工具。它与广立微的DFT诊断入口、YMS良率管理系统以及Testchip测试芯片方案深度协同，构成了 “设计预防—在线监控—失效诊断”的完整闭环，为客户提供生态化、系统化的良率提升解决方案。</p>
-<p style="text-indent:2em;">
-	目前，QuanTest-YAD已顺利通过行业头部晶圆厂（Fab）功能与性能双重<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>，同时在多家顶级芯片设计公司（Fabless）实现商用落地，充分验证了产品在高端芯片量产场景的实用性与稳定性。</p>
-<p align="center">
-	<img src="https://file1.elecfans.com/web3/M00/80/42/wKgZO2rV4FeATDhMAADU_zWr41g719.jpg" style="width:500px;height:375px;" alt="5dc5628c-c891-11f1-90a1-92fbcf53809c.jpg"/></p>
-<p style="text-indent:2em;">
-	此次荣获2026“国芯展”创新成果奖，是对广立微在芯片良率提升领域持续创新与产业实践的权威肯定。未来，广立微将继续深耕良率提升核心技术，推动<a href="https://www.elecfans.com/soft/data/42-102/" target="_blank"><u>AI技术</u></a>与更多软硬件产品深度融合。</p>
-<p style="text-indent:2em;">
-	关于我们</p>
-<p style="text-indent:2em;">
-	杭州广立微电子股份有限公司（股票代码：301095）是领先的集成电路<a href="https://m.elecfans.com/v/tag/1053/" target="_blank"><u>EDA</u></a>软件与晶圆级电性测试设备供应商，公司专注于芯片成品率提升和电性测试快速监控技术，是国内外多家大型集成电路制造与设计企业的重要合作伙伴。公司提供EDA软件、PDA软件、大数据分析软件、电路IP、WAT电性测试设备以及与芯片成品率提升技术相结合的整套解决方案，在集成电路设计到量产的整个产品周期内实现芯片性能、成品率、稳定性的提升，成功案例覆盖多个集成电路工艺节点。</p>]]></description></item><item>    <title><![CDATA[美新半导体亮相首届空天科技博览会]]></title>    <link>https://www.elecfans.com/d/8789795.html</link>    <guid>https://www.elecfans.com/d/8789795.html</guid>    <pubDate>2026-10-19 17:18:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	10月13日至15日，第十一届中国航空创新创业大赛在江苏南通国际展览<a href="https://m.hqchip.com/tags" target="_blank"><u>中心</u></a>举行。本届活动由中国航空学会联合中国航空工业集团、中国航空发动机集团、中国商用飞机有限责任公司、中国国新控股有限责任公司等单位共同举办，同期举办首届空天科技博览会、第二届空天产业链创新发展大会等系列活动。212个优秀空天科技项目同台竞技，数百展商同场展览，共同呈现空天科技领域的创新成果与产业发展活力。</p>
-<p style="text-indent:2em;">
-	全球领先的<a href="https://www.elecfans.com/v/tag/7888/" target="_blank"><u>MEMS</u></a>全栈感知技术生态构建者——美新<a href="https://m.hqchip.com/gongsi.html" target="_blank"><u>半导体</u></a>（MEMSIC）受邀参展，携六轴IMU、AMR地磁<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>、AMR磁编码器、热式/<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>式加速度传感器、霍尔传感器、eOIS影像稳定<a href="https://m.hqchip.com/app/1787" target="_blank"><u>驱动芯片</u></a>等核心产品亮相，全面展示覆盖“传感芯片+软件<a href="https://www.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>+应用方案”的一站式MEMS感知能力，以高性能“中国芯”助力空天科技创新与低空经济发展。</p>
-<p style="text-indent:2em;">
-	十年磨一剑，空天创新的产业沃土</p>
-<p style="text-indent:2em;">
-	历经十载，中国航空创新创业大赛始终与空天<a href="https://bbs.elecfans.com/group_831" target="_blank"><u>创客</u></a>并肩同行，见证创新突破，也关注每一项成果从技术探索走向产业应用的成长之路。迈入第十一个年头，大赛致力于让好技术找到应用场景，让好项目链接产业资源，让创新的努力转化为发展的动力。</p>
-<p style="text-indent:2em;">
-	从赛场上的创新交锋，到展台前的深入交流，再到产业与资本的务实对接，美新半导体在展会期间与来自航空航天领域的整机厂商、科研院所、产业链伙伴及投资机构展开了广泛而深入的交流，围绕<a href="https://www.elecfans.com/v/tag/12732/" target="_blank"><u>无人机</u></a>、低空经济、具身智能机器人等高增长场景探讨了切实的合作机会。</p>
-<p style="text-indent:2em;">
-	聚焦空天场景，<span style="text-indent:2em;">美新半导体MEMS感知技术全阵容亮相</span></p>
-<p style="text-indent:2em;">
-	空天与低空经济场景对传感器提出了<a href="https://m.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>、高可靠、宽温域、抗干扰的严苛要求，美新半导体此次参展的产品矩阵，正是面向这些场景的系统性解答。</p>
-<p style="text-indent:2em;">
-	在低空飞行领域，集成3轴<a href="https://www.elecfans.com/tags/陀螺仪/" target="_blank"><u>陀螺仪</u></a>与3轴加速度计的六轴IMU具备高精度低漂移、低温飘、可靠性高等特性，支持丰富的通讯方式与中断模式，是无人机飞控与组合导航的核心器件，美新强大的算法团队还可为客户提供定制化算法支持。基于各向异性磁阻（AMR）技术的AMR 3D地磁传感器测量分辨率达1度，零偏不随温度漂移，受磁环境变化影响小，强磁干扰后无需频繁校准，为无人机电子罗盘与航向参考提供关键支撑，延续了美新首创将高性能AMR磁传感器引入<a href="https://www.elecfans.com/soft/data/39-96/" target="_blank"><u>消费电子</u></a>市场的领先姿态。</p>
-<p style="text-indent:2em;">
-	面向具身智能<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>领域，AMR磁编码器INL角度精度优于±0.07°，支持21bit SPI、12bit PWM、ABZ 1-16384PPR及UVW多种输出，工作在饱和区可有效抵抗垂直磁场干扰，最大支持65536记圈，能够替代部分光编码器，精准匹配机器人关节绝对角度测量以及<a href="https://m.elecfans.com/v/tag/194/" target="_blank"><u>伺服电机</u></a>、<a href="https://www.elecfans.com/tags/bldc/" target="_blank"><u>BLDC</u></a><a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机控制</u></a>的需求。</p>
-<p style="text-indent:2em;">
-	在高可靠感知方面，美新全球独一无二的热气体式加速度传感器无运动部件、超级可靠，跌落测试通过率100%，对马达高频振动天然免疫，应力容忍度高，SMT前后零偏变化小，特别适合无人机、智能仪表及各类严苛工业环境；依托6亿片量产经验的电容式加速度计具备超薄尺寸、超低功耗等优势；工作<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>典型值仅2.5μA的霍尔开关传感器可满足超长待机场景需求；以0.315mm超薄WL-CSP封装集成高精度传感、H桥恒流驱动与硬件<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>D算法的eOIS影像稳定驱动芯片，则展现了美新在消费电子领域的深厚积累。</p>
-<p style="text-indent:2em;">
-	展会期间，美新展台吸引了众多专业观众驻足交流，现场技术人员围绕产品性能指标、场景适配与算法支持等话题与观众深入互动。来自无人机、机器人、<a href="https://bbs.elecfans.com/group_78" target="_blank"><u>汽车电子</u></a>及工业领域的观众纷纷结合自身应用需求，就传感器选型与定制化方案展开探讨，一站式交付能力获得产业链伙伴的广泛认可，多个意向合作在交流中萌芽。</p>
-<p style="text-indent:2em;">
-	二十余年深耕，<span style="text-indent:2em;">从感知硬件到智能感知底座</span></p>
-<p style="text-indent:2em;">
-	依托二十余年的深耕积淀，美新半导体作为全球惯性MEMS传感器供应商，拥有从芯片设计、<a href="https://bbs.elecfans.com/group_66" target="_blank"><u>晶圆制造</u></a>到<a href="https://bbs.elecfans.com/group_53" target="_blank"><u>封装测试</u></a>的全链路能力，为客户提供从传感芯片、软件算法到应用方案的一站式交付。公司荣膺国家级专精特新“小巨人”企业称号，并连续多年蝉联中国半导体MEMS十强企业，产品广泛应用于消费电子、汽车、<a href="https://www.elecfans.com/tags/iot/" target="_blank"><u>IoT</u></a>设备、低空经济、具身智能机器人、航空航天和工业类产品等多个领域。</p>
-<p style="text-indent:2em;">
-	在<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>与<a href="https://m.elecfans.com/v/tag/293/" target="_blank"><u>新能源</u></a>的时代浪潮中，美新正从“感知硬件供应商”升级为“智能感知底座”，让物理世界与数字世界无缝对话。展望未来，美新半导体将持续加大研发投入，与空天产业伙伴携手同行，共同推动创新成果从赛场走向产业、从样品走向量产，为低空经济与空天科技的高质量发展注入澎湃的“芯”动力。</p>]]></description></item>  </channel></rss>
+	审核编辑 黄宇</p>]]></description></item>  </channel></rss>
