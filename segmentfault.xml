@@ -1,4 +1,756 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[C 语言 calloc() 详解：零初始化、动态数组与内存管理实战 唐青枫 ]]></title>    <link>https://segmentfault.com/a/1190000048376801</link>    <guid>https://segmentfault.com/a/1190000048376801</guid>    <pubDate>2026-10-28 14:02:19</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <h2>C 语言 <code>calloc()</code> 详解与实战 Demo</h2><p><code>calloc()</code> 是 C 标准库提供的动态内存分配函数，主要用于在堆上分配一块连续内存，并将分配的所有字节初始化为 0。</p><p>它与 <code>malloc()</code>、<code>realloc()</code>、<code>free()</code> 一起构成 C 语言动态内存管理的核心。</p><p>如果你熟悉 C#、Java，可以先这样理解：</p><ul><li><code>malloc()</code>：申请一块内存，但不初始化其内容。</li><li><code>calloc()</code>：申请一块内存，并将所有字节清零。</li><li><code>realloc()</code>：调整已经分配的内存大小。</li><li><code>free()</code>：释放动态分配的内存。</li></ul><p>需要注意，C 语言的动态内存分配没有 C#、Java 那样的垃圾回收机制，程序员需要自己管理内存的生命周期。</p><h3>一、calloc() 基本概念</h3><h4>1. 函数原型</h4><p>定义在 <code>&lt;stdlib.h&gt;</code> 中：</p><pre><code class="C">#include &lt;stdlib.h&gt;
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[工业网关远程重启后配置全丢了？聊聊掉电存储与持久化 龙兴物联 ]]></title>    <link>https://segmentfault.com/a/1190000048376820</link>    <guid>https://segmentfault.com/a/1190000048376820</guid>    <pubDate>2026-10-28 15:09:26</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>做过工业物联网现场运维的人，大概率经历过这种让人血压升高的情况：</p><p>设备出了点小故障，为了省事，在后台点了一下“远程重启”。重启完一看，通信断了，数据不上了。远程登录进去检查，发现之前辛辛苦苦配好的采集点表、IP地址、MQTT参数全都没了，设备回到了出厂默认状态。</p><p>“配置丢失”是物联网主机最不该发生、但现场偏偏经常发生的故障。这篇文章把设备重启后配置丢失的底层逻辑拆开，讲清楚配置持久化的关键环节。</p><p><strong>一、配置到底存在哪里？</strong></p><p>要搞清楚配置为什么会丢，先要知道配置存哪了。</p><p>物联网主机的配置（比如IP、采集点表、转发规则）通常存在两个地方：运行内存（RAM）和非易失性存储（Flash或EEPROM）。</p><p>我们在后台点“保存”或“下发配置”时，系统通常会先把配置加载到运行内存里，让程序立刻按照新参数工作。但这只是“临时”生效，如果没写进非易失性存储，一旦断电或重启，RAM里的数据瞬间清空，设备就只能读取Flash里上一次保存的老配置，或者直接恢复出厂设置。</p><p>配置持久化的核心，就是确保修改后的配置，完完整整、安全地写进了Flash里。</p><p><strong>二、关键点一：是否正确执行了“保存并应用”</strong></p><p>这是最低级也最常见的错误。很多工程师在后台改完参数，点了“应用”，看到数据变了，以为大功告成，直接点了重启。结果一重启，数据又不对了。</p><p>原因就在于：有些系统的“应用”只是让配置在RAM里生效，并没有触发写Flash的动作。必须有“保存配置”或“写入存储”的独立步骤。或者系统虽然会自动保存，但在保存完成前如果被强制重启，写入就被打断了。</p><p>避坑建议： 改完配置后，在后台寻找“保存到设备”或“永久生效”的按钮。如果系统支持，在重启前通过日志确认一句“Config saved to flash successfully”。</p><p><strong>三、关键点二：掉电时机——正在写Flash时断电了</strong></p><p>配置写进Flash不是一瞬间的事，它需要几十到几百毫秒的时间。</p><p>如果设备刚好在“擦除旧配置”和“写入新配置”的这个短暂窗口期内断电（或者被强制重启），就会发生灾难性后果：旧配置被擦了，新配置没写完。重启后，文件系统损坏，系统只能加载默认配置，或者直接无法启动。</p><p>现场很多“远程重启导致配置丢失”，实际上是设备在重启的瞬间，系统后台刚好有配置正在写入。</p><p>解决办法： 正规的工业级物联网主机，写配置时应该有掉电保护机制（比如加一颗小电容，断电后供电几百毫秒把当前写入操作做完），或者采用双备份机制（存两份配置，一份坏了读另一份）。</p><p><strong>四、关键点三：文件系统损坏与只读挂载</strong></p><p>有些设备使用的是嵌入式Linux系统，文件系统比较脆弱。如果设备经历了多次非法断电，文件系统可能会出现坏块或变成只读状态。</p><p>一旦变成只读，你在后台改配置，系统提示“保存成功”，但实际上数据根本写不进去。一重启，配置全部打回原形。</p><p>排查方法： 如果设备频繁出现配置无法保存，远程登录到命令行，用 mount 命令查看存储分区是否变成了 ro（只读）。如果是，说明文件系统出问题了，需要修复或格式化存储区。</p><p>避免“重启丢配置”，需要设备厂家和现场工程师两边配合：厂家实现配置的双备份、带校验的持久化写入、以及写Flash期间的掉电保护；现场工程师改完关键配置务必确认已“永久保存”，远程重启前先确认无正在进行的后台写入操作。<br/>你遇到过设备重启后配置全部丢失的崩溃瞬间吗？最后是怎么恢复的？评论区聊聊。</p>]]></description></item><item>    <title><![CDATA[【AI工程师精讲】23：投机解码：为什么"先猜后验"反而更快 悟空聊AI ]]></title>    <link>https://segmentfault.com/a/1190000048376827</link>    <guid>https://segmentfault.com/a/1190000048376827</guid>    <pubDate>2026-10-28 15:08:38</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p><strong>先理解一个反直觉的事实。</strong></p><p>在解码阶段（逐字生成），<strong>GPU 的计算单元利用率通常很低</strong>。</p><p><strong>原因</strong>：每生成一个 token，模型都要把所有层的权重从显存读一遍，<strong>而读一遍权重的时间是固定的</strong> —— 不管你这次算的是一个 token 还是十个 token。</p><blockquote><strong>也就是说：解码阶段的开销大头是"搬权重"，而不是"算 token"。</strong></blockquote><h3>那么问题来了</h3><p>既然搬一次权重能顺便算好几个 token，<strong>为什么每次只算一个？</strong></p><p><strong>答案是因果性</strong>：</p><blockquote><strong>第 N+1 个 token 需要第 N 个 token 作为输入，依赖关系是串行的。</strong></blockquote><p><strong>这是个硬约束</strong> —— 你没法并行生成，因为下一个字依赖上一个字。</p><h3>投机解码解决的就是这个矛盾</h3><p><strong>它的思路非常漂亮</strong>：</p><blockquote><strong>既然不能并行生成，那就先"猜"、后"验"。</strong></blockquote><hr/><h2>第一部分：核心机制——小模型猜，大模型验</h2><p><strong>流程拆成两步。</strong></p><h3>1.1 第一步：草稿（Draft）</h3><p><strong>用一个小而快的模型，连续生成若干个 token（比如 5 个）。</strong></p><blockquote><strong>小模型单步开销小，连续生成几个的代价也不高。</strong></blockquote><h3>1.2 第二步：验证（Verify）</h3><p><strong>把这几个候选 token 一起送进大模型，让大模型一次性检查这整段。</strong></p><p><strong>它可以并行计算每个位置的概率，判断"这些候选是否都在可选范围内"。</strong></p><h3>1.3 关键就在这里</h3><blockquote><strong>验证是并行的。</strong></blockquote><p><strong>大模型一次前向就能同时评估多个位置，而这次前向的开销，与只生成一个 token 时几乎一样。</strong></p><p><strong>"几乎一样"的原因</strong>：<strong>因为瓶颈是搬权重，不是算 token</strong> —— <strong>多算几个位置不增加搬运量。</strong></p><h3>1.4 于是有几种结果</h3><table><thead><tr><th>结果</th><th>收益</th></tr></thead><tbody><tr><td><strong>几个候选都被接受</strong></td><td><strong>一次前向推进了好几个 token</strong></td></tr><tr><td><strong>第一个就被拒绝</strong></td><td>退回一个 token，<strong>这次白猜了</strong></td></tr><tr><td><strong>接受前 3 个、第 4 个被拒</strong></td><td>推进 3 个，<strong>收益仍然大于成本</strong></td></tr></tbody></table><h3>1.5 所以加速比取决于什么</h3><blockquote><strong>取决于"接受率"。</strong></blockquote><p><strong>接受率高，一次前向顶好几次；接受率低，就是在做无用功。</strong></p><p><strong>这一个变量，决定了投机解码是"加速利器"还是"纯粹负担"。</strong></p><hr/><h2>第二部分：为什么这件事能成立——两种模型的"合谋"</h2><p><strong>有一个前提必须成立</strong>：</p><blockquote><strong>小模型的猜测，要有相当比例落在大模型会选的范围内。</strong></blockquote><h3>2.1 一个重要的澄清</h3><p><strong>这不是"小模型要和大模型一样好"，而是两个模型的偏好在常见情况下的重合度要够高。</strong></p><p><strong>这个区别很关键</strong> —— 它意味着<strong>你不需要一个"小但很强"的模型，只需要一个"和大模型想法接近"的模型。</strong></p><p><strong>这也解释了为什么下面第三个因素（同族）如此重要。</strong></p><h3>2.2 三个影响因素</h3><p><strong>因素一：同族模型最理想。</strong></p><p><strong>用同一系列的小模型做大模型的草稿</strong> —— 因为训练数据与架构相近，<strong>输出分布更接近，接受率天然更高。</strong></p><p><strong>因素二：任务的可预测性。</strong></p><p><strong>如果输出有强模式（代码、结构化文本、常见短语），小模型很容易猜对好几句。</strong></p><p><strong>因素三：采样温度。</strong></p><table><thead><tr><th>温度</th><th>接受率</th></tr></thead><tbody><tr><td><strong>低（更确定）</strong></td><td>两个模型都倾向于选高概率词，<strong>接受率高</strong></td></tr><tr><td><strong>高（更随机）</strong></td><td>分歧变大，<strong>接受率下降</strong></td></tr></tbody></table><h3>2.3 所以"猜得准"靠什么</h3><blockquote><strong>不是靠小模型聪明，而是靠"两个模型在同一个任务上想到一块去"。</strong></blockquote><p><strong>这个理解很重要</strong> —— 因为它在实践中<strong>改变了你的选型思路</strong>：<strong>你不会去挑"最强的小模型"，而是挑"最像大模型的小模型"。</strong></p><hr/><h2>第三部分：收益从哪里来——把串行变成并行</h2><h3>3.1 用一个具体的数感说明</h3><p><strong>假设解码一步的开销是"读一遍权重"</strong>：</p><table><thead><tr><th>方式</th><th>生成 5 个 token 的开销</th></tr></thead><tbody><tr><td><strong>不用投机</strong></td><td>5 次权重读取</td></tr><tr><td><strong>用投机</strong>（接受率良好）</td><td>小模型猜 5 个（开销小）+ 大模型验证 1 次（1 次权重读取）= <strong>约 1 次大模型前向推进 4 个 token</strong></td></tr></tbody></table><h3>3.2 实际收益</h3><blockquote><strong>理论上能带来数倍加速，实际报告的加速通常在 2 到 3 倍区间。</strong></blockquote><p><strong>为什么达不到理论值？</strong></p><ul><li><strong>要扣除草稿模型的开销</strong>；</li><li><strong>要应对被拒绝的情况</strong>（拒绝后那部分工作量白花了）。</li></ul><h3>3.3 一个非常重要的性质</h3><blockquote><strong>投机解码不改变输出分布（在正确实现下）。</strong></blockquote><p><strong>它不是近似，而是等价的加速</strong> —— 这一点和量化、稀疏注意力不同，<strong>它不牺牲质量。</strong></p><p><strong>"等价"这个性质的技术含义是</strong>：<strong>验证步骤保证了只有"大模型本来也会选的"那些 token 才会被接受</strong> —— 所以最终输出的分布和大模型自己生成时是一致的。</p><h3>3.4 所以它的推广阻力很小</h3><table><thead><tr><th>优势</th><th>含义</th></tr></thead><tbody><tr><td><strong>不损失质量</strong></td><td>不需要做质量评测对比</td></tr><tr><td><strong>不需要重训</strong></td><td>直接用在现有模型上</td></tr><tr><td><strong>可以按需开关</strong></td><td>接受率低时关掉即可</td></tr></tbody></table><p><strong>这三个性质合起来，意味着它是一个"低决策成本"的优化</strong> —— 这一点和前面讲 FlashAttention 时是同一个道理。</p><hr/><h2>第四部分：代价与前提——什么时候它会变慢</h2><p><strong>这是最该记住的一节。</strong></p><h3>4.1 情况一：接受率低</h3><p><strong>如果草稿模型和大模型偏好差异大</strong>（比如不同系列、不同训练数据），<strong>大部分猜测被拒绝，等于白白多跑一个小模型。</strong></p><blockquote><strong>这时候它比不用还慢。</strong></blockquote><h3>4.2 情况二：草稿模型本身不便宜</h3><p><strong>如果"小模型"其实没那么小，草稿开销加上验证开销，可能超过直接生成。</strong></p><p><strong>判断标准是"草稿开销 / 大模型开销"这个比值</strong> —— <strong>如果这个比值不够小（比如超过 1/3），收益空间就很有限。</strong></p><h3>4.3 情况三：显存紧张</h3><blockquote><strong>你需要同时装下大模型和小模型。</strong></blockquote><p><strong>显存本来就吃紧的场景，多出来的这份权重可能让你根本跑不起来。</strong></p><p><strong>这类问题的特点是</strong>：它不是"变慢"，而是"<strong>根本用不了</strong>"。</p><h3>4.4 情况四：并发很高、批处理很大时</h3><p><strong>在大批处理下，GPU 的算力其实已经被填满了</strong>，"搬权重"不再是唯一瓶颈。</p><blockquote><strong>这时投机的额外开销可能不划算。</strong></blockquote><p><strong>这个原因的机制是</strong>：<strong>投机解码的收益来自"单次前向的算力被浪费"</strong> —— <strong>而大批处理恰好把算力填满了，所以浪费消失了，收益也就消失了。</strong></p><h3>4.5 情况五：输出高度随机</h3><p><strong>高温度采样、创意写作类任务，候选的可预测性低，接受率上不去。</strong></p><h3>4.6 一句话总结</h3><blockquote><strong>投机解码擅长"低并发、低温度、有模式"的场景，不擅长"高并发、高随机、显存紧张"的场景。</strong></blockquote><hr/><h2>第五部分：几个有趣的变体</h2><p><strong>围绕这个思路，出现了几种不依赖独立草稿模型的方案。</strong></p><h3>5.1 变体一：自带多个"预猜头"</h3><p><strong>有些方法不是在外部挂一个小模型，而是给大模型本身加几个额外的预测头</strong>，让它们并行预测后续多个位置。</p><table><thead><tr><th> </th><th>内容</th></tr></thead><tbody><tr><td><strong>好处</strong></td><td>不需要第二个模型（<strong>省显存</strong>）</td></tr><tr><td><strong>坏处</strong></td><td><strong>要专门训练这些头</strong></td></tr></tbody></table><h3>5.2 变体二：同模型自投机</h3><p><strong>用同一个模型的不同配置</strong>（比如量化版、或者浅层提前退出）<strong>来当草稿</strong>。</p><blockquote><strong>不需要额外模型族，但接受率取决于近似程度。</strong></blockquote><p><strong>"近似程度"这个说法很准确</strong> —— 因为<strong>量化版本身就和原版有偏差，所以接受率会受到影响。</strong></p><h3>5.3 变体三：基于查找的猜测</h3><p><strong>如果你的输出有大量重复片段</strong>（比如代码生成里常见的固定结构、或者多轮对话里重复的提示内容），<strong>可以直接从历史文本里"检索"候选，不需要任何模型。</strong></p><blockquote><strong>思路最轻，但适用面窄。</strong></blockquote><h3>5.4 变体四：与缓存技术组合</h3><p><strong>前缀缓存负责"开头不重算"，投机解码负责"后续多推进"。</strong></p><blockquote><strong>两者互不冲突，可以叠加。</strong></blockquote><h3>5.5 选择的思路</h3><pre><code class="text">先看显存是否宽裕（决定用不用独立草稿模型）
+再看输出是否有强模式（决定接受率）</code></pre><p><strong>这个顺序的逻辑是"先排除硬约束，再看收益"</strong> —— 因为<strong>显存不够的话，收益再高也用不了。</strong></p><hr/><h2>第六部分：怎么判断该不该上</h2><p><strong>给一份可操作的判断清单。</strong></p><h3>6.1 判断一：你的瓶颈是延迟还是吞吐？</h3><p><strong>投机解码主要改善单请求延迟</strong>（更快出字）。</p><blockquote><strong>如果你的目标是提高总吞吐，先去做批处理与显存优化。</strong></blockquote><p><strong>注意这个方向的区别</strong> —— 两者<strong>不能用同一个手段解决</strong>。</p><h3>6.2 判断二：输出有强模式吗？</h3><p><strong>代码、结构化输出、固定格式、常见问答</strong> —— 这些接受率通常不错。</p><p><strong>开放式创作类任务收益有限。</strong></p><h3>6.3 判断三：温度设得高吗？</h3><p><strong>高温度会拉低接受率。如果业务必须高温度，收益会打折。</strong></p><h3>6.4 判断四：显存还有余量吗？</h3><p><strong>需要额外装一个草稿模型。没余量就先做量化或缩上下文。</strong></p><h3>6.5 判断五：能接受实现复杂度吗？</h3><p><strong>需要选型草稿模型、调参（草稿长度）、并监控接受率。</strong></p><blockquote><strong>这是持续维护成本。</strong></blockquote><h3>6.6 五条都过关，再上</h3><p><strong>而且建议</strong>：</p><blockquote><strong>先小流量试，把"接受率"作为核心指标监控 —— 接受率低于某个水平就该关掉。</strong></blockquote><p><strong>"低于某个水平就该关掉"这个机制很重要</strong> —— 因为<strong>它把投机解码变成了一个可以安全开启的优化</strong>（最坏情况是自动关掉，而不是一直拖慢服务）。</p><hr/><h2>第七部分：上线后该盯什么</h2><p><strong>投机解码上线后，有几个指标决定它是在帮忙还是在添乱。</strong></p><h3>7.1 五个指标</h3><table><thead><tr><th>指标</th><th>作用</th></tr></thead><tbody><tr><td><strong>① 接受率</strong></td><td><strong>最关键的一个</strong>，直接决定加速是否成立</td></tr><tr><td><strong>② 每请求实际推进的 token 数</strong></td><td>综合反映接受率与草稿长度的效果</td></tr><tr><td><strong>③ 端到端延迟对比</strong></td><td><strong>务必和关闭投机的基线做对比</strong>，而不是凭理论判断</td></tr><tr><td><strong>④ 草稿模型的资源占用</strong></td><td>它的显存与计算开销要计入总成本</td></tr><tr><td><strong>⑤ P95 延迟</strong></td><td>投机解码可能改善平均值，<strong>但要确认长尾没有被恶化</strong></td></tr></tbody></table><h3>7.2 为什么第五个指标重要</h3><p><strong>机制是</strong>：<strong>草稿长度设得过大时，偶尔会出现"猜了 8 个，前 1 个就被拒绝"的情况</strong> —— <strong>这类请求会比普通请求慢很多。</strong></p><p><strong>所以平均值可能改善，而长尾恶化。</strong> 而<strong>长尾恰恰是用户能感知到的部分。</strong></p><h3>7.3 核心原则</h3><blockquote><strong>把投机解码当作一个"可以动态开关的优化"，而不是一个默认必开的配置。</strong></blockquote><hr/><h2>常见误区</h2><p><strong>误区一："投机解码会损失质量。"</strong></p><p><strong>在正确实现下它是等价加速，不改变输出分布。</strong></p><blockquote><strong>这与量化、稀疏注意力有本质区别。</strong></blockquote><p><strong>这个区别的意义在于</strong>：<strong>它不需要质量评测</strong> —— 而需要质量评测的优化，往往在评审阶段就被卡住了。</p><p><strong>误区二："随便找个小模型当草稿就行。"</strong></p><p><strong>接受率高度依赖两个模型的相似度。</strong></p><blockquote><strong>不同族的小模型往往接受率很低，加速效果差甚至变慢。</strong></blockquote><p><strong>误区三："它能让吞吐翻倍。"</strong></p><p><strong>它主要改善单请求延迟。</strong></p><blockquote><strong>吞吐受限于批处理与显存，两者是不同的优化方向。</strong></blockquote><p><strong>而且要注意</strong>：<strong>在高并发场景下，投机解码的收益会下降</strong>（因为算力已经被批处理填满了）。</p><p><strong>误区四："开了就一定更快。"</strong></p><p><strong>在低接受率、高温度、高并发、显存紧张的场景下，它可能更慢。</strong></p><blockquote><strong>必须实测并支持动态关闭。</strong></blockquote><p><strong>误区五："草稿长度越长，加速越多。"</strong></p><p><strong>不是。</strong> 草稿长度存在一个最优点：</p><table><thead><tr><th>草稿长度</th><th>后果</th></tr></thead><tbody><tr><td><strong>太短</strong></td><td>收益不足（一次只推进一两个）</td></tr><tr><td><strong>太长</strong></td><td><strong>被拒绝后浪费更多</strong>（而且小模型长距离猜测的准确率会下降）</td></tr></tbody></table><p><strong>最优草稿长度取决于接受率的分布</strong> —— 而<strong>这需要实测。</strong></p><p><strong>误区六："投机解码和批处理优化是二选一。"</strong></p><p><strong>它们可以同时用，只是收益会互相影响。</strong></p><p><strong>在高并发场景下</strong>，批处理填满算力的收益可能更大；<strong>在低并发场景下</strong>，投机解码的收益更明显。</p><p><strong>实际系统通常会根据负载动态调整</strong>（比如低并发时开投机、高并发时关掉）。</p><hr/><h2>实战问答</h2><p><strong>Q1：面试问"投机解码为什么能加速"，怎么答得准确？</strong></p><p><strong>A</strong>：按"根因 → 机制 → 前提 → 补充"四层。</p><p><strong>根因</strong>：</p><blockquote>解码阶段的开销大头是"读一遍权重"，<strong>与本次算几个 token 关系不大</strong>，所以一次前向"顺便"多验证几个位置几乎是免费的。</blockquote><p><strong>机制</strong>：</p><blockquote><strong>小模型连续猜 k 个，大模型一次并行验证。</strong></blockquote><p><strong>前提</strong>：</p><blockquote><strong>接受率决定收益</strong>，而这取决于两个模型的分布相似度与任务的可预测性。</blockquote><p><strong>补充</strong>：</p><blockquote><strong>它不损失质量。</strong></blockquote><p><strong>最后这一句能显出理解深度</strong> —— 因为它说明你知道<strong>这个优化不需要质量折衷。</strong></p><hr/><p><strong>Q2：为什么我开了投机解码反而变慢？</strong></p><p><strong>A</strong>：检查三件事，<strong>优先看第一个</strong>。</p><table><thead><tr><th>检查项</th><th>判断</th></tr></thead><tbody><tr><td><strong>① 接受率是否过低</strong></td><td>草稿模型与大模型分布差异大</td></tr><tr><td><strong>② 草稿长度是否过长</strong></td><td>被拒之后白跑</td></tr><tr><td><strong>③ 显存是否紧张</strong></td><td>多一个模型导致调度变差</td></tr></tbody></table><blockquote><strong>优先把接受率打出来看。</strong></blockquote><p><strong>为什么优先看接受率？</strong> 因为<strong>它是最直接的诊断指标</strong> —— <strong>接受率低于某个阈值（比如 50%），加速就不可能成立。</strong></p><hr/><p><strong>Q3：显存不够，还能用投机解码吗？</strong></p><p><strong>A</strong>：<strong>可以考虑不额外挂草稿模型的变体</strong>（比如给模型加预测头，或用同一模型的近似版本）。</p><blockquote><strong>但通常不建议在显存紧张时优先做这件事——先把显存问题解决，收益更确定。</strong></blockquote><p><strong>"先解决显存"的理由是"收益确定性"</strong> —— 因为<strong>显存优化（调小最大长度、量化）的收益是确定的，而投机解码的收益依赖接受率（不确定）。</strong></p><hr/><p><strong>Q4：怎么选草稿模型？</strong></p><p><strong>A</strong>：三条原则。</p><table><thead><tr><th>原则</th><th>理由</th></tr></thead><tbody><tr><td><strong>同一个模型家族优先</strong></td><td>分布最接近</td></tr><tr><td><strong>足够小</strong></td><td>草稿开销要低</td></tr><tr><td><strong>在你的任务上验证接受率</strong></td><td><strong>第三条最重要</strong></td></tr></tbody></table><blockquote><strong>换任务可能就要换草稿模型。</strong></blockquote><p><strong>第三条之所以最重要，是因为它把"理论上的相似"变成了"实测的接受率"</strong> —— 而<strong>这两者在实践中可能差异很大</strong>（比如某个小模型虽然同族，但在你的特定任务上表现不同）。</p><hr/><p><strong>Q5：接受率多少算正常？</strong></p><p><strong>A</strong>：<strong>没有绝对标准，但有几个参考。</strong></p><table><thead><tr><th>接受率</th><th>判断</th></tr></thead><tbody><tr><td><strong>70% 以上</strong></td><td>加速效果通常明显</td></tr><tr><td><strong>50%~70%</strong></td><td>有一定收益，需要实测确认</td></tr><tr><td><strong>低于 50%</strong></td><td><strong>收益可能不成立</strong>，建议关掉</td></tr></tbody></table><p><strong>但要注意"接受率"的定义差异</strong>：</p><ul><li><strong>按 token 计</strong>（每个候选 token 被接受的比例）；</li><li><strong>按序列计</strong>（整段草稿全部被接受的比例）。</li></ul><p><strong>前者的数值通常更高。</strong> 所以<strong>在对比不同方案的报告时，要确认口径一致。</strong></p><hr/><p><strong>Q6：草稿长度设多少合适？</strong></p><p><strong>A</strong>：<strong>从 4~6 开始试，看接受率的分布。</strong></p><p><strong>判断方法</strong>：</p><p>如果你观察到<strong>"平均接受 2~3 个，但偶尔接受 6 个"</strong>，那可以适当加长；如果<strong>"经常只接受 1 个"</strong>，说明草稿太长或接受率太低。</p><p><strong>一个实用的调优方式</strong>：</p><blockquote><strong>让草稿长度可以根据最近的接受率动态调整。</strong></blockquote><p>有些实现支持这个，<strong>它能在接受率高时多猜、低时少猜</strong> —— 这是比固定长度更好的方案。</p><hr/><p><strong>Q7：怎么向团队说明"这个优化可能没用"？</strong></p><p><strong>A</strong>：<strong>给一个可验证的判断标准，而不是主观评估。</strong></p><p><strong>沟通框架</strong>：</p><pre><code class="text">前提条件（三条，都可测）：
+① 我们的场景是低并发延迟敏感（不是高吞吐）
+② 输出有强模式（代码/结构化/固定格式）
+③ 采样温度较低
+
+如果三条都满足 → 预计有 2 倍左右收益
+如果有一条不满足 → 收益会明显打折，需要实测确认
+
+实测方式：小流量开启，监控接受率，低于 50% 自动关闭。
+风险：可控（最坏情况是自动回退到普通解码）。</code></pre><p><strong>这个沟通方式的力量在于</strong>：<strong>它把"可能没用"这个风险，转化成了"有明确判断条件和自动回退机制"的方案。</strong></p><hr/><h2>术语表</h2><table><thead><tr><th>术语</th><th>含义</th></tr></thead><tbody><tr><td><strong>投机解码</strong></td><td>用小模型草稿、大模型并行验证的加速方法</td></tr><tr><td><strong>接受率</strong></td><td>草稿 token 被大模型接受的比例，决定加速效果</td></tr><tr><td><strong>草稿模型</strong></td><td>用于生成候选 token 的小模型</td></tr><tr><td><strong>自投机</strong></td><td>用同一模型的不同配置或提前退出作为草稿</td></tr><tr><td><strong>等价加速</strong></td><td>不改变输出分布的加速方式，与近似方法相对</td></tr><tr><td><strong>前缀缓存</strong></td><td>复用相同前缀的计算结果，可与投机解码叠加</td></tr><tr><td><strong>草稿长度</strong></td><td>每次猜多少个 token，存在最优值</td></tr></tbody></table><hr/><h2>结语</h2><p>把这篇压缩成三句话：</p><p><strong>第一，投机解码的漂亮之处在于利用了"搬权重比算 token 贵"这个事实。</strong></p><blockquote><strong>一次前向验证多个位置几乎免费，于是让大模型"一次批准好几个字"。</strong></blockquote><p><strong>第二，它不损失质量，但加速完全取决于接受率。</strong></p><blockquote><strong>所以低温度、有模式、同族模型的场景收益最大；高随机、高并发、显存紧张的场景可能反而更慢。</strong></blockquote><p><strong>第三，它改善的是单请求延迟，不是吞吐</strong> —— <strong>而这两者是不同的优化方向。</strong></p><p>而如果只允许带走一个动作，那就是：<strong>把"接受率"作为核心监控指标，并支持自动关闭。</strong> 因为<strong>这一个指标就决定了它是帮忙还是添乱</strong> —— 而<strong>自动关闭让你可以在不确定的情况下安全地试。</strong></p>]]></description></item><item>    <title><![CDATA[删了一个没用的 console.log，生产环境直接崩了! 前端技术官 ]]></title>    <link>https://segmentfault.com/a/1190000048376836</link>    <guid>https://segmentfault.com/a/1190000048376836</guid>    <pubDate>2026-10-28 15:07:45</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>大家好😃。</p><p>最近我们准备发了一个新版本，趁着这次发版，顺手清理了一波项目里散落的 <code>console.log</code>。这在大多数团队里都属于日常卫生工作——生产环境不应该有调试日志，这谁都知道。</p><p>负责清理的同事很利索，全局搜索 <code>console.log</code>，逐条确认、逐条删除，半小时搞定。<code>CI</code> 跑过，测试环境验过，没任何异常。上线。</p><p>上线后 20 分钟，告警群开始响。</p><p>一个核心的商品详情页，部分用户打开后商品价格显示为 <code>undefined</code>。不是所有用户，也不是所有商品——只有带阶梯定价规则的商品才会出问题。</p><p>我们回滚之后开始排查。<code>git diff</code> 拉出来，这次发版改动了 47 个文件，其中 38 个是删 <code>console.log</code>。最终定位到的那行，是这样的：</p><pre><code class="javascript">// 被删掉的那行
+console.log('price config:', product.priceConfig);</code></pre><p>就这么一行。删掉之后，<code>product.priceConfig</code> 在后续的渲染逻辑里变成了 <code>undefined</code>。</p><p><strong>一个 <code>console.log</code>，居然是让某段业务逻辑跑通的前置条件！！！</strong></p><p>这个听起来很荒谬，但当我拆开 <code>product</code> 对象的实现之后，一切都说得通了。</p><hr/><h3>为什么 <code>console.log</code> 不是纯读的 ？</h3><p>大多数人对 <code>console.log(obj)</code> 的心智模型是：它读一下这个值，打印到控制台，然后什么都不影响。一个纯粹的只读操作，删了它不应该对程序行为有任何影响。</p><p><strong>这个理解是错的！</strong></p><p>在 <code>JavaScript</code> 里，读取一个属性这件事，本身就可能触发代码执行。<code>console.log(obj.foo)</code> 在引擎层面做的是👇：</p><p><img referrerpolicy="no-referrer" src="https://image-static.segmentfault.com/390/482/390482097-6ae19378b6ded" alt="screenshot-20261027-155247.png" title="screenshot-20261027-155247.png"/></p><p>这条链路上的每一步，都可能产生副作用。而 <code>console.log</code> 正好是那个触发整条链路的扳机。</p><hr/><h3>我们项目里到底发生了什么</h3><p>回到那个事故。<code>product</code> 对象不是一个普通的对象，它是从一个状态管理层构造出来的响应式对象。简化后的核心逻辑长这样：</p><pre><code class="typescript">class ProductModel {
+  private _rawData: RawProductData;
+  private _priceConfig: PriceConfig | null = null;
+
+  constructor(raw: RawProductData) {
+    this._rawData = raw;
+  }
+
+  // 阶梯定价配置是懒加载的——第一次访问时才从原始数据里解析
+  get priceConfig(): PriceConfig {
+    if (this._priceConfig === null) {
+      this._priceConfig = this.parsePriceRules(this._rawData.priceRules);
+    }
+    return this._priceConfig;
+  }
+
+  private parsePriceRules(rules: RawPriceRule[]): PriceConfig {
+    // 一段比较重的解析逻辑：校验规则合法性、排序、合并区间...
+    return {
+      tiers: rules
+        .filter(r =&gt; r.minQty &gt; 0 &amp;&amp; r.price &gt; 0)
+        .sort((a, b) =&gt; a.minQty - b.minQty)
+        .map(r =&gt; ({ minQuantity: r.minQty, unitPrice: r.price })),
+      currency: this._rawData.currency ?? 'CNY',
+    };
+  }
+}</code></pre><p>看到了吗？ 上面的 <code>priceConfig</code> 是一个 <strong><code>getter</code></strong>，而且是一个带 <strong>惰性初始化（lazy initialization）</strong> 的 <code>getter</code>。第一次访问它的时候，才会去解析原始数据并缓存结果。后续再访问，直接返回缓存。</p><p><img referrerpolicy="no-referrer" src="https://image-static.segmentfault.com/501/498/501498913-6ae193816a6c6" alt="screenshot-20261027-161111.png" title="screenshot-20261027-161111.png" loading="lazy"/></p><p>那行被删掉的 <code>console.log('price config:', product.priceConfig)</code> 写在组件的 <code>setup</code> 函数里，位置在渲染逻辑之前。它看起来只是在打印调试信息，<strong>但实际上它是第一次触发 <code>priceConfig</code> getter 的地方——它完成了惰性初始化。</strong></p><p>删掉之后，<code>priceConfig</code> 的 <code>getter</code> 在渲染阶段之前从未被触发过。而恰好在渲染逻辑里，有一段代码是这样写的：</p><pre><code class="typescript">// 渲染逻辑里的问题代码
+const displayPrice = product['_priceConfig']?.tiers[0]?.unitPrice;</code></pre><p>这段代码没有通过 <code>getter</code> 访问 <code>priceConfig</code>，而是直接访问了私有属性 <code>_priceConfig</code>——因为某个历史时期为了绕过 <code>TypeScript</code> 的访问限制，用了方括号语法。而 <code>_priceConfig</code> 的初始值是 <code>null</code>，它要等 <code>getter</code> 被触发后才会被赋值。</p><p><strong><code>console.log</code> 不在了 → <code>getter</code> 没人触发 → <code>_priceConfig</code> 保持 <code>null</code> → 页面显示 <code>undefined</code>。</strong></p><p>一个没用的调试语句，其实是整条初始化链路的起点。</p><hr/><h3>讲一讲 3 种常见的 <code>console.log</code> 副作用模式</h3><p>翻完这次事故之后，我回头审视了项目里其他几处有意义的 <code>console.log</code>，发现这类隐形副作用远比我想象的多。</p><h4><code>Proxy</code> 拦截器里的副作用</h4><p>如果你在用 <code>Vue 3</code> 或者任何基于 <code>Proxy</code> 的响应式系统，<code>console.log</code> 一个响应式对象时，会触发 <code>Proxy</code> 的 <code>get</code> 拦截器。而在 <code>Vue</code> 的响应式系统里，触发 <code>get</code> 意味着<strong>依赖收集</strong>。</p><pre><code class="typescript">const state = reactive({ count: 0 });
+
+// 这行 console.log 看起来很正常
+// 但它触发了 state.count 的 getter
+// 如果这行代码在某个 watchEffect 或 computed 的上下文里执行
+// 它会把 count 注册为这个 effect 的依赖
+console.log('current state:', state.count);</code></pre><p>删掉这行 <code>console.log</code> 之后，某个 <code>computed</code> 或者 <code>watchEffect</code> 可能就不再追踪 <code>count</code> 的变化了——因为它的依赖收集阶段少了一次对 <code>count</code> 的访问。结果：<code>count</code> 变了，但 <code>UI</code> 不更新。</p><p>这种 Bug 极其隐蔽，因为你完全不会怀疑是删 <code>console.log</code> 导致的🤷‍♂️。</p><h4><code>toString</code> 和 <code>Symbol.toPrimitive</code> 的隐式调用</h4><p><code>console.log</code> 在序列化输出时，对某些对象会触发隐式的类型转换：</p><pre><code class="typescript">class TrackingToken {
+  private _accessed = false;
+
+  // 当这个对象被转成字符串时（比如被 console.log 打印）
+  // 标记为已访问
+  toString(): string {
+    this._accessed = true;
+    return `[Token accessed=${this._accessed}]`;
+  }
+
+  get isAccessed(): boolean {
+    return this._accessed;
+  }
+}
+
+const token = new TrackingToken();
+
+// 这行会触发 toString()，把 _accessed 设为 true
+console.log('token:', token);
+
+// 后续逻辑依赖 isAccessed 的值
+if (token.isAccessed) {
+  // 走到这里是因为 console.log 触发了 toString
+  // 删掉 console.log 之后，这个分支永远不会进入
+  reportTokenUsage(token);
+}</code></pre><p>这种模式在埋点、链路追踪、权限校验等场景里真实存在。</p><h4>引用保持导致 <code>WeakRef</code> 行为变化</h4><p>这个更隐蔽。<code>console.log</code> 会保持对传入对象的引用（至少在控制台被清除之前）。如果你的代码依赖 <code>WeakRef</code> 或 <code>FinalizationRegistry</code> 来做资源清理，<code>console.log</code> 可能让一个本该被回收的对象一直存活：</p><pre><code class="typescript">let ref: WeakRef&lt;HeavyResource&gt;;
+
+function initResource() {
+  const resource = new HeavyResource();
+  ref = new WeakRef(resource);
+  
+  // 这行 console.log 持有了 resource 的强引用
+  // 导致 resource 不会被 GC 回收
+  // WeakRef.deref() 始终返回对象
+  console.log('resource created:', resource);
+}
+
+function checkResource() {
+  const resource = ref.deref();
+  if (resource) {
+    // console.log 在的时候，resource 一直活着，这里总能进来
+    // console.log 删了之后，resource 可能被 GC 了，这里就进不来了
+    resource.doWork();
+  }
+}</code></pre><p>生产环境里你不会打开控制台，所以 <code>console.log</code> 对引用的保持效果和开发环境不同。但如果你的代码在某个特定时序下恰好依赖了这个意外的引用保持，删掉它就会出问题。</p><hr/><h3>不要全局搜索删除！</h3><p>经过这次事故之后，我们团队调整了处理 <code>console.log</code> 的策略。</p><h4>用构建工具自动剥离，而不是手动删</h4><p>手动删除 <code>console.log</code> 的问题在于：你必须理解每一行 <code>console.log</code> 的上下文才能判断它是否安全。这在几百个文件的项目里根本不现实。</p><p>正确做法是在构建阶段自动剥离，让 <code>console.log</code> 在源码里保留（开发时还能用），但打包产物里不包含：</p><pre><code class="typescript">// vite.config.ts
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  esbuild: {
+    // 生产构建时自动移除 console 和 debugger
+    drop: process.env.NODE_ENV === 'production' 
+      ? ['console', 'debugger'] 
+      : [],
+  },
+});</code></pre><p><strong>但要注意</strong>：<code>esbuild</code> 的 <code>drop: ['console']</code> 做的是语法层面的移除，它会把 <code>console.log(expr)</code> 整个语句删掉。如果 <code>expr</code> 本身有副作用（就像我们遇到的 <code>getter</code> 触发），这个副作用也会一起消失。</p><p>所以这种自动剥离本质上和手动删除面临同样的问题——<strong>它假设 <code>console.log</code> 的参数表达式没有副作用。</strong></p><h4>怎么彻底解决这个问题？</h4><p>事故的根本原因不是 <code>console.log</code>，而是：</p><ol><li><strong>惰性初始化的 <code>getter</code> 被隐式触发，没有显式的初始化调用</strong></li><li><strong>业务代码绕过了 <code>getter</code>，直接访问了私有属性</strong></li></ol><p>修复方案不是别删 <code>console.log</code>：</p><pre><code class="typescript">// 惰性 getter + 直接访问私有属性
+class ProductModel {
+  private _priceConfig: PriceConfig | null = null;
+  
+  get priceConfig(): PriceConfig {
+    if (this._priceConfig === null) {
+      this._priceConfig = this.parsePriceRules(this._rawData.priceRules);
+    }
+    return this._priceConfig;
+  }
+}
+
+// 渲染时直接摸私有属性（绕过了 getter）
+const price = product['_priceConfig']?.tiers[0]?.unitPrice;</code></pre><p>改造后👇：</p><pre><code class="typescript">// 显式初始化 + 禁止直接访问私有属性
+class ProductModel {
+  private _priceConfig: PriceConfig;
+
+  constructor(raw: RawProductData) {
+    this._rawData = raw;
+    // 构造时就完成初始化，不搞惰性加载
+    this._priceConfig = this.parsePriceRules(raw.priceRules);
+  }
+
+  get priceConfig(): PriceConfig {
+    return this._priceConfig;
+  }
+}
+
+// 渲染时通过公开的 getter 访问
+const price = product.priceConfig.tiers[0]?.unitPrice;</code></pre><p>如果惰性加载确实有性能必要（比如解析成本很高、且大部分场景不需要这个值），那就用<strong>显式的 <code>init()</code> 方法</strong>代替隐式的首次访问触发：</p><pre><code class="typescript">class ProductModel {
+  private _priceConfig: PriceConfig | null = null;
+
+  // 显式调用，语义清晰：谁调了 init，谁就负责初始化
+  initPriceConfig(): void {
+    if (this._priceConfig === null) {
+      this._priceConfig = this.parsePriceRules(this._rawData.priceRules);
+    }
+  }
+
+  get priceConfig(): PriceConfig {
+    if (this._priceConfig === null) {
+      throw new Error(
+        'priceConfig 未初始化，请先调用 initPriceConfig()'
+      );
+    }
+    return this._priceConfig;
+  }
+}</code></pre><p>未初始化就访问，直接抛异常。<strong>用显式的失败代替隐式的静默，让问题在开发阶段就暴露出来。</strong></p><hr/><h3>可以给项目加一条 <code>ESLint</code> 规则</h3><p>如果你想从前端工程层面防止类似问题，可以在 <code>ESLint</code> 里配一条规则，禁止在 <code>getter</code> 里做赋值操作（副作用）：</p><pre><code class="javascript">// .eslintrc.js
+module.exports = {
+  rules: {
+    // 禁止在 getter 里产生副作用
+    'no-setter-return': 'error',
+    // 搭配 @typescript-eslint 的规则，限制直接访问私有属性
+    '@typescript-eslint/no-unsafe-member-access': 'warn',
+  },
+};</code></pre><p>规则不能覆盖所有场景，但至少能让团队养成一个意识：<strong><code>getter</code> 应该是纯计算，不应该有赋值、网络请求、事件触发等副作用。如果你需要副作用，写成显式的方法调用。</strong></p><hr/><p>经历这次事故之后，我对 <code>JavaScript</code> 里读取这个动作的理解变深了。</p><p>在很多语言里，读一个属性就是读一个内存地址，没有任何其他效果。但在 <code>JavaScript</code> 里，因为 <code>getter</code>、<code>Proxy</code>、<code>Symbol.toPrimitive</code>、<code>valueOf</code>、<code>toString</code> 这些机制的存在，<strong>每一次属性访问都可能是一次函数调用，每一次函数调用都可能改变程序状态。</strong></p><p>所以下次你在代码里看到一个多余的 <code>console.log</code>，<strong>删之前先想三秒：它的参数表达式里有没有 <code>getter</code>？对象是不是 <code>Proxy</code>？有没有自定义的 <code>toString</code>？</strong> 如果你不确定，就别手动删——交给构建工具，同时去检查一下那段代码是否存在隐式的副作用依赖。</p><p>真正该修的不是 <code>console.log</code>，而是那些把副作用藏在属性访问里的代码设计。</p><p>你们觉得呢？</p><p><img referrerpolicy="no-referrer" src="https://image-static.segmentfault.com/141/431/1414319495-078eb25df824a37e" alt="Suggestion (3).gif" title="Suggestion (3).gif" loading="lazy"/></p><hr/><p>喜欢我的文章，也欢迎关注我的微信公众号：【前端技术官】。</p><p>主要分享：<strong>前端架构 · AI 编程 · 职场认知 · 开发者成长</strong></p><p><img width="300" height="300" referrerpolicy="no-referrer" src="/img/bVdqpix" alt="前端技术官-ErpanOmer" title="前端技术官-ErpanOmer" loading="lazy"/></p><p><strong>微信扫码关注</strong> 👆</p><p>不定期更新，不刷屏，聊点真正有用的干货。</p>]]></description></item><item>    <title><![CDATA[非常罕见的主从复制唯一索引列数据重复冲突案例 GreatSQL社区 ]]></title>    <link>https://segmentfault.com/a/1190000048376838</link>    <guid>https://segmentfault.com/a/1190000048376838</guid>    <pubDate>2026-10-28 15:07:03</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <h2>问题发生</h2><p>某银行客户的开发测试环境，使用的是一主两从半同步复制GreatSQL。现场DBA发现一个slave节点的sql线程异常，show slave status检查错误码是1062，检查另一个slave的复制线程状态正常。</p><pre><code class="SQL">GreatSQL &gt; show slave status \G
+*************************** 1. row ***************************
+               Slave_IO_State: Waiting for source to send event
+                        ......
+                   Last_Errno: 1062
+                   Last_Error: Coordinator stopped because there were error(s) in the worker(s). The most recent failure being: Worker 1 failed executing transaction '1b79061d-71ae-11ef-9633-00163e2cb875:17436241' at master log greatdb-bin.000288, end_log_pos 362599392.. See error log and/or performance_schema.replication_applier_status_by_worker table for more details about this failure or others, if any.
+                        ......</code></pre><p>检查表performance\_schema.replication\_applier\_status\_by\_worker显示信息如下：</p><pre><code class="SQL">GreatSQL &gt; SELECT * FROM performance_schema.replication_applier_status_by_worker \G
+....
+LAST_ERROR_NUMBER: 1062
+LAST_ERROR_MESSAGE: Worker 1 failed executing transaction '1b79061d-71ae-11ef-9633-00163e2cb875:17436241' at master log greatdb-bin.000288, end_log_pos 362599392; Could not execute Write_rows event on table xxxx; Duplicate entry 'Ms001-0xx-20230901-1' for key 'fnd_xxxxx_yyy.UK0_fnd_xxxxx_yyy', Error_code: 1062; handler error HA_ERR_FOUND_DUPP_KEY; the event's master log First, end_log_pos 362599392
+...</code></pre><p>提示表nfesp\_fesl1\_db\_jy.fnd\_xxxxx\_yyy表的唯一索引UK0\_fnd\_xxxxx\_yyy有重复数据。</p><p>检查表nfesp\_fesl1\_db\_jy.fnd\_xxxxx\_yyy的建表语句：</p><pre><code class="SQL">CREATE TABLE `fnd_xxxxx_yyy` (
+  `IvsmPd_ECD` varchar(80) COLLATE utf8mb4_bin NOT NULL COMMENT '产品编码',
+  `Txn_Mkt_ID` char(19) COLLATE utf8mb4_bin NOT NULL COMMENT '市场编号',
+  `FndCo_Agnc_Sale_InsID` varchar(9) COLLATE utf8mb4_bin NOT NULL COMMENT '代理销售商代码',
+  `Fnd_Qtn_Dt` char(8) COLLATE utf8mb4_bin NOT NULL COMMENT '行情日期',
+  `Ext_Fnd_StCd` char(1) COLLATE utf8mb4_bin DEFAULT NULL COMMENT '外部产品状态',
+  `NetVal_TpCd` char(1) COLLATE utf8mb4_bin NOT NULL COMMENT '净值类型代码',
+  `Unit_Ast_NetVal` decimal(19,8) DEFAULT NULL COMMENT '单位净值',
+  `AcNetVal` decimal(19,8) DEFAULT NULL COMMENT '累计净值',
+  `Each_TenThsd_Pft_Amt` decimal(10,6) DEFAULT NULL COMMENT '每万份收益额',
+  `InBkMt_BdYdRto_ECD` char(10) COLLATE utf8mb4_bin DEFAULT NULL COMMENT '收益率类型',
+  `Avrg_Exp_YldRto` decimal(19,8) DEFAULT NULL COMMENT '收益率值',
+  `Fnd_Co_Fdbk_Tot_Cps` decimal(19,2) DEFAULT NULL COMMENT '反馈总份数',
+  `Fnd_Co_Anc_Fnd_Sz` decimal(19,2) DEFAULT NULL COMMENT '发布产品规模',
+  `Tot_Pft_Amt` decimal(22,6) DEFAULT NULL COMMENT '当期总收益',
+  `Acm_Pft_Amt` decimal(31,16) DEFAULT NULL COMMENT '累计收益',
+  `MULTI_TENANCY_ID` char(5) COLLATE utf8mb4_bin DEFAULT NULL COMMENT '#多实体标识',
+  `TXN_ITT_CHNL_ID` char(23) COLLATE utf8mb4_bin DEFAULT NULL COMMENT '#发起渠道编号',
+  `TXN_ITT_CHNL_CGY_CODE` char(8) COLLATE utf8mb4_bin DEFAULT NULL COMMENT '#发起渠道类别',
+  `Crt_Br_ID` char(9) COLLATE utf8mb4_bin DEFAULT NULL COMMENT '创建分行编号',
+  `Mdf_Br_ID` char(9) COLLATE utf8mb4_bin DEFAULT NULL COMMENT '变更分行编号',
+  `Scr_Crt_InsID` char(9) COLLATE utf8mb4_bin DEFAULT NULL COMMENT '记录创建机构编号',
+  `Scr_Mdf_InsID` char(9) COLLATE utf8mb4_bin DEFAULT NULL COMMENT '记录变更机构编号',
+  `Scr_Crt_TrID` char(8) COLLATE utf8mb4_bin DEFAULT NULL COMMENT '记录创建柜员编号',
+  `Mdf_TrID` char(8) COLLATE utf8mb4_bin DEFAULT NULL COMMENT '记录变更柜员编号',
+  `Ahn_TrID` char(8) COLLATE utf8mb4_bin DEFAULT NULL COMMENT '授权柜员编号',
+  `Data_Rcd_Crt_Dt` char(8) COLLATE utf8mb4_bin DEFAULT NULL COMMENT '#数据记录创建日期',
+  `Rcd_Crt_Tm` char(6) COLLATE utf8mb4_bin DEFAULT NULL COMMENT '记录创建时间',
+  `StMd_Dt` char(8) COLLATE utf8mb4_bin DEFAULT NULL COMMENT '状态变更日期',
+  `Rcd_Udt_Tm` char(6) COLLATE utf8mb4_bin DEFAULT NULL COMMENT '记录更新时间',
+  `Data_Udt_Dt_Tm` datetime(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '#数据更新日期时间',
+  `SN_Rcd_ID` bigint NOT NULL AUTO_INCREMENT COMMENT '记录序号',
+  PRIMARY KEY (`SN_Rcd_ID`),
+  UNIQUE KEY `UKQ_fnd_xxxxx_yyy` (`IvsmPd_ECD`,`Txn_Mkt_ID`,`Fnd_Qtn_Dt`,`NetVal_TpCd`)
+) ENGINE=InnoDB AUTO_INCREMENT=1714 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin COMMENT='产品日信息';</code></pre><p>发现：有唯一索引UK0\_fnd\_xxxxx\_yyy ( IvsmPd\_ECD , Txn\_Mkt\_ID , Fnd\_Qtn\_Dt , NetVal\_TpCd ) ,检查主库中表fnd\_xxxxx\_yyy的数据，发现SN\_Rcd\_ID=860和1711的2条数据的唯一索引的列完全相同。</p><pre><code class="SQL">GreatSQL &gt; SELECT IvsmPd_ECD, Txn_Mkt_ID, Fnd_Qtn_Dt, NetVal_TpCd, SN_Rcd_ID FROM gsqldb.fnd_xxxxx_yyy WHERE SN_Rcd_ID in(860,1711);
++------------+------------+------------+-------------+-----------+
+| IvsmPd_ECD | Txn_Mkt_ID | Fnd_Qtn_Dt | NetVal_TpCd | SN_Rcd_ID |
++------------+------------+------------+-------------+-----------+
+| MS001      | 0XX        | 20230901   | 1           |       860 |
+| MS001      | 0XX        | 20230901   | 1           |      1711 |
++------------+------------+------------+-------------+-----------+
+1 row in set (0.00 sec)</code></pre><h3>问题总结</h3><ul><li>一主两从的复制架构中，nfesp\_fesl1\_db\_jy.fnd\_xxxxx\_yyy表在主节点中，唯一索引列存在2条重复数据；</li><li>主库重复数据的第2条，在一个slave节点上回放时，由于唯一索引重复而无法插入，导致sql\_thread停止；</li><li>主库重复数据的第2条，在另一个slave上，可以正常回放，唯一索引列同样存在2条重复数据；</li></ul><h2>问题分析</h2><h3>解析binlog</h3><p>使用mysqlbinlog解析master节点的binlog文件greatdb-bin.000288，显示该事务是一个insert语句，在事务中，有如下设置会话变量的信息：</p><pre><code class="SQL">SET **@@session.unique_checks=0**/*!*/;</code></pre><p>表明在执行该事务时，用户修改了会话级变量unique\_checks，禁用了唯一索引的唯一性检查。</p><h3>分析程序源码</h3><p>从源码上看，同时满足以下三个条件，可能导致向唯一索引列插入重复值：</p><ul><li>禁用唯一索引检查unique\_checks=OFF</li><li>使用了change buffer</li><li>要更新的唯一索引页不在buffer pool中</li></ul><h2>问题复现</h2><ol><li>配置一主两从的复制环境，配置所有节点使用change buffer。</li></ol><pre><code class="SQL">GreatSQL &gt; SHOW VARIABLES LIKE 'unique%';
++---------------+-------+
+| Variable_name | Value |
++---------------+-------+
+| unique_checks | ON    |
++---------------+-------+
+1 row in set (0.01 sec)
+
+GreatSQL &gt; SHOW VARIABLES LIKE 'innodb_change_buffering';
++-------------------------+-------+
+| Variable_name           | Value |
++-------------------------+-------+
+| innodb_change_buffering | all   |
++-------------------------+-------+
+1 row in set (0.01 sec)</code></pre><ol start="2"><li><p>创建测试表sbtest\_uq，在（c,pad）上创建唯一索引。</p><pre><code class="SQL">CREATE TABLE `sbtest_uq` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `k` int NOT NULL DEFAULT '0',
+  `c` char(120) NOT NULL DEFAULT '',
+  `pad` char(60) NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`),
+  KEY `k_1` (`k`),
+  unique key `uk_c_pad`(`c`,`pad`)
+) ENGINE=InnoDB AUTO_INCREMENT=1000001 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+;</code></pre></li><li>在sbtest\_uq中插入唯一索引列(c,pad)='1','1'的一条数据(id=1)。</li></ol><pre><code class="SQL">GreatSQL &gt; TRUNCATE TABLE sbtest_uq;
+Query OK, 0 rows affected (0.10 sec)
+-- 插入测试数据
+GreatSQL &gt; insert into sbtest_uq(id,k,c,pad) values(1,1,'1','1');
+Query OK, 1 row affected (0.01 sec)
+-- 插入其他数据
+GreatSQL &gt; insert into sbtest_uq select * from sbtest1 where id&gt;1;
+Query OK, 999999 rows affected (55.99 sec)
+Records: 999999  Duplicates: 0  Warnings: 0</code></pre><ol start="4"><li>在master节点，执行其他DML操作，将sbtest\_uq从buffer pool中挤出；也可以在innodb\_buffer\_pool\_load\_at\_startup=off下重启实例。</li></ol><pre><code class="SQL">-- 执行其他操作，将sbtest_uq从buffer pool中挤出 
+-- 或者 在innodb_buffer_pool_load_at_startup=off下重启实例
+GreatSQL &gt; TRUNCATE TABLE sbtest12;
+Query OK, 0 rows affected (0.51 sec)
+
+GreatSQL &gt; insert into sbtest12 SELECT * FROM sbtest2;
+Query OK, 1000000 rows affected (28.36 sec)
+Records: 1000000  Duplicates: 0  Warnings: 0
+
+-- 检查buffer pool中已没有sbtest_uq
+GreatSQL &gt; SELECT * FROM sys.innodb_buffer_stats_by_table WHERE object_schema='test' and object_name='sbtest_uq';
+Empty set (0.26 sec)</code></pre><ol start="5"><li>在slave节点1，确认buffer pool中没有表sbtest\_uq的数据。</li></ol><pre><code class="SQL">-- 检查buffer pool中已没有sbtest_uq
+GreatSQL &gt; SELECT * FROM sys.innodb_buffer_stats_by_table WHERE object_schema='test' and object_name='sbtest_uq';
+Empty set (0.26 sec)</code></pre><ol start="6"><li>在slave节点2，将sbtest\_uq的索引数据加载到buffer pool中。</li></ol><pre><code class="SQL">GreatSQL &gt; SELECT * FROM sbtest_uq WHERE c='1' and pad='1';
++----+---+---+-----+
+| id | k | c | pad |
++----+---+---+-----+
+|  1 | 1 | 1 | 1   |
++----+---+---+-----+
+1 row in set (0.19 sec)
+
+GreatSQL &gt; SELECT * FROM sys.innodb_buffer_stats_by_table WHERE object_schema='test' and object_name='sbtest_uq';
++---------------+-------------+------------+-----------+-------+--------------+-----------+-------------+
+| object_schema | object_name | allocated  | data      | pages | pages_hashed | pages_old | rows_cached |
++---------------+-------------+------------+-----------+-------+--------------+-----------+-------------+
+| test          | sbtest_uq   | 112.00 KiB | 48.45 KiB |     7 |            0 |         7 |         413 |
++---------------+-------------+------------+-----------+-------+--------------+-----------+-------------+
+1 row in set (0.28 sec)</code></pre><ol start="7"><li>在master节点插入唯一索引列(c,pad)='1','1'的另一条数据（id=9999999）。</li></ol><pre><code class="SQL">-- 关闭唯一索引检查
+GreatSQL &gt; set unique_checks=OFF;
+Query OK, 0 rows affected (0.00 sec)
+-- 插入重复数据
+GreatSQL &gt; insert into sbtest_uq(id,k,c,pad) values(9999999,1,'1','1'); 
+Query OK, 1 row affected (0.01 sec)</code></pre><ol start="8"><li>检查master和slave上的数据及复制状态。</li></ol><p>master节点：(c,pad)列上已存在重复数据。</p><pre><code class="SQL">-- 查询表sbtest_uq，确认c,pad列上已存在重复数据
+GreatSQL &gt; SELECT * FROM sbtest_uq WHERE id in(1,9999999);
++---------+---+---+-----+
+| id      | k | c | pad |
++---------+---+---+-----+
+|       1 | 1 | 1 | 1   |
+| 9999999 | 1 | 1 | 1   |
++---------+---+---+-----+
+2 rows in set (0.00 sec)</code></pre><p>slave节点1：(c,pad)列上已存在重复数据；复制线程Slave\_SQL\_Running=Yes</p><pre><code class="SQL">GreatSQL &gt; SELECT * FROM sbtest_uq WHERE id in(1,9999999);
++---------+---+---+-----+
+| id      | k | c | pad |
++---------+---+---+-----+
+|       1 | 1 | 1 | 1   |
+| 9999999 | 1 | 1 | 1   |
++---------+---+---+-----+
+2 rows in set (0.07 sec)
+
+GreatSQL &gt; show slave status\G
+*************************** 1. row ***************************
+               Slave_IO_State: Waiting for source to send event
+                    。。。。。。
+             Slave_IO_Running: Yes
+            **Slave_SQL_Running: Yes**
+                    。。。。。。
+           Retrieved_Gtid_Set: e6ea0eeb-591c-11ef-8984-00163e919d0a:209358-209371
+            Executed_Gtid_Set: e6cbf195-591c-11ef-99d9-00163e33cf00:1-1572367,
+e6d361d5-591c-11ef-b1d5-00163e0ea4a5:1-138208,
+e6ea0eeb-591c-11ef-8984-00163e919d0a:1-209371
+                    ......
+1 row in set, 1 warning (0.00 sec)</code></pre><p>slave节点2：(c,pad)列上没有重复数据；复制线程Slave\_SQL\_Running=No，提示唯一索引重复。</p><pre><code class="SQL">GreatSQL &gt; SELECT * FROM sbtest_uq WHERE id in(1,9999999);
++----+---+---+-----+
+| id | k | c | pad |
++----+---+---+-----+
+|  1 | 1 | 1 | 1   |
++----+---+---+-----+
+1 row in set (0.00 sec)
+
+GreatSQL &gt; show slave status\G
+*************************** 1. row ***************************
+               Slave_IO_State: Waiting for source to send event
+                        ......
+             Slave_IO_Running: Yes
+            **Slave_SQL_Running: No**
+                        ......
+                   Last_Errno: 1062
+                   Last_Error: Coordinator stopped because there were error(s) in the worker(s). The most recent failure being: Worker 1 failed executing transaction 'e6ea0eeb-591c-11ef-8984-00163e919d0a:209371' at master log greatdb-bin.000020, end_log_pos 606. See error log and/or performance_schema.replication_applier_status_by_worker table for more details about this failure or others, if any.
+                        ......  
+               Last_SQL_Errno: 1062
+               Last_SQL_Error: Coordinator stopped because there were error(s) in the worker(s). The most recent failure being: Worker 1 failed executing transaction 'e6ea0eeb-591c-11ef-8984-00163e919d0a:209371' at master log greatdb-bin.000020, end_log_pos 606. See error log and/or performance_schema.replication_applier_status_by_worker table for more details about this failure or others, if any.
+                        ......
+           Retrieved_Gtid_Set: e6ea0eeb-591c-11ef-8984-00163e919d0a:209366-209371
+            Executed_Gtid_Set: e6cbf195-591c-11ef-99d9-00163e33cf00:1-1572367,
+e6d361d5-591c-11ef-b1d5-00163e0ea4a5:1-138208,
+e6ea0eeb-591c-11ef-8984-00163e919d0a:1-209370
+                        ......  
+1 row in set, 1 warning (0.00 sec)
+
+
+GreatSQL &gt; SELECT * FROM performance_schema.replication_applier_status_by_worker\G
+*************************** 1. row ***************************
+                                           CHANNEL_NAME: 
+                                              WORKER_ID: 1
+                                              THREAD_ID: NULL
+                                          SERVICE_STATE: OFF
+                                      LAST_ERROR_NUMBER: 1062
+                                     LAST_ERROR_MESSAGE: Worker 1 failed executing transaction 'e6ea0eeb-591c-11ef-8984-00163e919d0a:209371' at master log greatdb-bin.000020, end_log_pos 606; Could not execute Write_rows event on table test.sbtest_uq; Duplicate entry '1-1' for key 'sbtest_uq.uk_c_pad', Error_code: 1062; handler error HA_ERR_FOUND_DUPP_KEY; the event's master log greatdb-bin.000019, end_log_pos 606
+                                   LAST_ERROR_TIMESTAMP: 2026-09-14 09:35:47.947584
+                               LAST_APPLIED_TRANSACTION: e6ea0eeb-591c-11ef-8984-00163e919d0a:209370
+     LAST_APPLIED_TRANSACTION_ORIGINAL_COMMIT_TIMESTAMP: 2026-09-14 09:31:27.529353
+    LAST_APPLIED_TRANSACTION_IMMEDIATE_COMMIT_TIMESTAMP: 2026-09-14 09:31:27.529353
+         LAST_APPLIED_TRANSACTION_START_APPLY_TIMESTAMP: 2026-09-14 09:31:28.832359
+           LAST_APPLIED_TRANSACTION_END_APPLY_TIMESTAMP: 2026-09-14 09:31:55.294233
+                                   APPLYING_TRANSACTION: e6ea0eeb-591c-11ef-8984-00163e919d0a:209371
+         APPLYING_TRANSACTION_ORIGINAL_COMMIT_TIMESTAMP: 2026-09-14 09:35:47.858275
+        APPLYING_TRANSACTION_IMMEDIATE_COMMIT_TIMESTAMP: 2026-09-14 09:35:47.858275
+             APPLYING_TRANSACTION_START_APPLY_TIMESTAMP: 2026-09-14 09:35:47.861972
+                 LAST_APPLIED_TRANSACTION_RETRIES_COUNT: 0
+   LAST_APPLIED_TRANSACTION_LAST_TRANSIENT_ERROR_NUMBER: 0
+  LAST_APPLIED_TRANSACTION_LAST_TRANSIENT_ERROR_MESSAGE: 
+LAST_APPLIED_TRANSACTION_LAST_TRANSIENT_ERROR_TIMESTAMP: 0000-00-00 00:00:00.000000
+                     APPLYING_TRANSACTION_RETRIES_COUNT: 0
+       APPLYING_TRANSACTION_LAST_TRANSIENT_ERROR_NUMBER: 0
+      APPLYING_TRANSACTION_LAST_TRANSIENT_ERROR_MESSAGE: 
+    APPLYING_TRANSACTION_LAST_TRANSIENT_ERROR_TIMESTAMP: 0000-00-00 00:00:00.000000</code></pre><h3>小结</h3><p>测试过程验证了在innodb\_change\_buffering=all，unique\_checks=OFF时，唯一索引列中存在插入重复数据可能。在主从复制的slave节点，如果buffer pool中没有唯一索引信息，该事务会正常回放，插入重复数据；如果buffer pool中存在唯一索引的信息，该事务回放时，会由于唯一索引重复而失败，从而导致sql线程中断。</p><p>对于客户的问题，由于buffer pool中没有索引UK0\_fnd\_xxxxx\_yyy的信息，所以在master节点能够插入重复数据；但在slave端回放binlog时，如果索引UK0\_fnd\_xxxxx\_yyy的信息在buffer pool中，可以正常插入，但唯一索引列有重复值；如果索引UK0\_fnd\_xxxxx\_yyy的信息在buffer pool中，会由于唯一索引重复从而导致sql线程中断。</p><h2>总结</h2><p>经实验验证，当同时满足以下三个条件时，存在向唯一索引列插入重复值的风险：</p><ul><li>禁用了唯一性检查（<code>unique_checks=OFF</code>）</li><li>启用了变更缓冲（Change Buffer）</li><li>待更新的唯一索引不在缓冲池（Buffer Pool）中</li></ul><p>通常情况下，应用系统禁用唯一性检查（<code>unique_checks=OFF</code>）是为了提升数据加载速度。但此操作的前提是必须确保唯一索引列的数据绝对唯一；若无法保证，请务必不要禁用该检查，否则极易导致数据重复，进而威胁业务系统的正常运行。在主从复制架构中，这还可能导致从库（Slave）的 SQL 线程中断。此外，在导入 mysqldump 导出文件时需特别留意：默认配置下 mysqldump 会自动在文件中添加 <code>unique_checks=0</code>，若未加注意，极易造成唯一索引列的数据重复。</p><p>在 GreatSQL 8.4.4 版本中，<code>innodb_change_buffering</code> 的默认值已调整为 <code>none</code>。这主要是考虑到在现代 SSD 硬件环境下，变更缓冲（Change Buffer）带来的性能收益已有所下降。将该默认值设为 <code>none</code>，不仅能提升数据库开箱即用的稳定性和可控性，更能有效避免在 <code>unique_checks=OFF</code> 时向唯一索引插入重复值的问题。</p>]]></description></item><item>    <title><![CDATA[Python3 线程：多任务并发编程详解 bug生产者 ]]></title>    <link>https://segmentfault.com/a/1190000048376844</link>    <guid>https://segmentfault.com/a/1190000048376844</guid>    <pubDate>2026-10-28 15:06:01</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <h2>Python 线程：什么时候该用，什么时候别用</h2><p>写并发代码的时候，很多人第一反应就是"开线程"。</p><p>但 Python 的线程有个特殊的地方——<strong>GIL（全局解释器锁）</strong>。这东西让 Python 同一时刻只能有一个线程在执行 Python 字节码。所以：</p><ul><li><strong>I/O 密集型任务</strong>（网络请求、文件读写、数据库查询）：多线程有用，线程在等 I/O 的时候 GIL 会释放</li><li><strong>CPU 密集型任务</strong>（大量计算、图像处理）：多线程没用，甚至更慢</li></ul><p><strong>一句话：Python 多线程适合"等"的场景，不适合"算"的场景。</strong></p><h3>创建线程：两种方式，用第一种就够了</h3><h4><strong>方式1：直接传函数（最常用）</strong></h4><pre><code class="python">import threading
+import time
+
+def worker(name, delay):
+    for i in range(3):
+        print(f"{name} 第 {i+1} 次")
+        time.sleep(delay)
+
+t1 = threading.Thread(target=worker, args=("A", 1))
+t2 = threading.Thread(target=worker, args=("B", 2))
+
+t1.start()
+t2.start()
+
+t1.join()  # 等 t1 结束
+t2.join()  # 等 t2 结束
+print("全部完成")</code></pre><p><code>start()</code> 启动线程，<code>join()</code> 等待线程结束。<strong>主线程如果不 <code>join()</code>，子线程可能还没来得及执行完，程序就退出了。</strong></p><h4><strong>方式2：继承 Thread 类（封装复杂状态时用）</strong></h4><pre><code class="python">class DownloadTask(threading.Thread):
+    def __init__(self, url):
+        super().__init__()
+        self.url = url
+        self.result = None
+    
+    def run(self):
+        # 线程启动后自动执行
+        print(f"下载：{self.url}")
+        time.sleep(2)
+        self.result = f"{self.url} 完成"
+
+task = DownloadTask("https://example.com/file.zip")
+task.start()
+task.join()
+print(task.result)</code></pre><p>日常开发用方式1就够了，方式2在需要把线程状态封装在对象里的时候用。</p><h3>守护线程：主程序退出，它也跟着退</h3><p>普通线程会阻止程序退出——主线程结束了，还要等所有子线程结束才退出。</p><p>守护线程（<code>daemon=True</code>）不一样：主线程一退出，守护线程直接被终止。</p><pre><code class="python">def background():
+    while True:
+        print("后台运行...")
+        time.sleep(1)
+
+t = threading.Thread(target=background, daemon=True)
+t.start()
+
+time.sleep(3)
+print("主程序结束")  # 3秒后退出，守护线程自动终止</code></pre><p>&lt;!-- more --&gt;</p><p><strong>什么时候用？</strong> 后台监控、心跳检测这种"主程序退出了你也没必要继续跑"的任务。</p><h3>线程同步：多个线程改同一个变量，会乱</h3><pre><code class="python">counter = 0
+
+def increment():
+    global counter
+    for _ in range(100000):
+        counter += 1
+
+t1 = threading.Thread(target=increment)
+t2 = threading.Thread(target=increment)
+t1.start()
+t2.start()
+t1.join()
+t2.join()
+
+print(counter)  # 期望 200000，实际可能 189xxx</code></pre><p><code>counter += 1</code> 不是原子操作（读-算-写三步），两个线程同时操作就会互相覆盖。</p><h4><strong>解决方案：用 Lock</strong></h4><pre><code class="python">counter = 0
+lock = threading.Lock()
+
+def increment():
+    global counter
+    for _ in range(100000):
+        with lock:   # 拿到锁再操作
+            counter += 1
+        # 离开 with 自动释放锁</code></pre><p><code>with lock</code> 是最安全的写法，不用手动 <code>acquire()</code> 和 <code>release()</code>，不会忘记释放。</p><h3>线程间通信：用 Queue，别自己折腾锁</h3><p>多个线程之间传数据，最省事的办法是 <code>queue.Queue</code>——它内部已经实现了线程安全。</p><pre><code class="python">import queue
+import threading
+
+q = queue.Queue()
+
+def producer():
+    for i in range(5):
+        q.put(i)
+        print(f"生产：{i}")
+    q.put(None)  # 结束信号
+
+def consumer():
+    while True:
+        item = q.get()
+        if item is None:
+            break
+        print(f"消费：{item}")
+
+t1 = threading.Thread(target=producer)
+t2 = threading.Thread(target=consumer)
+t1.start()
+t2.start()
+t1.join()
+t2.join()</code></pre><p><strong>生产者-消费者模式</strong>是线程间通信最经典的场景，<code>Queue</code> 就是为这个设计的。</p><p><code>Queue</code> 有三种：</p><table><thead><tr><th align="left">类型</th><th align="left">特点</th></tr></thead><tbody><tr><td align="left"><code>Queue</code></td><td align="left">先进先出（默认）</td></tr><tr><td align="left"><code>LifoQueue</code></td><td align="left">后进先出（栈）</td></tr><tr><td align="left"><code>PriorityQueue</code></td><td align="left">按优先级取</td></tr></tbody></table><p>大部分场景用默认的 <code>Queue</code> 就够了。</p><h3>其他同步工具：认识一下，用到的时候知道有这东西</h3><table><thead><tr><th align="left">工具</th><th align="left">作用</th><th align="left">什么时候用</th></tr></thead><tbody><tr><td align="left"><code>Lock</code></td><td align="left">互斥锁，同一时刻只能一个线程访问</td><td align="left">保护共享变量</td></tr><tr><td align="left"><code>RLock</code></td><td align="left">可重入锁，同一线程可多次获取</td><td align="left">递归函数里加锁</td></tr><tr><td align="left"><code>Semaphore</code></td><td align="left">信号量，限制同时访问的线程数</td><td align="left">限流，比如最多3个线程同时请求API</td></tr><tr><td align="left"><code>Event</code></td><td align="left">事件通知，一个线程等另一个线程的信号</td><td align="left">等待初始化完成、等待任务结束</td></tr><tr><td align="left"><code>Condition</code></td><td align="left">条件变量，更灵活的通知机制</td><td align="left">生产者-消费者（但通常用 Queue 就够了）</td></tr></tbody></table><p><strong>实际开发中，Lock 和 Queue 是最常用的两个。</strong> 其他的用到的时候再查文档就行。</p><h3>线程池：别手动创建一堆线程</h3><p>手动创建线程没有问题，但如果你要创建几十上百个线程，用线程池更省事——复用线程，不用频繁创建销毁。</p><pre><code class="python">from concurrent.futures import ThreadPoolExecutor
+
+def task(n):
+    return n * 2
+
+# 创建线程池，最多3个线程同时跑
+with ThreadPoolExecutor(max_workers=3) as executor:
+    # 方式1：提交单个任务
+    future = executor.submit(task, 5)
+    print(future.result())  # 10
+    
+    # 方式2：批量提交
+    results = executor.map(task, range(5))
+    print(list(results))  # [0, 2, 4, 6, 8]</code></pre><p><code>with</code> 语句会自动等待所有任务完成并清理线程池。</p><p><strong><code>submit</code> vs <code>map</code>：</strong></p><ul><li><code>submit</code>：提交单个任务，返回 <code>Future</code> 对象，可以单独拿结果</li><li><code>map</code>：批量提交，返回结果的迭代器，顺序跟输入一致</li></ul><pre><code class="python"># 获取完成的任务（谁先完成先处理谁）
+with ThreadPoolExecutor(max_workers=3) as executor:
+    futures = [executor.submit(task, i) for i in range(5)]
+    for future in as_completed(futures):
+        print(future.result())</code></pre><p><code>as_completed()</code> 在需要"谁先完成先处理谁"的时候很有用。</p><h3>什么时候用线程，什么时候用别的</h3><table><thead><tr><th align="left">任务类型</th><th align="left">推荐方案</th><th align="left">原因</th></tr></thead><tbody><tr><td align="left">网络请求、爬虫</td><td align="left">线程 / 线程池</td><td align="left">I/O 等待时释放 GIL</td></tr><tr><td align="left">文件读写</td><td align="left">线程</td><td align="left">I/O 操作，线程有效</td></tr><tr><td align="left">大量计算（CPU密集）</td><td align="left">多进程（<code>multiprocessing</code>）</td><td align="left">GIL 限制，线程无效</td></tr><tr><td align="left">高并发网络服务</td><td align="left"><code>asyncio</code>（异步IO）</td><td align="left">单线程更高效</td></tr><tr><td align="left">简单并发</td><td align="left"><code>concurrent.futures</code></td><td align="left">统一接口，切换方便</td></tr></tbody></table><p><strong>一个简单的判断逻辑：</strong></p><ul><li>任务在等外部（网络、磁盘、数据库）→ 用线程</li><li>任务在算内部（循环、数学运算）→ 用多进程或异步</li></ul><h3>一个完整的例子：批量下载</h3><pre><code class="python">from concurrent.futures import ThreadPoolExecutor
+import requests
+import time
+
+urls = [
+    "https://httpbin.org/delay/1",
+    "https://httpbin.org/delay/2",
+    "https://httpbin.org/delay/1",
+    "https://httpbin.org/delay/3",
+]
+
+def download(url):
+    start = time.time()
+    resp = requests.get(url, timeout=10)
+    elapsed = time.time() - start
+    return {"url": url, "status": resp.status_code, "time": elapsed}
+
+# 串行
+start = time.time()
+for url in urls:
+    print(download(url))
+print(f"串行耗时：{time.time() - start:.2f}s")
+
+# 并行（线程池）
+start = time.time()
+with ThreadPoolExecutor(max_workers=4) as executor:
+    results = executor.map(download, urls)
+    for r in results:
+        print(r)
+print(f"并行耗时：{time.time() - start:.2f}s")</code></pre><p>4 个请求各等 1-3 秒，串行要等 7 秒，并行只等最长的那个 3 秒。</p>]]></description></item><item>    <title><![CDATA[PHP 开发中常见的语法与机制：从对象到数据处理 姜姜 ]]></title>    <link>https://segmentfault.com/a/1190000048376846</link>    <guid>https://segmentfault.com/a/1190000048376846</guid>    <pubDate>2026-10-28 15:05:21</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>PHP 的很多语法看起来简单，但在实际开发中，往往会涉及对象、数组、类型转换、空值判断和魔术方法等机制。理解这些基础知识，不仅能看懂现有代码，也能减少一些不容易察觉的错误。</p><p>本文结合常见的 PHP 写法，从基础语法开始，逐步介绍日常开发中值得掌握的知识点。</p><h2>一、<code>$this</code>：当前对象的引用</h2><p>在 PHP 中，类可以理解为创建对象的模板，而通过 <code>new</code> 创建出来的才是真正的对象。</p><pre><code class="php">class User
+{
+    public $name = '张三';
+
+    public function sayHello(): void
+    {
+        echo $this-&gt;name;
+    }
+}
+
+$user = new User();
+$user-&gt;sayHello(); // 张三</code></pre><p>这里有三个需要区分的概念：</p><ul><li><code>User</code> 是类，定义了对象具有哪些属性和方法。</li><li><code>$user</code> 是通过 <code>new User()</code> 创建的实例对象。</li><li><code>$this</code> 指向当前正在执行实例方法的对象。</li></ul><p>因此，<code>$this-&gt;name</code> 表示访问当前对象的 <code>name</code> 属性，<code>$this-&gt;sayHello()</code> 则表示调用当前对象的 <code>sayHello()</code> 方法。</p><p>需要注意，<code>$this</code> 不能直接用于普通的<strong>静态</strong>方法中，因为静态方法不依赖某个具体的实例对象。</p><h2>二、PHP 方法可以声明返回类型</h2><p>PHP 允许方法省略返回类型，也可以显式声明返回值的类型。</p><pre><code class="php">// 不声明返回类型
+public function getName()
+{
+    return '张三';
+}
+
+// 声明返回类型
+public function getAge(): int
+{
+    return 20;
+}
+
+// 声明不返回业务值
+public function printMessage(): void
+{
+    echo 'Hello';
+}</code></pre><p>在这些例子中：</p><ul><li><code>: int</code> 表示方法应返回整数。</li><li><code>: string</code> 表示方法应返回字符串。</li><li><code>: void</code> 表示方法不应返回业务值。</li><li>不声明返回类型时，方法可以返回不同类型的值，也可以不写 <code>return</code>，此时默认返回 <code>null</code>。</li></ul><p>如果声明了返回类型，实际返回值就需要满足相应的类型要求，否则可能产生 <code>TypeError</code>。具体的类型检查行为还会受到 PHP 类型声明规则的影响。</p><p>返回类型声明能够让代码意图更加明确，也有助于静态分析工具发现错误。</p><h2>三、对象属性、数组与 JSON 数据</h2><p>PHP 常用的两种数据结构是数组和对象。它们都能保存数据，但访问方式不同。</p><h3>1. 数组与短数组语法</h3><p>PHP 5.4 引入了短数组语法，可以使用 <code>[]</code> 代替传统的 <code>array()</code>。</p><pre><code class="php">// 传统写法
+$user = array(
+    'name' =&gt; '张三',
+    'age' =&gt; 20
+);
+
+// 短数组写法
+$user = [
+    'name' =&gt; '张三',
+    'age' =&gt; 20
+];
+
+echo $user['name']; // 张三</code></pre><p>两种写法功能相同，只是短数组语法更加简洁。</p><p>PHP 数组既可以作为索引数组使用，也可以作为关联数组使用：</p><pre><code class="php">$numbers = [10, 20, 30];
+
+$user = [
+    'name' =&gt; '张三',
+    'age' =&gt; 20
+];</code></pre><p>索引数组通过数字索引访问元素，关联数组则通常通过字符串键访问元素。</p><h3>2. <code>json_decode()</code> 的第二个参数</h3><p><code>json_decode()</code> 用于将 JSON 字符串解析为 PHP 数据结构。</p><pre><code class="php">$json = '{"name":"张三","age":20}';</code></pre><p>第二个参数决定 JSON 对象应该转换成哪种结构。</p><p><strong>传入 <code>true</code>：转换为关联数组。</strong></p><pre><code class="php">$user = json_decode($json, true);
+
+echo $user['name']; // 张三</code></pre><p><strong>不传 <code>true</code>：JSON 对象默认转换为 <code>stdClass</code> 对象。</strong></p><pre><code class="php">$user = json_decode($json);
+
+echo $user-&gt;name; // 张三</code></pre><p>两种方式的区别在于访问语法：</p><table><thead><tr><th>数据类型</th><th>访问方式</th></tr></thead><tbody><tr><td>关联数组</td><td><code>$user['name']</code></td></tr><tr><td>对象</td><td><code>$user-&gt;name</code></td></tr></tbody></table><p>数组和对象不能随意混用访问方式，否则可能产生类型错误。</p><p>此外，JSON 中的数组通常会被解析成 PHP 索引数组，即使 <code>json_decode()</code> 的第二个参数为 <code>false</code>，也不意味着所有数据都会变成对象。</p><h3>3. <code>stdClass</code> 是什么？</h3><p>std是standard缩写。</p><p><code>stdClass</code> 是 PHP 内置的通用类，可以用来承载没有预先定义固定结构的数据。</p><pre><code class="php">$user = new stdClass();
+
+$user-&gt;name = '张三';
+$user-&gt;age = 20;
+
+echo $user-&gt;name;</code></pre><p>这里不需要提前定义 <code>User</code> 类，就能给对象添加属性。</p><p>但是，<code>stdClass</code> 并不会自动处理不存在的属性：</p><pre><code class="php">$user = new stdClass();
+
+echo $user-&gt;address;</code></pre><p>如果访问的属性不存在，PHP 通常会产生未定义属性的警告，并得到 <code>null</code>。</p><p>这也是为什么使用 <code>json_decode()</code> 时，需要清楚返回的是数组还是对象，以及后续应该如何访问数据。</p><h2>四、<code>isset()</code>、<code>empty()</code> 与 <code>??</code></h2><p>这三个语法经常出现在参数处理和数据读取中，但它们的判断逻辑并不相同。</p><h3>1. <code>isset()</code>：判断变量是否存在且不为 <code>null</code></h3><pre><code class="php">$name = '';
+
+var_dump(isset($name)); // true</code></pre><p>只要变量存在且值不是 <code>null</code>，<code>isset()</code> 就返回 <code>true</code>。因此，空字符串、数字 <code>0</code>、字符串 <code>'0'</code>、<code>false</code> 和空数组都不会被 <code>isset()</code> 判定为空。</p><pre><code class="php">$value = null;
+
+var_dump(isset($value)); // false</code></pre><p>对于数组，<code>isset($array['key'])</code> 还可以用于判断某个键是否存在且不为 <code>null</code>。</p><h3>2. <code>empty()</code>：判断值是否为空</h3><p><code>empty()</code> 的判断范围更广，以下情况都会返回 <code>true</code>：</p><pre><code class="php">empty(null);   // true
+empty('');     // true
+empty(0);      // true
+empty('0');    // true
+empty(false);  // true
+empty([]);     // true</code></pre><p>它还有一个特点：即使变量尚未定义，<code>empty()</code> 通常也不会因此产生未定义变量警告。</p><h3>3. 两者有什么区别？</h3><table><thead><tr><th>情况</th><th><code>isset($value)</code></th><th><code>empty($value)</code></th></tr></thead><tbody><tr><td>变量未定义</td><td><code>false</code></td><td><code>true</code></td></tr><tr><td><code>null</code></td><td><code>false</code></td><td><code>true</code></td></tr><tr><td><code>''</code></td><td><code>true</code></td><td><code>true</code></td></tr><tr><td><code>0</code></td><td><code>true</code></td><td><code>true</code></td></tr><tr><td><code>'0'</code></td><td><code>true</code></td><td><code>true</code></td></tr><tr><td><code>false</code></td><td><code>true</code></td><td><code>true</code></td></tr><tr><td><code>[]</code></td><td><code>true</code></td><td><code>true</code></td></tr><tr><td><code>'hello'</code></td><td><code>true</code></td><td><code>false</code></td></tr></tbody></table><p>可以这样理解：</p><ul><li>使用 <code>isset()</code>，关注的是变量是否存在且不为 <code>null</code>。</li><li>使用 <code>empty()</code>，关注的是变量的值在 PHP 中是否被视为“空”。</li></ul><h3>4. <code>??</code>：空合并运算符</h3><p>空合并运算符 <code>??</code> 用于在变量不存在或值为 <code>null</code> 时提供默认值。</p><pre><code class="php">$name = null;
+
+$result = $name ?? '匿名用户';
+
+echo $result; // 匿名用户</code></pre><p>它也经常用于读取数组元素：</p><pre><code class="php">$user = [];
+
+$name = $user['name'] ?? '匿名用户';</code></pre><p>如果 <code>name</code> 不存在，就使用默认值，而不会因为缺少这个数组键而产生常规的未定义键警告。</p><p><code>??</code> 与简写三元运算符 <code>?:</code> 不同：</p><pre><code class="php">$value = 0;
+
+echo $value ?? 100; // 0
+echo $value ?: 100; // 100</code></pre><p><code>??</code> 主要检查变量是否存在且不为 <code>null</code>，而 <code>?:</code> 会根据条件的真假进行判断。因此，<code>0</code>、<code>false</code>、<code>''</code> 和 <code>'0'</code> 等值可能使 <code>?:</code> 使用后面的默认值。</p><h2>五、PHP 魔术方法</h2><p>魔术方法是 PHP 在满足特定条件时自动调用的特殊方法，方法名通常以<strong>双下划线</strong> <code>__</code> 开头。</p><p>它们并不是普通的工具方法，而是用于定义对象在创建、属性访问、方法调用和序列化等场景中的特殊行为。</p><h3>1. 属性相关的魔术方法</h3><h4><code>__get()</code>：读取属性时触发</h4><p>当访问不存在或不可访问的属性时，如果类定义了 <code>__get()</code>，PHP 就可能调用它。</p><pre><code class="php">class User
+{
+    public function __get($name)
+    {
+        return '无法直接访问属性：' . $name;
+    }
+}
+
+$user = new User();
+
+echo $user-&gt;address;
+// 无法直接访问属性：address</code></pre><h4><code>__set()</code>：给属性赋值时触发</h4><pre><code class="php">class User
+{
+    public function __set($name, $value)
+    {
+        echo "正在设置 {$name}，值为 {$value}";
+    }
+}
+
+$user = new User();
+
+$user-&gt;name = '张三';</code></pre><h4><code>__isset()</code>：使用 <code>isset()</code> 或 <code>empty()</code> 检查属性时触发</h4><p>当检查的属性不存在或不可访问，并且类实现了 <code>__isset()</code> 时，PHP 可以调用该方法。</p><h4><code>__unset()</code>：使用 <code>unset()</code> 删除属性时触发</h4><pre><code class="php">unset($user-&gt;name);</code></pre><p>当删除的属性不存在或不可访问，并且类定义了 <code>__unset()</code> 时，就可能触发该方法。</p><p>这四个方法主要负责属性访问相关的特殊行为。</p><p>需要注意，<strong>不是属性值为空就会触发魔术方法</strong>。触发条件与属性是否存在、是否可访问以及具体操作有关。</p><p>在一些框架中，模型会利用 <code>__get()</code>、<code>__set()</code> 等方法，将属性访问转发到底层的数据结构。例如，模型可能允许通过 <code>$model-&gt;name</code> 读取数据库字段，而不必在类中逐一声明这些属性。</p><h3>2. 方法相关的魔术方法</h3><p><code>__call()</code> 和 <code>__callStatic()</code> 分别处理不存在或不可访问的实例方法调用与静态方法调用。</p><pre><code class="php">class Handler
+{
+    public function __call($name, $arguments)
+    {
+        echo "调用了实例方法：{$name}";
+    }
+
+    public static function __callStatic($name, $arguments)
+    {
+        echo "调用了静态方法：{$name}";
+    }
+}
+
+$handler = new Handler();
+
+$handler-&gt;run(); // 调用实例方法：run
+
+Handler::execute(); // 调用静态方法：execute</code></pre><p>它们常用于动态方法调用、代理和框架封装等场景。</p><p>这里有个容易混淆的区别：</p><ul><li><code>$object-&gt;name</code> 是属性访问，对应的相关魔术方法是 <code>__get()</code>。</li><li><code>$object-&gt;name()</code> 是方法调用，对应的相关魔术方法是 <code>__call()</code>。</li></ul><h3>3. 构造与析构</h3><p><code>__construct()</code> 是构造方法，在创建对象时自动调用，通常用于初始化对象状态。</p><pre><code class="php">class User
+{
+    public function __construct()
+    {
+        echo '对象已创建';
+    }
+}
+
+$user = new User();</code></pre><p><code>__destruct()</code> 是析构方法，在对象被销毁或脚本结束时调用。它可以用于清理资源，但其具体执行时机受对象生命周期等因素影响，因此不应依赖它保证重要业务操作一定执行。</p><h3>4. 序列化与反序列化</h3><p>序列化可以将对象转换成可保存或传输的表示形式，反序列化则用于恢复对象。</p><ul><li><code>__sleep()</code>：使用传统 <code>serialize()</code> 序列化对象时，可以指定需要序列化的属性。</li><li><code>__wakeup()</code>：使用传统 <code>unserialize()</code> 恢复对象时触发。</li></ul><p>这类方法可能用于重置对象状态或恢复必要资源。</p><p>需要特别注意安全问题：<strong>不要直接反序列化不可信的外部输入</strong>，否则可能引入对象注入等安全风险。</p><h3>5. 将对象当作字符串或函数使用</h3><p><code>__toString()</code> 用于定义对象被当作字符串输出时的行为。</p><pre><code class="php">class User
+{
+    public function __toString(): string
+    {
+        return '用户对象';
+    }
+}
+
+echo new User(); // 用户对象</code></pre><p><code>__toString()</code> 必须返回字符串。</p><p><code>__invoke()</code> 则允许对象像函数一样被调用：</p><pre><code class="php">class Greeter
+{
+    public function __invoke($name)
+    {
+        return '你好，' . $name;
+    }
+}
+
+$greeter = new Greeter();
+
+echo $greeter('张三'); // 你好，张三</code></pre><h3>6. 克隆对象</h3><p><code>__clone()</code> 会在对象被克隆时触发，可以用于调整克隆后对象的状态。</p><pre><code class="php">class User
+{
+    public $name = '张三';
+
+    public function __clone()
+    {
+        $this-&gt;name = '新用户';
+    }
+}
+
+$user1 = new User();
+$user2 = clone $user1;
+
+echo $user1-&gt;name; // 张三
+echo $user2-&gt;name; // 新用户</code></pre><p>需要注意，PHP 对象克隆默认属于浅拷贝。如果对象包含其他对象作为属性，想要连同内部对象一起复制，通常需要在 <code>__clone()</code> 中进一步处理。</p><h3>7. 常见魔术方法速查</h3><table><thead><tr><th>魔术方法</th><th>主要触发场景</th></tr></thead><tbody><tr><td><code>__construct()</code></td><td>创建对象</td></tr><tr><td><code>__destruct()</code></td><td>对象销毁</td></tr><tr><td><code>__get()</code></td><td>读取不存在或不可访问的属性</td></tr><tr><td><code>__set()</code></td><td>给不存在或不可访问的属性赋值</td></tr><tr><td><code>__isset()</code></td><td>检查相关属性</td></tr><tr><td><code>__unset()</code></td><td>删除相关属性</td></tr><tr><td><code>__call()</code></td><td>调用不存在或不可访问的实例方法</td></tr><tr><td><code>__callStatic()</code></td><td>调用不存在或不可访问的静态方法</td></tr><tr><td><code>__toString()</code></td><td>将对象转换为字符串</td></tr><tr><td><code>__invoke()</code></td><td>将对象当作函数调用</td></tr><tr><td><code>__clone()</code></td><td>克隆对象</td></tr><tr><td><code>__sleep()</code></td><td>传统对象序列化前</td></tr><tr><td><code>__wakeup()</code></td><td>传统对象反序列化后</td></tr></tbody></table><p>理解这些方法的触发条件，比死记方法名更重要。实际开发中，最值得优先掌握的是 <code>__construct()</code>、<code>__get()</code>、<code>__set()</code>、<code>__call()</code> 和 <code>__toString()</code>。</p><h2>六、类型转换与正则表达式</h2><p>处理外部输入时，数据格式往往不统一。例如，同一日期可能写成 <code>2024-06</code>、<code>2024/06</code> 或 <code>2024.06</code>。</p><p>可以先清洗字符串，再通过正则表达式判断格式。</p><h3>1. 类型转换与字符串处理</h3><pre><code class="php">$value = ' 2024-06 ';
+
+$value = trim((string) $value);
+$value = str_replace(['/', '.', '-', ' '], '', $value);
+
+echo $value; // 202406</code></pre><p>这里用到了两个常见函数：</p><ul><li><code>(string)</code>：将值转换为字符串。</li><li><code>trim()</code>：去除字符串首尾的空白字符。</li><li><code>str_replace()</code>：将指定内容替换为其他内容。这里将常见分隔符替换为空字符串。</li></ul><p>类型转换有助于统一输入格式，但并不能保证任何类型都能被安全、合理地转换。例如，数组转成字符串可能产生警告，因此仍要根据输入类型决定是否需要额外校验。</p><h3>2. <code>preg_match()</code>：判断字符串是否匹配正则表达式</h3><p><code>preg_match()</code> 用于检查字符串是否匹配指定的正则表达式。</p><pre><code class="php">preg_match('/^\d{4}$/', '2024'); // 1
+preg_match('/^\d{4}$/', '20ab'); // 0</code></pre><p>返回结果需要区分：</p><ul><li><code>1</code>：匹配成功。</li><li><code>0</code>：匹配失败。</li><li><code>false</code>：发生正则表达式相关错误。</li></ul><p>PHP 的正则表达式需要使用分隔符，例如 <code>/.../</code>。</p><p>下面拆解 <code>/^\d{4}$/</code>：</p><table><thead><tr><th>符号</th><th>含义</th></tr></thead><tbody><tr><td><code>^</code></td><td>字符串开头</td></tr><tr><td><code>\d</code></td><td>一个数字字符</td></tr><tr><td><code>{4}</code></td><td>前面的表达式连续出现四次</td></tr><tr><td><code>$</code></td><td>字符串结尾</td></tr></tbody></table><p>因此，<code>/^\d{4}$/</code> 表示整个字符串必须恰好由四个数字组成。</p><p>这里的 <code>^</code> 和 <code>$</code> 很重要。如果去掉它们，表达式就可能只匹配字符串中的一部分。例如，<code>/\\d{4}/</code> 也能在 <code>abc2024xyz</code> 中找到四个连续数字，而不要求整个字符串都是数字。</p><h3>3. 示例：将不同格式的日期统一为整数</h3><p>如果只关心日期中的年份和月份，可以将不同格式的日期统一转换为 <code>YYYYMM</code> 形式的整数。</p><pre><code class="php">function dateToComparableInt($value): int
+{
+    $value = trim((string) $value);
+
+    $value = str_replace(
+        ['/', '.', '-', ' '],
+        '',
+        $value
+    );
+
+    // 只包含年份，例如 2024
+    if (preg_match('/^\d{4}$/', $value) === 1) {
+        return (int) $value * 100;
+    }
+
+    // 年月格式，例如 202406
+    if (preg_match('/^\d{6}$/', $value) === 1) {
+        return (int) $value;
+    }
+
+    // 年月日格式，例如 20240615
+    if (preg_match('/^\d{8}$/', $value) === 1) {
+        return (int) substr($value, 0, 6);
+    }
+
+    // 无法识别的格式
+    return 0;
+}</code></pre><p>这个函数的处理过程很简单：先统一输入格式，再依次判断字符串长度和结构，最后返回对应的整数。</p><table><thead><tr><th>输入</th><th>清洗后</th><th align="right">返回值</th></tr></thead><tbody><tr><td><code>2024</code></td><td><code>2024</code></td><td align="right"><code>202400</code></td></tr><tr><td><code>2024.06</code></td><td><code>202406</code></td><td align="right"><code>202406</code></td></tr><tr><td><code>2024/06/15</code></td><td><code>20240615</code></td><td align="right"><code>202406</code></td></tr><tr><td><code>2024-06-15</code></td><td><code>20240615</code></td><td align="right"><code>202406</code></td></tr><tr><td><code>2024.6</code></td><td><code>20246</code></td><td align="right"><code>0</code></td></tr></tbody></table><p>转换后，可以直接使用 <code>&gt;</code>、<code>&lt;</code> 等运算符比较年份和月份。</p><p>不过，这种写法只校验字符串格式，并没有验证日期是否合法。例如，<code>202413</code> 也满足六位数字的正则表达式，但月份显然不合法。如果需要严格验证日期，还应进一步检查月份、日期范围及闰年等规则。</p><h2>七、ThinkPHP 中的几个补充知识点</h2><p>前面主要介绍 PHP 本身的语法。实际使用 ThinkPHP 时，还会接触到框架提供的请求对象、数据库查询方法等功能。这些方法不是 PHP 语言原生提供的，而是框架对常见操作的封装。</p><h3>1. 获取请求参数</h3><p>ThinkPHP 可以通过请求对象读取不同来源的参数。</p><pre><code class="php">// 获取框架合并处理的请求参数
+$value = $this-&gt;request-&gt;param('page', 1);
+
+// 只获取 GET 查询参数
+$value = $this-&gt;request-&gt;get('page', 1);
+
+// 只获取 POST 参数
+$value = $this-&gt;request-&gt;post('page', 1);</code></pre><p>例如，请求地址是：</p><pre><code class="text">https://example.com/list?page=2</code></pre><p>其中，<code>page=2</code> 属于 URL 查询参数，因此可以通过 <code>get('page', 1)</code> 获取。</p><p>第二个参数 <code>1</code> 是默认值：当没有取得相应参数时，框架会按照该方法的规则使用默认值。</p><p><code>param()</code> 则用于读取框架统一处理的请求参数。不同版本及配置下，参数合并和优先级可能存在差异，因此不要想当然地认为 GET、POST 和路由参数永远按某个固定顺序覆盖。</p><h3>2. 查询结果不等于异常</h3><p>在 ThinkPHP 中，<code>find()</code> 通常用于查询单条记录。</p><pre><code class="php">$data = Db::name('user')
+    -&gt;where('id', 1)
+    -&gt;find();</code></pre><p>需要区分两种情况：</p><p><strong>第一种：没有查到数据。</strong></p><p>这通常属于正常的查询结果，应根据返回值进行判断。具体返回表现需要结合正在使用的 ThinkPHP 版本和配置确认。</p><p><strong>第二种：数据库操作发生故障。</strong></p><p>例如，数据库连接失败、SQL 执行错误或数据表不存在等情况，可能触发数据库异常。</p><p>这两种情况不是一回事。没有查到数据不代表数据库出了故障，因此通常不需要围绕每一次 <code>find()</code> 都编写 <code>try-catch</code>。对于数据库异常，可以根据项目架构交由统一异常处理机制处理；只有在当前层确实需要特殊处理时，才单独捕获异常。</p><h2>八、总结</h2><p>PHP 的基础知识点看似分散，实际上可以按照几条主线理解：</p><ol><li><strong>对象机制：</strong> 理解 <code>$this</code>、实例方法以及魔术方法，才能看懂面向对象代码和框架封装。</li><li><strong>数据结构：</strong> 区分关联数组、索引数组和对象，弄清 <code>json_decode()</code> 的返回结果以及对应的访问方式。</li><li><strong>空值判断：</strong> 掌握 <code>isset()</code>、<code>empty()</code> 和 <code>??</code> 的区别，避免把 <code>0</code>、<code>false</code> 或空字符串误判为不存在。</li><li><strong>数据处理：</strong> 熟悉类型转换、字符串处理和正则表达式，能够对外部输入进行规范化与格式判断。</li><li><strong>框架机制：</strong> 区分 PHP 语言本身与 ThinkPHP 的封装，明确参数获取、数据库查询和异常处理各自的职责。</li></ol><p>学习这些内容时，不必只背诵语法定义。更有效的方式是理解每个语法的触发条件、返回结果和边界情况，再通过简单例子验证自己的判断。真正遇到项目代码时，才不至于每看到一个 <code>-&gt;</code>、<code>??</code> 或双下划线方法，就得重新猜一遍 PHP 到底在做什么。</p>]]></description></item><item>    <title><![CDATA[DeepSeek+dify+ollama三剑客，从理论到实战 买醉的苦瓜 ]]></title>    <link>https://segmentfault.com/a/1190000048376852</link>    <guid>https://segmentfault.com/a/1190000048376852</guid>    <pubDate>2026-10-28 15:04:29</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>受够了“把东西交给别人”：我为什么开始搭DeepSeek+Dify+Ollama这套栈</p><p>很长一段时间里，我用AI的方式是“打开网页，输入，拿走结果”。方便，快速，不需要维护任何东西。但用得越久，一种不安越明显：我的对话记录、项目草稿、半成品的思考，全部留在了别人的服务器上；每一次简单得不能再简单的格式整理，都在消耗按量计费的token；平台一改版、一限流，我的工作流就得跟着变。我知道这些成本，但一直用“反正也没多大事”说服自己。真正让我停下来的，是一次整理敏感材料的经历。我把一份不该随手贴到对话框里的内容贴了进去，手指离开键盘的那一秒，心里咯噔了一下。东西已经出去了，而我没有任何办法把它收回来。</p><p>那个瞬间让我意识到，我一直在用一种“租来的能力”做事。能力本身不假，但它不在我手里。我可以随时被涨价、被降智、被限制，而我积累的所有使用习惯和上下文，都建立在别人的产品决策之上。我不想再这样了。我开始寻找一种方式，让模型跑在我能控制的地方，让编排逻辑留在我的机器上，让数据在最基本的层面不出我的边界。DeepSeek、Dify、Ollama这三个名字，就是在这个动机下凑到一起的。</p><p>我最初以为这是一个“替代方案”：用本地的东西替掉云端的东西，省点钱，顺便保个密。但真正动手之后，我发现事情远比“替代”复杂。Ollama让我在自己的笔记本上跑起了一个能对话的模型，7B的量化版本在8GB显存上就能跑出可用的速度。Dify让我用拖拽的方式把知识库、工作流和模型串起来，不需要从零写编排代码。DeepSeek既可以通过Ollama跑在本地，也可以通过API在需要更强推理时兜底。三者拼在一起，不是一个更便宜的云端，而是一个结构上不同的东西：我终于有了一个自己能解释、能修改、能决定它在哪里运行的系统。</p><p>当然，这个“拥有”的代价很快就显现了。Ollama跑完一轮默认会把模型从显存里卸掉，下一轮对话要重新加载，延迟陡增，我得学会让它常驻。Dify的Docker Compose拉起来是一串容器，依赖关系没理清，服务就起不来。本地小模型在复杂推理上的天花板也真实存在，不是所有任务都能“本地优先”。但这些麻烦和之前的不安相比，性质完全不同：之前的麻烦是“我控制不了”，现在的麻烦是“我还没学会怎么控制”。前者让人无力，后者让人有方向。</p><p>现在回头看，我走进这套栈，不是因为我相信“本地一定比云端好”。我不相信这种简单的对立。我走进它，是因为我想搞清楚一件事：当我不再把智能外包出去，我到底需要理解多少东西，才能让一个系统真正按我的意图工作。Dify让我面对编排，Ollama让我面对运行，DeepSeek让我面对模型本身的能力边界。这三件事，过去都被一个对话框遮住了。现在它们露出来了，并不好看，但至少是我的。</p>]]></description></item><item>    <title><![CDATA[AI 绘画视频爆款玩法：提示词 + 动作控制 + 图像修复全解析 买醉的苦瓜 ]]></title>    <link>https://segmentfault.com/a/1190000048376855</link>    <guid>https://segmentfault.com/a/1190000048376855</guid>    <pubDate>2026-10-28 15:03:20</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>从“生成一张好看的图”到“做出一条能传播的视频”：我为什么走进AI绘画视频爆款玩法</p><p>决定认真研究AI绘画视频爆款玩法之前，我对AI绘画的理解一直停留在“出图”层面。写一段提示词，生成一张好看的图，调一调风格，换一换构图，发到社交平台上收几个赞，这大概就是我过去全部的使用场景。说实话，一开始确实有新鲜感，但很快就不满足了。因为我发现，单张好看的图太多了，多到没有人会为一张“还不错的图”停留。真正能让人停下来、看完、转发、评论的，不是一张图，而是一段有动作、有节奏、有叙事感的内容。图是静态的，视频是流动的；图靠一眼惊艳，视频靠持续抓住注意力。我过去的技能栈只能做前者，做不了后者。这个落差，是我走进AI绘画视频爆款玩法的起点。</p><p>我选择这个方向，首先是因为它把三个我原本分开看待的能力串成了一条链：提示词、动作控制、图像修复。过去我以为提示词就是“描述画面”，写得越详细越好，但做视频之后才发现，提示词不只是描述一帧，而是要描述一个角色、一种风格、一段运动趋势，还要在不同镜头之间保持一致性。动作控制更让我意识到，AI生成的角色不是随便动一动就行，动作要自然、节奏要匹配、镜头要合理，否则观众第一秒就划走了。图像修复则是最后一道关卡：生成出来的画面往往有瑕疵，手部崩、面部糊、背景乱、帧间闪烁，不修复就发出去，爆款梦直接变成翻车现场。这三件事单独看都是技能点，串在一起才是一条能产出爆款视频的完整链路。</p><p>第二个原因，是我受够了“碰运气式创作”。过去我用AI出图，经常是生成十张挑一张，挑中了开心，挑不中重来。这种方式偶尔能出好东西，但不可复制，也无法解释为什么好。爆款视频不能靠碰运气，它需要在提示词设计上有方法，在动作控制上有判断，在修复环节有标准。我想搞清楚的是：一条视频从创意到发布，哪些环节是我能控制的，哪些是概率，怎么把概率往我这边拉。这种从“碰运气”到“有方法”的转变，是我走进这个方向最核心的动力。</p><p>还有一个很现实的原因，是我希望自己的创作能力能形成积累。提示词会过时，工具会更新，模型会迭代，但“怎么设计一个能抓住注意力的画面”“怎么让动作看起来自然”“怎么判断一张图修到什么程度算好”这些判断力不会过时。我看重这种积累，因为它让我不必追着每个新工具跑，而是把精力放在更稳定的创作能力上。</p><p>当然，走进这个方向之后，我也很快感到压力。提示词写得不够精确，角色前后不一致；动作控制调不好，人物像在抽搐；图像修复修过头，画面变得塑料感。我过去那种“生成出来看看再说”的习惯，在这里很容易浪费时间。但也正是这些压力，让我从“生成一张好看的图”开始转向“做出一条能传播的视频”。现在我看一个AI视频作品，不再只问画面好不好看，而会先问：提示词有没有设计感，动作自不自然，修复到不到位，整条内容有没有让人看下去的理由。这份视角，是我走进AI绘画视频爆款玩法后得到的第一份真实成长。</p>]]></description></item><item>    <title><![CDATA[2026年10月中国数据库流行度排行榜：OB孤峰遥领占鳌头，TDSQL进位八强跃新阶 墨天轮 ]]></title>    <link>https://segmentfault.com/a/1190000048376857</link>    <guid>https://segmentfault.com/a/1190000048376857</guid>    <pubDate>2026-10-28 15:02:47</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>金风送秋，岁序向晚，10月<a href="https://link.segmentfault.com/?enc=zZKTE8LGsupljf4rIyHUcQ%3D%3D.Zip%2Ffrf6qN0eK%2By1ytUMUKkbWKGOzLuFHmIs0Kq%2Fx5pWR2sNQjAa5fZnc0%2Fy9XNS" rel="nofollow" target="_blank">中国数据库流行度排行榜</a>已如期发布。OceanBase 以 795.77 分蝉联榜首，与第二名达梦数据库拉开 105.25 分；而达梦与第三名金仓数据库的 683.08 分之间只差 7.44 分，榜眼与探花的距离已被压到极窄。</p><p>当前行业头部格局正在逐渐稳固，榜单中段与细分赛道依旧活跃，垂直场景、新锐厂商与开源分支各自找到了难以被替代的立足点。而分数背后的几条产业轨道也逐渐明晰，份额正向金融核心场景集中，合规门槛正被快速填平，数据库的调用者正从人变成 Agent，出海则已从试点走向规模。</p><h3><strong>一、OceanBase 孤峰领跑，PolarDB 转身 Agent</strong></h3><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048376859" alt="image.png" title="image.png"/></p><p>图1：2026年10月排行榜TOP10产品得分情况</p><p><a href="https://link.segmentfault.com/?enc=3Y1d93h35JPgBl8CDCB49w%3D%3D.o8y8ZoZpI1ssVMbVTOkrmebZt%2FwZiM70A50bfUohImNX72NZy3otRAWN6SI6IKy2" rel="nofollow" target="_blank"><strong>OceanBase</strong></a> 以 795.77 分继续领跑，领先第二名 105.25 分。其在市场份额、生产级承载规模与前沿基准成绩同时发力，稳定榜单领先地位：</p><p>● <strong>在市场份额侧</strong>，Omdia 发布的《2026年亚太及大洋洲分布式数据库市场研究》数据显示，按2025年收入算，OceanBase 位居亚洲及大洋洲分布式数据库市场第一；在 IDC《中国金融行业分布式事务型数据库市场份额，2025》中，OceanBase 以26.7%的占比位列分布式数据库本地金融部署第一，这也是 OceanBase 连续三年获得这一权威认可。</p><p>● <strong>在解决方案侧</strong>， OceanBase 作为唯一受邀数据库企业在中国国际信息通信展览会，发布通信 AI 一体化数据解决方案，披露已覆盖三大运营商近 4000 个核心节点、服务超 10 亿移动端。</p><p>● <strong>在前沿基准侧</strong>，基于国产大模型 GLM-5.2 构建的 Data Agent 方案在国际数据智能体基准 Data Agent Benchmark 上以 90.62% 的准确率刷新纪录，成为该榜单中首个准确率达到 90%以上的参评方案，相关能力将并入 DataPilot。</p><p>本月 <a href="https://link.segmentfault.com/?enc=ZYlgZrHK3ASnPgIgXAL8jw%3D%3D.jrvhST0lw8R9evjYGgkKXFb9sGhRWUcaO18pgFcSycokZdGQGAW1VdNAjM8KroWS" rel="nofollow" target="_blank"><strong>达梦数据库</strong></a> 稳居榜眼。<strong>业务侧</strong>，批方案陆续落地、新项目接连中标：三峡梯调系统实现 100% 覆盖，为长江干流梯级联合调度提供稳定的数据支撑；助力广西水运江河海一体化调度平台等十余套业务系统的数字化建设，为平陆运河世纪工程完成护航；与湖北银行联合实验室完成了一年三类真实生产场景的验证；并成功中标华能信息统一安全生产管理平台项目，计划完成 282 套数据库部署，实现 11.6 万名用户的数据库统一监控、管理与运维。<strong>产品侧</strong>，凭借硬核产品实力，DM9 拿下第 28 届中国国际软件博览会金奖；并于第二届央国企 CIO 及数科公司数智创新峰会上斩获 “2026 年度数智赋能・优秀供应商奖”。生态侧，达梦联合墨天轮推出的征文活动最终征稿105篇，为数据库生态内容建设添砖加瓦。</p><p><a href="https://link.segmentfault.com/?enc=cYCO8JzxHsYn0CrXlmdkzQ%3D%3D.aPTwTEVsOMfyk20hrjjDlWb7%2FOy9pU3Y4nBpF%2BXQPN4Pe85PMe0xKamWdQ8W75KE" rel="nofollow" target="_blank"><strong>金仓数据库</strong></a>以 683.08 分位列第三，与榜眼的差距只有 7.44 分。本月，其在核心行业落地与国家级资质认定持续发力，港珠澳大桥通关系统完成国产化替代，中石油核心生产场景经与昆仑数智的合作顺利落地，多家医院全院业务系统规模上线；同时入选工业和信息化部第一批国家新兴产业发展示范基地创建对象名单，成为软件领域首批认定的四家示范企业之一。在生态侧，与石化盈科完成应用层与数据库底座的双向适配，十余款产品互认证打通，覆盖从全面预算到千亿资产管理、从油气生产到智慧经营的多元场景。</p><p><a href="https://link.segmentfault.com/?enc=rMHMEE2hNHsIctzbd7FhjQ%3D%3D.rncqR96SXuQYiS7FkYOMBo42TgsurlgVYmO1E7BtPG34kT2evGIN%2Bg0fsYSKXSjj" rel="nofollow" target="_blank"><strong>PolarDB</strong></a> 获得 540.79 分位列第四，<strong>其在 AI Agent 数据底座建设的全栈布局与长期主义的追求已逐渐清晰</strong>。产品定位方面，阿里云发布品牌升级公告，将PolarDB Mem0 正式更名为 PolarDB Agent Memory，以此更突出面向 AI Agent 构建长期记忆的核心定位；在 9 月 23 日举办的云栖大会上 ，PolarDB 明确“为 Agent 提供全栈数据基座“ 的定位，以 Limitless、PolarSearch、Agent Memory、企业知识空间与多模能力覆盖会话、记忆、知识、业务四类新数据域。学术研究领域，阿里云瑶池数据库团队共有8篇论文被 VLDB 主会收录，成果覆盖了从大模型推理的存储支撑到数据库自治管理的完整技术链路。未来，PolarDB 在 AI 赛道的表现值得期待。</p><p><a href="https://link.segmentfault.com/?enc=t3nvfRB9qz23N9tVpPc4yg%3D%3D.DUkh%2BhMUcUmKyt8FFgiSYPE3WiMrUByXlQ1EqF0qWi0Fc4J4zfpuCNM6LylKC8YH" rel="nofollow" target="_blank"><strong>GoldenDB</strong></a> 在金融主战场上依旧亮眼，<strong>已完成金融行业多类客户多条业务线的全覆盖</strong>。在两份 IDC 最新报告中，金篆信科 GoldenDB 在 2025 年银行业本地部署分布式事务型数据库市场中，以 28.7% 的市场份额稳居第一，连续第三年蝉联该领域冠军。期待 GoldenDB 能让数据库不仅能承载金融的关键交易，更能驱动金融的智能未来。</p><p>本月榜单中，<a href="https://link.segmentfault.com/?enc=CeKrM%2BVYNFDun%2B%2B3qgJCXg%3D%3D.5VnuIuEDiF7DUCR%2F3%2BHZyiRXE%2Bph0xnCoQ%2B6qgaYgnAFjA60oV2UQJuVGIptvaQy" rel="nofollow" target="_blank"><strong>TDSQL</strong></a> 实现位次上升一名到第八名。其在市场拓展、产品打磨以及信创准入资质建设多维度持续发力，迎来本次排名提升。在 IDC 发布的《中国金融行业分布式事务型数据库市场份额，2025》报告中显示，<strong>TDSQL 以 22.2% 的市场份额位居行业整体市场第一，并连续三年保持领先</strong>。目前，腾讯云 TDSQL 在银行领域已实现四大行主力数据库全覆盖。产品侧，TDSQL Nexa Lakebase 以“AI 原生多模数据库”为定位，将宽表、分析、搜索与 AI 计算融进一套系统，基于开放湖格式打通数据加工到检索应用的完整链路，直指智能驾驶、企业 Agent 等 AI 场景的数据底座。在 9 月新发布的《安全可靠测评结果公告（2026年第3号）》中，腾讯云TDSQL集中式关系型数据库管理系统软件V10.3获评Ⅰ级，凭借权威测评认证充分验证产品稳定性与安全能力，进一步夯实核心场景落地竞争力。</p><h3><strong>二、细分赛道各辟蹊径，长尾产品各得其所</strong></h3><p>榜单中段活跃度并不比头部低，本期挑选的几款产品分属通用型底座、向量数据库、国产通用型新锐与开源分支四个方向，接下来一起盘点。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048376860" alt="" title="" loading="lazy"/></p><p>图2：排行榜亮点数据库产品得分情况</p><p><a href="https://link.segmentfault.com/?enc=dtK%2B%2FUuEszRga%2F0N7ZyPzw%3D%3D.OmbfmtlDVyOQoVLLsRrxYHOCPdCIhRbVGmQZ8V%2BMQpktNcIcrik2XD63WRz4ywe4" rel="nofollow" target="_blank"><strong>YashanDB</strong></a> 当前位列第 11，得分 255.41 分。YashanDB 是前十之外少数同时具备集中式与分布式双形态、并且两者都在持续演进的国产底座。<strong>其核心主张是“真正的融合不是形态并存，而是能力共生”</strong>：一套架构、一次选型、持续演进，避免了集中式与分布式两条产品线各修各的、运维体系互相割裂的老问题。本月在场景侧，YashanDB 以《基于国产数据库的交通核心业务系统国产化升级实践》获第五届“鼎新杯”数字化转型应用创新实践，并落地江西金控的汽车租赁业务系统、诉讼案件管理系统、供应链票据平台等金融业务系统的全链路国产化适配。品牌侧则连获两道背书：《科技日报》围绕崖山数据库系统构建了全栈自主可控的技术体系进行了专题报道；此外亦入选中国电子信息行业联合会《2026 年度软件创新产品推广目录》。</p><p>持续深耕产品的 <a href="https://link.segmentfault.com/?enc=4FE6XTYHNsDSC4P00C3z%2BQ%3D%3D.51rTXDPci3PrQgAJPnUSDhD6tOJlXgs8W5DrTAxUUsdRkQxP1Y%2Fps7Fb2ymWwY7o" rel="nofollow" target="_blank"><strong>Milvus</strong></a> 本月排名上升两位至第 21 名。技术层面，在最新版本 Milvus 3.0 中，关键词召回、全文检索、语义检索被收进同一套体系，Hybrid Search 成为默认路径，这意味着向量数据库的竞争焦点已经不在“能不能存下向量”，而在”能不能把结构化条件也吃进来”；外表能力让 Milvus 以只读模式直接检索留在 S3 与湖上的数据，查询时才拉起计算资源，一份数据同时服务在线检索、交互式探索与批量分析三类负载。商业侧的跟进同样密集，火山引擎公测 Milvus Vector Lakebase，把湖原生存储与弹性计算结合、按需拉起算力；阿里云则推出自研内核 EAGLE，明确兼容开源生态且基准测试开源可复现。</p><p><a href="https://link.segmentfault.com/?enc=4i%2F5XADLkzUw7SkYW8xC%2Bg%3D%3D.XOz7P2uvwji%2BZoFutje5KgGTscAi6%2BCaFyi1S%2FI3pz5U6VKhEP4d9bru4hoyzG3k" rel="nofollow" target="_blank"><strong>Halo</strong></a> 本月排名跃升至第 26 位。Halo 即杭州易景数通科技自研的羲和数据库，<strong>是一款覆盖集中式、云原生、分布式三类部署形态的全场景通用型统一数据库</strong>。在最新的安可测评公告中，羲和通用数据库系统软件 V1.0 获评安全可靠 Ⅰ 级。凭借这次过测，Halo 赢得了业内广泛关注，也实现了榜单名次的突围。在技术路线上，Halo 选的是统一内核加配置化生态切换，并非在数据库外面套一层 SQL 翻译，而是从协议握手、语法解析、优化器到执行器的全链路原生实现，这套设计的直接收益是应用代码修改量可大幅降低，部分场景甚至做到零修改。其技术理念也通过开源项目 openHalo 对外输出，基于 PostgreSQL 内核实现 MySQL 协议的原生兼容，把多模兼容的底层能力向社区开放。测评通过只是起点，能否拿出下一代产品和更多生产案例，或许才是它真正的考题。</p><p>作为一款开源数据库，<a href="https://link.segmentfault.com/?enc=7J9LqTa%2FzhDz964%2FNPOIRg%3D%3D.n%2Bb5GJEEj9sjM3DpA9GxlmE6%2FkxSmYJS1K8VSub7H6TLxVcz%2BmeB2bKdAvISrXsV" rel="nofollow" target="_blank"><strong>IvorySQL</strong></a> 定位是兼容 Oracle 的 PostgreSQL 数据库，本月排名提升三个位次来到第 28 名。目前 IvorySQL 新发布的 5.6 版本已将内核升级到 PostgreSQL 18.6，并新增了可以零安装体验多种集群架构的在线沙盒，无需本地安装，用户即可在线一键构建 IvorySQL 5.6 实验环境，为零门槛探索新版本、开展 AI 辅助实验与社区协作提供了便捷入口。</p><p>纵览这四款产品，会发现他们的共同点不是性能更强，而是让替换和试错的代价变得更小。一套架构收掉两条运维线、一张湖表省掉一次数据搬迁、一个统一内核把应用改写压到接近零、一套沙盒把上生产前的验证成本降到最低。<strong>存量时代，国产数据库真正的竞争力，是让客户敢换。</strong></p><h3><strong>三、若隐若现的四道考题：合规、份额、Agent 与出海</strong></h3><p>将榜单放大到整个行业，仿佛看到了四道考题同时摆在了国产数据库面前，而它们的答案都已经写在公告和报告里。</p><p><strong>1、合规侧，门槛正在从筛子变成入场券</strong></p><p>最新的<a href="https://link.segmentfault.com/?enc=488VwIZYP7FkeZKX9W7gWA%3D%3D.m55coeMjPZvOSPZp%2FKS7c8LRZN3qNrOScBl41XFbNDKX4nwvighw1%2BIyju3HUZH%2BqhWO1uQTYMBdyHJhYqDTdA%3D%3D" rel="nofollow" target="_blank">第 3 号安全可靠测评公告</a>新增三款产品通过，且全部是集中式 Ⅰ 级。往前看，今年<a href="https://link.segmentfault.com/?enc=lIIHNAXw9psTT056Cn5Y%2Bg%3D%3D.KH1IFSMn78%2BndVJhM35JhptCKT72BsQmTWPN8CcujtpBZAvUyuNpIMNOwn%2FQtMan13U2l0gUlyQ5z034nfl3BA%3D%3D" rel="nofollow" target="_blank">上一期公告</a>一次放行了 23 款产品，覆盖 8 款集中式与 15 款分布式产品，其中达梦、崖山、GaussDB、GoldenDB 4 款斩获 Ⅱ 级高安全等级。从 2023 年底首批 11 款算起，不到三年，通过安全可靠测评的国产数据库产品已达 57 款，其中集中式 31 款、分布式 26 款，Ⅰ 级 51 款、Ⅱ 级 6 款。</p><p>这意味着信创选型中“能不能过国测”这个前置条件，正在贬值。未来拼的是过测之后谁能拿出 Ⅱ 级的高安全等级、核心系统的生产案例，以及续期压力下持续迭代的产品力。再往细了看，会发现基础认证在批量放行，高等级认证却依然稀缺，57 款里只有 6 款拿到 Ⅱ 级，且榜单前十名中仅达梦、GaussDB、GoldenDB 三家在列。门票会越来越不值钱，但位置有限。</p><p><strong>2、份额侧，整体市场双轨并立，银行本地部署市场增量更大。</strong></p><p>最新一份 IDC 中国金融行业分布式事务型数据库市场份额报告显示，2025 年该细分市场整体规模 3.7 亿美元，同比增长 32.1%，腾讯 TDSQL 以 22.2% 居首，OceanBase、金篆信科、阿里巴巴、华为、PingCAP 分列其后。可以看到，腾讯、阿里云、华为云三家云厂商瓜分约五成份额，OceanBase、金篆信科、PingCAP三家数据库原生厂商合计约四成，几近双轨并立。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048376861" alt="https://oscimg.oschina.net//AiCreationDetail/up-c3c6703a89a9f50c6dc2246d95459c55.png" title="https://oscimg.oschina.net//AiCreationDetail/up-c3c6703a89a9f50c6dc2246d95459c55.png" loading="lazy"/></p><p>同日发布的银行业本地部署报告显示：该细分规模约 1.99 亿美元、同比增长 47.0%，增速接近整体市场的 1.5 倍，GoldenDB 以 28.7% 的份额连续三年第一，腾讯、OceanBase 分列二、三位。综合两份报告来看，整体市场前三名合计 62.0%，银行业本地部署前三名合计 70.6%，增速更快的市场，收口更紧，而它的第一名，是中兴通讯旗下的金篆信科。云厂商在整体市场的先发优势，并没有自动带进银行核心系统。而在另一个战场，同样的规律正在重演：只是这一次争夺的不再是“谁更通用”，而是“谁更好用”。</p><p><strong>3、产品侧，数据库与 AI Agent 的关系已经从“被动提供能力支持 AI”变成“AI Agent 主动调用数据库”。</strong></p><p>这个月很多产品动作几乎都在做同一件事——给 Agent 开门：PolarDB Mem0 更名为 PolarDB Agent Memory，腾讯云推出 TencentDB Agent Memory，华为云 DAS 数据库 AI 助手开启公测，OceanBase 的 PowerContext 完成对 Jev、Laya 决策模型的适配，GaussDB 运维智能体随开发者版本同步亮相……最有说服力的数字来自云栖：过去一年阿里云 RDS PostgreSQL 的新增实例环比增长超过 400%，其中约 80% 由 Agent 创建，输入输出流量中约 50% 由 Agent 交互和驱动。Agent 不只接管了数据库的创建，它已经跑起了大头流量。</p><p>然而门要开，护栏也要跟上。阿里云在云栖上把这件事讲得很直接提及：“今天真正在落地的 Agentic 场景，几乎都需要 AI 直接动手改数据，它可能是对的，但它也可能会犯错。”对应的解法是 PolarDB Branching，让 Agent 的试错可以秒级创建、随时丢弃；腾讯云把 Agent 升级为“权限独立、行为可控、结果可审计”的数字员工；华为云 DAS 数据库 AI 助手则用沙箱隔离、凭证保护、写操作人工审批、全链路审计四层机制，确保 Agent 不越界。<strong>所以今年真正的分水岭，不在于谁先把 Agent 接进来——接进来是能力，敢让它动手才是信任。</strong> 数据库的第一用户正在从人变成 Agent，这股热潮也正在向更远处蔓延。</p><p><strong>4、出海侧，规模化的迹象已经出现。</strong></p><p>Omdia 把 OceanBase 放上亚洲及大洋洲分布式数据库市场第一的位置，同时判断该区域未来数年复合增长率将达 19.3%，增长正从中国向印度、日韩和东南亚扩散。而达梦数据库已持续 11 年受邀参与援外培训项目、助力非洲法语国家数字化能力建设，81 国跨洲数据同步做到 10 秒级。资本市场也在同步开闸：星环科技登陆港交所主板，海量数据定增通过上交所审核并披露其自主数据库客户数已从 182 家增长至 794 家。出海已经不再是发布会上的 PPT 关键词，而是一批可核对的运行数据。</p><p>如果把这四条连起来看，指向的是同一个判断：<strong>国产数据库的通用能力优势正在被追平，而真正拉开差距的，是场景纵深。</strong> 合规侧的分层、份额侧的核心市场、Agent 入口、出海交付，四件事考的都是同一件事，谁在客户的真实环境里待得更久，谁就更有位置。榜单分数只是各项热度的量化体现；真正影响来年行业格局的，是这些落地到项目合同、可追溯客户案例的硬核成果。谁能把握行业下一轮的机遇？让我们拭目以待！</p><hr/><p><strong>相关阅读</strong></p><ul><li><a href="https://link.segmentfault.com/?enc=mCrhXOCQ7B2RMQegMdRPug%3D%3D.iI7JMstT29dxIH1TBiY52QzYefCCrN4Z63qYI2GPOd1DtFepUasQXDbkm2iVXz2s" rel="nofollow" target="_blank">国产数据库流行度排行榜-墨天轮</a></li><li><a href="https://link.segmentfault.com/?enc=nPtNi6zTb7tDiF3jiU8fOw%3D%3D.pYE7yBBGhT%2Fpvrxwn9ljxiTx0gAJH0xc5rV4xuCpRqrY%2BZlSnPS7r06xEdxx3C%2Bs" rel="nofollow" target="_blank">国产数据库流行度排名规则-墨天轮</a></li><li><a href="https://link.segmentfault.com/?enc=ZgckVN7Q3r%2Fqcl0dEr20Cw%3D%3D.eKYXpf1nYdQ5N6oYLrt1gAdQZyC7%2BZ5FZC9JMh6Y9vJxPTmO5reW6aMCXpycHQ1a" rel="nofollow" target="_blank">《往期国产数据库流行度排行榜解读》</a></li><li><a href="https://link.segmentfault.com/?enc=CCtfzhR0DnoxJmX97z4Mwg%3D%3D.zhmiNRJKa9SsHlFRjC4eoIr99MJLA93BXO1lErEEJ0%2Bjxw0eDr1VTtf1iVgZvp2L" rel="nofollow" target="_blank">《中国数据库行业分析报告》往期合辑</a></li></ul><p><em>原文链接</em> ：<a href="https://link.segmentfault.com/?enc=Bb5Tn%2BtGaf6BlxAlgQ0nFA%3D%3D.im3jVcZIVM95UE%2Fu5AtUnR0anSmBMQut4Tzn%2FaM8UG0fBFHIpznTnPo9A%2Beinv2L25wVoDYCQ6HsLOXPqGDUsw%3D%3D" rel="nofollow" target="_blank"><em>https://www.modb.pro/db/2112728186211622912</em></a></p><p>欲了解更多可浏览<a href="https://link.segmentfault.com/?enc=eYLApx34WuxzVswi40Hk2g%3D%3D.NpLjlI9iDLTY9TVKMBEVeyohIsIiySzi0C471anhmbk%3D" rel="nofollow" target="_blank">墨天轮社区</a>，围绕数据人的学习成长提供一站式的全面服务，打造集新闻资讯、在线问答、活动直播、在线课程、文档阅览、资源下载、知识分享及在线运维为一体的统一平台，持续促进数据领域的知识传播和技术创新。</p>]]></description></item><item>    <title><![CDATA[刷短剧上头后，我用5090和ComfyUI部署MiniMax H3 niaonao ]]></title>    <link>https://segmentfault.com/a/1190000048376869</link>    <guid>https://segmentfault.com/a/1190000048376869</guid>    <pubDate>2026-10-28 15:01:57</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <h2>前言</h2><p>大家好，我是袅袅。</p><p>最近刷短剧有点上头，B站也不进了，抖音也不看了，就在黄果……啊不，红果里待着了。</p><p>好了好了好了，这下好了，感觉脑子也不痒了。</p><p>之前我就在本机跑过 MiniMax H3，配置是 <strong>RTX 5060 Ti 16GB 显存 + 32GB 内存</strong>。画面效果还不错，让我有了继续折腾的兴趣，但生成一段 <strong>768p 5s的视频，需要约 22 分钟</strong>。</p><p>改一下提示词，然后又 22 分钟，呜呜呜</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048376871" alt="" title=""/></p><p>于是这次，我在 <strong>AutoDL 上租了一张 RTX 5090，32GB 显存、90GB 内存，通过 ComfyUI 部署 MiniMax H3</strong>。GPU 租用价格是 <strong>2.88 元/小时</strong>，我想看看换一张显卡，实际使用体验能改善多少，也为后续统计生成成本做个准备。</p><p>下面把这次的<strong>实例配置、ComfyUI 安装、模型下载、文生视频工作流配置和避坑过程</strong>整理出来。准备自己动手的朋友，可以沿着这条路线搭起来。</p><h2>一、部署说明</h2><blockquote><p>ComfyUI 是什么</p><p>ComfyUI 是一个基于节点式工作流的开源 AI 生成界面，让用户通过拖拽连接模块来灵活搭建和运行图像、视频等生成流程。</p></blockquote><p>本次算力平台采用 AutoDL，我把 ComfyUI、Minimax H3 部署在算力平台实例。</p><p>ComfyUI 对外提供API服务，通过 AutoDL 的自定义服务 URL 可以访问 ComfyUI 及 API。</p><p>博客完整记录了 <strong>AutoDL 实例创建、ComfyUI 安装、Minimax H3 模型文件下载、文生视频工作流、参考图生视频工作流</strong>。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048376872" alt="" title="" loading="lazy"/></p><h3>1.1 算力选型</h3><p>研发阶段低并发场景，选择 1-2 张 RTX 5090 32G 显卡作为算力服务即可。</p><p>RTX 5090 计费：<strong>￥2.88/小时、￥408.50/周、￥1625.00/月</strong>；实际租用以平台显示为准，磁盘等费用另看账单。</p><p>内存和磁盘：<strong>32GB 显存，90GB 内存（建议内存不低于 64G）</strong>；模型加载、运行和卸载会用到不同资源，具体占用需要结合工作流观察。</p><p>磁盘空间：<strong>300G（建议不低于 200G）</strong>；像 Minimax H3 模型文件都要80G左右，Qwen Image 2.1 模型文件在25G左右。当然针对某个模型文件，我们可以指定下载部分文件，不下载全部模型文件，以减少磁盘占用。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048376874" alt="" title="" loading="lazy"/></p><ul><li>研发阶段算力配置</li></ul><table><thead><tr><th>项目</th><th align="left">本次实际配置</th></tr></thead><tbody><tr><td>算力平台</td><td align="left"><a href="https://link.segmentfault.com/?enc=XqcEdqvV7BRmgatyfsUY0w%3D%3D.0vl38O8CPnyYneg6Y6NXZKj05aRm06SRnytlj9NeDpw%3D" rel="nofollow" target="_blank">AutoDL</a></td></tr><tr><td>GPU</td><td align="left">RTX 5090 32GB × 1</td></tr><tr><td>CPU</td><td align="left">25 vCPU，Intel Xeon Platinum 8470Q</td></tr><tr><td>内存</td><td align="left">90GB</td></tr><tr><td>镜像</td><td align="left">PyTorch 2.8.0 + Python 3.12 + CUDA 12.8</td></tr><tr><td>操作系统</td><td align="left">Ubuntu 22.04</td></tr><tr><td>系统盘</td><td align="left">30GB</td></tr><tr><td>数据盘</td><td align="left">免费 50GB + 付费扩容 200GB</td></tr><tr><td>安装路径</td><td align="left"><code>/root/autodl-tmp/ComfyUI</code></td></tr><tr><td>服务端口</td><td align="left"><code>6006</code></td></tr></tbody></table><ul><li>生产力选型建议</li></ul><table><thead><tr><th>生产力</th><th align="left">建议配置</th><th>显卡数量</th></tr></thead><tbody><tr><td>研发阶段低并发场景</td><td align="left">RTX 5090 32G</td><td>1</td></tr><tr><td>小规模生产力</td><td align="left">RTX PRO 6000 96GB</td><td>2</td></tr><tr><td>中大型生产力</td><td align="left">H100/H800</td><td>4</td></tr></tbody></table><h3>1.2 部署流程</h3><pre style="display:none;"><code class="mermaid">graph TD
+Start --&gt; A(创建 AutoDL 实例)
+A(创建 AutoDL 实例) --&gt; B(安装 ComfyUI 服务)
+B(安装 ComfyUI 服务) --&gt; C(自定义服务地址访问 ComfyUI)
+C(自定义服务地址访问 ComfyUI) --&gt; D(加载 MiniMax H3 工作流模板)
+D(加载 MiniMax H3 工作流模板) --&gt; E(下载模型文件)
+E(下载模型文件) --&gt; F(执行视频工作流)
+F(执行视频工作流) --&gt;  Stop</code></pre><h3>1.3 为什么要自己部署，因为API费用真的太酷啦！</h3><p><code>个人或团队如果有算力，本地部署只需要承担电费。</code></p><table><thead><tr><th>模型名称</th><th>分辨率</th><th>价格</th></tr></thead><tbody><tr><td>Seedance 2.5</td><td>720p</td><td>1.5元/s</td></tr><tr><td>Seedance 2.0</td><td>720p</td><td>1.0元/s</td></tr><tr><td>MiniMax-H3</td><td>768p</td><td>0.5元/s</td></tr><tr><td>MiniMax-H3</td><td>2k</td><td>0.8元/s</td></tr></tbody></table><h2>二、创建 AutoDL 实例</h2><p>创建实例时，我选择了下面的 PyTorch 镜像<code>PyTorch  2.8.0 + Python  3.12(ubuntu22.04) + CUDA  12.8</code></p><p>AutoDL 容器把<code>/</code>作为系统盘（默认30G），<code>/root/autodl-tmp</code>作为数据盘（默认50G，扩容了200G）。</p><p>Minimax H3 等模型文件、ComfyUI 服务一定要部署在数据盘，系统盘就30G，一不小心就空间不足了。</p><p>AutoDL 容器统一对外暴漏了 2 个端口6006、6008，不支持更多端口了，想要映射其他服务或端口，只有借助 nginx 反向代理去实现。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048376875" alt="" title="" loading="lazy"/></p><h2>三、安装 ComfyUI</h2><h3>Step 1：进入实例，确认 GPU 可用</h3><p>启动示例后，从 JupyterLab 打开 Terminal。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000048376876" alt="" title="" loading="lazy"/></p><p>先查看显卡：</p><pre><code class="bash">nvidia-smi</code></pre><p>确认型号为 <code>NVIDIA GeForce RTX 5090</code>，再检查当前 Python 环境：</p><pre><code class="bash">python --version
+python -c "import torch; print(torch.__version__); print(torch.version.cuda); print(torch.cuda.is_available())"
+python -c "import torch; print(torch.cuda.get_device_name(0)); print(torch.cuda.get_device_properties(0).total_memory / 1024**3)"</code></pre><p>这里重点看三项：Python 版本、PyTorch 版本，以及 <code>torch.cuda.is_available()</code> 是否返回 <code>True</code>。</p><p><code>nvidia-smi</code> 能看到显卡以后，还需要确认当前 Python 里的 PyTorch 能调用它。最后一条命令输出 GPU 名称和显存容量，容量按 GiB 计算，不必恰好等于 <code>32.0</code>。</p><h3>Step 2：拉取 ComfyUI 到数据盘</h3><p>执行命令进入数据盘 <code>cd /root/autodl-tmp</code>，然后执行下面的命令拉取 ComfyUI。</p><pre><code class="bash">git clone --depth 1 https://github.com/Comfy-Org/ComfyUI.git</code></pre><p>拉取 github 代码时，网络不好时可以使用 <code>ghfast.top</code> 加速地址，改用下面的命令。</p><p><code>--depth 1</code> 表示只拉取较浅的提交历史，减少首次下载量；HTTP 配置只对这条命令生效。</p><pre><code class="bash">git -c http.version=HTTP/1.1 clone --depth 1 \
+  https://ghfast.top/https://github.com/Comfy-Org/ComfyUI.git</code></pre><h3>Step 3：安装依赖</h3><p>创建 AutoDL 实例时，镜像已包含完整的 Python 和 PyTorch 环境。直接使用即可，不用额外安装 Python 环境。</p><p>执行命令<code>cd /root/autodl-tmp/ComfyUI</code>，进入 ComfyUI 安装目录</p><p>开始下载依赖：</p><pre><code class="bash">python -m pip install -r requirements.txt \
+  -i https://pypi.tuna.tsinghua.edu.cn/simple</code></pre><p>使用阿里云源下载速度约为 <code>100KB/s</code>；换到清华源后约为 <code>10MB/s</code>。</p><p>不同实例的网络情况可能不同，下载慢时可以先检查包源。可以更新 pip 配置为清华镜像源。<code>pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple</code></p><h2>四、通过 AutoDL 自定义服务打开页面</h2><p><code>MiniMax H3 的基础 T2V、I2V、R2V 工作流模板要求 ComfyUI &gt;= 0.30.0，启动 ComfyUI 后可以检查下版本</code></p><h3>Step 1：启动 ComfyUI</h3><p>执行命令<code>cd /root/autodl-tmp/ComfyUI</code>进入 ComfyUI 安装目录。</p><p>因为 AutoDL 的容器对外暴漏 6006 端口，此处启动 ComfyUI时，我们重新指定端口为 6006。</p><p>执行下面的命令启动 ComfyUI 服务</p><pre><code class="bash">python main.py --listen 0.0.0.0 --port 6006</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048376878" alt="" title="" loading="lazy"/></p><p>可以在容器实例的自定义服务下找到服务地址</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048376879" alt="" title="" loading="lazy"/></p><p>然后复制服务地址，粘贴到浏览器后回车打开，可以看到 ComfyUI。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048376880" alt="" title="" loading="lazy"/></p><h3>Step 2：确认页面和服务都正常</h3><p>浏览器能看到 ComfyUI 节点编辑器，说明 Web 页面已经可以访问。</p><p>如果页面打不开，先在实例终端检查本机服务：</p><pre><code class="bash">curl -I http://127.0.0.1:6006/</code></pre><h3>Step 3：后台启动 ComfyUI</h3><p>前台方式方便观察第一次启动日志。</p><p>需要关闭终端，在后台运行，可以使用 Ctrl + C 结束自己启动的前台进程，再执行下面命令：</p><pre><code class="bash">cd /root/autodl-tmp/ComfyUI
+mkdir -p logs
+nohup python -u main.py --listen 0.0.0.0 --port 6006 \
+  &gt; logs/comfyui.log 2&gt;&amp;1 &amp;</code></pre><p>查看运行日志：</p><pre><code class="bash">tail -f /root/autodl-tmp/ComfyUI/logs/comfyui.log</code></pre><h2>五、加载工作流模板下载模型文件</h2><h3>Step 1：从模板库选择 MiniMax H3 视频模板</h3><p>打开 ComfyUI 的模板库，搜索 <code>MiniMax H3</code>，选择文生视频模板 <code>MiniMax H3 T2V</code>。</p><p>ComfyUI 模板会提示缺少哪些必须的模型文件，我们可以按需下载，降低文件下载耗时。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048376881" alt="" title="" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048376882" alt="" title="" loading="lazy"/></p><h3>Step 2：MiniMax H3 模型目录</h3><ul><li>工作流类型</li></ul><table><thead><tr><th>类型</th><th>用途</th><th>生成模型</th></tr></thead><tbody><tr><td>T2V</td><td>文本生成视频</td><td><code>fl2va</code></td></tr><tr><td>I2V</td><td>首帧或首尾帧生成视频</td><td><code>fl2va</code></td></tr><tr><td>R2V</td><td>参考素材生成视频</td><td><code>ref2va</code></td></tr></tbody></table><p>主模型负责生成，文本编码器处理提示词，视频和音频 VAE 负责把模型内部表示还原成画面与声音，Turbo LoRA 用于模板的加速模式。</p><p>下面是 ModelScope 社区的 ComfyUI 全部模型文件，我们可以按需下载指定的模型文件。</p><pre><code class="text">📂 /root/autodl-tmp/ComfyUI/
+├── 📂 models/
+│   ├── 📂 diffusion_models/
+│   │   ├── minimax_h3_fl2va_bf16.safetensors
+│   │   ├── minimax_h3_fl2va_int8_convrot.safetensors
+│   │   ├── minimax_h3_fl2va_pruned_bf16.safetensors
+│   │   ├── minimax_h3_fl2va_pruned_int8_convrot.safetensors
+│   │   ├── minimax_h3_fl2va_pruned_w6a8.safetensors
+│   │   ├── minimax_h3_fl2va_pruned_fp8_scaled.safetensors
+│   │   ├── minimax_h3_ref2va_bf16.safetensors
+│   │   ├── minimax_h3_ref2va_int8_convrot.safetensors
+│   │   ├── minimax_h3_ref2va_pruned_bf16.safetensors
+│   │   ├── minimax_h3_ref2va_pruned_int8_convrot.safetensors
+│   │   ├── minimax_h3_ref2va_pruned_w6a8.safetensors
+│   │   └── minimax_h3_ref2va_pruned_fp8_scaled.safetensors
+│   ├── 📂 text_encoders/
+│   │   ├── qwen3vl_32b_minimax_h3_bf16.safetensors
+│   │   ├── qwen3vl_32b_minimax_h3_int8_convrot.safetensors
+│   │   └── qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors
+│   ├── 📂 loras/
+│   │   ├── minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors
+│   │   ├── minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors
+│   │   └── minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors
+│   ├── 📂 vae/
+│   │   ├── minimax_h3_audio_vae_fp32.safetensors
+│   │   ├── minimax_h3_audio_vae_fp32.safetensors
+│   │   └── minimax_h3_video_vae_int8_convrot.safetensors
+│   ├── 📂 model_patches/
+│   │   ├── minimax_h3_fun_controlnet_union_pruned_bf16.safetensors
+│   │   └── minimax_h3_fun_controlnet_union_pruned_int8_convrot.safetensors
+│   ├── 📂 embeddings/
+│   │   ├── minimaxh3_art_is_explosion.safetensors
+│   │   ├── minimaxh3_blooming_flowers.safetensors
+│   │   ├── minimaxh3_bullet_time.safetensors
+│   │   ├── minimaxh3_dark_magic.safetensors
+│   │   ├── minimaxh3_fire_breath.safetensors
+│   │   ├── minimaxh3_four_seasons.safetensors
+│   │   ├── minimaxh3_kiss_camera.safetensors
+│   │   ├── minimaxh3_spiral_ascent.safetensors
+│   │   ├── minimaxh3_storm_magic.safetensors
+│   │   └── minimaxh3_truman_show.safetensors</code></pre><h3>Step 3：从 ModelScope 按需下载</h3><p>拉取 <a href="https://link.segmentfault.com/?enc=0MxFuRd2%2BSqUdBST2T1Lkw%3D%3D.oPCcu8kdPRUMyKIu9bvNlb8pZflDJxtqMa4haRDg9KGo4qYL%2FD1%2F3JE6%2FesAPJ%2Bn" rel="nofollow" target="_blank">Hugging Face</a> 镜像文件网速不佳时，使用  <a href="https://link.segmentfault.com/?enc=wnhPUUIlVvi6NCTB75GgZg%3D%3D.hNvVI8brvGTnwioK%2BQtYhW7m78Umu91ugWuLEAYl4efJIPP75eJCsS0wMbeFYLogf9ZxEBRDfk8aLf3BO6IOOQ%3D%3D" rel="nofollow" target="_blank">ModelScope</a> 社区镜像源是一样的。</p><p>就像我们使用阿里云加速、清华镜像加速一样，Hugging Face是外网社区，ModelScope 是国内社区。</p><p>首先安装下载工具 Modelscope：</p><pre><code class="bash">python -m pip install modelscope \
+  -i https://pypi.tuna.tsinghua.edu.cn/simple
+modelscope download --help</code></pre><p>然后使用 modelscope 命令按需下载工作流所需的文件到数据盘：</p><p>这里按文件清单下载，避免把其他精度、其他任务的权重也全部拉下来。一个 <code>--include</code> 后面可以列出多个匹配项；<code>--local_dir</code> 指定文件落地目录。</p><p><code>根据显卡配置 RTX5090 32GB VRAM 选择模型文件 INT8 DiT + NVFP4/AWQ Text Encoder，如果选择 BF16 H3 显存压力会非常大。</code></p><pre><code class="bash">modelscope download \
+  --model Comfy-Org/MiniMax-H3 \
+  --local_dir /root/autodl-tmp/ComfyUI/models \
+  --include \
+  "diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors" \
+  "text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors" \
+  "vae/minimax_h3_video_vae_int8_convrot.safetensors" \
+  "vae/minimax_h3_audio_vae_fp32.safetensors" \
+  "loras/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors" \
+  "embeddings/minimaxh3_art_is_explosion.safetensors"</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048376883" alt="" title="" loading="lazy"/></p><h3>Step 4：检查下载位置，重新加载模板</h3><p>模型文件下载完成后，重启 ComfyUI，重新打开模板，检查节点中的模型选择。</p><h2>六、配置一次简单的文生视频任务</h2><p>环境准备好以后，可以按下面这组设置进行首次生成验证：</p><table><thead><tr><th>参数</th><th>建议起点</th></tr></thead><tbody><tr><td>工作流</td><td>MiniMax H3 T2V</td></tr><tr><td>分辨率</td><td>1344 × 768</td></tr><tr><td>时长</td><td>约 5 秒</td></tr><tr><td>Base 采样步数</td><td>20</td></tr><tr><td>Turbo</td><td>关闭</td></tr><tr><td>Seed</td><td>固定，便于后续对照</td></tr><tr><td>场景</td><td>单个主体、单个镜头、简单运动</td></tr></tbody></table><p>这组参数用于首次验证，完整耗时和输出效果还需要实际记录。</p><p>提示词可以先使用这样一个简单场景：</p><pre><code class="text">一位年轻的亚洲女子在霓虹闪烁的东京夜街上缓缓行走。
+雨水淅淅沥沥地下着，五彩缤纷的霓虹灯倒映在湿漉漉的人行道上。
+镜头从她身后缓缓跟随，以流畅的电影式长镜头呈现。
+自然的脚步声、雨声、远处车流的喧嚣以及轻柔的城市噪音。</code></pre><p>这里同时描述了人物、地点、动作、镜头和声音：雨夜街道、背后跟拍、脚步声、雨声与远处车流声。</p><p>点击运行后，观察节点进度和终端日志。任务结束时，在保存节点指定的输出位置查找文件，默认输出根目录是：</p><pre><code class="text">/root/autodl-tmp/ComfyUI/output</code></pre><p>检查生成结果时，我建议把画面和声音一起看：</p><ul><li>视频能否完整播放，尺寸、实际时长是否符合设置。</li><li>主体动作和镜头是否符合提示词。</li><li>音轨是否存在，声音是否符合场景。</li><li>终端是否出现模型加载或执行错误。</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048376884" alt="" title="" loading="lazy"/></p><h2>七、避坑指南</h2><p>最大的问题还是外网网络问题，如果都是国内社区文件，下载会很快。</p><p>Github、Hugging Face、包括部分仓库依赖文件，总是下载中断，并且网速都是 100kb/s 很难受。此处主要是找加速镜像地址，一般是下载 <strong>Python</strong> 依赖问题，modelscope 解决模型文件问题。</p><p>其中只有一个<code>comfyui-workflow-templates-media-assets-02==0.1.11</code>始终下载不下来，最终选择了官方镜像，慢慢下载的，好在文件也就 15MB。</p><pre><code class="bash">python -m pip install \
+  comfyui-workflow-templates-media-assets-02==0.1.11 \
+  -i https://pypi.org/simple</code></pre><table><thead><tr><th align="left">问题</th><th align="left">处理方式与结果</th></tr></thead><tbody><tr><td align="left">GitHub 拉取遇到网络中断</td><td align="left">使用加速地址拉取代码</td></tr><tr><td align="left">依赖源下载速度较慢</td><td align="left">切换包源，当时下载速度有所改善</td></tr><tr><td align="left">模板依赖 <code>0.1.11</code> 找不到</td><td align="left">从官方 PyPI 单独补装成功，继续安装其余依赖</td></tr><tr><td align="left">模型路径从系统盘切换到数据盘</td><td align="left">后续启动和下载统一使用 <code>/root/autodl-tmp/ComfyUI</code></td></tr><tr><td align="left">浏览器访问入口需要适配平台</td><td align="left">将服务启动在 <code>6006</code>，通过 AutoDL 自定义服务访问</td></tr></tbody></table><h2>八、写在最后</h2><p>这次从本机的 RTX 5060 Ti 换到 AutoDL 的 RTX 5090，把实例创建、ComfyUI 安装和 H3 工作流配置过程整理了一遍。希望能帮准备自己部署的朋友少走几个弯路。</p><p>如果你也在跑 MiniMax H3，欢迎在评论区分享一下：<strong>用的什么显卡，生成多大分辨率、多长的视频，需要等多久？</strong> 带上采样步数和是否开启 Turbo，就更方便大家对照自己的配置了。</p><p>后面我会继续折腾生成加速和参考图工作流，有实际结果再来分享。部署时遇到问题，也可以把报错和卡住的步骤留在评论区，一起交流。</p><p>以上就是这次的部署分享。我是袅袅，我们下次再见！</p><blockquote><p>参考资料</p><p><a href="https://link.segmentfault.com/?enc=YMll0c2C2hNQV69mH9hnhw%3D%3D.dKNroPp2pmr7n%2FqOxa%2FRKExNT0Rdc%2FSCkWfd7ttdvI0%3D" rel="nofollow" target="_blank">ComfyUI 地址</a></p><p><a href="https://link.segmentfault.com/?enc=lryy7fLFVheyLpfiGFVR%2Bw%3D%3D.kgwoeAQNppez83bVygLh42IiyK5sRpDnrbyxt%2Fc6Uw8%3D" rel="nofollow" target="_blank">AutoDL 地址</a></p><p><a href="https://link.segmentfault.com/?enc=ZyeGbrQ884j17EA2%2FKtb3A%3D%3D.h2V%2Fe%2F3ZlWIDGXQYyNJR21yt5PjrZUuxT0Lrl%2BqiQ2UFCQsiTKXa1Kja9xgHN0TIuuVcRu6weT7rSb6MjlmnI7ljfqPXDfeMHn1R6bxFqDU%3D" rel="nofollow" target="_blank">ModelScope CLI 文档</a></p><p><strong>niaonao · Building Executable AI</strong></p></blockquote>]]></description></item><item>    <title><![CDATA[C盘爆红别乱删！我用 Codex 查出 AppData 占了 87.81GB niaonao ]]></title>    <link>https://segmentfault.com/a/1190000048376905</link>    <guid>https://segmentfault.com/a/1190000048376905</guid>    <pubDate>2026-10-28 15:01:26</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <h2>前言</h2><p>C 盘又红了。这次我用 Codex 做了一次磁盘占用统计，<strong>8 分 14 秒</strong>后拿到一份 Excel 报表：<code>C:\Users</code> 占了 <strong>117.94 GB</strong>，其中 AppData 就占了 <strong>87.81 GB</strong>。</p><p>本文记录了安装磁盘空间统计 Skill、查看报表、定位占用大户和按需清理的过程。先说明一个关键点：<strong>87.81 GB 是 AppData 的占用量，并不代表这些文件都能删除</strong>。</p><p>C 盘作为系统盘，保存着 Windows 系统文件。</p><p>大部分软件默认安装C盘，程序运行中的临时文件、浏览器缓存、用户下载数据等落到 C 盘。</p><p>文件越积越多，One Day，它红了。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000048334316" alt="在这里插入图片描述" title="在这里插入图片描述"/></p><p>博主作为一个经常安装开发工具、折腾本地 AI 应用的小研发人员，也深受其扰。</p><p>我好懊恼，不～不～～<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000048334317" alt="在这里插入图片描述" title="在这里插入图片描述" loading="lazy"/></p><p>博主在处理 C 盘空间不足时，创建了一个<strong>磁盘空间统计 Skill</strong>。</p><p>这个 Skill 负责统计文件夹大小和生成 Excel 报表，清理动作由我们再根据报表里面大文件夹的完整路径，判断哪些文件可以清理，另行去清理。</p><h2>一、磁盘空间统计 Skill</h2><blockquote><p>Skill 是什么？</p><p>Skill 可以理解为一份可复用的任务说明，配合脚本，告诉 Codex 按什么步骤完成磁盘排查。</p></blockquote><p>SKILL 申请完全访问权限，扫描过程只读取已有文件，不修改、移动或删除被扫描文件；生成报表时，会写入 JSON 和 Excel。</p><p>这里用 PowerShell 收集目录大小，再用 Python 生成 Excel。</p><p>Skill 会从 C 盘开始统计四层目录的文件占用情况，并按照大小倒序排序，帮助我们快速定位“磁盘杀手”到底是谁。</p><p>执行流程如下：</p><ol><li>统计 C 盘第一层、第二层目录，按大小排序。</li><li>选出第一层占用最大的两个目录，继续分析其子目录。</li><li>生成 JSON 和 Excel，查看目录统计、汇总及数据完整性信息。</li></ol><p>生成 Excel 报表包含第一层、第二层、第三层(深度分析)、第四层(深度分析)和汇总工作表；发现数据异常时，会额外生成数据完整性告警工作表。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048334318" alt="在这里插入图片描述" title="在这里插入图片描述" loading="lazy"/></p><h2>二、Codex 快速使用</h2><h3>Step 1：安装 Skill</h3><p>把下面的提示词发送给 Codex：</p><pre><code>使用 skill-installer 安装以下仓库中的 disk-usage-excel Skill：
+https://github.com/niaonao/niaonao-skill/tree/main/disk-usage-excel
+安装完成后，告诉我实际安装路径。</code></pre><p>我本次使用的本机 Skill 目录为：</p><pre><code>C:\Users\Administrator\.codex\skills</code></pre><p>这是我的机器路径，安装后以实际返回路径为准；如果 Skill 没有出现，可以重启 Codex 再检查。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048334319" alt="在这里插入图片描述" title="在这里插入图片描述" loading="lazy"/></p><h3>Step 2：先检查权限，再统计 C 盘</h3><p>C 盘包含用户目录和 Windows 系统目录。沙箱限制可能使部分路径无法读取，导致报表数值明显偏小。</p><p><strong>避坑：先让 Skill 完成权限自检。</strong> 如果出现拒绝访问或自检失败，根据 Codex 的权限提示调整访问范围后重新统计。扩大沙箱访问范围不等于所有 Windows 系统目录都可读；统计完成后仍需检查完整性信息。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048334320" alt="在这里插入图片描述" title="在这里插入图片描述" loading="lazy"/></p><p>在 Codex 输入框中输入 <code>/</code>，输入“磁盘空间统计”选中Skill，发送以下提示词给codex执行skill：</p><pre><code>使用 disk-usage-excel 统计 C 盘磁盘占用情况，并生成 Excel 报表。
+先做权限自检，扫描时不要修改、移动或删除已有文件。
+完成后告诉我报表路径、占用最大的目录，以及数据完整性检查结果。</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048334321" alt="在这里插入图片描述" title="在这里插入图片描述" loading="lazy"/></p><p>如果希望指定输出位置，在提示词中补上一个实际存在的目录，例如 <code>D:\disk-reports</code>；没有 D 盘时换成自己的可用路径。</p><h3>Step 3：等待生成报表</h3><p>我这次完整统计耗时 <strong>8 分 14 秒</strong>。扫描结束后，Codex 会给出占用最大的目录，并生成 Excel 报表。</p><p>扫描结束后，先查看 Excel 报表的汇总 Sheet 的完整性信息。</p><p>如果出现“数据完整性告警”，先排查统计范围和权限问题，再决定是否能用这些数据判断空间去向。</p><p>目录大小按可读取文件的长度累计，单位GB。</p><h2>三、统计结果分析</h2><h3>3.1 第一层目录</h3><p>从第一层结果可以看出，磁盘占用主要集中在 <code>C:\Users</code>。</p><table><thead><tr><th align="left">目录</th><th>占用空间</th><th>说明</th></tr></thead><tbody><tr><td align="left"><code>C:\Users</code></td><td><strong>117.94 GB</strong></td><td>占约 62%，绝对大头</td></tr><tr><td align="left"><code>C:\Windows</code></td><td>24.62 GB</td><td>Windows 系统文件</td></tr><tr><td align="left"><code>C:\Program Files</code></td><td>17.17 GB</td><td>应用安装目录</td></tr><tr><td align="left"><code>C:\ProgramData</code></td><td>12.59 GB</td><td>公共应用数据和缓存</td></tr><tr><td align="left"><code>C:\Program Files (x86)</code></td><td>9.15 GB</td><td>32 位应用安装目录</td></tr><tr><td align="left"><code>C:\$RECYCLE.BIN</code></td><td>3.18 GB</td><td>回收站文件</td></tr></tbody></table><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048334322" alt="在这里插入图片描述" title="在这里插入图片描述" loading="lazy"/></p><h3>3.2 看完整路径，继续定位 AppData 目录</h3><p>本次记录中，<code>C:\Users\Administrator\AppData</code> 占用 <strong>87.81 GB</strong>。AppData 是软件存放当前用户配置、缓存和其他应用数据的位置。</p><p>这里需要说明目录深度。以 <code>C:\</code> 为起点：<br/>第一层：C:\Users<br/>第二层：C:\Users\Administrator<br/>第三层：C:\Users\Administrator\AppData<br/>第四层：C:\Users\Administrator\AppData\Local 或 Roaming<br/>第五层：Local\JetBrains、Roaming\LarkShell 等<br/>第六层：Local\Google\Chrome</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048334323" alt="在这里插入图片描述" title="在这里插入图片描述" loading="lazy"/></p><h3>3.3 看完整路径，继续定位 AppData 目录</h3><p>需要复现更深目录的分析时，可以继续发送以下提示词给 Codex：</p><pre><code class="MATLAB">继续分析当前用户 AppData 下的 Local 和 Roaming 目录。
+按完整路径列出占用最大的应用目录，并说明每个数值的统计范围。
+仅统计，不执行清理；把结果输出为单独的报表，保留上一轮文件。</code></pre><ul><li>其中 <code>AppData\Local</code> 占用 63.66 GB：</li></ul><table><thead><tr><th>目录</th><th>占用空间</th><th>内容</th></tr></thead><tbody><tr><td><code>Google\Chrome</code></td><td><strong>15.68 GB</strong></td><td>浏览器缓存和用户数据</td></tr><tr><td><code>Temp</code></td><td><strong>10.27 GB</strong></td><td>临时文件</td></tr><tr><td><code>wsl</code></td><td>6.86 GB</td><td>WSL 虚拟磁盘</td></tr><tr><td><code>JetBrains</code></td><td>4.55 GB</td><td>IDEA 等开发工具数据</td></tr><tr><td><code>Packages</code></td><td>4.33 GB</td><td>Microsoft Store 应用数据</td></tr><tr><td><code>npm-cache</code></td><td>2.93 GB</td><td>npm 缓存</td></tr></tbody></table><ul><li><code>AppData\Roaming</code> 占用 24.13 GB：</li></ul><table><thead><tr><th>目录</th><th>占用空间</th><th>内容</th></tr></thead><tbody><tr><td><code>LarkShell</code></td><td><strong>10.69 GB</strong></td><td>飞书客户端数据和聊天缓存</td></tr><tr><td><code>Tencent</code></td><td>2.80 GB</td><td>腾讯应用数据</td></tr><tr><td><code>kingsoft</code></td><td>1.80 GB</td><td>金山应用数据</td></tr><tr><td><code>DingTalk</code></td><td>1.19 GB</td><td>钉钉客户端数据</td></tr></tbody></table><p>统计到这里，真正占空间的目录已经找到了。</p><p>上述表格只列出了部分目录，不能用表格各行之和代替 Local 或 Roaming 的总量。</p><p>Chrome、飞书等目录也包含需要保留的数据，目录大不代表整目录都能删除。</p><p>可以询问 Codex，会给出建议哪些可以删除，哪些建议保留。</p><h2>四、根据报表按需清理</h2><p>博主之前安装过 LM Studio、Ollama 等本地 AI 工具，也经常使用开发软件。</p><p>排查时，我重点检查临时文件、应用缓存和已经卸载的软件残留。</p><p>下面结合本次目录记录，说明各类占用的处理方式。</p><h3>Step 1：清理 Temp 临时文件</h3><p>在资源管理器地址栏输入<code>C:\Users\Administrator\AppData\Local\Temp</code></p><p>关闭正在运行的软件后，删除目录中的临时文件。遇到正在使用、无法删除的文件直接跳过。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048334324" alt="在这里插入图片描述" title="在这里插入图片描述" loading="lazy"/></p><h3>Step 2：清空回收站</h3><p>本次统计中，<code>C:\$RECYCLE.BIN</code> 占用了 3.18 GB。确认没有需要恢复的文件后，右键桌面回收站，选择“清空回收站”。</p><h3>Step 3：清理应用缓存</h3><p>Chrome、飞书、钉钉和 JetBrains 等应用，优先使用软件设置中的缓存清理功能。</p><p>当然如果你熟悉以上应用各文件夹的作用，也可以手动找文件夹进行清理。</p><ul><li>Chrome：进入“设置 → 隐私和安全 → 删除浏览数据”；</li><li>飞书、钉钉：进入设置，清理存储空间或缓存；</li><li>JetBrains IDE：使用 IDE 自带的缓存管理功能。</li></ul><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048334325" alt="在这里插入图片描述" title="在这里插入图片描述" loading="lazy"/></p><h3>Step 4：清理 npm 缓存</h3><p>先检查缓存：</p><pre><code class="PowerShell">npm cache verify</code></pre><p>确认需要清理后执行：</p><pre><code class="PowerShell">npm cache clean --force</code></pre><h3>Step 5：清理已卸载软件的残留目录</h3><p>在资源管理器地址栏输入<code>C:\Users\Administrator\</code></p><p>我之前安装过 LM Studio、Ollama、CodeArts、Qoder 和 Postman。软件已经卸载，但部分目录仍然留在 <code>AppData</code> 中。</p><p>确认软件不再使用，并检查目录中没有需要保留的模型、项目和配置后，可以删除对应的软件残留目录。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048334326" alt="在这里插入图片描述" title="在这里插入图片描述" loading="lazy"/></p><h3>Step 6：处理 WSL 占用</h3><p><code>AppData\Local\wsl</code> 中可能保存完整的 Linux 系统、项目和数据库，不要直接删除 <code>.vhdx</code> 文件。</p><p>先查看已安装的发行版：</p><pre><code class="PowerShell">wsl --list --verbose</code></pre><p>确定某个发行版不再使用，并备份所需数据后，再执行：</p><p><strong>这条命令会永久删除该发行版的数据、设置和软件，不是普通的缓存清理命令。</strong></p><pre><code class="PowerShell">wsl --unregister &lt;DistributionName&gt;</code></pre><h2>五、二次统计</h2><p>清理完成后，先在“此电脑”中查看 C 盘可用空间，再重新调用 Skill，可以继续挖掘文件占用情况。</p><p>发送以下提示词给 Codex：</p><pre><code class="MATLAB">重新使用 disk-usage-excel 统计 C 盘磁盘占用情况。
+生成一份清理后的 Excel 报表，使用新的文件名，保留清理前的报表。
+检查数据完整性，并对比两份报表中主要目录的大小变化。</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048334327" alt="在这里插入图片描述" title="在这里插入图片描述" loading="lazy"/></p><p>核对时重点看三个指标：</p><ol><li><strong>C 盘可用空间</strong>：前后差值才是实际释放空间的直接参考。</li><li><strong>目标目录大小</strong>：例如 Temp、npm 缓存是否减少。</li><li><strong>回收站占用</strong>：确认删除的文件是否仍在回收站中。</li></ol><h2>备注</h2><p>首次运行需要完全访问权限</p><p>C 盘包含用户目录和 Windows 系统目录。Codex 第一次运行 Skill 时，可能因为沙箱权限不足而无法读取完整数据，提示 xxx 拒绝访问。</p><p>此时需要授权完全访问权限，然后重新执行统计。完全访问权限用于读取和统计磁盘文件，Skill 本身不包含写入或删除操作。</p><p>如果没有授权，统计结果可能严重偏小，不能作为清理依据。</p><blockquote><p><a href="https://link.segmentfault.com/?enc=y%2F3S4fUGCCf2gKbUqpedeQ%3D%3D.gLGN4e2g%2BK86x4TzIO3FTaMlBKahfmf4KSr1cbUWfUUzdLKgRLUh87Hu9BbiMVmOvrkx7YwhcSlriKyGWWuzEf4mJAEbiWirPmuF1bGRaPE%3D" rel="nofollow" target="_blank">磁盘空间统计 Skill 源码</a></p><p><a href="https://link.segmentfault.com/?enc=XO4rQYihHgxvYLja5Vrtpw%3D%3D.k2Rjf5eKPva4zABeBT16h0aVra2CaSNexnKa9mZixxbOHTEHlC6YlNZcZ78%2BuF%2BJWOA1FWarDAe%2Ffv%2BY97cy5Q%3D%3D" rel="nofollow" target="_blank">Skillhub：磁盘空间统计 Skill</a></p><p><a href="https://link.segmentfault.com/?enc=JpW4vCIfKrea70tW%2FEcNeQ%3D%3D.q735aVmxqmK6JOPfJdkK6hDy%2BkBsbQdfSyOsNqy6tmltvP%2BAUWDrHG7lqjvA3xjrLjMeyYNq%2FwDrR8ssKIfvDQ%3D%3D" rel="nofollow" target="_blank">Google：删除 Chrome 浏览数据</a></p><p><a href="https://link.segmentfault.com/?enc=AeGlj8VjbPNFNLjdglVqeQ%3D%3D.mMCD8fkY9cJeQPodN%2Bag2Sh9AXBZoM1JAhxcLoC32kBqAtdLJBIzba7RnJgD6iIiry6A9BMsiJaxxG5qfkZiCg%3D%3D" rel="nofollow" target="_blank">npm：缓存管理命令</a></p><p><a href="https://link.segmentfault.com/?enc=iz0O4hBelfPT6Q5vH08%2BPg%3D%3D.NyrNYz%2B5ax8GRw43HzS3v0jUEBVBYoUMfOfYBy7kcq6tgXrDr%2FUsbGyrsMDT9L0%2BdwQe08qSt1c149FPigOuWw%3D%3D" rel="nofollow" target="_blank">Microsoft：WSL 基本命令</a></p><p>Powered By niaonao</p></blockquote>]]></description></item><item>    <title><![CDATA[C 语言 calloc() 详解：零初始化、动态数组与内存管理实战 唐青枫 ]]></title>    <link>https://segmentfault.com/a/1190000048376801</link>    <guid>https://segmentfault.com/a/1190000048376801</guid>    <pubDate>2026-10-28 14:02:19</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <h2>C 语言 <code>calloc()</code> 详解与实战 Demo</h2><p><code>calloc()</code> 是 C 标准库提供的动态内存分配函数，主要用于在堆上分配一块连续内存，并将分配的所有字节初始化为 0。</p><p>它与 <code>malloc()</code>、<code>realloc()</code>、<code>free()</code> 一起构成 C 语言动态内存管理的核心。</p><p>如果你熟悉 C#、Java，可以先这样理解：</p><ul><li><code>malloc()</code>：申请一块内存，但不初始化其内容。</li><li><code>calloc()</code>：申请一块内存，并将所有字节清零。</li><li><code>realloc()</code>：调整已经分配的内存大小。</li><li><code>free()</code>：释放动态分配的内存。</li></ul><p>需要注意，C 语言的动态内存分配没有 C#、Java 那样的垃圾回收机制，程序员需要自己管理内存的生命周期。</p><h3>一、calloc() 基本概念</h3><h4>1. 函数原型</h4><p>定义在 <code>&lt;stdlib.h&gt;</code> 中：</p><pre><code class="C">#include &lt;stdlib.h&gt;
 
 void *calloc(size_t nmemb, size_t size);</code></pre><p>参数说明：</p><table><thead><tr><th>参数</th><th>类型</th><th>说明</th></tr></thead><tbody><tr><td><code>nmemb</code></td><td><code>size_t</code></td><td>需要分配的元素数量</td></tr><tr><td><code>size</code></td><td><code>size_t</code></td><td>每个元素占用的字节数</td></tr><tr><td>返回值</td><td><code>void *</code></td><td>成功返回内存首地址，失败返回 <code>NULL</code></td></tr></tbody></table><p>分配的总字节数为：</p><p>Total Bytes = nmemb * size</p><p>例如：</p><pre><code class="C">int *arr = calloc(5, sizeof(int));</code></pre><p>假设当前平台 <code>sizeof(int) == 4</code>，则：</p><pre><code>5 × 4 = 20 字节</code></pre><p>这段代码申请了 20 字节的连续内存，并将其全部清零。</p><h4>2. 内存结构示意图</h4><p><img width="723" height="253" referrerpolicy="no-referrer" src="/img/bVdq9a4" alt="image.png" title="image.png"/></p><p>注意：<code>calloc()</code> 清零的是字节，并不意味着所有类型的对象都获得了符合 C 标准的“零值”。例如，标准不保证所有位为 0 的指针一定表示空指针。</p><h3>二、基础 Demo：使用 calloc 创建动态数组</h3><pre><code class="C">#include &lt;stdio.h&gt;
 #include &lt;stdlib.h&gt;
@@ -1020,327 +1772,4 @@ powercontext doctor zcode</code></pre><p>安装器会复制插件，并将其注
                  ↓
        Target 一次批量验证</code></pre><p>只有模型经过相应训练并显式启用 parallel_drafting 时，才属于并行生成多个 draft token 的路径。不能把"投机解码能一次验证多个 Token"等同于"EAGLE 一次 Forward 就生成多个 Token"。</p><h3>3.2 EAGLE-3：从单一最终特征走向多层特征融合</h3><p>EAGLE-3 延续了特征级 Drafter 的思路，但进一步使用 Target Model 的多个辅助隐藏状态。不同深度的 Transformer 层携带的信息侧重点不同：较浅层更接近局部和词法信息，中间层逐步形成语义表示，较深层更贴近最终预测。将多层特征融合后，Drafter 可以获得比单一末层状态更丰富的条件信息。</p><p><img referrerpolicy="no-referrer" src="https://image-static.segmentfault.com/422/612/4226127547-6ae04059cf046" alt="EAGLE-3 多层特征融合示意图" title="EAGLE-3 多层特征融合示意图" loading="lazy"/></p><p>这里不能简单写成"固定使用最后三层"。在 vLLM 中，辅助层首先由 checkpoint 的 eagle_aux_hidden_state_layer_ids 等配置决定；若 checkpoint 没有指定，通用接口才会按模型深度选择三个默认位置，分别靠近早期、中间和后期。</p><p>还需要保留一个实现层面的例外：部分 EAGLE-3 checkpoint 会设置 use_aux_hidden_state=false，退化为只使用最后层输出。因此，"多层特征融合"是 EAGLE-3 的典型设计，而不是所有 checkpoint 都必须满足的硬编码规则。</p><h3>3.3 EAGLE 与 EAGLE-3 有什么不同</h3><table><thead><tr><th>对比维度</th><th>EAGLE</th><th>EAGLE-3</th></tr></thead><tbody><tr><td>核心输入</td><td>当前 Token embedding 与 Target hidden state</td><td>当前 Token embedding 与一个或多个 Target 辅助 hidden states</td></tr><tr><td>特征来源</td><td>通常以最终隐藏特征为主</td><td>典型实现融合多个层级的隐藏特征</td></tr><tr><td>vLLM 方法名</td><td>method="eagle"</td><td>method="eagle3"</td></tr><tr><td>默认 Draft 方式</td><td>自回归、逐步生成 K 个候选</td><td>自回归、逐步生成 K 个候选</td></tr><tr><td>Target 职责</td><td>批量验证并决定最终输出</td><td>批量验证并决定最终输出</td></tr></tbody></table><p>EAGLE-3 的主要改进点是 Drafter 获得了更丰富的 Target 特征，而不是取消 Target Verification，也不是天然把所有候选 Token 改成一次并行生成。</p><h2>4. 为什么不会牺牲生成正确性</h2><p>投机解码中，Drafter 只提供候选，最终输出仍由 Target Model 的 logits 和验证算法决定。Drafter 猜错的直接后果是接受长度变短，而不是错误 Token 被无条件写入结果。</p><p>在 greedy decoding 下，可以直观理解为逐位置比较 draft token 是否与 Target 的选择一致；一旦不一致，就在该位置使用 Target 的结果。在概率采样下，需要使用与配置相匹配的拒绝采样流程，才能保持目标采样分布。</p><p>因此，α=min(1,p(x)/q(x)) 是"Draft 按概率分布 q 采样"场景下的经典接受概率，但不能不加条件地套到所有 EAGLE 配置上。当前 vLLM 的 draft_sample_method 默认值是 greedy，验证侧则由标准 rejection sampler 结合实际采样参数处理。</p><h2>5. 性能收益取决于什么</h2><p>EAGLE 的收益来自一个权衡：用较便宜的 Draft 计算，换取更少的 Target 串行 Decode Step。决定最终加速效果的不是某一个指标，而是以下因素共同作用：</p><ul><li><strong>Draft 成本：</strong> Drafter 越轻、生成 K 个候选越快，额外开销越小。</li><li><strong>接受率：</strong> 提出的候选中有多少被 Target 接受。</li><li><strong>平均接受长度：</strong> 每轮验证实际输出多少 Token，包含 bonus token。</li><li><strong>候选 K 的大小：</strong> 候选 K 太小，减少的串行步数有限；候选 K 太大，Draft 与验证开销会上升。</li></ul><p>因此，"候选越多越快"是不成立的。vLLM 的动态投机解码文档特别指出，验证阶段的有效 batch 可近似理解为 BS × K；并发度升高后，过大的 K 可能让验证从 memory-bound 转向 compute-bound，反而使 TPOT 变差。实际部署应基于目标模型、硬件和业务并发测量 K，而不是照搬固定值。</p><h2>6. EAGLE 与 KV Cache 的关系</h2><p>KV Cache 与 EAGLE 优化的是两个不同维度。KV Cache 复用已经计算过的历史 K/V，避免每次 Decode 重算全部上下文；EAGLE 尝试预测未来 Token，让一次 Target Verification 推进多个位置。</p><p><img referrerpolicy="no-referrer" src="https://image-static.segmentfault.com/275/753/2757530967-6ae0405aaff8e" alt="EAGLE 与 KV Cache 关系示意图" title="EAGLE 与 KV Cache 关系示意图" loading="lazy"/></p><p>实现上，Target 与 Drafter 还可能分别维护自身需要的 KV Cache。EAGLE 并不是 KV Cache 的替代品，而是在 KV Cache 基础上进一步降低 Decode 的串行性。</p><h2>7. 适用场景与局限</h2><p>EAGLE 更适合 Decode 占比高、中低 QPS（Queries-per-second，并发）、单步 Decode 受内存带宽限制的场景，例如长文本生成、代码生成、对话和 Agent 长输出。若请求主要耗时在长 Prompt 的 Prefill，或者系统已经处于高并发、高计算利用率状态，端到端收益可能有限，甚至可能因为 Draft 和批量验证开销而出现负收益。</p><p>部署时还需要考虑 Drafter checkpoint 与 Target 的模型家族、词表、隐藏维度和辅助层配置是否匹配；Draft 模型会增加权重和 KV Cache 占用；EAGLE-3 还要求 Target 实现能够导出所需的辅助隐藏状态。</p><h2>8. 一句话理解 EAGLE / EAGLE-3</h2><p><strong>EAGLE 利用 Target 已计算的隐藏特征，让轻量 Drafter 在特征空间中自回归预测未来 Token；EAGLE-3 进一步融合多个层级的 Target 隐藏特征。候选最终仍由 Target 批量验证，从而在保持 Target 生成语义的前提下，减少串行 Decode 轮数。</strong></p><pre><code class="text">KV Cache：过去算过的，不要重复算
 EAGLE：未来可能生成的，先低成本地猜
-Target Verification：猜得对就批量接受，猜错就由 Target 纠正</code></pre><h2>9. 参考资料</h2><ul><li>vLLM：docs/features/speculative_decoding/eagle.md</li><li>vLLM：docs/features/speculative_decoding/README.md</li><li>vLLM：docs/features/speculative_decoding/acceptance_metrics.md</li><li>vLLM：docs/features/speculative_decoding/dynamic_speculative_decoding.md</li><li>vLLM 实现：vllm/v1/spec_decode/llm_base_proposer.py</li><li>vLLM 实现：vllm/model_executor/models/llama_eagle.py、llama_eagle3.py</li><li><a href="https://link.segmentfault.com/?enc=N13wMKTM3L18283Qt92MlQ%3D%3D.Hire7WqrFYNnYhmSTshRu5JqegPaycRl0obUeGHwp5kPCmy%2Fhnn0JqdK1r%2FRnlyZ" rel="nofollow" target="_blank">EAGLE: Speculative Sampling Requires Rethinking Feature Uncertainty</a></li><li><a href="https://link.segmentfault.com/?enc=6rX9rWYMr%2BG7CpPqMK7UQw%3D%3D.9fabY7vTcacqqcH%2FOAfC%2FQCa1x2nQSZFD2Y209fUVuAr8S%2B6dmZNRqRXdn76uXtz" rel="nofollow" target="_blank">EAGLE-3: Scaling up Inference Acceleration of Large Language Models via Training-Time Test</a></li></ul>]]></description></item><item>    <title><![CDATA[AI在软件测试的未来中处于什么位置？（2） 陈哥聊测试 ]]></title>    <link>https://segmentfault.com/a/1190000048375047</link>    <guid>https://segmentfault.com/a/1190000048375047</guid>    <pubDate>2026-10-27 15:05:52</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>大家好，我是陈哥。</p><p>上次我们聊了AI对于测试领域的两项新技术，这周继续聊聊AI能帮我们做多少事。</p><p>这话听上去有点保守，我认为AI目前最有价值的位置其实是助手。AI真正的本事是让以前只能想想的自动化工具变得简单，或者说门槛一下子降低了。</p><p>什么是测试？测试是由环环相扣的流程组成的。如今，我们不但能用AI辅助其中的环节，还能让它帮我们把流程衔接起来。</p><p>说几个比较常见的场景。</p><h4><strong>1.测试方案生成</strong></h4><p>测试早期最头疼的就是构思方案。我们可以把问题交给AI，不到五分钟，它就能给出一个方案，甚至还能连你的想法一起评估。</p><p>你可以沿用原来那套，也可以顺着它给的思路，补几个没想到的方向。AI没办法生成出一个完美的测试方案，硬要较劲只会白费力气，不如拿它来帮自己把思路铺开。</p><p><img referrerpolicy="no-referrer" src="https://image-static.segmentfault.com/345/373/3453735860-6ae03a270197b" alt="测试方案" title="测试方案"/></p><h4><strong>2.数据处理</strong></h4><p>做测试，也会处理一些零散数据。比如把项目里的任务全部整理出来，对应上开发提交的代码改动记录，再根据这些代码变动，找到需要重点测的测试用例，判断版本会存在哪些风险。</p><p>这类工作机械又耗时间，现在AI可以帮我们承担。我们可以配置AI智能体，让AI帮我们完成信息搜集，还能处理数据对不上的异常情况。</p><p>不过AI也会出错。只要我们流程设计合理，把系统里真实完整的原始数据交给AI，它产出的结果大方向就不会跑偏。拿到原始真实数据是重中之重，如果缺少一手资料，AI就只能靠猜测得出结论，很容易给我们错误的判断。</p><p><img referrerpolicy="no-referrer" src="https://image-static.segmentfault.com/386/685/3866858496-6ae03a4db79b4" alt="数据处理" title="数据处理" loading="lazy"/>说实话，现在像禅道这类研发管理工具，也已经把AI接进了日常流程：帮你自动生成测试方案、辅助分析Bug、梳理需求等。</p><p>工具在往前走，我们也不能原地踏步。测试数据生成、失败用例分析、构建失败排查、自动化用例评审……能落地的场景太多了，但在使用AI时，我们有这样几条底线：</p><ul><li>AI不会一直给出正确的答案，它不知道什么是正确，它是生成式的，结论必须你自己判断；</li><li>它高度依赖训练数据，可能会给你误导信息，要和自身知识交叉验证；</li><li>它通常缺乏完整上下文，也常因训练数据过时而滞后。</li></ul><p>此外，测试人员要重新认识自己的定位。作为曾经的测试人，我想以我过来人的经验给大家一些建议。</p><p><strong>第一，学技能，别怕被取代。</strong> 未来被淘汰的不会是你，而是不善用AI的同行。</p><p><strong>第二，提高AI素养。</strong> 就像十年前懂测试技术、会用自动化工具是标配，现在用AI辅助测试也正在变成新门槛。</p><p><strong>第三，当好伦理的守门人。</strong> AI越深入软件产品，测试在守住伦理底线上的责任越重。我们不光要验功能，还要验公平性、可解释性、安全性和潜在偏差。</p><p><strong>第四，注意人机协同。</strong> 最有效的AI测试策略从来不是让机器单干，而是人机协作。人始终掌握主导权，对AI生成的内容做验证、质疑和修正。</p><p><strong>第五，拓宽测试的边界。</strong> 别再抱着“测试就是点点点”的老观念了，流程要往宽里做，环节里该上AI的地方就上。</p><p><img referrerpolicy="no-referrer" src="https://image-static.segmentfault.com/341/982/3419828864-6ae03a5b673bb" alt="AI软件测试" title="AI软件测试" loading="lazy"/>最后聊几句质量思维。在速度和规模一起往上顶的今天，AI确实让我们跑得更快。</p><p>软件测试的未来，从来不是AI和人二选一，就像当年也不是手动和自动化二选一。差别只在于，谁把工具用得更熟。AI会成为催化剂，逼着更多团队认真对待质量工程。当AI开始写代码、出需求、跑用例的时候，质量的含金量正在被重新定义。</p><p>作为测试，应该始终用怀疑精神，要多想一下：这合理吗？这么做，流程是不是真的更完善了？</p>]]></description></item><item>    <title><![CDATA[终端行为审计系统设计清单：从日志采集到事件溯源 dk防护录 ]]></title>    <link>https://segmentfault.com/a/1190000048375067</link>    <guid>https://segmentfault.com/a/1190000048375067</guid>    <pubDate>2026-10-27 15:05:21</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>很多团队刚上终端审计时，第一反应是能采的日志全采上来，日志量越大越安心。可真跑了几个月，遇到事儿要查的时候，又发现翻不出来，或者翻出来也是一堆对不上的碎片。</p><p>问题往往出在，审计系统被当成了「日志采集工具」。只停在采集层面，系统很容易退化成日志堆积平台，数量很大，却撑不起事件排查、行为分析和责任认定。</p><p>真正能用的终端行为审计系统，要从「事件溯源」这个目标反向倒推设计。它不止要记录终端上发生了什么，还要能回答，谁在什么时间、对什么对象、执行了什么操作、产生了什么结果。</p><p>这篇文章从架构设计角度，拆解终端行为审计系统的核心能力模型，再给一份能直接落地的设计清单。</p><h2>一、问题拆解，终端审计系统到底要解决什么</h2><p>终端审计不能只为了记录而记录，它要真正支撑的是下面三类场景。</p><h4>1. 事后溯源</h4><p>发生疑似数据泄露、违规操作或者安全事件时，系统要帮管理员还原事件过程，定位问题根源。<br/>典型问题有这些</p><ul><li>用户访问过哪些敏感文件</li><li>文件有没有被复制、下载或者外传</li><li>行为发生在哪台终端、哪个时间段</li><li>有没有网络外传或者 AI 工具处理痕迹</li></ul><h4>2. 行为分析</h4><p>审计系统攒下的日志，可以作为用户行为分析的数据底座。持续记录终端行为，企业就能识别异常模式，比如非工作时段访问敏感数据、批量拷贝文件、频繁往外部传文件等。</p><h4>3. 合规与责任认定</h4><p>在部分行业和组织里，审计记录是安全检查和责任认定的重要依据。系统得保证日志完整、字段可靠、查询可追溯，还要能导出分析结果。</p><p>所以终端审计系统的设计目标可以归纳成，记录关键行为、统一日志标准、支撑快速查询、还原事件链路。</p><h2>二、能力模型，终端审计系统的四层架构</h2><p>从技术设计看，终端行为审计系统可以拆成四层，分别是行为采集层、日志治理层、检索分析层和事件溯源层。</p><table><thead><tr><th>层级</th><th>核心职责</th><th>关键能力</th></tr></thead><tbody><tr><td>行为采集层</td><td>收集终端关键行为</td><td>文件操作、外设打印、网络访问、AI 工具使用</td></tr><tr><td>日志治理层</td><td>统一日志格式与质量</td><td>字段规范、时间同步、日志标准化</td></tr><tr><td>检索分析层</td><td>提供查询与分析能力</td><td>多维度检索、条件过滤、数据导出</td></tr><tr><td>事件溯源层</td><td>支撑事件调查</td><td>时间线还原、行为链分析、证据链整理</td></tr></tbody></table><p>这种分层的价值在于，企业可以先把采集能力做稳，再逐步补上日志治理和事件分析，不必一开始就追求复杂的智能分析。</p><h2>三、行为采集层，哪些终端行为必须记录</h2><p>采集层是审计系统的基础。采集范围不全或者字段缺失，上层分析就会处处受限。</p><h4>1. 文件操作审计</h4><p>文件是企业数据资产的主要载体，文件操作应当作为审计系统的核心采集对象。<br/>建议记录以下字段</p><ul><li>文件名称</li><li>文件路径</li><li>文件类型</li><li>文件大小</li><li>操作类型</li><li>操作时间</li><li>操作结果</li><li>终端信息</li><li>用户账户</li></ul><p>操作类型至少应覆盖创建、打开、读取、复制、移动、删除、重命名、下载这些动作。</p><h4>2. 外设与打印审计</h4><p>外设和打印是终端数据外传的重要通道。</p><p>外设审计建议记录这几项</p><ul><li>设备接入时间</li><li>设备类型</li><li>设备标识</li><li>文件操作方向</li><li>操作结果</li></ul><p>打印审计建议记录这几项</p><ul><li>文档名称</li><li>打印时间</li><li>打印机信息</li><li>打印份数</li><li>打印结果</li></ul><h4>3. 网络访问审计</h4><p>网络行为审计的目标，是看清数据有没有通过网页、邮件、网盘或者即时通讯工具往外传。<br/>建议覆盖这些场景</p><ul><li>网页访问</li><li>搜索行为</li><li>邮件收发</li><li>文件上传下载</li><li>即时通讯传输</li></ul><p>对应的关键字段有访问地址、标题、时间、方向、文件名、大小、应用来源、目标对象等。</p><h4>4. AI 工具使用审计</h4><p>AI 工具正在变成新的数据接触点。审计系统要关注的是，用户有没有把内部文件上传到 AI 平台，或者在提示词里输入敏感信息。</p><p>建议记录这几项</p><ul><li>AI 工具名称</li><li>访问时间</li><li>输入内容摘要</li><li>上传文件信息</li><li>调用结果</li></ul><p>AI 审计的设计要特别注意边界，不要对用户所有输入做无差别采集，优先围绕敏感文件上传和高风险调用去展开。</p><h2>四、日志治理层，为什么日志字段比日志数量更重要</h2><p>不少系统能采集大量日志，真到分析时却不好用，根子往往在日志治理没跟上。</p><h4>1. 统一日志格式</h4><p>不同来源的日志结构差异很大。文件日志、网络日志、AI 日志如果各管各的，管理员很难做统一查询。<br/>建议建立统一的日志模型，至少包含这些字段</p><ul><li>事件时间</li><li>用户账户</li><li>终端信息</li><li>行为类型</li><li>操作对象</li><li>操作结果</li><li>来源模块</li></ul><h4>2. 保证时间一致性</h4><p>事件溯源依赖时间顺序。不同日志来源时间不同步，就没法准确判断行为先后。<br/>所以终端审计系统要考虑这几件事</p><ul><li>统一时间基准</li><li>同时记录事件发生时间和日志接收时间</li><li>避免时间戳错乱</li><li>对异常时间做标记</li></ul><h4>3. 建立日志质量标准</h4><p>低质量日志会直接拉低分析效率。常见问题有字段缺失、对象信息不全、结果状态不明确、终端信息丢失等。<br/>建议在采集端和平台端做双重校验</p><ul><li>采集端保证关键字段上报</li><li>平台端对缺失字段告警或者标记</li><li>对高频行为建立标准化字典</li></ul><h2>五、检索分析层，如何让日志真正可查</h2><p>审计系统的价值，很大程度取决于检索分析能力。日志只能批量翻看、不能按条件过滤，事件排查效率就会很低。</p><h4>1. 多维度检索</h4><p>管理员应当能从不同维度切入查询，例如</p><ul><li>按用户查询</li><li>按终端查询</li><li>按时间范围查询</li><li>按行为类型查询</li><li>按文件名称或者路径查询</li><li>按网络地址或者应用查询<br/>多维度检索的意义，是让管理员可以从不同线索进入事件调查，单一入口远远不够。</li></ul><h4>2. 条件组合查询</h4><p>实际排查里，查询条件往往是组合出现的。例如</p><ul><li>非工作时段 + 敏感文件访问 + 复制行为</li><li>某用户 + 外部网盘访问 + 文件上传</li><li>某终端 + AI 工具使用 + 文件上传</li></ul><p>系统需要支持条件组合查询，不能只做简单的关键词搜索。</p><h4>3. 数据导出能力</h4><p>审计日志需要导出，用途包括</p><ul><li>事件分析</li><li>报告整理</li><li>合规检查</li><li>跨平台分析</li></ul><p>导出数据要保持字段完整，避免只导出部分信息导致分析中断。</p><h2>六、事件溯源层，如何还原终端行为链</h2><p>事件溯源层要做的事，是帮管理员把完整的事件链路还原出来。单条日志只是原料，串成链才有价值。</p><h4>1. 时间线还原</h4><p>时间线是事件溯源最基础的工具。靠时间线，管理员能直观看到用户在某个时间段内的行为顺序。<br/>一个典型事件链大致是这样</p><ol><li>用户登录终端</li><li>访问敏感目录</li><li>打开目标文件</li><li>执行复制操作</li><li>访问外部平台</li><li>上传文件</li></ol><p>时间线的作用，是把离散的行为组织成连续的过程。</p><h4>2. 对象关联分析</h4><p>除了时间顺序，管理员还要关注操作对象是不是同一份。比如用户打开的文件，和后续上传、打印或者发送的文件，是不是同一个对象。</p><p>对象关联分析的难点在于，不同日志类型对文件对象的描述方式可能不一样。系统要借助文件名、路径、大小、时间这些信息来建立关联。</p><h4>3. 证据链整理</h4><p>事件调查最终要形成证据链。证据链要把日志组织成一份能说清事件过程的结构化记录，简单罗列远远不够。<br/>一条完整的证据链应包含</p><ul><li>事件时间</li><li>涉及用户</li><li>涉及终端</li><li>关键行为</li><li>操作对象</li><li>行为结果</li><li>日志来源</li></ul><h2>七、工具选型参考，从一款产品的设计视角看</h2><p>在企业终端安全工具里，审计能力常常和端点检测、设备控制以及数据防泄漏能力打包部署。迪康端点安全一体化管理系统在公开方案里强调终端行为记录与统一审计平台建设，适合作为企业理解终端审计体系的一个参考样本。</p><p>从架构设计角度看，这类方案的关注点主要集中在三个方面</p><ol><li>多场景行为日志的统一采集</li><li>日志检索与导出能力</li><li>事件链路还原与安全分析</li></ol><p>企业评估类似产品时，建议把重点放在日志模型是否统一、关键字段是否完整、检索是否灵活，功能数量多寡反在其次。</p><h2>八、终端审计系统设计清单</h2><p>以下是一份可直接用于方案评审的设计清单。</p><h4>采集范围</h4><ul><li>是否覆盖文件操作审计</li><li>是否覆盖外设与打印审计</li><li>是否覆盖网页访问与网络传输审计</li><li>是否覆盖邮件与即时通讯审计</li><li>是否覆盖 AI 工具使用审计</li></ul><h4>日志字段</h4><ul><li>是否记录用户账户</li><li>是否记录终端信息</li><li>是否记录操作时间</li><li>是否记录操作类型</li><li>是否记录操作对象</li><li>是否记录操作结果</li></ul><h4>检索能力</h4><ul><li>是否支持按用户查询</li><li>是否支持按终端查询</li><li>是否支持按时间范围查询</li><li>是否支持按行为类型查询</li><li>是否支持条件组合查询</li><li>是否支持日志导出</li></ul><h4>事件溯源</h4><ul><li>是否支持时间线展示</li><li>是否支持行为链还原</li><li>是否支持对象关联分析</li><li>是否支持证据链整理</li><li>是否支持事件结果标记</li></ul><h2>结语</h2><p>终端行为审计系统远不止是一个日志采集工具，它是一套围绕事件溯源来搭建的技术体系。企业建设时，要从采集范围、日志治理、检索分析和事件溯源这四个层面一步步推进，优先把关键字段做完整、让日志可查、让事件可还原。</p><p>做到这些，终端审计系统才有可能从「日志记录平台」真正走成「事件调查平台」。</p><blockquote>声明：本文提及的产品仅作为终端审计架构设计的参考样本，不构成任何采购建议。</blockquote>]]></description></item><item>    <title><![CDATA[实时看、持续记、及时说，央视体育携手阿里云 Flink 打造大型赛事实时 AI 解说Agent 阿里]]></title>    <link>https://segmentfault.com/a/1190000048375069</link>    <guid>https://segmentfault.com/a/1190000048375069</guid>    <pubDate>2026-10-27 15:04:48</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>赛事直播中的关键瞬间，往往只在几秒之间。泳池里，一次转身就可能改写领先关系；靶场上，一枪成绩就可能决定奖牌归属。解说需要紧跟画面，讲清赛场态势、项目规则、排名变化和比赛走势。比赛结束后，媒体还要第一时间找到精彩瞬间，完成高光剪辑并进入发布流程。</p><p>在 2026 年名古屋大型赛事上，央视体育与阿里云 Flink 合作打造大型赛事实时 AI 解说 Agent。它在直播过程中持续完成画面理解、赛事判断、上下文记忆、解说生成和音视频处理，让 AI 跟随比赛“实时看、持续记、及时说”，并支持赛事高光生产。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048375071" alt="图片" title="图片"/></p><h2>阿里云 Flink 与千问大模型构建可靠的实时解说流水线</h2><p>大型赛事实时 AI 解说 Agent 采用事件驱动的流式架构。直播画面、官方赛事数据与赛程信息持续进入系统，有效变化更新比赛状态，并触发解说或剪辑任务。依托 Qwen3.8-Max、Qwen3.8-Flash，以及语音合成模型 qwen-audio-3.0-tts-plus 等理解与生成能力，阿里云 Flink 将信号接入、画面感知、赛事理解、任务策划和执行连接为持续运转的流水线。</p><p>大型赛事直播对这条流水线提出了两项要求：成绩、名次和奖牌归属有据可依，数小时的连续运行保持稳定。为此，多源确认、事实校验和故障恢复贯穿各个环节，让生成内容具备可信依据，也让比赛上下文能够持续积累和恢复。</p><h3>赛事信号接入与画面感知</h3><p>系统持续接收赛事直播视频流、赛程与参赛名单，以及官方实时赛事事件。视频经过解析、格式标准化、关键帧采样与时间轴归一，形成带时间信息的画面帧；官方成绩、名单和赛程作为结构化数据进入关联处理。Flink 提供持续处理和事件时间组织能力，业务链路据此建立媒体时间与赛事时间的映射，明确当前画面属于哪场比赛、成绩对应哪位运动员和哪个轮次，为音画对齐与高光定位打下基础。</p><p>赛事观察插件进一步提取运动员、动作变化、比分字幕和成绩图卡等信息。射击场景关注选手姓名、单枪环数与累计成绩，游泳场景关注道次、转身、交接、触壁和分段计时。感知结果带有时间与来源标记，经由 Flink 持续流转，供后续环节综合判断。</p><h3>多源理解与持续更新的比赛上下文</h3><p>从识别画面中的数字到确认一项成绩，还需要结合官方数据、参赛名单、比赛阶段和项目规则。理解插件据此识别关键事件，区分当前成绩与历史回放、分段领先与正式赛果，并更新比分、排名和比赛进程。名次、成绩和奖牌归属以官方确认信息为依据，证据不足的结论暂不进入播报。</p><p>Flink 的状态管理承载不断演进的比赛上下文，包括当前阶段、领先选手、逐枪成绩、排名变化和已确认事实。新事件到达后，系统增量更新相关状态；平均值、分差等数值由结构化计算给出，再交给模型组织分析。这既为实时解说提供前情，也让赛后回顾和高光标题能够追溯到具体赛事信息，减少数据错配、重复报分和前后表述不一致。</p><h3>动态策划与经过校验的内容执行</h3><p>Agent 根据事件重要性、事实可靠性、比赛节奏与可用播出时长，决定此刻讲什么、做什么。关键成绩和奖牌归属优先播报，比赛间隙补充规则与选手背景；冲刺阶段使用简短赛况，轮次间隙再展开分析。例如，射击比赛中识别到铜牌产生后，Agent 会从项目科普转向奖牌播报。高光策划则确定哪些事件值得成片，以及需要保留的前后过程。</p><p>解说任务依次经过文稿生成、事实与数字校验、内容审核、语音合成和播出编排。选手姓名、成绩、排名及结果表述在输出前再次核对，待播队列依据优先级与有效期调整，撤回过时内容。同一份赛事事实可生成三种风格的文稿与音轨。高光任务则完成视频边界确认、裁剪拼接、封面选择、标题生成和成品上传，保持标题与画面事实相符。</p><h3>持续处理与故障恢复</h3><p>连续直播中，模型推理和语音生成的耗时波动可能造成等待与积压。链路可结合异步处理、并发控制和超时策略管理外部服务调用，并通过播出队列调整减少解说滞后。</p><p>Flink 的检查点机制为受管理的计算状态提供一致性快照，配合可恢复的数据源，在作业重启后恢复比赛上下文并继续处理。已经播出的解说和已经上传的高光，还需要由执行链路记录动作状态，结合幂等或去重机制控制重复输出。</p><p>主备切换、监控告警、模型服务防护与人工值班共同构成运行保障。团队持续关注处理积压、模型响应时间、解说输出延迟和作业恢复情况，及时发现并处置异常。Flink 的状态恢复能力与模型、媒体组件和运维协同，支撑 Agent 长时间稳定进入赛事生产流程。</p><h2>实时看、持续记、及时说，央视体育携手阿里云 Flink 打造大型赛事实时AI解说Agent</h2><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048375072" alt="图片" title="图片" loading="lazy"/></p><h3>解说跟随直播节奏，三种风格随时切换</h3><p>系统利用直播流安全审核产生的时间窗口，优化画面理解、文稿生成与语音合成的全流程耗时，使 AI 解说与 CCTV5 等直播流基本同步，让线上观众几乎感受不到额外延迟。观众还可在央视体育客户端中随时切换“低音沉稳”“高能爆发”“清亮温和”三种解说风格。</p><h3>实时播报成绩，跟进关键结果</h3><p>射击比赛中，Agent 将选手、枪次、单枪成绩与累计成绩准确关联，成绩有效变化后再触发播报，避免重复报分。游泳比赛中，Agent 围绕出发、转身、交接和触壁跟踪分段成绩与位次变化，讲清谁在领先、谁在追赶，并区分阶段排名与最终赛果。</p><h3>记住比赛前情，讲清多轮表现变化</h3><p>射击前十枪结束后，Agent 可以比较最近五枪与此前五枪的平均成绩，结合累计成绩、排名和分差分析选手如何追赶。比分接近时，还可结合赛制提示淘汰风险，让解说从单次报分延伸到连续比赛分析。</p><h3>在比赛间隙穿插规则与知识</h3><p>Agent 根据项目和比赛阶段选择知识内容：赛前介绍轮次安排，击发间隙讲解呼吸控制与持枪稳定性，临近淘汰时说明场上局势。奖牌产生后及时转向关键赛况，让科普自然融入直播节奏，帮助首次观看该项目的观众理解比赛。</p><h3>结合历史资料与实时表现讲述运动员</h3><p>以徐嘉余的男子 50 米仰泳决赛为例，Agent 在出场时介绍道次、预赛成绩和历史表现，赛中跟踪成绩与名次变化，赛后及颁奖阶段结合本场结果回顾比赛经历。知识检索补充人物资料，实时上下文连接当场表现，形成连贯的人物讲述。</p><h3>关键事件驱动高光拆条</h3><p>关键得分、反超、淘汰或夺冠等事件确认后，高光 Agent 启动剪辑任务，保留事件的完整过程，完成裁剪拼接、封面选择、标题生成和上传。高光链路可在精彩事件发生后一分钟内完成片段合成与上传，产出供编辑审核发布的成品。</p><h2>AI 融入赛事，实时计算连接赛事现场与内容生产</h2><p>大型赛事项目多，赛程密集，阿里云Flink团队与政企事业部文化传媒行业线团队通力合作，让央视体育解说覆盖海量赛事，为技术团队带来新解法，大幅拓宽赛事解说的覆盖范围。对观众而言，规则科普、运动员故事和多种声音风格丰富了观赛选择，也为冷门项目和多路直播获得完整解说提供了可能。</p><p>对媒体而言，实时解说与事件驱动的高光生产让内容从“赛后加工”走向“赛中即产”。本次实践中，两条链路按业务要求分别接入视频源，编辑团队负责审核把关、深度策划和创意表达，形成 AI 生产与专业团队协同的工作方式。</p><p>这次实践也呈现了实时计算与大模型协作的路径：大模型提供理解与表达能力，Flink 持续组织实时数据、维护随事件演进的上下文，并提供可恢复的计算状态。Agent 因而能够从单次问答走向持续感知、实时决策和任务执行。</p><p>未来，实时 AI 解说能力可进一步延伸到更多运动项目、语种和赛事场景。央视体育与阿里云也将继续探索实时计算与大模型的融合，让赛场瞬间被及时看见、准确讲述和长久留存。</p>]]></description></item><item>    <title><![CDATA[外汇实时行情API接入：WebSocket重连后，怎样避免显示旧报价？ 老白不白 ]]></title>    <link>https://segmentfault.com/a/1190000048375078</link>    <guid>https://segmentfault.com/a/1190000048375078</guid>    <pubDate>2026-10-27 15:03:58</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <blockquote><strong>摘要</strong>：接入外汇实时行情API后，WebSocket重连成功并不等于页面已经恢复。本文面向负责外汇看板、汇率监控或价格提醒的开发者，以 EUR/USD 真实订阅为例，走完连接、订阅、主动断开与重连的过程，讲清报价时间、心跳和页面状态怎样配合，帮团队少被旧数据误导。文章里的恢复顺序和验收清单，产品经理和技术同事可以一起对照检查页面表现。</blockquote><p><strong>一句话答案</strong>：WebSocket 重连后，不要因为连接灯变绿就恢复页面；要重新订阅目标货币对，收到 EURUSD 新报价，并确认报价时间晚于断线前最后一条记录、落在允许范围内，再切回正常状态。</p><p>行情页上的连接灯重新变绿，EUR/USD 却还停在断线前的价格。如果价格提醒跟着恢复运行，它使用的可能仍是上一条旧记录。用户关心的是“这条报价更新到什么时候”，页面却只告诉他“网络又连上了”。</p><p>接入时，最好把连接状态和报价状态分开处理：重新订阅目标货币对，收到时间可用的新报价，再恢复正常提示。下面用一段真实运行记录，把这条恢复路径完整走一遍。</p><p>美联储官网列出的下一次 FOMC 会议安排在 2026 年 10 月 27—28 日。重要日程前的外汇监控，除了配好价格提醒，也值得提前检查：数据中断后页面会怎么恢复。美联储会议日历可以作为检查节点。</p><p>连接恢复后，还要检查目标报价及其时间。</p><h2>WebSocket重连后，绿灯亮了为什么还要等报价</h2><p>本节结论：连接恢复只证明通道建立，页面恢复还要等目标报价通过检查。</p><p>行情页的恢复过程，可以拆成下面几个时刻：</p><table><thead><tr><th>客户端已经收到什么</th><th>页面知道了什么</th><th>接下来还要看什么</th></tr></thead><tbody><tr><td>新连接打开</td><td>连接通道已建立</td><td>是否重新订阅了 EURUSD</td></tr><tr><td>订阅确认或心跳回复</td><td>请求得到了回应</td><td>是否收到目标货币对的报价</td></tr><tr><td>EURUSD 报价</td><td>有了可检查的数据</td><td>时间是否推进，是否落在页面允许的时间范围内</td></tr></tbody></table><p>把这三个时刻画成时间线，就是：新连接打开 → 重新订阅 → 订阅确认或心跳 → 目标报价到达 → 时间检查通过 → 页面恢复正常。</p><p>产品需求也可以写得更具体一点：断线时保留最后价格和报价时间，显示“连接中断”；重新连上以后，先显示“等待 EURUSD 报价”；等报价通过检查，再切回正常状态。</p><p>这样，用户能看到数据停在了哪里，技术同事也有明确的恢复条件。</p><h2>外汇实时行情API接入实测：从主动断开到收到新报价</h2><p>本节结论：这次实测里，从新连接打开到收到通过检查的新报价，相隔 491 毫秒。</p><p>2026 年 10 月 22 日，我们使用 Node.js 26.0.0 和 <code>ws</code> 8.22.0，通过 TickDB 的 WebSocket 行情订阅 EURUSD 行情。最终这次运行持续约 25 秒，收到 62 条通过基础检查的报价，经历两次连接和一次本客户端主动断开。脚本最长运行时间设为 90 秒。</p><p>下面是日志里的恢复顺序。时间统一使用 UTC，北京时间需要加 8 小时。</p><table><thead><tr><th>客户端事件</th><th>UTC时间</th></tr></thead><tbody><tr><td>请求主动断开</td><td>13:57:39.322</td></tr><tr><td>新连接打开</td><td>13:57:42.018</td></tr><tr><td>再次发送 EURUSD 订阅</td><td>13:57:42.018</td></tr><tr><td>收到订阅确认</td><td>13:57:42.381</td></tr><tr><td>记录应用层 <code>pong</code> 事件</td><td>13:57:42.383</td></tr><tr><td>收到通过恢复检查的新报价</td><td>13:57:42.509</td></tr></tbody></table><p>主动断开前，最后一条报价为 <code>1.11953</code>。恢复后第一条通过检查的新报价为 <code>1.11952</code>，它携带的报价时间是 <code>13:57:42.469Z</code>。</p><p>这次断开是测试脚本主动发起的。原始消息和事件日志都留着，可以对照查看重连后先收到了什么、页面为什么恢复正常状态。</p><p>从新连接打开到收到通过检查的新报价，相隔 491 毫秒，中间包含重新订阅和等待报价的客户端流程。</p><h2>外汇实时行情API接入：先把 EUR/USD 报价接进来</h2><p>本节结论：每次连接打开都要重新订阅，不能默认上一次订阅还有效。</p><p>连接地址以当前官方文档为准，正文不粘贴完整 URL，避免平台判定外链。认证使用 <code>api_key</code> 查询参数。密钥从后端安全环境读取，日志里不要输出带密钥的完整连接地址。</p><p>每次连接成功打开后，示例脚本发送下面的订阅消息：</p><pre><code class="json">{
-  "cmd": "subscribe",
-  "data": {
-    "channel": "ticker",
-    "symbols": ["EURUSD"]
-  }
-}</code></pre><p>连接重新建立后，也要再发一次。示例不会默认上一次连接的订阅还有效。</p><h3>读懂第一条报价</h3><p>本节结论：报价时间和客户端接收时间都要保存，二者不是同一个东西。</p><p>这是最终运行中保存的第一条 EURUSD 行情消息：</p><pre><code class="json">{
-  "cmd": "ticker",
-  "data": {
-    "symbol": "EURUSD",
-    "type": "forex",
-    "last_price": "1.11950",
-    "bid_price": "1.11950",
-    "ask_price": "1.11951",
-    "spread": "0.00001",
-    "timestamp": 1792677449581
-  }
-}</code></pre><p>这里的 <code>timestamp</code> 是毫秒时间戳，对应 <code>2026-10-22T13:57:29.581Z</code>；客户端收到这条消息的时间是 <code>13:57:29.745Z</code>。</p><p>这两个时间都值得保存。前者是报价自带的时间，后者是消息到达本客户端的时刻。两者之差还包含时钟偏差和链路处理，不能直接当成单程网络延迟。</p><p>价格按返回的字符串保存。需要双边报价的页面，还要分别保留买价 <code>bid_price</code> 和卖价 <code>ask_price</code>。这些外汇行情消息应当作报价更新来用，不要改写成已经发生的外汇成交记录。行情订阅的具体字段可以对照当前文档核对。</p><h2>价格没变，也可能一直在更新</h2><p>本节结论：判断行情是否更新，要看报价时间，不能只看价格跳不跳。</p><p>原始记录中有这样两条相邻报价：</p><table><thead><tr><th>价格</th><th>报价自带的UTC时间</th><th>客户端接收UTC时间</th></tr></thead><tbody><tr><td>1.11952</td><td>13:57:30.393</td><td>13:57:30.440</td></tr><tr><td>1.11952</td><td>13:57:30.481</td><td>13:57:30.527</td></tr></tbody></table><p>价格相同，报价时间却向前推进了。对用户来说，屏幕上的数字没有变化；对程序来说，它已经收到了新的观察记录。</p><p>所以，监控要同时记录消息时间和报价时间。只看“这个数字多久没跳”，很难判断连接是否正常、报价还在不在更新。</p><h2>WebSocket重连后，心跳为什么不能替报价过关</h2><p>本节结论：心跳只证明连接有回应，目标报价仍要单独等、单独检查。</p><p>这次运行中，新连接打开以后，先收到订阅确认和应用层 <code>pong</code>，随后才收到 EURUSD 报价。</p><p>示例脚本会继续等待，并检查报价是否满足以下条件：</p><ul><li>标的是 <code>EURUSD</code>；</li><li>价格和毫秒时间戳可用；</li><li>报价时间晚于主动断开前的最后一条报价；</li><li>落在示例设定的时间范围内。</li></ul><p>前面提到的恢复后第一条报价，其报价时间和接收时间都通过检查，随后记录恢复。</p><p><strong>心跳回复不会更新页面上的报价</strong>。WebSocket 协议本身的 Ping/Pong 控制帧，和接口的 JSON <code>ping</code>、<code>pong</code> 消息要分开看。日志里的这次 <code>pong</code> 是应用层消息；目标货币对的价格仍然从 <code>ticker</code> 消息里取。RFC 6455 对 Ping/Pong 控制帧有定义，心跳消息也可以对照当前文档核对。</p><p>把判断过程写成流程，就是：收到消息 → 是不是 EURUSD → 价格和时间戳是否可用 → 报价时间是否晚于断线前最后一条 → 是否落在允许时间范围 → 通过则恢复，不通过则继续等待。</p><h3>没有新消息时，旧报价也会继续变老</h3><p>本节结论：时间检查要持续运行，不能只在收到消息时跑。</p><p>如果程序只在收到消息时检查时间，一旦没消息了，这段检查就不会跑。最后一条报价可能一直挂着“正常”状态。</p><p>本次运行的脚本每秒重新判断当前显示状态。即使连接还开着、没有新消息，旧报价超过设定时间后也会转入相应提示。</p><p>本示例把报价过期阈值设为 5 秒；如果报价时间比本地时钟还快，也留 5 秒容忍范围，避免因时钟偏差误判。这些是示例里设的参数，实际项目要按看板、提醒规则和时钟环境调整。</p><p>页面可以继续保留最后价格，同时显示报价时间和等待提示。这样，用户既能看到最后一次记录，也能知道当前状态。</p><h3>连续重试时，等待时间怎样安排</h3><p>本节结论：重试要分阶段退避，连接成功后重置计数并重新订阅。</p><p>当前连接指南采用分阶段等待：</p><table><thead><tr><th>重试次数</th><th>每次等待</th></tr></thead><tbody><tr><td>第1—3次</td><td>1秒</td></tr><tr><td>第4—6次</td><td>5秒</td></tr><tr><td>第7次及以后</td><td>30秒</td></tr></tbody></table><p>示例按这个顺序安排重试；连接成功打开后重置计数，并重新订阅。认证或权限错误要先处理具体原因，一直重试解决不了权限问题。重连指南可以对照当前文档检查。</p><p>日志还为每次连接记录独立编号，方便把断线前后的消息分开查看。</p><h2>报价恢复了，断流的那一段仍要留下</h2><p>本节结论：重新收到报价，不会自动补出中断期间的每一次更新。</p><p>CSV 逐条保存连接编号、接收时间、报价时间、价格和检查状态。事件日志另外记录主动断开、连接打开、发送订阅和收到新报价的时刻。</p><p>这些记录可以用来给看板或下游数据标出中断窗口。后面重新收到报价，也不会自动补出中间每一次更新。</p><p>比如，从断线前最后一条报价到恢复后第一条通过检查的报价，只能比较这两个观察点；仅凭它们，还原不了期间的每次变化、价格穿过某个阈值的准确时刻，也说不清具体漏了多少条消息。</p><p>需要历史 K 线时，要另外查询对应时间窗口，并检查返回结果。K 线汇总的是一个周期里的数据；补上 K 线以后，也要保留实时订阅曾经中断的记录。</p><h2>给产品与技术同事的页面验收清单</h2><p>本节结论：验收不要只看连接灯，要逐项检查页面状态。</p><table><thead><tr><th>检查时刻</th><th>页面应当怎样表现</th><th>核对重点</th></tr></thead><tbody><tr><td>连接中断</td><td>保留最后价格和报价时间，提示中断</td><td>不把最后一次记录继续显示成正在更新</td></tr><tr><td>新连接打开</td><td>显示等待目标货币对报价</td><td>已重新发送订阅</td></tr><tr><td>只有确认或心跳</td><td>继续等待报价</td><td>不因收到控制消息就清除提示</td></tr><tr><td>新报价到达</td><td>按标的和报价时间检查后更新状态</td><td>同时保存报价时间与接收时间</td></tr><tr><td>连接正常但长时间没有新报价</td><td>根据应用设定调整提示</td><td>时间检查仍持续运行</td></tr><tr><td>后续复盘</td><td>能定位中断窗口</td><td>不把恢复后的两个端点当作全部过程</td></tr></tbody></table><p>这张表可以直接放进需求文档。先约定页面要告诉用户什么，再让技术实现对应检查，比只写一句“支持断线重连”更容易验收。</p><h2>常见问题</h2><h3>Q1：第一次接外汇实时行情，从哪里开始？</h3><p>先只订阅 <code>EURUSD</code>，确认收到订阅回应和真实的 <code>ticker</code> 消息，再扩展货币对。具体账户权限和可用标的，以当前文档和实际返回为准。</p><h3>Q2：连接恢复了，却一直没有 EURUSD 报价，怎么办？</h3><p>保留等待状态，依次检查发出去的订阅、确认消息、返回标的、服务端错误和报价时间。收到心跳或其他货币对的数据，都不应该解除 EURUSD 的等待提示。等待状态要一直保持到目标报价通过检查，或者明确转为异常提示。</p><h3>Q3：后续需要当前快照或历史走势，怎样配合？</h3><p>按页面任务分别查询行情快照或历史 K 线，给结果保留各自的时间和用途；订阅中断记录继续保留，方便解释数据来源。具体接口以当前文档和实际返回为准。</p><h2>把恢复条件写进产品需求</h2><p>本节结论：页面恢复条件要写成可验收的状态变化，不能只写“支持断线重连”。</p><p>外汇行情接入后，页面应该能解释清楚：订阅了什么、最后收到什么，以及为什么从等待状态恢复正常。</p><p>这次实测留下了完整顺序：连接重新打开，客户端再次订阅，随后收到报价时间推进、并通过检查的 EURUSD 报价。对照恢复顺序和时间图，团队可以把“页面什么时候恢复”写进验收条件。</p><p>用自己的货币对做一次同样的测试，再决定看板和提醒什么时候恢复。连接灯和报价时间一起看，用户才更容易判断眼前这条数据该怎么用。</p><p>数据记录于 2026 年 10 月 22 日，用于演示行情处理，不构成投资建议。</p><h2>术语表</h2><ul><li><strong>报价时间</strong>：行情消息自带的 <code>timestamp</code>，表示这条报价对应的时间。</li><li><strong>客户端接收时间</strong>：本客户端收到消息的时刻，和报价时间不是同一个概念。</li><li><strong>恢复检查</strong>：判断新报价是否属于目标标的、时间是否可用、是否晚于断线前最后一条、是否落在允许范围内。</li><li><strong>断流窗口</strong>：从最后一次有效报价到恢复后第一条有效报价之间的时间段，中间更新不会自动补出。</li><li><strong>应用层心跳</strong>：接口 JSON 消息里的 <code>ping</code>、<code>pong</code>，和 WebSocket 协议控制帧不是一回事。</li></ul><h2>参考资料</h2><ol><li>官方文档：WebSocket 连接与重连、行情订阅、心跳消息</li><li>IETF：RFC 6455 中 Ping/Pong 控制帧的定义</li><li>美联储：FOMC 会议日历</li></ol><hr/>]]></description></item><item>    <title><![CDATA[复制外来图纸直接用？第三方图纸坑多，接收图纸前务必做审查 酷酷的板凳 ]]></title>    <link>https://segmentfault.com/a/1190000048375080</link>    <guid>https://segmentfault.com/a/1190000048375080</guid>    <pubDate>2026-10-27 15:03:27</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>日常工作中，我们经常收到外协单位、甲方发来的外部 DWG 图纸，很多人拿到文件直接复制图元、修改使用。外来图纸隐藏大量隐患：图层混乱、单位错误、碎线重叠、非法块、代理图形，直接拿来改图，后续极易出现卡顿、打印异常、尺寸错误等问题。外来图纸审查，是 CAD 从业者必备的隐性能力，比绘图命令更重要。外来图纸最大隐患，是制图标准不统一。外单位绘图人员习惯各不相同，图层命名杂乱，有的图纸单位是英寸，有的是毫米，直接复制到你的项目文件，整套图纸单位错乱，尺寸全部失效。还有图纸里面大量重叠线条、多余代理对象、自定义第三方块，你的 CAD 缺少对应插件，打开之后图形异常。<br/><img referrerpolicy="no-referrer" src="/img/remote/1460000048375082" alt="图片" title="图片"/><br/>拿到外部图纸，固定审查流程。<br/>第一步，核查单位，用 UNITS 命令确认单位，毫米是国内工程通用标准；<br/>第二步，核查图层，清理多余垃圾图层，统一图层命名规范；<br/>第三步，图形核查，AUDIT 检查图形错误，OVERKILL 删除重叠重复线条；<br/>第四步，清理无用块、文字样式，PU 清理冗余对象；<br/>最后，检查外部参照、图片附件，确认所有外部链接完整。<br/>很多人嫌麻烦，跳过图纸审查直接改图，画到项目后期才发现底层数据异常，这时修改工作量成倍增加。如果需要提取外来图纸的局部构件，不要直接全图复制，优先清理之后再提取图元。也不要直接把外来图纸模板，当做本项目正式模板。<br/>对外来图纸的审查，核心是隔离风险，把别人不规范的图纸，转化为符合自己项目标准的图纸。懂得审查外部图纸的绘图员，能避开大量看不见的陷阱，减少项目中途突发的各类图纸故障。</p>]]></description></item><item>    <title><![CDATA[AI日报｜企业智能体要按结果验收 斯巴达信息 ]]></title>    <link>https://segmentfault.com/a/1190000048375094</link>    <guid>https://segmentfault.com/a/1190000048375094</guid>    <pubDate>2026-10-27 15:02:29</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p><a href="https://link.segmentfault.com/?enc=IPBroDjF0FVQrTYjMn%2BfWQ%3D%3D.4pCQBusOfeaYBXnjEM1etqPf%2Bhpawzj6FIxZK9fR3KFT%2BGD0F%2BXiCTvvVq4hpkTGNLBxQz7I7uZRpTnaDGHx6A%3D%3D" rel="nofollow" target="_blank">AI技术解读</a> · AI日报 · 2026-10-27</p><p>企业智能体的交付标准不是回答有多像人，而是业务状态能否在授权范围内正确改变并留下证据。</p><p>AI日报企业智能体AI Agent项目验收流程自动化权限控制</p><p><img referrerpolicy="no-referrer" src="https://image-static.segmentfault.com/184/122/1841222821-6ae03b6d5012f" alt="明亮企业运营控制室内工程师核对智能体任务、审批与结果状态的AI生成概念场景" title="明亮企业运营控制室内工程师核对智能体任务、审批与结果状态的AI生成概念场景"/><br/><em>AI生成概念场景：企业智能体的目标、审批、执行回执与结果复核，不代表客户实拍或真实项目证据</em></p><p>10月26日，Oracle集中发布面向财务、人力、供应链、制造、销售和服务的企业智能体能力。真正值得企业关注的，不是又多了多少个Agent，而是产品开始把“目标、权限、确定性计算、人工批准、执行动作和结果状态”放进同一条链路。对于正在选型或验收智能体的企业，这意味着评价标准要从“回答像不像人”转向“结果是否可核验、动作是否获授权、异常是否能接管”。</p><p>本期以北京时间2026年10月27日早间为截止点。过去48小时内，与企业采购、交付和验收直接相关的一手更新主要集中在Oracle同一组发布；因此今日重点按一个主事件的不同工程变化整理，不把同一发布虚构成多条独立行业新闻。10月14日至22日的IBM、Microsoft和NVIDIA资料仅用于边界对照，均明确标注日期。</p><h2>今日重点</h2><ul><li><strong>Oracle把企业Agent从“建议”推向“受控执行”。</strong> 10月26日公告称，25个Fusion Claw驱动的Agentic Applications已覆盖ERP、HCM、SCM和CX。</li><li><strong>目标、权限与责任成为任务入口。</strong> 用户定义希望达成的业务结果，同时给出可用权限与责任边界，系统再协调流程、审批和Agent。</li><li><strong>供应链应用强调比较方案后再执行。</strong> 物料与产能分配、装载规划、采购支出等场景先分析约束和权衡，再把高价值方案交给人员审查。</li><li><strong>确定性计算被保留在关键环节。</strong> 长任务可以使用模型推理和连续重规划，但金额、分配、迁移等动作仍需要可复核计算与批准。</li><li><strong>统一入口开始跨系统协调工作。</strong> Fusion Companion可从支持的AI入口理解目标，再选择事务、工作流、审批、Agent和应用。</li><li><strong>完成状态成为产品的一部分。</strong> Fusion Agentic Home用于委派、跟踪和处理异常，说明“是否完成”不能只由对话结束来判断。</li><li><strong>知识库也正在成为被治理的Agent资产。</strong> IBM 10月21日更新把知识库与工具、MCP服务器、模型一起纳入发现和风险关系图。</li><li><strong>工业现场的闭环仍需要人和记录。</strong> Microsoft 10月22日公开的电梯服务案例让现场人员读取设备知识，再用口述复盘把新经验写回；它是案例材料，不是通用收益承诺。</li></ul><h2>一、发生了什么：企业软件开始交付“结果系统”</h2><p>Oracle在10月26日的总公告中称，新的Fusion Agentic Applications由Fusion Claw执行运行时支撑，可处理更长、更复杂的专业工作，包括持续重规划、确定性执行和受治理的自动化。公告列出的25个应用跨越财务、人力、供应链、制造、销售与服务。这里的关键信号不是数量，而是每个应用都被放在已有业务数据、权限、审批和交易记录里运行。</p><p>同日供应链公告给出了更具体的工作对象：Supply Planning Allocation比较生产线、工作中心、成品、零部件和业务取舍；Shipment Load Planning比较时间、容量、服务承诺与成本；Procurement Spend分析采购支出、供应商协议和合同偏离。公告反复使用“准备方案供团队审查”“执行已批准动作”等表述，说明产品边界仍包含人工决定。</p><p>已确认的是厂商发布的产品能力与可用应用范围。仍未知的是不同地区、版本和客户配置的实际可用性、接入周期、准确率、节约金额、异常率和生产成效。Oracle没有在这些公告中给出适用于所有企业的统一ROI，因此不能把“可交付结果”直接写成“已经产生确定收益”。</p><h2>二、为什么“会回答”不等于“交付了结果”</h2><p>传统对话助手的任务通常在输出文字时结束；流程智能体则必须改变一个可观察的业务状态。例如“优化采购”至少要明确基线支出、允许调整的供应商与合同、审批人、建议动作、实际执行记录和结果复核时间。如果系统只生成一段建议，却没有进入批准和执行链，它仍是辅助工具，不是完成了采购优化。</p><p>反过来，系统能调用接口也不等于完成任务。它可能选择了错误对象、使用过期数据、绕开审批或在异常后重复执行。验收因此需要把自然语言目标拆成机器和人员都能检查的状态：输入是否齐全、约束是否满足、方案是否被批准、动作是否幂等、外部系统是否确认、结果是否达到阈值、失败是否进入人工队列。</p><h2>三、白泽重点拆解：一条可验收的企业Agent链路</h2><h3>1. 目标契约：先定义“完成”</h3><p>任务启动时写清业务对象、目标指标、不可触碰的边界、截止条件和停止条件。比如“降低采购支出”不能作为可执行目标；更可验收的表达是“在不改变质量等级、合格供应商范围和交付窗口的前提下，为指定品类生成三套方案，并由采购负责人批准后创建草稿订单”。目标契约应由业务负责人确认，不能由Agent自己改写后自动扩大范围。</p><h3>2. 证据输入：知道结论来自哪里</h3><p>业务数据、制度文档、设备记录和外部信息进入任务时，要保留来源、版本、时间和权限。IBM在10月21日介绍AI资产发现时，已经把知识库作为Agent的关联资产，与模型、工具和MCP服务器一起进入治理图。对项目验收而言，这意味着不能只列一个“知识库已接入”，而要能回答Agent在这次任务里实际读取了哪些知识资产。</p><h3>3. 方案与确定性计算：把概率判断和硬约束分开</h3><p>模型适合归纳异常、解释原因和生成候选方案；金额核算、库存平衡、生产能力、阈值判断、版本迁移等可确定计算，应由规则、求解器或业务系统完成。Oracle把连续重规划与确定性执行放在同一运行时描述中，正好提示企业：复杂任务不是“全部交给大模型”，而是让模型负责选择和解释，让确定性组件负责算准、校验和落账。</p><h3>4. 审批闸门：批准的是具体动作</h3><p>审批不能只是对一句“是否继续”点击同意。审批页面至少应展示对象、动作、参数、影响范围、依据、风险、回滚方式和有效期。审批后若参数变化，原批准应失效；高风险动作如付款、删除、发布、生产切换或设备控制，必须由模型外策略决定是否允许。</p><h3>5. 执行回执：外部系统说成功才算成功</h3><p>Agent发出请求不代表业务系统已完成。验收要保存交易号、版本号、状态码、时间、执行人或服务身份，以及重试与幂等键。遇到超时，先查询真实状态，再决定是否重试，避免重复下单、重复发信或重复修改。可逆动作要有补偿步骤，不可逆动作要在执行前提高审批等级。</p><h3>6. 结果复核：把业务结果和模型表现分开</h3><p>一个任务可能“技术执行成功”但“业务结果未达成”。例如分配方案已写入系统，却造成某条产线缺料；服务建议已发送，却没有解决设备故障。应分别记录动作完成率、异常接管率、错误执行率、业务指标变化和人工复核结论。没有基线、观察窗口和样本量，就不能宣称Agent带来增长或降本。</p><h2>四、企业知识库与现场流程如何接上这条链</h2><p>知识库不是只给Agent补充答案，它还决定任务依据是否可信。若设备手册、维修记录和制度版本没有所有者、有效期和权限，Agent越能执行，错误知识造成的副作用越大。企业RAG项目应把引用片段、文档版本、检索策略和权限决策一并写入任务证据，而不是只保留最终回答。</p><p>Microsoft在10月22日公开的TK Elevator材料展示了一种双向闭环：现场技术人员在手机或平板上查询设备历史和技术手册；工作结束后，再用语音复盘把经验写回记录，供以后服务人员使用。这个案例说明，知识系统的价值来自“工作前提供证据、工作后回收真实记录”。但报道没有给出可外推到所有企业的统一准确率、节省时间或投资回报，不能据此替代本地验证。</p><p>正在建设类似流程的企业，可以先在<a href="https://link.segmentfault.com/?enc=tr3UlDe%2BJXC2vCAkYA10yg%3D%3D.JCKXmTLZ%2F8ZZa4fSiwaQd2%2FICp7AsXstMhO5ZyswA%2FvZhYyOdfqD17PZY798%2FRKQLPea8mpEBgHe5pMS6jLywg%3D%3D" rel="nofollow" target="_blank">企业智能体开发服务</a>中明确任务、权限、工具和回执；若问题集中在文档检索、引用和权限，可再看<a href="https://link.segmentfault.com/?enc=BYm%2BhXnSGbz3u%2FM3pV8T7g%3D%3D.krDYGd%2FrJYLLjSsPgq%2FJrfxXQq1%2FmocoNZBk4Zo6LzX9BZpHvSUyoFC%2BGSNOsgwz" rel="nofollow" target="_blank">企业RAG开发</a>。本期没有与Oracle产品能力一一对应的白泽公开案例，因此不把外部发布包装为自身业绩。</p><h2>五、工业视觉为什么更不能只看“模型指标”</h2><p>NVIDIA在10月14日的半导体制造公告中给出了多项仿真与检查加速数据，包括部分早期测试的2至3倍加速，以及合作方特定仿真任务的更高倍数。这些数字属于指定库、硬件、工作负载和合作方结果，不能外推到玻璃瓶、零部件或其他产线，更不能替代漏检、误检、节拍、停机和复测验收。</p><p>对工业视觉而言，“结果系统”应连接相机采集、缺陷分类、剔除或报警、人工复核、批次追踪与模型回归。算法推理速度只是其中一项。企业应按缺陷类型、尺寸、位置、光照、瓶型或工件型号分层统计，再在真实节拍下观察漏检与误检；任何生成式解释都不能取代可追溯图像、设备信号和质量记录。</p><h2>六、采购和验收时要问的八个问题</h2><ol><li>Agent收到的业务目标如何转成可验证完成条件？</li><li>每次任务使用了哪些数据、知识库、模型、工具和策略版本？</li><li>哪些计算由确定性系统完成，哪些判断由模型给出？</li><li>审批人看见的是具体动作与影响，还是模糊的“继续”？</li><li>权限是否按任务、对象和时间发放，能否即时撤销？</li><li>外部系统返回未知状态时，如何查询、重试和防止重复执行？</li><li>失败后能否停机、回滚、转人工并保全证据？</li><li>业务效果采用什么基线、观察窗口和样本量复核？</li></ol><p>费用与周期取决于系统数量、接口质量、权限复杂度、历史数据、异常分支和审批要求。没有这些输入，固定报价或“几天上线”的承诺没有可靠依据。可先选一个高频、边界清楚、动作可逆的流程做小样本验证，再决定是否扩大权限和覆盖范围。</p><h2>今日企业行动清单</h2><ol><li><strong>挑一个真实流程画状态机。</strong> 标出开始、等待资料、待审批、执行中、成功、失败、未知和人工接管，不用“Agent处理中”覆盖全部状态。</li><li><strong>把一项高风险动作拆开。</strong> 明确建议、审批、执行、回执和回滚分别由谁负责，禁止模型同时当申请人和批准人。</li><li><strong>准备异常验收集。</strong> 加入过期知识、权限撤销、接口超时、重复请求、计算冲突和人工拒绝，检查系统是否停止并留下证据。</li></ol><h2>来源与边界</h2><ul><li>Oracle，2026-10-26，Fusion Applications outcome-driven AI、供应链Agentic Applications、Fusion Companion与Agentic Home三份官方公告。</li><li>IBM，2026-10-21，AI Asset Discovery更新；知识库进入Agent治理资产关系图。</li><li>Microsoft，2026-10-22，TK Elevator现场服务与知识闭环案例。</li><li>NVIDIA，2026-10-14，半导体设计、仿真与检查加速公告；仅用于说明性能数据必须限定工作负载。</li></ul><p>厂商公告说明产品方向和设计边界，不等于所有客户已经取得相同效果。文中的六段验收链和八项问题是白泽工程判断，需在企业真实数据、权限、接口和流程中验证。本文未取得可靠的搜索量、排名、采购规模或通用ROI，不作增长承诺。</p><p>白泽智能｜重庆斯巴达信息技术有限公司</p>]]></description></item><item>    <title><![CDATA[GenUI SDK v1.4.0 React 渲染器能力与特性解析 OpenTiny社区 ]]></title>    <link>https://segmentfault.com/a/1190000048375123</link>    <guid>https://segmentfault.com/a/1190000048375123</guid>    <pubDate>2026-10-27 15:01:29</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>OpenTiny 团队的 GenUI SDK 走到了<a href="https://link.segmentfault.com/?enc=osMRS51FkVSEu8bKELk2NA%3D%3D.ddjnhquiWEg5b73FJLO3mEHHktAWanosugMWbZNdPrEhvL8QSY6teLsgGIEWFCTC" rel="nofollow" target="_blank"> v1.4.0</a>。如果说 v1.3.0 的意义在于"把核心逻辑从渲染器里拆出来、让物料可插拔"，那 v1.4.0 的主线只有一件事——<strong>React 渲染器正式发布，Vue / React / Angular 三大主流框架全覆盖</strong>。</p><p>v1.3.0 时 React 渲染器还停留在 <code>alpha</code> 阶段，而现在已经正式落地，可以交付使用。本文从开发者视角拆解这次更新，重点回答三个问题：</p><p><strong>React 渲染器从 alpha 到正式版经历了什么、三框架一致性到底意味着什么、以及这套方案在生产环境中值不值得押注。</strong></p><h2>一、先回顾：GenUI SDK 的核心链路没有变</h2><p>在往下讲之前，先回顾下 GenUI SDK 的核心流程。v1.4.0 所有改动，都是在这条链路上做加强，不是重新搞一套。</p><blockquote>大模型流式输出 Schema → 前端增量解析（Delta Patch） → 渲染器实时渲染 UI → 用户交互回写</blockquote><p>v1.3.0 做的是"骨架工程"：Core 独立发包、物料解耦、渲染器补齐 refs / 异步 Action / 生命周期。v1.4.0 则是在这副骨架上，把最后一块框架拼图——React——正式装上去。</p><p><img width="723" height="413" referrerpolicy="no-referrer" src="/img/bVdq8JF" alt="1.png" title="1.png"/></p><h2>二、React 渲染器正式发布：从 alpha 到正式版的质变</h2><p>v1.3.0 放出的 React 渲染器是 <code>1.3.0-alpha.1</code>，配套 Ant Design 物料库。当时能跑通基本流程，但 alpha 意味着"路径走通了，细节还没打磨"。</p><p>v1.4.0 的 React 渲染器正式晋升为正式版本。从源码来看，核心文件结构已经稳定：</p><pre><code>packages/frameworks/react/src/
-├── config-provider/
-│   ├── ConfigProvider.tsx    # 全局配置提供者，注入物料、主题、通知
-│   ├── index.ts
-│   └── notify.types.ts      # 通知能力类型定义
-├── renderer/
-│   ├── GenuiRenderer.tsx     # 核心渲染器（约 157 行）
-│   ├── config.ts             # 渲染配置（字段选择器等）
-│   ├── index.ts
-│   ├── renderer.css          # 渲染器样式
-│   └── renderer.types.ts     # 类型定义
-├── index.ts                  # 包入口
-└── transform-jsx.ts          # JSX 转换工具</code></pre><p>接入方式与此前 Vue / Angular 保持一致——<code>GenuiConfigProvider</code> 注入物料，<code>GenuiRenderer</code> 负责渲染：</p><pre><code class="tsx">import { GenuiConfigProvider, GenuiRenderer } from '@opentiny/genui-sdk-react';
-import { materials } from '@opentiny/genui-sdk-materials-react-antd/materials';
-import 'antd/dist/reset.css';
-
-export function App({ schema }: { schema: unknown }) {
-  return (
-    &lt;GenuiConfigProvider materials={materials}&gt;
-      &lt;GenuiRenderer content={schema} isJsonComplete /&gt;
-    &lt;/GenuiConfigProvider&gt;
-  );
-}</code></pre><p>几个值得关注的实现细节：</p><ul><li><strong><code>forwardRef</code> 暴露实例</strong>：<code>GenuiRenderer</code> 通过 <code>forwardRef</code> 暴露 <code>SchemaRendererHandle</code>，允许外部直接调用 <code>setContext</code>、<code>setState</code> 等方法——这与 v1.3.0 在 Vue / Angular 渲染器里补的 refs 能力对齐；</li><li><strong>物料合并策略</strong>：<code>contextMaterials.components</code> 与 <code>props.customComponents</code> 合并，后者优先级更高，方便业务覆盖默认组件；</li><li><strong>Action 分发</strong>：<code>callAction</code> 从 <code>customActions</code> 中查找对应 action 并执行，未找到时输出 warning 而非抛错——容错策略与 Vue 版一致；</li><li><strong>错误兜底</strong>：JSON 解析失败时渲染错误提示而非白屏。</li></ul><p><strong>总结</strong>：React 渲染器从 alpha 转正，并不是我们从零重写了一套渲染器。本质上，v1.3.0 定下的 Core + 物料这套架构，顺利扛住了第三个框架的考验。框架之间的差别，只在组件怎么实现：React 用 Hooks、Vue 用组合式 API、Angular 靠依赖注入，对外的 API 全都保持一致。这件事的意义，远不止多出来一个 React 版本，它证明咱们这套架构的扩展性不是空想，是真的能用。</p><p><img width="723" height="464" referrerpolicy="no-referrer" src="/img/bVdq8JI" alt="2.png" title="2.png" loading="lazy"/></p><h2>三、流式渲染：三框架共享同一套核心逻辑</h2><p>流式渲染是 GenUI SDK 的核心亮点之一，也是技术含量最高的部分。模型流式输出的 JSON 往往是不完整的——比如 <code>{ "type": "Form", "fields": [</code> 这种半成品——直接渲染必然报错。</p><p>v1.3.0 在 Core 层实现了 <code>repairJson</code> 和 <code>DeltaPatcher</code>：前者实时修复不完整的 JSON，后者把增量更新应用到已有的组件树。v1.4.0 的 React 渲染器直接复用了这套逻辑，从 <code>GenuiRenderer.tsx</code> 的核心代码可以看到：</p><pre><code class="tsx">useEffect(() =&gt; {
-  setIsError(false);
-  const raw = props.content;
-  if (typeof raw === 'string' &amp;&amp; raw.trim()) {
-    const { value, state } = repairJson(raw);
-    if (!value || typeof value !== 'object') {
-      setIsError(true);
-      return;
-    }
-    // ... 处理流式更新
-  }
-}, [props.content]);</code></pre><p>这意味着三件事：</p><ol><li><strong>开发者不需要自己处理流式逻辑</strong>——把模型输出直接传给 <code>content</code> prop 即可；</li><li><strong>流式修复的正确性由 Core 统一保证</strong>——三个框架共享同一段 <code>repairJson</code>，修一个 bug 三端同时受益；</li><li><strong>"模型吐一个字，界面就更新一点"的体验在三框架上完全一致</strong>。</li></ol><p><strong>总结</strong>：流式渲染这块，是生成式 UI 最容易出各种奇怪 bug 的地方。GenUI SDK 把这部分能力下沉到 Core 层，三个框架共用一套实现。一方面不用重复写代码，另一方面体验也能统一。对开发者来说，不管你用哪个框架，流式渲染的表现、异常情况全都一样，省心很多。</p><p><img width="723" height="414" referrerpolicy="no-referrer" src="/img/bVdq8JJ" alt="3.png" title="3.png" loading="lazy"/></p><h2>四、自定义组件与 Actions：生成式 UI 融入业务的两个抓手</h2><p>v1.3.0 在渲染器层面补了默认 Props、refs、异步 Action、生命周期四项能力，让生成式 UI 从"静态模板"进化为"可编排业务流程的可用界面"。v1.4.0 的 React 渲染器完整继承了这些能力。</p><h3>自定义组件：业务组件直接注入</h3><p>如果项目有专属的业务组件——<code>&lt;OrderCard /&gt;</code>、<code>&lt;UserAvatar /&gt;</code>——可以通过 <code>customComponents</code> 注入：</p><pre><code class="tsx">&lt;GenuiConfigProvider 
-  materials={materials}
-  customComponents={{
-    OrderCard: OrderCardComponent,
-    UserAvatar: AvatarComponent,
-  }}
-&gt;
-  &lt;GenuiRenderer content={schema} /&gt;
-&lt;/GenuiConfigProvider&gt;</code></pre><p>模型生成的 SchemaJson 里只要包含 <code>{ "componentName": "OrderCard", "props": { ... } }</code>，渲染器就会自动映射到对应的业务组件。物料合并策略保证了 <code>customComponents</code> 优先级高于默认物料，业务覆盖不需要改动物料包本身。</p><h3>自定义 Actions：交互逻辑外挂</h3><p>按钮点击、表单提交等交互通过 <code>customActions</code> 注入：</p><pre><code class="tsx">&lt;GenuiConfigProvider 
-  materials={materials}
-  customActions={{
-    submitOrder: {
-      execute: (params, context) =&gt; {
-        // 调用业务 API
-      }
-    }
-  }}
-&gt;
-  &lt;GenuiRenderer content={schema} /&gt;
-&lt;/GenuiConfigProvider&gt;</code></pre><p>配合 v1.3.0 引入的异步 Action（<code>async: true</code> + <code>return</code> Schema），模型可以在 Schema 内编排"校验 → 等待结果 → 分支判断 → 继续"这类有状态的业务流程。</p><p><strong>总结</strong>：这两个机制让生成式 UI 不再是"只能展示信息的卡片"，而是能真正嵌入业务系统的可用界面。三框架 API 一致，意味着你在 Vue 项目里调试好的自定义组件和 Action 逻辑，迁移到 React 项目时几乎不用改。</p><p><img width="723" height="415" referrerpolicy="no-referrer" src="/img/bVdq8JV" alt="4.png" title="4.png" loading="lazy"/></p><h2>五、三框架一致性：不是巧合，是架构选择</h2><p>把三个框架的 API 放在一起看，一致性是刻意的：</p><table><thead><tr><th>能力</th><th>Vue</th><th>React</th><th>Angular</th></tr></thead><tbody><tr><td>渲染器</td><td><code>GenuiRenderer</code></td><td><code>GenuiRenderer</code></td><td><code>GenuiRenderer</code></td></tr><tr><td>配置提供者</td><td><code>GenuiConfigProvider</code></td><td><code>GenuiConfigProvider</code></td><td><code>GenuiConfigProvider</code></td></tr><tr><td>物料注入</td><td>✅</td><td>✅</td><td>✅</td></tr><tr><td>自定义组件</td><td>✅</td><td>✅</td><td>✅</td></tr><tr><td>自定义 Actions</td><td>✅</td><td>✅</td><td>✅</td></tr><tr><td>流式 JSON 修复</td><td>✅</td><td>✅</td><td>✅</td></tr><tr><td>通知能力</td><td>✅</td><td>✅</td><td>✅</td></tr></tbody></table><p>这套一致性，根源其实是 v1.3.0 定下的架构思路：<strong>和框架无关的纯业务逻辑，全都下沉到 <code>@opentiny/genui-sdk-core</code>；跟框架绑定的渲染逻辑，放在上层</strong>。 三个框架共用同一套 SchemaJson 协议、<code>repairJson</code>、<code>DeltaPatcher</code> 和 <code>genPrompt</code>。它们的区别只在组件怎么写：React 靠 Hooks，Vue 用组合式 API，Angular 则是依赖注入。</p><p>对于企业来说，这意味着：</p><ul><li><strong>学习成本只付一次</strong>：团队学会一个框架的 GenUI SDK 用法，另外两个框架几乎零学习成本；</li><li><strong>跨项目复用</strong>：物料包、提示词、业务组件、自定义 Actions 可以在不同框架间共享；</li><li><strong>技术栈迁移无感</strong>：从 Vue 迁移到 React 时，生成式 UI 部分的 Schema 协议、物料元数据、服务端 Prompt 全部不用改。</li></ul><p><strong>总结</strong>：三框架一致性不是"三个团队各写一遍然后碰巧一样"，而是 Core 独立发包 + 统一协议层的必然结果。这种架构选择让"学一次、到处用"从口号变成了工程事实。</p><h2>六、物料体系：前端 <code>materials</code> 与后端 <code>materialsMeta</code> 的双向契约</h2><p>物料包是 GenUI SDK 里最容易被低估、实际上最关键的组成部分。以 React 的 <code>@opentiny/genui-sdk-materials-react-antd</code> 为例，它提供两样东西：</p><p><strong><code>materials</code> — 运行时组件映射</strong>，告诉渲染器"Schema 里的组件名对应哪个真实 React 组件"：</p><pre><code class="ts">export const materials = {
-  components: {
-    Button: AntButton,
-    Input: AntInput,
-    Form: AntForm,
-    // ...
-  }
-};</code></pre><p><strong><code>materialsMeta</code> — 提示词元数据</strong>，告诉模型"可以使用哪些组件、每个组件有哪些参数"：</p><pre><code class="ts">export const materialsMeta = {
-  components: [
-    {
-      name: 'Button',
-      description: '按钮组件',
-      props: [
-        { name: 'type', type: 'string', enum: ['primary', 'default', 'dashed'] },
-        { name: 'size', type: 'string', enum: ['small', 'medium', 'large'] }
-      ]
-    }
-  ]
-};</code></pre><p>前端注入 <code>materials</code>，服务端通过 <code>genPrompt()</code> 注入 <code>materialsMeta</code>——<strong>两边必须匹配</strong>。如果模型生成了一个前端物料包里不存在的组件名，渲染器就会报错。</p><p><img width="723" height="439" referrerpolicy="no-referrer" src="/img/bVdq8J2" alt="5.png" title="5.png" loading="lazy"/></p><p><strong>总结</strong>：这是一个"双向契约"设计。它把"模型能生成什么"和"前端能渲染什么"解耦了——你可以为不同业务场景准备不同的物料包，渲染器保持稳定通用。v1.3.0 引入的物料可插拔在 v1.4.0 的 React 物料包上得到了完整验证：换物料包不需要改渲染器代码，换框架不需要改物料元数据。</p><h2>七、实战：从零搭建一个 React AI 对话应用</h2><p>理论讲完，看一个完整的实战流程。</p><p><strong>安装依赖</strong>：</p><pre><code class="bash">pnpm add @opentiny/genui-sdk-react @opentiny/genui-sdk-materials-react-antd antd</code></pre><p><strong>前端代码</strong>——<code>GenuiChat</code> 是开箱即用的对话组件，内置输入框、消息列表、渲染器：</p><pre><code class="tsx">import { GenuiChat } from '@opentiny/genui-sdk-react';
-import { materials } from '@opentiny/genui-sdk-materials-react-antd/materials';
-import 'antd/dist/reset.css';
-
-export function App() {
-  return (
-    &lt;GenuiChat 
-      url="/api/chat" 
-      model="deepseek-chat"
-      materials={materials}
-    /&gt;
-  );
-}</code></pre><p><strong>服务端代码</strong>——<code>startServer</code> 自动处理流式响应，把模型输出转换为 SchemaJson：</p><pre><code class="ts">import { startServer } from '@opentiny/genui-sdk-server';
-import { materialsMeta } from '@opentiny/genui-sdk-materials-react-antd/meta';
-
-startServer({
-  port: 3100,
-  baseURL: 'https://api.openai.com/v1',
-  apiKey: process.env.OPENAI_API_KEY,
-  materialsMeta,
-});</code></pre><p>启动后访问 <code>http://localhost:5173</code>，试着说"帮我生成一个用户注册表单"，界面会实时生成出来。</p><p><strong>总结</strong>：从安装到跑通，前端不到 10 行代码，服务端不到 10 行代码。<code>GenuiChat</code> 封装了完整的对话流程，适合快速验证；如果需要更细粒度的控制，可以拆开用 <code>GenuiRenderer</code> + 自定义消息管理。</p><h2>八、演练场：先体验再集成的零成本入口</h2><p>如果还不想动手写代码，官方演练场是最直接的体验方式。演练场本身用 GenUI SDK 搭建，支持切换 Vue / React / Angular 三种技术栈，在同一会话里横向对比不同框架的生成效果。</p><p>跳转演练场，在物料面板中选择React技术栈。就可以跳过手写代码的过程，直接在演练场优先体验生成式UI的能力了。</p><p><img width="723" height="369" referrerpolicy="no-referrer" src="/img/bVdq8J3" alt="6.png" title="6.png" loading="lazy"/></p><p><strong>演练场地址</strong>：<a href="https://link.segmentfault.com/?enc=dn12j5CAbs7xBMMZYfZVqw%3D%3D.aEwFiOkwLyOvpTtOWou%2BXRS%2BhHtCZRnyjFyXsQlVV5gFvW7poHn8WtXuBECWz8h8" rel="nofollow" target="_blank">https://opentiny.design/genui-sdk/playground</a></p><p><strong>总结</strong>：演练场可不只是个在线 Demo。它支持同一个会话里混用三个框架，还能导出源码，相当于一个低成本的方案验证工具。大家打算接入之前，可以先在演练场跑一遍，看看生成效果是不是符合预期。</p><h2>九、总结与展望</h2><p>v1.4.0 的其中一条重要主线：<strong>React 渲染器正式发布，三大主流框架全覆盖</strong>。但这个"集齐"的背后，是 v1.3.0 架构决策的兑现——</p><ul><li><strong>Core 独立发包</strong>让流式修复、协议定义、Prompt 生成等核心逻辑可以被三个框架共享，修一个 bug 三端受益；</li><li><strong>物料可插拔</strong>让"换框架不换物料"成为可能，React 物料包与 Vue / Angular 物料包遵循完全相同的元数据规范；</li><li><strong>API 一致性</strong>让团队的学习成本只付一次，跨框架迁移时生成式 UI 部分几乎无感。</li></ul><p>对于开发者而言，v1.4.0 是一个可以认真评估接入的版本。尤其是那些此前因为"团队用 React 但 SDK 只有 Vue / Angular"而观望的团队，这块拼图现在已经补齐了。</p><p><img width="723" height="448" referrerpolicy="no-referrer" src="/img/bVdq8J4" alt="7.png" title="7.png" loading="lazy"/></p><p><strong>相关链接</strong></p><ul><li>演练场：<a href="https://link.segmentfault.com/?enc=8OTNT2TR%2F4nOn%2BUqJ5pJeA%3D%3D.te%2BsLnSw0vm0w612fWuoCtsOV2Ltcw8MBdSWAm%2Fh5vCNZSg96nOl5tnNFK31MeoFwy0urWI%2BqcZ3MqtRQytnKQ%3D%3D" rel="nofollow" target="_blank">https://opentiny.github.io/genui-sdk/playground/#/chat</a></li><li>React 快速开始：<a href="https://link.segmentfault.com/?enc=hTA18exZc%2FTYKQ8ZHtqxyQ%3D%3D.bi7QCTixnBljfYWZmeTklH2lx9iNmdqq7XnlT5GskLHKIckWpgtfdDzcoUh7j7JZgix%2BXHwkTSd3t2nil%2BskZel7YDFjBtqpXi03d8owAQY%3D" rel="nofollow" target="_blank">https://docs.opentiny.design/genui-sdk/guide/react/start-with...</a></li><li>React 组件 API：[<a href="https://link.segmentfault.com/?enc=B2tKh7GkiOx5ypnNwqfJww%3D%3D.gB%2BqzgGfuzs8S05IzvYP0RDmg9FofeAopzA48VRGrKoqounhOUiQPCuwv8ISvafTuM%2BvW8eNNCofONKGpmACfeb2l691WgO5sWHkEXyrkis%3D" rel="nofollow" target="_blank">https://docs.opentiny.design/genui-sdk/components/react/renderer</a></li></ul><h2>关于 OpenTiny</h2><p>OpenTiny 是面向企业级场景的前端 AI 应用开发平台。平台依托生成式 UI与WebMCP两大核心底层技术，打造适配 Agent 智能应用生态的 NEXT-SDKs、AI 扩展工具、TinyRobot 对话 AI 组件库、GenUI SDK生成式 UI 、WebAgent 智能代理等系列产品，能够依托 AI 解析用户需求意图，自动驱动任务执行，助力企业现有业务系统快速完成智能化升级。</p><p>同时 OpenTiny 沉淀成熟通用前端基建能力：提供跨端、跨框架、跨版本的 TinyVue 组件库，配套基于 Angular+TypeScript 技术栈的 TinyNG 组件库；内置可高度自定义拓展的低代码引擎 TinyEngine，搭配 TinyPro 中后台业务模板、TinyCLI 命令行工具等配套工具链，全方位赋能开发者高效搭建各类 Web 端企业应用。</p><p>欢迎加入 OpenTiny 开源社区。添加微信小助手：opentiny-official 一起参与交流前端技术～\<br/>OpenTiny 官网：<a href="https://link.segmentfault.com/?enc=FhQ%2Fd0lKWrrK9LrrAE%2FH3A%3D%3D.3HSr0sFHUJMyN1%2BPKUEKte8tto%2FMLkv6DCDGg96GOk4%3D" rel="nofollow" target="_blank">https://opentiny.design</a>\<br/>GenUI SDK 代码仓库：<a href="https://link.segmentfault.com/?enc=JZO%2FL%2FuPLP6ebwETMOEFsw%3D%3D.FbVNZylZXmNz%2BQ8MdsYISRjn2OHXfU6eEYRwk8mn7yKvYfBrmkFnWmYgsSaRzlek" rel="nofollow" target="_blank">https://github.com/opentiny/genui-sdk</a>（欢迎star ⭐）</p><p>如果你也想要共建，可以进入代码仓库，找到 good first issue标签，一起参与开源贡献\~如果你有任何问题，欢迎在评论区留言交流！</p>]]></description></item><item>    <title><![CDATA[编译器工具链：GCC、Clang、MSVC、ICC、armclang Zw_awa ]]></title>    <link>https://segmentfault.com/a/1190000048374961</link>    <guid>https://segmentfault.com/a/1190000048374961</guid>    <pubDate>2026-10-27 14:03:27</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>写了几百行代码，按过很多次“编译”按钮。灯亮不亮、程序跑不跑得起来，是后面的事；按下去之后第一个说话的东西，是编译器——它要么一声不吭地把代码变成能烧进芯片的文件，要么甩回来一串红字，告诉你哪一行它看不懂。</p><p>红字里有一类特别让人发懵：代码在上一个工程里明明能编过，换了个地方就开始报错，报的还是“声明不能出现在语句之后”这种听起来莫名其妙的理由。代码未必坏了，通常是<strong>编译器换了</strong>，或者<strong>编译器采用的语言标准换了</strong>。</p><h2>编译不是一件事，是一整条流水线</h2><p>“编译”是口语。真正发生的是好几步：把 <code>#include</code> 和 <code>#define</code> 展开、把 C 代码变成汇编、把汇编变成机器码目标文件、最后把一堆目标文件和库拼成一个可执行的映像。</p><p>干这些活的不是单个程序，是一组程序，加上随它们一起来的头文件、库、启动文件——这一整套叫<strong>工具链</strong>。你在 Keil 里点的那一下，是让工具链从头到尾跑一遍。</p><p>每一环的细节都能单独讲很久，这里先只记一件事：<strong>工具链是有品牌、有版本的</strong>。它像尺子一样，量同一段代码，不同牌子、不同版本的尺子给的答案可能不一样。</p><h2>几个名字先认识</h2><p>各家工具链的差别，先看它们平时出现在哪：</p><table><thead><tr><th>名字</th><th>是什么</th><th>常在哪见到</th></tr></thead><tbody><tr><td>GCC</td><td>开源编译器集合，出现最早、移植最广</td><td>嵌入式上的 <code>arm-none-eabi-gcc</code>、Linux 上的 <code>gcc</code></td></tr><tr><td>Clang / LLVM</td><td>新一代编译框架，报错友好、结构清晰</td><td>苹果开发工具、很多嵌入式工具链的内核</td></tr><tr><td>MSVC</td><td>微软 Visual Studio 的编译器</td><td>Windows 桌面程序</td></tr><tr><td>ICC</td><td>Intel 的编译器</td><td>x86 平台上追求性能的场景</td></tr><tr><td>armclang</td><td>ARM 官方编译器，基于 Clang / LLVM</td><td>Keil MDK 的 AC6</td></tr></tbody></table><p>看这张表能发现一件事：<strong>编译器是跟着目标芯片走的</strong>。PC 上的 <code>gcc</code> 编出来的是给自己这台电脑跑的程序；STM32 跑不了 PC 的程序，所以嵌入式用的是另一套——同一个 GCC 家族里那个 <code>arm-none-eabi-</code> 前缀的版本。</p><p>Keil 里用的就是 ARM 自家的那一支，而且有两代。</p><h2>手上这一套：AC5 和 AC6</h2><p>Keil MDK 把 ARM 的编译器打包进来，于是选项里出现过两个名字：</p><ul><li><strong>AC5</strong>：编译器程序叫 <code>armcc</code>，老一代，很多年前的标准库工程都是它编的，ARM 已经不再维护；</li><li><strong>AC6</strong>：编译器程序叫 <code>armclang</code>，基于 Clang 重写，支持现代 C 标准，优化也更好。</li></ul><p>怎么知道自己在用哪一个？三个地方都能看到：</p><ol><li><strong>工程选项</strong>：<code>Options for Target</code> → <code>Target</code> 页，<code>ARM Compiler</code> 下拉框里写着用的是哪个版本；</li><li><strong>编译输出窗口</strong>：每次编译都会打印编译器自己的名字和版本，例如 <code>Armcc.exe V5.06 update 6 (build 750)</code> ——这行就是 AC5；</li><li><strong>帮助菜单</strong>：<code>Help</code> → <code>About µVision</code>，看的是 IDE 的版本，和编译器版本是两件事。</li></ol><p>为什么要在意？因为选择哪一个，直接决定你的代码要满足哪一套语言规则。</p><h2>C 语言其实有好几个版本</h2><p>我以前也把“C 语言”当成一个固定的东西，后来才发现它其实有一份份逐年发布的标准。标准管的是<strong>语法允许写什么、库提供哪些函数</strong>。版本一路走过来，写代码的手感一直在变。</p><p><strong>C89 / C90</strong>：第一份正式标准。ANSI 在 1989 年发布，ISO 在 1990 年采纳，内容一样，所以两个名字指的是同一份东西。它的规矩很严：</p><ul><li>变量声明必须写在块的<strong>最前面</strong>，中间不能插；</li><li>只有 <code>/* */</code> 块注释，<code>//</code> 单行注释还没进标准（不少编译器把它当扩展先用着）；</li><li>没有固定宽度的整数类型那套头文件。</li></ul><p><strong>C99</strong>：1999 年的版本，是写嵌入式的人最该认识的一版。它带来的变化，几乎每一条都用得着：</p><ul><li>变量可以<strong>随用随声明</strong>，不必挤在块首；</li><li><code>//</code> 单行注释正式写进标准；</li><li><code>for</code> 里面可以直接声明循环变量；</li><li>多了固定宽度整数类型（<code>int8_t</code>、<code>uint32_t</code> 这一家）和布尔类型；</li><li>指定初始化器：结构体可以只写要赋值的字段，<code>.speed = 30</code> 这样点名；</li><li>支持变长数组等特性。</li></ul><p><strong>C11</strong>：2011 年的版本，主要加了些“编译期就能检查”和并发相关的东西，例如编译期断言、匿名结构体与联合体、<code>_Generic</code> 泛型选择。</p><p><strong>C17 / C18</strong>：2018 年出的修补版，主要是澄清和勘误，<strong>没有加新语言特性</strong>。</p><p><strong>C23</strong>：更新的版本，工具链支持还在陆续跟上。</p><p>看这一串能明白一件事：<strong>“编译器报错”很多时候不是代码错，而是它按的版本比你想的旧</strong>。</p><h2>同一段代码，两种命运</h2><p>举个最典型的例子。C90 要求一个块里的声明全部挤在开头，语句一旦开始，后面就不许再声明变量。写成这样就通不过：</p><pre><code class="c">void Work_Once(void)
-{
-    uint8_t mode = 0U;        /* 声明写在块首，合法 */
-    mode = 1U;                /* 从这里开始是语句 */
-    uint8_t count = 0U;       /* 语句之后又出现声明，C90 不允许 */
-    count = mode;
-}</code></pre><p>在<strong>按 C99 检查</strong>的编译器眼里，这是正常写法。在<strong>按 C90 检查</strong>的编译器眼里，<code>mode = 1U;</code> 已经是一条语句，后面再冒出 <code>uint8_t count = 0U;</code>，就属于“语句之后再出现声明”，直接拒绝：</p><pre><code class="text">error: #268: declaration may not appear after executable statement in block</code></pre><p><code>#268</code> 这个编号是 ARM 老编译器（AC5）的报错风格。同一段代码换到 AC6 上编译，通常一句话都不会说——因为 AC6 默认就按现代标准来。</p><p>所以那个经典的困惑就有了答案：<strong>代码没变，标准变了</strong>。AC5 默认按 C90 的口径检查，AC6 默认按更现代的标准检查。</p><h2>怎么让它们讲同一种语言</h2><p>三种做法，按你手上的工具选：</p><p><strong>Keil 的 AC5</strong>：<code>Options for Target</code> → <code>C/C++</code> 页，把 <code>C99 Mode</code> 勾上。勾选前后编同一份代码，上面那个 <code>#268</code> 会直接消失。这是把老编译器“放宽到 C99”的开关。</p><p><strong>GCC / Clang</strong>：命令行上加 <code>-std=c99</code> 或 <code>-std=c11</code>，明确告诉它按哪一版检查。</p><p><strong>MSVC</strong>：用 <code>/std:c11</code> 或 <code>/std:c17</code> 指定。这里补一个背景：MSVC 对 C 语言的支持长期停在 C89 那一套上，C11、C17 是近几年才通过这两个选项补进来的——同一段代码在 MSVC 上编不过，原因可能只是它的 C 支持起步晚。</p><p>反过来看，<strong>AC6、GCC、Clang 之间通常更接近</strong>：它们都认现代标准，符号也相似。真正常见的组合是：老工程（尤其是随工程附带的标准外设库那种）在 AC5 下顺顺当当，换成 AC6 就冒出一片错——那些错误多半来自编译器内置关键字和头文件里的分支，而不是你的业务逻辑写错了。</p><h2>优化等级：编译器会替你改代码</h2><p>编译器还有一个会改变现象的权力：<strong>优化</strong>。</p><p>在 Keil 的 <code>Options for Target</code> → <code>C/C++</code> 页里，<code>Optimization</code> 分级从 <code>Level 0 (-O0)</code> 到 <code>Level 3 (-O3)</code>。级别越高，编译器越“主动”：把能算的提前算掉、把重复的搬出去、把没用的删掉。换来的通常是更小的体积、更快的速度，代价是单步调试时跳来跳去，不好对应源码。</p><p>这里有个必须知道的坑。想用空循环凑一段延时，写成这样：</p><pre><code class="c">for (uint32_t i = 0; i &lt; 1000000U; i++)
-{
-    /* 什么都不做 */
-}</code></pre><p><strong>AC6（armclang）</strong>开了优化以后，编译器一眼看出这个循环没有任何可见效果，于是<strong>整段删掉</strong>。你想要的这段延时就不存在了（一百万次空循环在 72MHz 上本来也只有约 0.1 秒），程序跑过去比眨眼还快。<strong>AC5（armcc</strong>）不会删它——<code>-O2</code>、<code>-O3</code>、<code>-O3 -Otime</code> 下这个空循环都还在，所以在 AC5 上看不到“整段删掉”这一幕。</p><p>解决办法是告诉编译器“这个变量每次都必须真的读写”：</p><pre><code class="c">for (volatile uint32_t i = 0; i &lt; 1000000U; i++)
-{
-    /* 什么都不做 */
-}</code></pre><p><code>volatile</code> 这个词上次出现，是讲寄存器的时候——它说的是“这个值可能被别的东西改变，不许替我优化掉”。空循环延时是它的另一个典型用武之地。</p><p>这个实验要拿 <strong>AC6（armclang）</strong> 做，只有它会把空循环删掉：让一盏灯亮、空循环、灭、空循环，先把 <code>Optimization</code> 放在 <code>Level 0</code>，看闪烁节奏；再改成 <code>Level 3</code> 重新编译，闪烁会明显变快；把循环变量加上 <code>volatile</code> 再编一次，节奏又回到原来那个速度。换成 <strong>AC5（armcc）</strong> 做同一个实验，<code>Level 0</code> 和 <code>Level 3</code> 的闪烁节奏看不出区别——它在 <code>-O2</code>、<code>-O3</code>、<code>-O3 -Otime</code> 下都没删这个空循环。<strong>同一份代码、同一个芯片，只改了编译选项</strong>——这就是工具链在动手脚。</p><p>顺带一句，编译输出的末尾会打印 <code>Code</code>、<code>RO-data</code>、<code>RW-data</code>、<code>ZI-data</code> 四个大小数字。改优化等级、加删代码的时候盯着它们，就能看到自己的程序占了多少 Flash 和 RAM。</p><h2>查一遍自己的</h2><p>三步，都在这台电脑上就能做完：</p><ol><li>打开任意一个工程的 <code>Options for Target</code>，看 <code>Target</code> 页的 <code>ARM Compiler</code>：你用的是 AC5 还是 AC6；</li><li>编译一次，在输出窗口里找到编译器打印的那行版本号，记下来——以后跟别人对问题时，这行比“我用的 Keil”有用得多；</li><li>去 <code>C/C++</code> 页看两处：<code>C99 Mode</code> 有没有勾、<code>Optimization</code> 在哪一级。</li></ol><p>知道了这三件事，再遇到“同一个工程换个电脑就编不过”“别人的代码我这儿报错”，就先比这三个设置，而不是先怀疑自己的板子。</p><h2>最后橘猫说</h2><p>同一份代码换台电脑就编不过，先查三样，别先怀疑板子：<strong>编译器是哪一代、语言标准是哪一版、优化在哪一级</strong>。</p><p>AC5 默认按 C90 检查，变量声明插在语句中间就报 <code>#268</code>；AC6 默认按现代标准来，同一段代码一句话不说。优化等级还会改现象：AC6 开了优化，空循环连影子都不剩，加 <code>volatile</code> 才留得住。三样都查清楚，“玄学编译问题”就会少很多。</p><h2>最后蜘蛛说</h2><p>汝可曾听闻“交叉编译”？</p>]]></description></item><item>    <title><![CDATA[批量任务的可观测性：怎么在 10 万条记录里定位那 3 条失败的 awayaz ]]></title>    <link>https://segmentfault.com/a/1190000048374989</link>    <guid>https://segmentfault.com/a/1190000048374989</guid>    <pubDate>2026-10-27 14:02:18</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <h2>批量任务的可观测性：怎么在 10 万条记录里定位那 3 条失败的</h2><p>批量任务跑到天亮，10 万条里有 3 条失败。产品问"哪 3 条、为什么"，你打开日志文件——只有一行 <code>job finished: success=99997 failed=3</code>。</p><p>这篇讲的是：<strong>怎么让系统自己回答这个问题</strong>，而不是让你去 grep 日志。</p><h3>一、先说结论：可观测性不是"多打日志"</h3><p>绝大多数团队的批量任务长这样：</p><pre><code class="python">for item in items:
-    try:
-        call_api(item)
-        ok += 1
-    except Exception as e:
-        fail += 1
-        logger.error(f"failed: {e}")</code></pre><p>它记录"失败了 3 条"，但回答不了三个关键问题：</p><ol><li><strong>是哪 3 条</strong>（业务 ID 是什么）</li><li><strong>为什么失败</strong>（参数错？限流？上游超时？）</li><li><strong>现在怎么补</strong>（重放哪一批、会不会重复扣费）</li></ol><p>可观测性的本质不是日志量，而是<strong>数据结构</strong>：你必须在跑之前就设计好"能被查询的状态"，而不是事后从文本里捞。</p><h3>二、三层可观测性，缺一层就查不动</h3><table><thead><tr><th>层级</th><th>记录什么</th><th>回答的问题</th></tr></thead><tbody><tr><td><strong>记录层</strong>（每条）</td><td>业务 ID、状态、尝试次数、失败原因码、最后一次错误摘要、时间戳</td><td>哪几条失败、为什么</td></tr><tr><td><strong>批次层</strong>（每片）</td><td>分片号、起止偏移、条数、成功/失败计数、耗时、触发原因</td><td>是不是某一片整体挂了</td></tr><tr><td><strong>系统层</strong>（依赖）</td><td>上游调用成功率、限流命中次数、平均延迟、错误码分布</td><td>是任务的问题还是上游的问题</td></tr></tbody></table><p>只有记录层没有批次层，你会看到"分散的 3 条失败"却不知道是否集中；只有批次层没有记录层，你知道哪片挂了但不知道挂了哪几条。<strong>三层都要有。</strong></p><h3>三、记录层：一个可直接用的表结构</h3><p>批量任务的状态必须落库（哪怕是 SQLite / JSONL 文件），不能只存在内存或日志里。</p><pre><code class="sql">CREATE TABLE batch_item (
-  task_id      TEXT NOT NULL,        -- 一次任务运行
-  shard        INTEGER NOT NULL,     -- 分片号
-  biz_id       TEXT NOT NULL,        -- 业务主键（订单号/用户ID/流水号）
-  status       TEXT NOT NULL,        -- pending|running|success|failed|skipped
-  attempts     INTEGER DEFAULT 0,    -- 尝试次数，重放时 +1
-  err_code     TEXT,                 -- 归一化后的原因码
-  err_msg      TEXT,                 -- 原始错误摘要（截断到 200 字）
-  idem_key     TEXT,                 -- 幂等键，重放靠它防重复
-  updated_at   TIMESTAMP,
-  PRIMARY KEY (task_id, biz_id)
-);</code></pre><p>关键设计点，逐条解释：</p><ul><li><strong><code>biz_id</code> 是业务主键，不是数组下标</strong>。用 <code>index=42</code> 记录失败的后果是：下次数据源顺序一变，你再也找不到那条记录。</li><li><strong><code>status</code> 用枚举，不用布尔</strong>。<code>success/failed</code> 二态无法表达"参数不合法，重试也没用"和"上游超时，重试有效"——这是一个关键区分（见下文原因码分类）。</li><li><strong><code>attempts</code> 必须有</strong>。它是判断"偶发失败"和"稳定失败"的唯一依据：attempts=1 就回 success 的是抖动，attempts=5 仍失败的是真问题。</li><li><strong><code>idem_key</code> 从第一版就要有</strong>。批量任务的补数据几乎必然发生，没有幂等键，重放就是重复扣费/重复发货。</li></ul><h3>四、原因码必须归一化，否则等于没有</h3><p>把上游五花八门的错误直接塞进 <code>err_msg</code>，等于把可观测性外包给了字符串匹配。做法是<strong>在写入前归类</strong>：</p><pre><code class="python">def classify(e) -&gt; str:
-    if isinstance(e, ParamError):        return "PARAM"        # 重试无用，需人工修数据
-    if isinstance(e, RateLimitedError):  return "RATE_LIMIT"   # 可退避重试
-    if isinstance(e, TimeoutError):      return "TIMEOUT"      # 可重试，但注意幂等
-    if isinstance(e, UpstreamError):     return "UPSTREAM"     # 可重试，注意熔断
-    if isinstance(e, BusinessReject):    return "BIZ_REJECT"   # 业务判定失败，非异常
-    return "UNKNOWN"</code></pre><p>有了这 6 个码，你的查询能力就立刻变成可操作的：</p><pre><code class="sql">-- 值得自动重放的（重试可能成功）
-SELECT biz_id FROM batch_item
-WHERE task_id = :t AND status='failed' AND err_code IN ('TIMEOUT','RATE_LIMIT','UPSTREAM');
-
--- 重放也没用的，必须回去修数据
-SELECT biz_id, err_msg FROM batch_item
-WHERE task_id = :t AND status='failed' AND err_code IN ('PARAM','BIZ_REJECT');</code></pre><p><strong>这一条是整个设计里收益最高的</strong>：把"要不要重试"从人的判断变成数据查询。</p><h3>五、批次层：用分片维度判断"系统性故障"</h3><p>单条失败和整片失败是完全不同的事故。分片记录能让你在 10 秒内区分：</p><pre><code class="sql">SELECT shard, COUNT(*) AS total,
-       SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed
-FROM batch_item WHERE task_id = :t
-GROUP BY shard ORDER BY failed DESC;</code></pre><p>读法：</p><ul><li><strong>失败集中在 1-2 个分片</strong> → 那一批数据有问题（脏数据聚集），或那个时间窗口上游抖动；</li><li><strong>失败率在各片均匀分布（比如都是 3-5%）</strong> → 上游整体降级或配额不够，应该停任务而不是继续打；</li><li><strong>某片 100% 失败</strong> → 该片的数据格式/字段整体错，先停后查。</li></ul><p>这三个判断在日志里几乎做不出来，在分片聚合里是三条 SQL。</p><h3>六、系统层：把上游状态也记成数据</h3><p>批量任务最典型的故障不是"我们的代码有 bug"，而是<strong>上游变了</strong>：延迟升高、限流变严、错误码新增。这些如果在任务里不留痕，就会变成"每月准时出现的莫名失败"。</p><p>最少要按批次记录：</p><pre><code>批次起止时间 / 调用总数 / 平均延迟 / P95 延迟 / 限流命中次数 / 各错误码分布</code></pre><p>其中<strong>限流命中次数</strong>最容易被忽略，但它是最有价值的先行指标：命中次数从 0 变成几百，说明你已经贴着配额在跑，再过几天就该撞墙了。</p><h3>七、重放：可观测性的最终验收</h3><p>能查出失败清单只完成了一半，<strong>能安全重放</strong>才算闭环。安全的前提是前面那个 <code>idem_key</code>：</p><pre><code>重放流程：
-1. 按 err_code 筛出可重试集合（QUERY 见上）
-2. 逐条带上原 idem_key 重新调用
-3. 上游若已处理 → 命中幂等，返回原结果 → 标记 success（不重复计费）
-4. 更新 attempts += 1，保留 err_code 历史
-5. 重放后仍失败的 stays failed，进人工队列</code></pre><p>注意第 3 步：<strong>幂等键的价值就在重放时才体现</strong>。这也是为什么它必须在第一批就设计，而不是"出了问题再说"。</p><h3>八、一份最小可用的检查单</h3><pre><code>□ 每条记录落库，主键是业务 ID（不是下标）
-□ status 是枚举（pending/running/success/failed/skipped）
-□ err_code 归一化（PARAM/RATE_LIMIT/TIMEOUT/UPSTREAM/BIZ_REJECT/UNKNOWN）
-□ attempts 计数，能区分抖动与稳定失败
-□ idem_key 存在且重放时复用
-□ 分片维度有成功/失败计数，可一键定位整片故障
-□ 记录限流命中次数与延迟分布
-□ 失败清单可导出、可筛选"可重试/不可重试"两堆</code></pre><p>八条里有六条是<strong>跑之前就要设计的</strong>，跑起来之后补的代价是要重新扫一遍历史数据。</p><h3>九、最后一句</h3><p>批量任务的可观测性，本质是把"临时 grep"变成"长期可查询"。</p><p>区别不在于日志写得多详细，而在于<strong>你在设计时有没有预想那几个必问的问题</strong>：哪几条、为什么、怎么补。这三个问题有答案，运维成本就从一个工程师的整晚，变成三条 SQL。</p><blockquote>接口侧的分页、幂等与错误码归一化约定，可以参考 <a href="https://link.segmentfault.com/?enc=tZZ86DkWldniqOSzp%2FaS5Q%3D%3D.r4cXHhG4UChcg68pI1gz3dAd021wWsZLQbdfLkDvenLvOdyz3LFHODf4kzDbU2xC" rel="nofollow" target="_blank">nztapi.com 的开发者文档</a> —— 具体接口是哪家不重要，思路对任何批量调用场景都通用。</blockquote><hr/><p><em>本文属「批量任务工程化」系列。上一篇讲并发与限流的设计，这一篇讲跑起来之后怎么定位问题；下一篇讲失败数据的重放与补偿策略。</em></p>]]></description></item><item>    <title><![CDATA[Go 入门笔记（一）：从 Hello World 到并发 姜姜 ]]></title>    <link>https://segmentfault.com/a/1190000048375017</link>    <guid>https://segmentfault.com/a/1190000048375017</guid>    <pubDate>2026-10-27 14:01:29</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <blockquote>学习目标：从 Go 的基本语法入手，逐步理解它和 PHP 的区别，最后搞明白 goroutine、channel 和 <code>sync.WaitGroup</code>。不追求一次背完所有概念，先能写，再理解为什么这么写。</blockquote><h2>一、Hello World：先让程序跑起来</h2><p>学习一门编程语言，第一步当然还是经典耍起。</p><p>新建 <code>hello-world.go</code>：</p><pre><code class="go">package main
-
-import "fmt"
-
-func main() {
-    fmt.Println("hello world")
-}</code></pre><p>逐行理解：</p><ul><li><code>package main</code>：声明当前文件属于 <code>main</code> 包。可执行程序的入口放在 <code>main</code> 包的 <code>main()</code> 函数中。</li><li><code>import "fmt"</code>：导入标准库中的 <code>fmt</code> 包，用于格式化输入输出。</li><li><code>func main()</code>：程序入口。</li><li><code>fmt.Println()</code>：打印内容，并自动换行。</li></ul><p><code>fmt</code> 可以简单理解为与 format（格式化）有关的标准库，日常打印、拼接格式化信息时经常用到。</p><h3>运行程序的两种方式</h3><pre><code class="bash"># 直接编译并运行
-go run hello-world.go
-
-# 编译生成可执行文件
-go build hello-world.go
-
-# 运行生成的程序
-./hello-world</code></pre><p><code>go run</code> 适合学习和开发时快速验证代码；<code>go build</code> 用于构建可执行程序，构建产物可以直接运行在相匹配的操作系统和 CPU 架构上，通常不需要额外安装 Go 解释器。</p><p>注意：Go 不是完全不需要任何运行时或外部依赖。程序仍可能依赖操作系统、动态链接库等环境。</p><h2>二、变量、数据类型与零值</h2><h3>1. Go 有哪些基本类型？</h3><p>先认识几种最常见的类型：</p><table><thead><tr><th>类型</th><th>用途</th><th>示例</th></tr></thead><tbody><tr><td><code>string</code></td><td>字符串</td><td><code>"hello"</code></td></tr><tr><td><code>int</code></td><td>整数</td><td><code>100</code></td></tr><tr><td><code>float64</code></td><td>64 位浮点数</td><td><code>3.14</code></td></tr><tr><td><code>bool</code></td><td>布尔值</td><td><code>true</code>、<code>false</code></td></tr></tbody></table><p>例如：</p><pre><code class="go">var name string = "姜姜"
-var age int = 20
-var score float64 = 95.5
-var passed bool = true</code></pre><p>这里的 <code>float64</code> 可以粗略对应 Java 的 <code>double</code>，以及 C/C++ 中常见的 <code>double</code>。</p><h3>2. 使用 var 声明变量</h3><p>Go 使用 <code>var</code> 声明变量，可以一次声明一个，也可以声明多个：</p><pre><code class="go">var name string = "Tom"
-
-var age int = 20
-
-var (
-    city    string = "Beijing"
-    enabled bool   = true
-)</code></pre><p>Go 一个很实用的特点是：<strong>声明了变量却没有赋初始值时，变量会自动获得对应类型的零值。</strong></p><pre><code class="go">var name string
-var age int
-var price float64
-var enabled bool
-
-fmt.Println(name)    // 空字符串
-fmt.Println(age)     // 0
-fmt.Println(price)   // 0
-fmt.Println(enabled) // false</code></pre><p>常见零值：</p><ul><li>数值类型：<code>0</code></li><li><code>bool</code>：<code>false</code></li><li><code>string</code>：<code>""</code></li><li>指针、切片、映射、通道、函数、接口等类型：通常为 <code>nil</code></li></ul><p>这意味着 Go 不会让普通局部变量处于未初始化的垃圾状态。</p><h3>3. 使用 := 简化声明</h3><p>下面两种写法作用相同：</p><pre><code class="go">var name string = "Tom"
-
-name2 := "Jerry"</code></pre><p>使用 <code>:=</code> 时，Go 会根据右侧的值推断变量类型，所以第二种写法中的 <code>name2</code> 会被推断为 <code>string</code>。</p><p>需要注意：</p><ul><li><code>:=</code> 是声明并初始化变量的简写。</li><li>它只能在函数内部使用，<strong>不能直接用于包级变量声明。</strong></li><li>已声明的变量可以用 <code>=</code> 重新赋值。</li></ul><pre><code class="go">age := 20
-age = 21</code></pre><p>不要把 <code>:=</code> 和 <code>=</code> 混淆。前者涉及声明，后者只是赋值。</p><h3>4. 常量 const</h3><pre><code class="go">const Pi = 3.1415926
-const MaxUsers = 100</code></pre><p>常量用于表示不需要在运行过程中改变的值。</p><p>Go 的数值常量还有一个有趣的特点：许多数值常量在被指定类型或用于需要确定类型的上下文之前，可以保持无类型常量的性质。这使得常量表达式能够进行精度较高的计算。</p><p>先记住基本使用方式即可，不必在第一天就深入研究。</p><h2>三、格式化输出：Go 与 C、Java 有什么区别？</h2><p>Go 的 <code>fmt</code> 包常用三个函数：</p><pre><code class="go">fmt.Print("hello")                // 打印，不自动换行
-fmt.Println("hello", "world")     // 打印，自动换行
-fmt.Printf("age=%d", 20)          // 按指定格式输出</code></pre><p>其中，<code>Printf</code> 中的 <code>%d</code>、<code>%f</code> 等称为格式化动词或格式化占位符。</p><h3>常见 Go 格式化占位符</h3><table><thead><tr><th>占位符</th><th>含义</th><th>示例</th></tr></thead><tbody><tr><td><code>%v</code></td><td>按默认格式输出值</td><td><code>fmt.Printf("%v", 10)</code></td></tr><tr><td><code>%T</code></td><td>输出变量的类型</td><td><code>fmt.Printf("%T", 3.14)</code></td></tr><tr><td><code>%d</code></td><td>十进制整数</td><td><code>fmt.Printf("%d", 100)</code></td></tr><tr><td><code>%f</code></td><td>浮点数</td><td><code>fmt.Printf("%f", 3.14)</code></td></tr><tr><td><code>%.2f</code></td><td>浮点数保留两位小数</td><td><code>fmt.Printf("%.2f", 3.14)</code></td></tr><tr><td><code>%s</code></td><td>字符串</td><td><code>fmt.Printf("%s", "hello")</code></td></tr><tr><td><code>%c</code></td><td>对应 Unicode 码点的字符</td><td><code>fmt.Printf("%c", 65)</code></td></tr><tr><td><code>%t</code></td><td>布尔值</td><td><code>fmt.Printf("%t", true)</code></td></tr><tr><td><code>%x</code></td><td>十六进制，小写</td><td><code>fmt.Printf("%x", 255)</code></td></tr><tr><td><code>%%</code></td><td>输出一个百分号</td><td><code>fmt.Printf("100%%")</code></td></tr></tbody></table><p>Go 中尤其值得掌握的是三个占位符：</p><pre><code class="go">a := 3.1415
-
-fmt.Printf("%v\n", a)   // 3.1415
-fmt.Printf("%.2f\n", a) // 3.14
-fmt.Printf("%T\n", a)   // float64</code></pre><p>其中 <code>%T</code> 很适合调试，尤其是在你不确定某个变量最终被推断成什么类型时。</p><p>对于结构体：</p><pre><code class="go">type User struct {
-    Name string
-    Age  int
-}
-
-u := User{Name: "Tom", Age: 20}
-
-fmt.Printf("%v\n", u)  // {Tom 20}
-fmt.Printf("%+v\n", u) // {Name:Tom Age:20}
-fmt.Printf("%#v\n", u) // main.User{Name:"Tom", Age:20}</code></pre><p>因此，调试结构体时，<code>%+v</code> 通常比 <code>%v</code> 更容易看懂。</p><h3>C、Java、Go 的区别</h3><table><thead><tr><th>功能</th><th>C <code>printf</code></th><th>Java <code>printf</code></th><th>Go <code>fmt.Printf</code></th></tr></thead><tbody><tr><td>整数</td><td><code>%d</code></td><td><code>%d</code></td><td><code>%d</code> 或 <code>%v</code></td></tr><tr><td>浮点数</td><td><code>%f</code></td><td><code>%f</code></td><td><code>%f</code> 或 <code>%v</code></td></tr><tr><td>字符串</td><td><code>%s</code></td><td><code>%s</code></td><td><code>%s</code> 或 <code>%v</code></td></tr><tr><td>查看类型</td><td>通常需其他方式</td><td>通常需其他方式</td><td><code>%T</code></td></tr><tr><td>通用默认输出</td><td>没有直接对应项</td><td><code>%s</code> 可用于字符串等场景</td><td><code>%v</code></td></tr></tbody></table><p>几个容易混淆的细节：</p><ol><li>Go 当然支持 <code>%d</code>，它就是整数格式化动词，不存在“Go 不使用 <code>%d</code>”这回事。</li><li>Java 的 <code>System.out.printf</code> 和 <code>String.format</code> 采用熟悉的格式化规则，<code>%n</code> 可以用于跨平台换行。</li><li>在 C 中，<code>printf</code> 输出 <code>double</code> 使用 <code>%f</code>；而 <code>scanf</code> 读取 <code>double</code> 时通常使用 <code>%lf</code>。</li><li>Go 中，<code>%v</code> 的作用类似一个通用默认格式，但它不是所有场景下最清晰的选择。需要控制精度、查看类型时，仍应使用专门的格式化动词。</li></ol><h2>四、Go 和 PHP：最大的区别是什么？</h2><p>笔者之前已经接触过 PHP，因此可以借助熟悉的东西理解 Go。</p><p>不过，语言之间的对比最好针对具体机制，而不是直接贴上“谁高级、谁落后”的标签。</p><h3>1. 类型系统：静态类型与动态类型</h3><p>Go 是静态类型语言，PHP 是动态类型语言。</p><p>Go：</p><pre><code class="go">var age int = 20
-age = "twenty" // 编译报错</code></pre><p>PHP：</p><pre><code class="php">$age = 20;
-$age = "twenty"; // 普通情况下允许</code></pre><p>区别在于：</p><ul><li>Go 在编译阶段就能检查出很多类型错误。</li><li>PHP 在运行时处理变量类型，部分运算和函数调用还可能涉及隐式类型转换。</li><li>PHP 可以通过类型声明和 <code>declare(strict_types=1)</code> 等机制加强部分类型检查，但它不会因此变成静态类型语言。</li></ul><p><strong>生产场景：</strong>假设一个支付接口需要接收金额。</p><p>Go 的静态类型检查能帮你提前发现一些明显的类型错误，但它并不能自动保证金额正确。例如，金额为负数、超出限额或重复支付，仍然需要业务校验。</p><h3>2. 编译与运行：Go 和 PHP 怎么启动？</h3><p><strong>Go 的常见流程：</strong></p><pre><code class="text">.go 源文件
-    ↓
-go build
-    ↓
-编译得到可执行程序
-    ↓
-在兼容的系统环境中运行</code></pre><p><strong>PHP 的常见流程：</strong></p><pre><code class="text">.php 源文件
-    ↓
-PHP 运行时执行
-    ↓
-输出结果</code></pre><p>实际开发中，PHP 还涉及 Zend Engine、SAPI、OPcache 等机制。</p><p>SAPI 可以理解为 PHP 与外部运行环境交互的一层接口。常见方式包括：</p><ul><li><strong>CLI SAPI：</strong>在命令行执行脚本，例如 <code>php script.php</code>、<code>php think</code>，以及常见的 Composer 命令行工作流。</li><li><strong>PHP-FPM：</strong>在 Nginx 等 Web 服务器前面处理 PHP 请求，是常见的线上部署方式。</li><li><strong>mod_php：</strong>PHP 与 Apache 集成的一种方式。</li></ul><p>这里有个必须纠正的误区：<strong>PHP-FPM 不是每来一个请求就创建一个新进程。</strong></p><p>它通常维护一个工作进程池，由已有的 worker 处理请求，再继续处理后续请求。进程池可以根据配置采用固定、动态或按需创建等管理策略。</p><p>此外，OPcache 能缓存编译后的操作码，减少重复编译开销。所以，把 PHP 理解成“每次请求都从头解释一遍”并不准确。</p><p>Go 编译后的程序通常不需要 PHP 解释器一类的语言运行时来执行，但依然受操作系统、CPU 架构及其外部依赖约束。</p><h3>3. 并发模型：goroutine 与 PHP-FPM</h3><p>这是 Go 值得重点学习的地方。</p><table><thead><tr><th>对比</th><th>Go</th><th>常见 PHP-FPM 部署</th></tr></thead><tbody><tr><td>并发执行单元</td><td>goroutine</td><td>多个工作进程处理并发请求</td></tr><tr><td>调度</td><td>Go runtime 调度 goroutine</td><td>PHP-FPM 管理工作进程</td></tr><tr><td>通信方式</td><td>channel、锁、其他同步机制</td><td>进程通信、共享存储等</td></tr><tr><td>轻量并发任务</td><td>goroutine 是语言原生支持的机制</td><td>需要结合进程模型、Fiber 或其他异步方案</td></tr></tbody></table><p>PHP 8.1 起提供 Fiber，它是一种可挂起和恢复执行的机制。但 Fiber 本身并不会把同步代码自动变成并发代码，实际效果还取决于程序如何调度，以及使用了什么异步 I/O 或运行框架。</p><p>不要只看“一个进程占多少内存、一个协程占多少内存”就得出结论。真实项目的吞吐量、延迟和资源占用还取决于业务代码、I/O、数据库、运行时配置等一整套因素。</p><h2>五、goroutine：Go 如何启动并发任务？</h2><p>先记住最重要的一句话：</p><p><strong>函数是代码，goroutine 是执行这段代码的独立执行单元。函数不等于 goroutine。</strong></p><p>例如：</p><pre><code class="go">func hello() {
-    fmt.Println("hello")
-}</code></pre><p>直接调用：</p><pre><code class="go">hello()</code></pre><p>这只是让当前 goroutine 执行 <code>hello()</code>。</p><p>加上 <code>go</code>：</p><pre><code class="go">go hello()</code></pre><p>Go 就会启动一个新的 goroutine，让它执行 <code>hello()</code>。</p><p>同一个函数可以被多个 goroutine 同时执行：</p><pre><code class="go">func test() {
-    fmt.Println("运行")
-}
-
-func main() {
-    test()     // 当前 goroutine 执行
-    go test()  // 新 goroutine 执行
-    go test()  // 另一个新 goroutine 执行
-}</code></pre><p>Go 的运行时负责调度 goroutine。它们通常比直接创建大量操作系统线程或进程更轻量，栈也可以按需增长。</p><p><strong>但不要把“轻量”理解成“无限量”。</strong></p><h3>真实业务场景：商品详情页</h3><p>假设一个商品详情页需要获取：</p><ul><li>商品基本信息；</li><li>库存；</li><li>促销信息；</li><li>用户是否收藏该商品。</li></ul><p>串行执行时，程序需要依次等待各个服务返回。</p><p>在任务互相独立、请求库支持并发调用的情况下，可以让多个 goroutine 分别发起请求，再统一汇总结果。这有机会缩短页面接口的响应时间。</p><p>但这不意味着所有任务都应该并发执行。例如，下一步操作依赖上一步的结果时，就不能盲目拆开。</p><p>这里还要区分两个概念：</p><ul><li><strong>并发：</strong>多个任务在一段时间内交替或同时推进。</li><li><strong>并行：</strong>多个任务在同一时刻真正运行在不同的执行资源上。</li></ul><p>启动多个 goroutine 不等于保证它们同时占用多个 CPU 核心。</p><h2>六、channel：goroutine 之间如何传递数据？</h2><p>Go 常见的并发设计理念可以用 CSP 来理解。</p><p>CSP 是 Communicating Sequential Processes，即通信顺序进程。Go 从中借鉴了通过通信协调并发任务的思想。</p><p>经典表述是：</p><blockquote>不要通过共享内存来通信；而要通过通信来共享内存。</blockquote><p>这是一种设计理念，不是说 Go 禁止使用互斥锁。多个 goroutine 可以通过 channel 传递消息，也可以在适当的场景下通过 <code>sync.Mutex</code> 等机制安全地访问共享状态。</p><h3>1. 通道是什么？</h3><p>通道（channel）是 goroutine 之间传递数据、协调执行的机制。</p><pre><code class="go">ch := make(chan int)</code></pre><p>这就创建了一个传递 <code>int</code> 类型数据的<strong>无缓冲</strong>通道。</p><p>发送数据：</p><pre><code class="go">ch &lt;- 100</code></pre><p>接收数据：</p><pre><code class="go">num := &lt;-ch</code></pre><p>记忆方式：</p><ul><li><code>ch &lt;- 100</code>：发送 100 到通道。</li><li><code>num := &lt;-ch</code>：从通道接收数据，并将结果赋给 <code>num</code>。</li></ul><p>数据流向很直观：发送时，箭头指向通道；接收时，箭头指向通道之外的接收变量。</p><h3>2. 无缓冲通道：发送和接收必须配合</h3><pre><code class="go">package main
-
-import "fmt"
-
-func main() {
-    ch := make(chan int) // chan 是通道类型
-
-    go func() {
-        ch &lt;- 100
-    }() // () 代表匿名函数的调用，go关键字的用法
-
-    num := &lt;-ch
-    fmt.Println(num)
-}</code></pre><p>这里 <code>ch</code> 是无缓冲通道。</p><p>发送操作必须等到有接收方参与，接收操作也必须等到有发送方参与，两者完成交接之后才能继续执行。</p><p>可以把它想成面对面交接文件：一方不能把文件随手丢在地上就走人，必须有人接。</p><p>但要注意，<strong>阻塞不一定是错误。</strong>它本来就是同步机制的一部分。真正的问题是，如果永远没有匹配的发送方或接收方，程序就可能一直卡住。</p><h3>3. 带缓冲通道：先放在架子上</h3><pre><code class="go">ch := make(chan int, 2)
-
-ch &lt;- 10
-ch &lt;- 20
-
-a := &lt;-ch
-b := &lt;-ch
-
-fmt.Println(a, b)</code></pre><p><code>make(chan int, 2)</code> 中的 <code>2</code> 表示缓冲区容量为 2。</p><p>执行过程：</p><pre><code class="text">初始状态：       []
-发送 10：        [10]
-发送 20：        [10, 20]
-接收一次：       [20]
-接收一次：       []</code></pre><p>无缓冲通道和带缓冲通道的核心区别：</p><table><thead><tr><th>操作</th><th>无缓冲通道</th><th>带缓冲通道</th></tr></thead><tbody><tr><td>发送</td><td>需要接收方配合</td><td>缓冲区未满时可以先放入</td></tr><tr><td>接收</td><td>需要发送方配合</td><td>缓冲区有数据时可以直接取出</td></tr><tr><td>容量</td><td>0</td><td>创建时指定的容量</td></tr></tbody></table><p>缓冲区满了，发送方就要等待；缓冲区空了，接收方就要等待。</p><p><strong>生产场景：</strong>假设一个订单服务需要将待处理任务交给后台 worker。使用带缓冲通道可以暂存一定数量的任务，暂时不必让生产者和消费者每次都同时到场。</p><p>但缓冲区不是无限队列。当消费者处理不过来时，缓冲区最终还是会满。此时阻塞、超时、拒绝任务还是扩容，都需要结合业务决定。</p><h3>4. 关闭通道</h3><pre><code class="go">close(ch)</code></pre><p>关闭通道意味着发送方不再发送新数据，但不是把通道中现有的数据全部删除。</p><p>关闭后：</p><ul><li>不能再发送数据，否则会触发 panic。</li><li>缓冲区中尚未读取的数据仍然可以读出。</li><li>缓冲区读空后，继续接收会得到该类型的零值。</li><li>可以使用 <code>value, ok := &lt;-ch</code> 判断通道是否已经关闭且没有剩余数据。</li></ul><p>通常由负责发送的一方关闭通道，接收方不应擅自关闭仍可能被其他发送方使用的通道。</p><h2>七、sync.WaitGroup：等一批任务全部结束</h2><p>前面学会了启动 goroutine，但问题来了：</p><p><strong>主 goroutine 启动子任务后，怎么确定它们全部执行完了？</strong></p><p>这就是 <code>sync.WaitGroup</code> 的用途之一。</p><p>它主要用于等待一组 goroutine 完成工作。它不负责自动收集返回值，也不负责限制并发数量。</p><h3>1. 三个核心方法</h3><pre><code class="go">var wg sync.WaitGroup</code></pre><p>只需要先理解三个方法：</p><table><thead><tr><th>方法</th><th>作用</th></tr></thead><tbody><tr><td><code>wg.Add(n)</code></td><td>增加需要等待的任务计数</td></tr><tr><td><code>wg.Done()</code></td><td>将计数减 1</td></tr><tr><td><code>wg.Wait()</code></td><td>等待计数归零</td></tr></tbody></table><p>可以把它想成一个任务计数器：</p><pre><code class="text">启动任务前：登记任务数量
-    ↓
-任务执行中：计数保持不变
-    ↓
-任务完成：Done()，计数减 1
-    ↓
-计数变为 0
-    ↓
-Wait() 返回，主流程继续</code></pre><p>如果要等 5 个任务全部完成，就需要让每个任务完成时都调用一次 <code>Done()</code>。</p><h3>2. 完整示例：并发执行 5 个任务</h3><pre><code class="go">package main
-
-import (
-    "fmt"
-    "sync"
-    "time"
-)
-
-func main() {
-    var wg sync.WaitGroup
-    start := time.Now()
-
-    for i := 0; i &lt; 5; i++ {
-        wg.Add(1)
-
-        go func(id int) {
-            defer wg.Done() // defer 关键字：等当前这个函数要退出的时候，再执行 `wg.Done()`
-
-            duration := time.Duration(100+id*50) * time.Millisecond
-            time.Sleep(duration)
-
-            fmt.Printf(
-                "任务 %d 完成，耗时 %v\n",
-                id,
-                duration,
-            )
-        }(i)
-    }
-
-    wg.Wait()
-
-    fmt.Printf("所有任务完成，总耗时：%v\n", time.Since(start))
-}</code></pre><p>运行后，任务完成信息的输出顺序不一定是 0、1、2、3、4，因为每个 goroutine 的执行进度可能不同。</p><p>不过所有任务都完成后，程序才会打印最终耗时。</p><h3>3. 逐段理解</h3><p><strong>第一步：声明等待组</strong></p><pre><code class="go">var wg sync.WaitGroup</code></pre><p>声明一个等待组，初始计数为 0。</p><p><strong>第二步：登记任务</strong></p><pre><code class="go">wg.Add(1)</code></pre><p>每启动一个 goroutine，就先登记一个任务，计数加 1。</p><p>在这个例子里，最终计数会从 0 增长到 5。</p><p><strong>第三步：启动 goroutine</strong></p><pre><code class="go">go func(id int) {
-    // 执行任务
-}(i)</code></pre><p>这里定义并立即调用一个匿名函数，同时使用 <code>go</code> 让这个函数在新的 goroutine 中执行。</p><p><code>(i)</code> 表示把当前循环中的 <code>i</code> 作为参数传给函数，因此函数内部使用的是对应的 <code>id</code>。</p><p>这种显式传参方式也能帮助避免闭包意外捕获循环变量的问题。Go 1.22 起，新的循环变量语义已经改善了许多此类问题，但理解传参仍然有价值。</p><p><strong>第四步：任务结束时减少计数</strong></p><pre><code class="go">defer wg.Done()</code></pre><p><code>defer</code> 会在当前函数返回前执行被延迟的调用。因此，无论任务正常完成还是通过其他正常的函数退出路径结束，只要执行到这里，<code>Done()</code> 就会在返回前运行。</p><p>这比手动在多处写 <code>wg.Done()</code> 更不容易遗漏。</p><p><strong>第五步：等待全部完成</strong></p><pre><code class="go">wg.Wait()</code></pre><p>主 goroutine 在这里等待，直到任务计数降到 0。</p><p>如果没有这一步，<code>main()</code> 可能在子任务完成之前就结束，程序中的其他 goroutine 也会随之停止执行。</p><h3>4. 并发耗时到底是多少？</h3><p>本例中，五个任务分别休眠：</p><pre><code class="text">100ms + 150ms + 200ms + 250ms + 300ms</code></pre><p>如果完全串行执行，休眠时间之和为：</p><pre><code class="text">100 + 150 + 200 + 250 + 300 = 1000ms</code></pre><p>并发执行时，理想情况下总耗时接近最慢任务的 300ms，再加上启动、调度和输出等开销。</p><p>这里的睡眠只是模拟任务耗时，不能直接代表真实业务的性能提升。真正的 I/O、CPU 密集型任务和数据库访问会有不同的资源竞争与调度成本。</p><h3>5. WaitGroup 的常见坑</h3><p><strong>坑一：把 Add 写进 goroutine 里面。</strong></p><p>不推荐：</p><pre><code class="go">go func() {
-    wg.Add(1)
-    defer wg.Done()
-    // ...
-}()
-wg.Wait()</code></pre><p><code>Wait()</code> 可能在 <code>Add(1)</code> 执行前就看到计数为 0 并返回。</p><p>正确方式是在启动 goroutine 前登记任务：</p><pre><code class="go">wg.Add(1)
-
-go func() {
-    defer wg.Done()
-    // ...
-}()</code></pre><p><strong>坑二：遗漏 Done。</strong></p><p>如果任务计数始终大于 0，<code>Wait()</code> 就可能一直等下去。</p><p><strong>坑三：误以为 WaitGroup 能限制并发数。</strong></p><p>不能。<code>WaitGroup</code> 只负责等待完成，不会控制同时运行多少个任务。生产项目中如果需要限制并发数量，应进一步了解 worker pool、带缓冲通道或信号量等方案。</p><p><strong>坑四：误以为 WaitGroup 能收集任务结果。</strong></p><p>它只告诉你任务是否全部完成。如果还需要收集结果、处理错误或支持取消任务，可以结合 channel、上下文 <code>Context</code>，或适合场景的任务编排工具。</p><h2>八、最后总结：这几个概念如何配合？</h2><table><thead><tr><th>概念</th><th>主要职责</th><th>类比</th></tr></thead><tbody><tr><td>函数</td><td>封装一段可调用的代码</td><td>工作说明书</td></tr><tr><td>goroutine</td><td>独立执行一项任务</td><td>工人</td></tr><tr><td>channel</td><td>传递数据、协调任务</td><td>传送带或交接窗口</td></tr><tr><td>WaitGroup</td><td>等待一批任务完成</td><td>任务清点表</td></tr><tr><td>mutex</td><td>保护需要共享访问的状态</td><td>需要加锁的柜子</td></tr></tbody></table><p>一个简单的并发程序通常是这样工作的：</p><pre><code class="text">main goroutine
-    │
-    ├── 登记任务：wg.Add()
-    │
-    ├── 启动 goroutine A
-    ├── 启动 goroutine B
-    └── 启动 goroutine C
-             │
-             ├── 必要时通过 channel 传递数据
-             └── 每个任务结束时调用 wg.Done()
-    │
-    └── wg.Wait() 返回后继续执行</code></pre><h3>官方资料</h3><ul><li><a href="https://link.segmentfault.com/?enc=TEidFzns8C2zE8m7OGrpAA%3D%3D.ZVeXOgsXHXe7T9EmeEJN1LF4r43ziZCZq5EIN6rNMhA%3D" rel="nofollow" target="_blank">Go 语言规范</a></li><li><a href="https://link.segmentfault.com/?enc=iqEwwaCkzG%2BKEtJmDch8Wg%3D%3D.K60ir1wQedUEkPoN%2BZaUmZ%2B2XaFCgcdQvctJ2EwMVoM%3D" rel="nofollow" target="_blank">Go fmt 包格式化说明</a></li><li><a href="https://link.segmentfault.com/?enc=Hr6y7nRTZJvF05aiPqu16A%3D%3D.SLz7xo5AmqSDX6hKkgkLK17eFugrke4XHFGZb3lpL54%3D" rel="nofollow" target="_blank">Go 1.22 发布说明：循环变量与整数 range</a></li><li><a href="https://link.segmentfault.com/?enc=uFqN85MMN9njNNsGEMZcZQ%3D%3D.0DKgMl3vGN28tJNrylQkQXFmmadlZsyUFvb4uv75K2SbKuQ03G04obdQaJgfDTUF" rel="nofollow" target="_blank">PHP-FPM 官方文档</a></li><li><a href="https://link.segmentfault.com/?enc=%2BfIr8zHOZ0OgByQ32bRaXA%3D%3D.%2FUqUz8Sw%2B%2FuO2VgVr38sDrqt7jDP4XgXmiXgrk4KWIo%3D" rel="nofollow" target="_blank">PHP Fiber 官方文档</a></li></ul>]]></description></item><item>    <title><![CDATA[麒麟操作系统 (kylinos) 从入门到精通 -人工智能AI - 第87篇 LLM AI Agen]]></title>    <link>https://segmentfault.com/a/1190000048374885</link>    <guid>https://segmentfault.com/a/1190000048374885</guid>    <pubDate>2026-10-27 13:01:57</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <h2>0.基础环境</h2><p>类别：笔记本<br/>型号：中国长城 NF14C<br/>硬件平台：飞腾处理器D2000（ArmV8 指令集）<br/>系统：银河麒麟操作系统 V10 SP1(2303) <br/><img width="619" height="273" referrerpolicy="no-referrer" src="/img/bVcZDTa" alt="" title=""/><br/>关键词：Linux,LLM,ReACT,Agent,PI,codex,claudecode,harness</p><h2>0.背景</h2><p>LLM AI agent harness时代，本篇主要引导大家安装，配置世界顶级的客户端工具，如opencode，claude code，codex以及CCSwitch工具。</p><h2>1.opencode</h2><p>opencode是开源的，每天强度不大免费的额度很够用的，且对token的消耗非常低。</p><h3>1.1 下载</h3><p><a href="https://link.segmentfault.com/?enc=G6h0KuUHisHfsFAi%2BG0L5A%3D%3D.mwi2%2Fb9Xs%2BDOp6AMYJJ%2BFJCdJEQh9AXZp0X4%2B8ZvgZJFcvkIlpwDMNa3Gaipb9gZ" rel="nofollow" target="_blank">https://github.com/anomalyco/opencode/releases/</a> 打开，让到最新版本<br/>找到opencode-desktop-linux-arm64.deb这样的链接，点击下载，如果无法下载，则需要使用前端下载法<a href="https://link.segmentfault.com/?enc=32%2F5GdAEVwz6ytsGK22TTw%3D%3D.v1MViQJ%2FT0dmft3nDKk9u5jKeGeUNpaXGUqcb9Xt2SHH6%2FyK7Gmi%2F5QgGVqbgO%2B6YqIn5IxEXvHfFgzrf5vUYhOBFMGhz5%2BsptDVgMtDu%2FqcnL3zlV28K7tvC41RoP%2BEZA%2BVLe%2FVvpU1HuI4c916rteLkZXTYrVGYVyL0BDygXw%3D" rel="nofollow" target="_blank">https://gh-proxy.com/https://github.com/anomalyco/opencode/re...</a><br/><img width="723" height="378" referrerpolicy="no-referrer" src="/img/bVdq8Cn" alt="图片.png" title="图片.png" loading="lazy"/></p><h3>1.2 安装</h3><p>装击下载好的deb文件安装包安装即可。</p><h3>1.3 使用</h3><p><img width="723" height="478" referrerpolicy="no-referrer" src="/img/bVdq8Cr" alt="图片.png" title="图片.png" loading="lazy"/><br/>可以直接使用默认的（记得创建一个专用目录），也可以添加如硅基流动，ds，qwen等国内主流的模型和API<br/><img width="723" height="478" referrerpolicy="no-referrer" src="/img/bVdq8Ct" alt="图片.png" title="图片.png" loading="lazy"/></p><h2>2.codex</h2><p><a href="https://link.segmentfault.com/?enc=uF9WHxR0lPn8f67lZifErg%3D%3D.ffPQmXBfwrcHAzefOVVgat84m9RUL7Zx57PbZ5Z9TqZpaTu8%2F2VmE0N2FxyCq3fB" rel="nofollow" target="_blank">https://learn.chatgpt.com/docs/linux/linux-app</a><br/><img width="723" height="368" referrerpolicy="no-referrer" src="/img/bVdq8Fv" alt="image.png" title="image.png" loading="lazy"/></p><p><a href="https://link.segmentfault.com/?enc=LROhq907nfLZcb2XLCHRvA%3D%3D.7%2Bb5u7MGiySQawFWHIpxfz9GPScOAeQSiU56j3Di3q5ksd8dY5J3oU2KDCMsDWmRubpRIfxPUbRrKvV6VZ1qrbvX2KoNzWUj0RnxCbtbHVGE5QzkHrDjEEqPyaDEN%2F0t" rel="nofollow" target="_blank">https://persistent.oaistatic.com/codex-app-prod/linux/deb/lat...</a><br/>依赖很多新版本的包，也需要利用Ubuntu高版本环境来支持，暂时略。</p><h2>3.claude code</h2><p><a href="https://link.segmentfault.com/?enc=verYtDSufVSPk2XRMhRhfw%3D%3D.kaYypFGUytrmClT7bJZ1bNOVnysuZAPGyiVRXaL0q2q78oySHmrmJrUDcSS5LkFR" rel="nofollow" target="_blank">https://code.claude.com/docs/en/desktop-linux</a><br/>装了，但没有UI。等他正式发布吧</p><h2>4.cc switch</h2><p>后期需要通过容器实现，库版本有依赖，需要解决electron的libwebkit高版本问题。需要使用Docker等容器工具运行2404以上的Ubuntu来解决。</p><h2>写在最后</h2><p>本篇遇到很多问题，但opencode是可以正常使用的。</p><p><strong>麒麟操作系统，从入门到精通</strong><br/>麒麟操作系统专栏:<a href="https://segmentfault.com/blog/kylinos" target="_blank">https://segmentfault.com/blog/kylinos</a><br/>麒麟操作系统x64专栏:<a href="https://segmentfault.com/blog/kylinos-x64" target="_blank">https://segmentfault.com/blog/kylinos-x64</a><br/>B站视频地址：<a href="https://link.segmentfault.com/?enc=L3P%2BmL9Zln1Dsv6GEgnOIw%3D%3D.Z6mQRMZAwxUBRzgiwLkGMvIFq%2FmkbHeT7a%2BhNU0xAxOPEAahS1EcQ6XMep6%2BK9OY" rel="nofollow" target="_blank">https://www.bilibili.com/list/243784204</a><br/>个人主页：<br/><a href="https://segmentfault.com/u/code4world/articles" target="_blank">https://segmentfault.com/u/code4world/articles</a><br/><a href="https://link.segmentfault.com/?enc=nfvF6MyaMbirZKdZSzV6FQ%3D%3D.o07bPhx64U3ccsNHT1GiiUMD9dFqyBNnGlqhwj4PfP0%3D" rel="nofollow" target="_blank">https://twitter.com/xiaohelong</a><br/><a href="https://link.segmentfault.com/?enc=c0lAB4HbCvYfYFS5RMPvqw%3D%3D.fA2Jq56vD0PzENKwCE2W3Ir9LLibubzST7uv3O4SfGA%3D" rel="nofollow" target="_blank">https://github.com/xiaohelong</a><br/>联系邮箱：<a href="mailto:1179611323@qq.com" target="_blank">1179611323@qq.com</a><br/>群：662512340<br/>发行日志：<br/>20261027 V1</p>]]></description></item>  </channel></rss>
+Target Verification：猜得对就批量接受，猜错就由 Target 纠正</code></pre><h2>9. 参考资料</h2><ul><li>vLLM：docs/features/speculative_decoding/eagle.md</li><li>vLLM：docs/features/speculative_decoding/README.md</li><li>vLLM：docs/features/speculative_decoding/acceptance_metrics.md</li><li>vLLM：docs/features/speculative_decoding/dynamic_speculative_decoding.md</li><li>vLLM 实现：vllm/v1/spec_decode/llm_base_proposer.py</li><li>vLLM 实现：vllm/model_executor/models/llama_eagle.py、llama_eagle3.py</li><li><a href="https://link.segmentfault.com/?enc=N13wMKTM3L18283Qt92MlQ%3D%3D.Hire7WqrFYNnYhmSTshRu5JqegPaycRl0obUeGHwp5kPCmy%2Fhnn0JqdK1r%2FRnlyZ" rel="nofollow" target="_blank">EAGLE: Speculative Sampling Requires Rethinking Feature Uncertainty</a></li><li><a href="https://link.segmentfault.com/?enc=6rX9rWYMr%2BG7CpPqMK7UQw%3D%3D.9fabY7vTcacqqcH%2FOAfC%2FQCa1x2nQSZFD2Y209fUVuAr8S%2B6dmZNRqRXdn76uXtz" rel="nofollow" target="_blank">EAGLE-3: Scaling up Inference Acceleration of Large Language Models via Training-Time Test</a></li></ul>]]></description></item>  </channel></rss>
