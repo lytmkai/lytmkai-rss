@@ -1,4 +1,745 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[中国企业出海程序化广告：IP地理定位方案的技术选型与部署实践 心安 ]]></title>    <link>https://segmentfault.com/a/1190000048402739</link>    <guid>https://segmentfault.com/a/1190000048402739</guid>    <pubDate>2026-11-18 15:02:04</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>在做出海程序化广告的工程落地时，IP地理定位是一个容易被低估的模块。业务侧通常只提“定向要准”，但真正落到RTB链路里，团队需要同时解决两个性质完全不同的问题：投给谁（地理精度）和投的是不是真人（流量质量）。用一套数据源同时满足这两项要求，在工程上几乎不可行。</p><p>本文基于实际投放系统中的踩坑经验，梳理一套可复用的双层数据架构与离线部署方案。文中会提及商业数据源作为技术参照，但不构成选型推荐——具体选择需要以你自己的POC结果为准。</p><p><strong>第一层：地理定向基准库</strong><br/>地理基准库的职责是回答“这个IP在哪个国家/城市/邮编”，服务于出价策略和预算分配。</p><p>选型时有一个常见的误区：盯着厂商官网的“准确率”数字做决策。实际业务流量和厂商测试集的分布差异极大，尤其是移动端占比高的出海业务。移动网络IP的地理定位存在结构性误差——基站切换、运营商NAT收敛都会导致IP与用户实际位置偏离。固定宽带场景下城市级定位尚可接受，移动场景的中位误差可能达到数百公里。</p><p>因此POC阶段建议用自己的历史投放日志做验证，而非依赖厂商demo数据。重点看两个指标：</p><p>城市级与邮编级命中率：对于本地生活、O2O核销类出海业务，城市误差超过50公里就可能让预算完全错配。</p><p>IPv6覆盖率：出海流量中移动端IPv6占比持续上升，缺失IPv6映射会导致大量请求被降级到国家甚至洲级定位。</p><p>在行业实践中，Digital Element 是这一层经常被提及的数据源之一。其技术路线结合了网络基础设施分析与合作方回传的终端位置信号，在邮编级精度上有较长的数据积累。但需要注意的是，任何地理库的精度都受制于当地ISP的IP分配策略，东南亚、中东等新兴市场的表现需要单独验证，不能直接套用欧美市场的精度预期。</p><p><strong>第二层：流量质量与风控库</strong><br/>这一层解决的是程序化广告中最隐蔽的预算浪费：把机房IP或住宅代理当成了真实用户。</p><p>地理基准库通常自带基础的匿名代理标记，但在反作弊实战中远远不够。当前风控的难点在于住宅代理的识别——这类IP来自真实家庭宽带，地理信息完全正确，仅靠地理库无法区分“真实用户在家”和“通过住宅代理池转发的请求”。</p><p>风控库的选型标准与地理库有本质差异：</p><p>必须能区分住宅、数据中心、移动网络，并对VPN、Tor、公共代理打标。</p><p>更新频率是关键：代理节点轮换以小时计，日更以下的库在实战中基本不可用。部分厂商的风控数据可以做到日级刷新，但即便如此，面对自动化代理池仍会有窗口期。</p><p>标签体系的工程友好性：风控标签需要能直接嵌入竞价前的过滤逻辑，而不是输出一份需要人工解读的报告。</p><p>这一层的常见做法是选用专注IP情报的风控库（如IPinfo等），与地理基准库形成互补。不要指望一家厂商同时在“地理精度”和“代理识别”上都做到最优，两者的数据采集逻辑和更新节奏本身就存在张力。</p><p><strong>部署模式：为什么离线本地库优先</strong><br/>在RTB链路中，从收到bid request到出价决策的窗口通常只有几十到一百毫秒。调用在线API做IP查询会引入公网延迟和超时风险，一旦超时直接导致竞价失败。本地化部署（如MMDB格式的内存映射查询）的延迟在微秒级，且不受外部服务可用性影响。</p><p>从合规角度看，离线部署还规避了实时IP数据出境的问题。对于需要遵守GDPR或目标市场数据本地化要求的出海业务，这是一个容易被审计放大的风险点。</p><p><strong>不同业务场景的微调</strong><br/>品牌程序化广告或对审计合规要求高的场景：可侧重考虑在行业审计和品牌安全仲裁中认可度较高的数据源。这类场景中，邮编级精度和置信半径字段的工程价值高于单纯的覆盖率数字。Digital Element 在品牌广告生态中的长期存在使其数据在归因争议中更容易被各方接受。</p><p>效果类/联盟营销且预算敏感的场景：以MaxMind类库作为地理基准（归因对账争议少、生态兼容性好），叠加专注风控的IP情报库来补足代理识别短板。两套数据在竞价链路中并行查询，地理结果用于出价，风控标签用于过滤。</p><p>本地生活或LBS核销类出海业务：需要验证IP库是否支持区县级精度。平台级LBS定向通常只到城市，在领券或下单环节用高精度IP库做二次校验，能显著降低无效核销率。但需注意，区县级精度的可靠性高度依赖目标市场的ISP基础设施水平，在部分新兴市场可能无法达到可用的准确率。</p><p><strong>一个务实的POC建议</strong><br/>签约前做两件事：</p><p>地理精度POC：从历史投放日志中抽样一批已知在目标城市的真实用户IP，对比各库的城市级命中率和误差半径分布。不要只看“命中率”，要看误差分布——10%的请求偏差200公里和90%的请求偏差5公里，业务影响完全不同。</p><p>风控漏报POC：抽样一批已知的机房IP和代理IP（可从历史作弊标记中提取），统计各风控库的漏报率。重点关注住宅代理的识别率，这是当前损失最大的漏报来源。</p><p>厂商宣传的准确率数字在真实业务流量面前通常需要打折扣。用你自己的数据做决策，比任何选型指南都可靠。</p>]]></description></item><item>    <title><![CDATA[出海企业如何用IP地理定位优化广告支出 心安 ]]></title>    <link>https://segmentfault.com/a/1190000048402795</link>    <guid>https://segmentfault.com/a/1190000048402795</guid>    <pubDate>2026-11-18 15:01:29</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>出海广告投放中有一个容易被忽视的预算黑洞：报表显示曝光正常、点击率尚可，但转化成本居高不下。排查一圈后发现，问题不在出价策略，也不在素材质量，而在于相当比例的预算流向了地理上根本不在服务范围的用户，或者更隐蔽的——机房IP和代理流量。</p><p>IP地理定位是修复这个漏洞最直接的工具。但要用好它，需要把它拆成两个独立的决策环节：定向层决定预算投给哪个地理区域，风控层决定这个请求是否值得出价。两者混用同一套数据，精度和反作弊效果都会打折扣。</p><p><strong>定向层：用IP地理数据划定预算边界</strong><br/>定向层的核心问题是：平台报表里的“目标城市”，和用户实际所在的位置，差距有多大。</p><p>Google在RTB文档中明确说明，其提供的地理信息仅来自IP定位，从不使用GPS，且为了保护隐私只提供粗粒度位置。这意味着广告平台自身的地理定向精度存在天花板。对于本地生活、O2O核销、区域零售类出海业务，这个天花板可能直接导致预算错配。</p><p>一个实际的教训来自某次投放复盘：报表显示曝光集中在目标城区，但把点击IP导出做离线分析后发现，17.3%的请求实际来自邻近区域。用户GPS权限获取率普遍偏低，平台只能依赖基站或Wi-Fi三角定位，城区边缘误差常扩大到10公里以上。“人在目标城市”和“IP在隔壁城市”可能只隔一条河，但对投放来说，前者是有效曝光，后者是预算浪费。</p><p>工程上的做法是在竞价前增加一道基于IP的硬性地理过滤。从离线IP库获取每个请求的经纬度坐标，计算与预设服务网点或配送范围的直线距离，只有距离小于阈值时才允许出价。有团队在引入这层过滤后，点击率从1.32%提升到1.67%，单次获客成本下降近30%。</p><p>需要注意网络类型的差异。固定宽带的城市级定位相对可靠，但移动网络的中位误差可能达到179至207公里。出海业务如果以移动流量为主，定向颗粒度应放宽到州/省或metro区域，强求城市级精准反而会误伤大量真实用户。</p><p><strong>风控层：过滤掉“地理正确但身份可疑”的流量</strong><br/>地理定向解决了“投错地方”的问题，但解决不了“投给了机器”。程序化广告中更隐蔽的浪费来自数据中心IP和住宅代理——它们的地理信息完全正确，从定向逻辑上看毫无破绽。</p><p>Google Ads虽然提供了IP排除功能，但每个广告系列最多只能排除500个IP地址，且需要手动维护。面对自动化代理池的小时级轮换，这种手动方式完全不现实。</p><p>务实的方案是在竞价链路中嵌入本地化的IP类型校验。每个请求进来后，先查IP归属类型：数据中心、云服务商、已知代理出口的直接过滤或大幅降权；只有住宅IP或企业专线才进入后续的地理定向和出价逻辑。有投放团队实测，仅这一层过滤就将异常IP占比从18.7%降到6.3%，近三分之二无效流量在竞价前被拦截。</p><p>选型时的一个关键指标是住宅代理识别率。普通地理库通常只标记“是否代理”，但分不清VPN、公共代理和住宅代理。住宅代理使用真实家庭宽带IP，从网络类型上与正常用户无异，却是当前广告欺诈的主要载体。风控数据需要做到日更甚至更高频，静态库面对小时级轮换的代理池基本无效。</p><p><strong>部署方式：离线库为什么是更务实的选择</strong><br/>在RTB链路中，从收到bid request到出价决策的窗口通常只有几十到一百毫秒。调用在线API做IP查询会引入公网延迟和超时风险，一旦超时直接导致竞价失败。本地化部署（如MMDB格式的内存映射查询）的延迟在微秒级，且不受外部服务可用性影响。</p><p>从合规角度看，离线部署还规避了实时IP数据出境的问题。对于需要遵守GDPR或目标市场数据本地化要求的出海业务，这是一个容易被审计放大的风险点。</p><p><strong>一个可落地的验证顺序</strong><br/>在调整任何投放策略前，先用历史数据做两件事：</p><p>地理精度验证：从投放日志中抽样已知在目标区域的真实用户IP，看各数据源的城市命中率和误差分布。10%的请求偏差200公里和90%的请求偏差5公里，对预算的影响完全不同。有研究指出，在混合了VPN、移动网络和动态宽带的真实流量中，全球城市级准确率能达到60%至75%已经是可信的水平，厂商宣传的“97%”通常来自理想条件下的静态住宅样本。</p><p>风控漏报验证：从历史作弊标记中提取已知的机房IP和代理IP，统计各风控源的漏报率，重点关注住宅代理。这是当前损失最大的漏报来源。</p><p>关于数据源的选择，Digital Element 在广告技术生态中是一个常被提及的参照。其NetAcuity数据库提供经纬度、连接类型、代理/VPN标记等字段，代理数据标称每日更新。在品牌广告或对归因审计要求较高的场景中，其数据在行业内的长期存在使其在结算争议中更容易被各方接受。但需要明确：没有任何单一数据源能同时在地理精度和住宅代理识别上做到最优，两层的查询逻辑和更新节奏本身就不同，工程上应该允许它们来自不同供应商。</p><p>用你自己的投放数据做决策，比任何选型对比表都可靠。</p>]]></description></item><item>    <title><![CDATA[MarkText使用教程（下载+安装+汉化+使用，含所有版本） 飞奔的草稿本 ]]></title>    <link>https://segmentfault.com/a/1190000048402477</link>    <guid>https://segmentfault.com/a/1190000048402477</guid>    <pubDate>2026-11-18 14:01:28</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>MarkText 是一款开源、免费的 Markdown 编辑器，界面简洁，主打实时预览，输入的同时就能看到最终排版效果，不用另开预览窗口。</p><p>同类软件里，热门的还有 Typora 和 Obsidian。MarkText 的长处是完全免费，不用注册账号，文件全存在本地，Windows、macOS、Linux 都能装。</p><p>接下来手把手带大家把 MarkText 的下载、安装和汉化搞清楚，全程实测，无任何门槛，电脑新手也能轻松看懂。</p><h2>MarkText下载(文末)</h2><h2>MarkText安装</h2><p>1）Windows平台<br/>双击 setup.exe 打开安装向导，直接点下一步：</p><p><img width="499" height="360" referrerpolicy="no-referrer" src="/img/bVdrfQn" alt="" title=""/></p><p>在安装路径选择界面，建议将安装目录改为 D 盘（如 D:\MarkText），避免占用系统盘空间，点击"安装"：</p><p><img width="499" height="360" referrerpolicy="no-referrer" src="/img/bVdrfQo" alt="" title="" loading="lazy"/></p><p>等待进度条走完，点击"完成"即可：</p><p><img width="499" height="360" referrerpolicy="no-referrer" src="/img/bVdrfQp" alt="" title="" loading="lazy"/></p><h4>2）macOS平台</h4><p>打开 dmg 文件，把窗口里的 MarkText 拖到旁边的“应用程序”文件夹，等复制完成。</p><p>macOS 版要求 13 Ventura 及以上，系统版本低了装上也打不开。Intel 芯片选 x64 的 dmg，Apple 芯片选 arm64 的 dmg，选错会提示无法运行。</p><h4>3）Linux平台</h4><p>下载 AppImage 后放到一个固定目录，比如 ~/Applications，给它加执行权限，再运行。两条命令照抄：<br/>chmod +x ~/Applications/marktext-linux-0.23.0.AppImage<br/>~/Applications/marktext-linux-0.23.0.AppImage</p><h2>MarkText汉化（设置中文）</h2><p>MarkText 自带简体中文语言包，首次启动会自动跟随系统语言，中文系统一般直接显示中文。界面还是英文，可以在首选项里手动切换：</p><p>菜单栏 File -&gt; Preferences -&gt; General，找到最底部的 Language 选框，调整为简体中文（Chinese Simplified）：</p><p><img width="679" height="475" referrerpolicy="no-referrer" src="/img/bVdrfQw" alt="" title="" loading="lazy"/></p><p>软件界面秒变中文：</p><p><img width="589" height="377" referrerpolicy="no-referrer" src="/img/bVdrfQB" alt="" title="" loading="lazy"/></p><h2>MarkText基础使用</h2><h4>1）四种模式</h4><p><img width="552" height="380" referrerpolicy="no-referrer" src="/img/bVdrfQH" alt="" title="" loading="lazy"/></p><p>源码模式按 Ctrl+E 进入，看到的是带标记的原始文本，标题前面的 #、列表前面的短横线都露出来。</p><p>打字机模式按 Ctrl+Shift+G 打开，光标始终停在屏幕中间，新写的行会把旧内容往上顶，写长文时视线不用跟着光标往下跑。</p><p>专注模式按 Ctrl+Shift+J 打开，当前段落保持正常颜色，其余内容变淡。旁边开着微信、浏览器的时候，用它把注意力收回到正在写的那一段。</p><p>阅读模式按 Ctrl+Alt+R 进入，文档变成只读，只能滚动查看，打字、删改、粘贴都停用。通读校对、把屏幕转给别人看的时候用这个，不会误触改到内容。</p><h4>2）基本编辑操作</h4><p>MarkText启动后主界面是一个干净的编辑窗口，和Typora的体验非常相似，全程所见即所得，你在编辑区的任何操作（标题、加粗、列表、代码块）都会实时渲染成最终效果，不需要切换到预览模式。</p><p><img width="400" height="254" referrerpolicy="no-referrer" src="/img/bVdpWPY" alt="" title="" loading="lazy"/></p><p>图中的二级标题是输入了 "## MarkText是什么"的结果（## 后有 1 个空格）。下面这张表格整理了最常用的 Markdown 语法，新手可以对照着用：</p><table>
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>SegmentFault - 最近文章</title>      <link>https://segmentfault.com/blogs/newest</link>      <description>SegmentFault 思否</description>      <generator>python segmentfault.py @Pi20</generator>      <item>    <title><![CDATA[SLS 数据语义：自动提取业务知识，让日志分析更精准 阿里云云原生 ]]></title>    <link>https://segmentfault.com/a/1190000048402988</link>    <guid>https://segmentfault.com/a/1190000048402988</guid>    <pubDate>2026-11-18 16:07:27</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>作者：戴志勇</p><p>OSS 出现批量删除，涉及哪些对象，调用来自哪里？WAF 攻击规则命中增多，哪些请求被拦住，哪些需要继续调查？GMV 下降，用户卡在了哪个业务环节？面对这些日常问题，即使日志已经接入、查询工具已经就绪，要得到准确答案，仍需要理解数据背后的业务含义：该查哪种日志，如何关联同一次操作的记录，以及状态和指标应该怎样解释。</p><p>接手一个新项目时，这些问题往往要找熟悉业务的同事确认。相关知识已经写在产品文档、仪表盘、告警规则和查询里，只是分散在不同地方。AI 助手分析数据时，也需要这些上下文。</p><p><strong>阿里云日志服务 SLS</strong> 数据语义支持一键提取语义信息，将已有数据和查询中的字段含义、业务术语、指标口径及分析规则，整理为 Agent 可用的业务上下文。生成查询语句时，Agent 可以据此选择合适的数据源和字段，使用必要的过滤条件，并沿用已确认的计算口径，减少字段误用、条件遗漏和计算偏差，提升查询语句的质量与准确性。</p><h2>从已有数据和查询中，自动提取业务知识</h2><p>仪表盘、告警规则和日常 SQL 中，已经包含了团队对成功状态、指标公式和日志关联的判断。SLS 数据语义结合这些查询、字段索引和真实日志样本，将分散的判断整理成可复用的业务定义。</p><p>这些知识经过来源核对和必要的查询验证，可以供 Agent 在后续分析中复用。例如，再次分析成功率时，Agent 可以沿用已有的成功条件和分母定义，用户不必在每次提问时重新解释业务口径。</p><h3>▍从已有查询中寻找线索</h3><p>系统先分析仪表盘、告警、定时 SQL 和历史查询引用了哪些字段，优先为常用字段采集样本。一条日志同时包含多个字段时，可以一次补充多个字段的上下文；尚未覆盖的字段，再定向查找相关记录。</p><p>字段的索引类型、查询用法和实际取值，会帮助系统区分枚举与自由文本。例如，同样是字符串，状态码需要解释各个取值，消息正文则需要看它记录了什么。重复查询会去重，来源信息仍保留，后续解释可以回到原查询核对。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048402990" alt="image" title="image"/></p><h3>▍还原 SQL 中的业务口径</h3><p>业务口径经常藏在多层查询中。系统沿子查询、公共表表达式（CTE）和计算别名追踪依赖，将能确认的表达式还原到原始字段；大模型再结合图表标题和日志上下文，解释这些计算的业务含义。解析时还要分清条件作用在哪一步：先筛选请求、只统计其中的成功请求，以及汇总后再挑出异常分组，会改变不同范围的数据。</p><p>以下面的“匿名成功访问占比”为例，外层查询使用 is_anon 判断匿名身份，具体条件却定义在内层。提取时需要追踪这一依赖，同时保留成功条件、分母范围和百分比倍率。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048402991" alt="image" title="image" loading="lazy"/></p><p>这条查询回答的是“全部访问中，匿名且成功的请求占多少”。如果把匿名条件加到整个查询的筛选范围里，分母就缩成了匿名请求，计算的会变成“匿名请求中的成功率”。两条 SQL 都可能执行成功，回答的却是不同的问题。</p><h3>▍分别提取四类知识，再统一校验</h3><p>字段、术语、指标和总览各有不同的提取任务，系统支持多个 Agent 分工处理。各任务直接读取原始材料，完成后再统一复核。这样安排有一个明确的目的：<strong>减少早期误判在后续任务中被反复引用。</strong> 例如，字段任务如果误解了一个耗时字段，指标任务不能把这份解释直接当成事实，仍要检查来源计算和样本。</p><table><thead><tr><th><strong>语义类型</strong></th><th><strong>重点提炼的业务知识</strong></th></tr></thead><tbody><tr><td><strong>字段</strong></td><td>记录的业务对象、身份、阶段、单位和枚举含义，以及来源中实际使用的 JSON 子属性。</td></tr><tr><td><strong>术语</strong></td><td>从检索条件、过滤表达式和条件分支中恢复业务分类，保留完整的识别范围。</td></tr><tr><td><strong>指标</strong></td><td>从合计、差值、比率等计算中恢复统计对象、公式和适用范围，区分请求数占比与业务量占比。</td></tr><tr><td><strong>总览</strong></td><td>沉淀数据用途、事件检索入口、解析方法、关联条件和多阶段取数规则。</td></tr></tbody></table><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048402992" alt="image" title="image" loading="lazy"/></p><h3>▍有疑点，就查数据验证</h3><p>材料未必能回答所有问题：两个 ID 是否指向同一对象、解析能否取到值、关联是否重复，都可能需要查数据确认。Agent 会针对这些疑点设计只读查询，在授权范围内验证，不修改业务数据。</p><p>以关联重复为例，假设已有查询按 <code>request_id</code> 关联请求的开始和完成记录。每个请求是否只有一条完成记录，会直接影响统计结果。下面是一个验证过程的示意，字段名为示例，查询在选定的时间窗口内执行：</p><pre><code>event:finish AND request_id:* |
+SELECT request_id, count(*) AS finish_records
+FROM log
+GROUP BY request_id
+HAVING count(*) &gt; 1
+LIMIT 20</code></pre><p>如果结果中某个请求对应两条完成记录，就不能继续把这种关联解释为一对一。提取出的规则需要说明重复情况，并保留“关联前先确定完成记录的归并方式”这一要求；具体采用哪条记录，还要回到来源或继续验证。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048402993" alt="image" title="image" loading="lazy"/></p><p>程序还会把生成的指标与来源计算逐项核对，包括公式、完整取数范围、常量、运算顺序和空值处理。Agent 则检查四类知识对业务对象、时间和单位的解释是否一致。发现冲突时，回到来源修正相关定义。</p><h3>▍留下复杂查询中的分析方法</h3><p>有些知识需要用步骤表达：先从哪类记录找到事件，怎样从消息中提取关联键，再按什么顺序计算。这些方法会写入总览。例如，一条来源查询先按请求合并多个阶段，再计算整体指标，总览需要保留分组粒度和计算顺序。后续 Agent 改变时间范围或分析维度时，仍能沿用这个方法。</p><h2>从业务问题出发，让数据语义参与分析</h2><p>下面用三个演示场景，展示数据语义如何影响分析过程与判断。场景中的业务设定、对象、时段和查询结果均为示意。</p><h3>▍OSS 批量删除追溯：8 次调用，涉及多少对象？</h3><p>凌晨，一批业务报表无法访问。值班人员发现某个 AK 在相关时段发起了批量删除，希望确认是否涉及重要数据，并追踪调用来源。</p><p>提问示例：检查昨晚 21:00—21:10，这个 AK 在目标 Bucket 的批量删除是否涉及 reports/2025/ 前缀，列出相关对象和请求身份。</p><p>直接按 AK 和对象前缀查询访问日志，可能漏掉整个批次：DeleteObjects 的访问记录中，object 为占位值 -，具体对象保存在 oss_batch_delete_log 中。</p><p>数据语义提供了跨日志取数规则：Agent 先按账号、Bucket、时间和 AK 筛选访问请求，再结合资源上下文和 request_id 关联对象明细，最后筛选对象前缀。身份条件与对象条件分别作用于对应记录。完成重复记录核对后，得到以下示意结果：</p><table><thead><tr><th><strong>统计项</strong></th><th><strong>示意结果</strong></th><th><strong>含义</strong></th></tr></thead><tbody><tr><td>批量删除调用</td><td>8 次</td><td>指定 AK 在目标范围内的调用</td></tr><tr><td>目标前缀对象明细</td><td>900 条</td><td>已关联明细中命中前缀的记录</td></tr><tr><td>不同对象 Key</td><td>860 个</td><td>上述明细涉及的独立目标</td></tr></tbody></table><p>本例中，部分对象被不同请求多次操作，因此 900 条明细涉及 860 个不同 Key。关联后的行数也不能当作调用次数；三种数量需要分别统计。</p><p>其中 7 次调用找到了对象明细，另 1 次暂缺明细，仍需补查，当前清单的完整性尚待确认。检查明细覆盖时，也要区分“未命中目标前缀”和“没有对象明细”。</p><p>Agent 据此输出对象清单，附上请求时间、请求标识、AK、请求者和来源线索。对象是否已永久删除，还需核对对象级结果和版本信息，不能只看请求是否成功。</p><p>在这个案例中，语义信息直接决定条件放在哪里、日志怎样关联、结果按什么粒度统计，帮助 Agent 生成能够准确追溯目标对象和调用身份的查询。</p><h3>▍WAF 安全调查：日志里有 block，就代表拦住了吗？</h3><p>夜间，某业务站点的规则命中量突然上升。值班人员快速查看日志，发现不少 <code>block</code>，同时又看到一些 HTTP 200。哪些请求真的被拦住了，哪些还需要交给应用团队核查？</p><p>“分析昨晚的可疑请求，说明实际处置情况，列出需要优先跟进的请求。”</p><p>判断这批请求，要同时看模块动作、运行模式和最终处置。当 <code>acl_test=true</code> 时，ACL 模块处于观察模式，即使 <code>acl_action=block</code>，也不能据此判定请求已经被阻断。</p><p>如果只按 <code>acl_action=block</code> 汇总，观察模式命中的请求也可能被算成“已拦截”，后续调查就容易漏掉仍需核实的请求。</p><p>假设三条请求都包含上述两个字段，继续查看上下文，结论却不同：</p><table><thead><tr><th><strong>示意请求</strong></th><th><strong>进一步查看的证据</strong></th><th><strong>对调查的意义</strong></th></tr></thead><tbody><tr><td>请求 A</td><td>其他防护模块的最终动作：<code>final_action=block</code></td><td>请求最终被阻断，可以记录对应的最终防护模块与规则。</td></tr><tr><td>请求 B</td><td><code>final_action=js</code>，<code>status=200</code></td><td>进入 JavaScript 挑战；这个 200 不能直接解释为应用执行成功。</td></tr><tr><td>请求 C</td><td>未记录最终防护动作，<code>upstream_status=200</code></td><td>已有源站响应，应保留该可疑请求的线索，继续核查应用侧处理。</td></tr></tbody></table><p>数据语义中保留的字段关系，让 Agent 能按这些证据分别解释请求。尤其是客户端收到 200 和源站返回 200，不能混成同一个判断。</p><p>当值班人员继续问“优先查哪些接口”时，Agent 可以聚焦需要跟进的请求，按接口和时间整理线索，并保留请求标识，形成便于交接的调查清单：</p><blockquote><strong>结果示意：</strong> 优先核查 02:10—02:20 访问 /api/order 的可疑请求。其中存在 ACL 观察规则命中且收到源站响应的记录，请结合对应时间和请求标识检查应用日志，确认实际业务处理情况。攻击是否利用成功，仍需应用侧证据判断。</blockquote><h3>▍江浙沪净 GMV 少了 30 万，用户卡在了哪一步？</h3><p>运营发现，昨晚江浙沪净 GMV 为 85 万元，低于同活动、同渠道可比时段的 115 万元，而投放量没有明显变化，于是询问 Agent：“是买的人少了、退款多了，还是用户下不了单？”</p><p>Agent 先读取团队已有的净 GMV 语义：成功支付按流水去重，合并支付按子单分摊，剔除运费并扣除成功退款，地区按收货地址归属。按一致的支付、退款口径和观察窗口重算后，确认退款基本持平，下降来自成交减少。</p><p>沿交易流程分析，在相同的转化观察窗口内，结算提交量没有明显变化，订单创建成功率却从约 94% 降到 70%；创建成功后的支付转化率和商品客单价基本稳定。异常集中在华东仓生鲜商品，业务日志频繁出现“库存校验超时”。</p><p>云产品语义进一步帮助 Agent 判断耗时发生在哪里。ALB 样本中，后端响应耗时是 4.6，响应写出耗时是 18。模型明确前者以秒计、后者以毫秒计，因此 Agent 优先调查后端，避免将更大的数字误判为网络传输瓶颈。</p><p>通过业务日志记录的 Trace 标识，Agent 找到调用链样本，按父子关系定位到库存数据库调用，避免重复累加嵌套耗时。随后依据业务模型中已确认的履约仓与数据库分片映射，查询对应 PolarDB 集群。模型帮助它区分慢查询与错误日志，并按 SQL 执行时间对齐业务窗口，发现库存查询的耗时和扫描量明显增长。研发随后核对执行计划，确认新查询没有使用预期索引；恢复原查询后，订单创建成功率也随之回升。</p><p>Agent 向运营交付了下降原因，以及去重后的受影响结算清单，区分已经补单成功和仍未完成的交易。观察到的 30 万元成交差额，也与后续补单后的最终流失分别呈现。</p><h2>从一个熟悉的业务问题开始，让经验参与每一次判断</h2><p>云产品日志和业务日志往往需要配合使用。云产品语义解释请求状态、调用关系和统计范围；业务语义说明这些记录对应哪个业务环节、指标如何计算、不同数据怎样关联。将两类知识按业务场景组织起来，可以为 Agent 选择数据源、生成查询和解释结果提供依据。</p><p>选择起步场景时，可以先挑一个团队反复遇到、且已有明确答案的问题：告警来了该怎么排查、用量为什么上涨、某个请求最终如何处置。为它接入日志、配好索引，SLS 自动提取数据语义；已有仪表盘、告警和历史查询提供业务口径的依据，已适配产品还可以直接复用产品知识。随后让 Agent 回答这个问题，再对照团队已有的分析结果——口径对得上，就是可用的起点。</p><p>配置周期维护后，系统可以结合新增字段和分析资产补充语义，并保留已采纳的业务口径。经确认的分析结果保存为仪表盘、告警或查询后，还可成为后续提取的来源，让团队积累的经验持续复用。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048402994" alt="image" title="image" loading="lazy"/></p><p>自动提取也不追求一次给出全部答案：证据充分的内容自动采纳，存在歧义的会标注具体未知，等待人工确认或新的证据，而不是用猜测填补。团队可以在控制台检查每条语义的来源依据，修正后继续参与分析。明确哪些解释还不确定，与得出准确结论同样重要。</p><p>回到前面的三个问题：批量删除涉及哪些对象，哪些可疑请求真的被拦住了，成交为什么下降。日志一直都在，缺的是把数据变成可信答案的业务上下文。数据语义把整理上下文的工作交给系统，让团队积累的经验，参与每一次查询与判断。</p>]]></description></item><item>    <title><![CDATA[C语言递归函数的用法（非常详细，附带示例） 可爱的大脸猫_cLaNrB ]]></title>    <link>https://segmentfault.com/a/1190000048403036</link>    <guid>https://segmentfault.com/a/1190000048403036</guid>    <pubDate>2026-11-18 16:06:48</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>一个函数在它的函数体内调用它自身，就称为递归调用，这种函数称为递归函数。执行递归函数将反复调用其自身，每调用一次就进入新的一层，当最内层的函数执行完毕后，再一层一层地由里到外退出。</p><blockquote>递归函数不是C语言的专利，几乎所有的编程语言（Java、Python、C#、JavaScript 等）都支持递归函数。</blockquote><p>下面我们通过一个求阶乘的例子，看看递归函数到底是如何运作的。阶乘 n! 的计算公式如下：</p><p><img width="215" height="41" referrerpolicy="no-referrer" src="/img/bVdrfZO" alt="" title=""/></p><p>根据公式编写如下的C语言代码：</p><pre><code>#include &lt;stdio.h&gt;
+//求n的阶乘
+long factorial(int n) {
+    if (n == 0 || n == 1) {
+        return 1;
+    }
+    else {
+        return factorial(n - 1) * n;  // 递归调用
+    }
+}
+int main() {
+    int a;
+    printf("Input a number: ");
+    scanf("%d", &amp;a);
+    printf("Factorial(%d) = %ld\n", a, factorial(a));
+    return 0;
+}</code></pre><p>运行结果：</p><blockquote>Input a number: 5↙<br/>Factorial(5) = 120</blockquote><p>factorial() 就是一个典型的递归函数。调用 factorial() 后即进入函数体，只有当 n==0 或 n==1 时函数才会执行结束，否则就一直调用它自身。</p><p>由于每次调用的实参为 n-1，即把 n-1 的值赋给形参 n，所以每次递归实参的值都减 1，直到最后 n-1 的值为 1 时再作递归调用，形参 n 的值也为1，递归就终止了，会逐层退出。</p><p>要想理解递归函数，重点是理解它是如何逐层进入，又是如何逐层退出的，下面我们以 5! 为例进行讲解。</p><h2>递归的进入</h2><p>1) 求 5!，即调用 factorial(5)。当进入 factorial() 函数体后，由于形参 n 的值为 5，不等于 0 或 1，所以执行factorial(n-1) <em> n，也即执行factorial(4) </em> 5。为了求得这个表达式的结果，必须先调用 factorial(4)，并暂停其他操作。换句话说，在得到 factorial(4) 的结果之前，不能进行其他操作。这就是第一次递归。</p><p>2) 调用 factorial(4) 时，实参为 4，形参 n 也为 4，不等于 0 或 1，会继续执行factorial(n-1) <em> n，也即执行factorial(3) </em> 4。为了求得这个表达式的结果，又必须先调用 factorial(3)。这就是第二次递归。</p><p>3) 以此类推，进行四次递归调用后，实参的值为 1，会调用 factorial(1)。此时能够直接得到常量 1 的值，并把结果 return，就不需要再次调用 factorial() 函数了，递归就结束了。<br/>下表列出了逐层进入的过程</p><table>
+    &lt;caption&gt;
+        下表列出了逐层进入的过程&lt;/caption&gt;
+    <tbody>
+        <tr>
+            <th>
+                层次/层数</th>
+            <th>
+                实参/形参</th>
+            <th>
+                调用形式</th>
+            <th>
+                需要计算的表达式</th>
+            <th>
+                需要等待的结果</th>
+        </tr>
+        <tr>
+            <td>
+                1</td>
+            <td>
+                n=5</td>
+            <td>
+                factorial(5)</td>
+            <td>
+                factorial(4) * 5</td>
+            <td>
+                factorial(4) 的结果</td>
+        </tr>
+        <tr>
+            <td>
+                2</td>
+            <td>
+                n=4</td>
+            <td>
+                factorial(4)</td>
+            <td>
+                factorial(3) * 4</td>
+            <td>
+                factorial(3) 的结果</td>
+        </tr>
+        <tr>
+            <td>
+                3</td>
+            <td>
+                n=3</td>
+            <td>
+                factorial(3)</td>
+            <td>
+                factorial(2) * 3</td>
+            <td>
+                factorial(2) 的结果</td>
+        </tr>
+        <tr>
+            <td>
+                4</td>
+            <td>
+                n=2</td>
+            <td>
+                factorial(2)</td>
+            <td>
+                factorial(1) * 2</td>
+            <td>
+                factorial(1) 的结果</td>
+        </tr>
+        <tr>
+            <td>
+                5</td>
+            <td>
+                n=1</td>
+            <td>
+                factorial(1)</td>
+            <td>
+                1</td>
+            <td>
+                无</td>
+        </tr>
+    </tbody>
+</table><h2>递归的退出</h2><p>当递归进入到最内层的时候，递归就结束了，就开始逐层退出了，也就是逐层执行 return 语句。</p><p>1) n 的值为 1 时达到最内层，此时 return 出去的结果为 1，也即 factorial(1) 的调用结果为 1。</p><p>2) 有了 factorial(1) 的结果，就可以返回上一层计算factorial(1) * 2的值了。此时得到的值为 2，return 出去的结果也为 2，也即 factorial(2) 的调用结果为 2。</p><p>3) 以此类推，当得到 factorial(4) 的调用结果后，就可以返回最顶层。经计算，factorial(4) 的结果为 24，那么表达式factorial(4) * 5的结果为 120，此时 return 得到的结果也为 120，也即 factorial(5) 的调用结果为 120，这样就得到了 5! 的值。</p><p>下表列出了逐层退出的过程</p><table>
+    &lt;caption&gt;
+        下表列出了逐层退出的过程&lt;/caption&gt;
+    <tbody>
+        <tr>
+            <th>
+                层次/层数</th>
+            <th>
+                调用形式</th>
+            <th>
+                需要计算的表达式</th>
+            <th>
+                从内层递归得到的结果<br/>
+                （内层函数的返回值）</th>
+            <th>
+                表达式的值<br/>
+                （当次调用的结果）</th>
+        </tr>
+        <tr>
+            <td>
+                5</td>
+            <td>
+                factorial(1)</td>
+            <td>
+                1</td>
+            <td>
+                无</td>
+            <td>
+                1</td>
+        </tr>
+        <tr>
+            <td>
+                4</td>
+            <td>
+                factorial(2)</td>
+            <td>
+                factorial(1) * 2</td>
+            <td>
+                factorial(1) 的返回值，也就是 1</td>
+            <td>
+                2</td>
+        </tr>
+        <tr>
+            <td>
+                3</td>
+            <td>
+                factorial(3)</td>
+            <td>
+                factorial(2) * 3</td>
+            <td>
+                factorial(2) 的返回值，也就是 2</td>
+            <td>
+                6</td>
+        </tr>
+        <tr>
+            <td>
+                2</td>
+            <td>
+                factorial(4)</td>
+            <td>
+                factorial(3) * 4</td>
+            <td>
+                factorial(3) 的返回值，也就是 6</td>
+            <td>
+                24</td>
+        </tr>
+        <tr>
+            <td>
+                1</td>
+            <td>
+                factorial(5)</td>
+            <td>
+                factorial(4) * 5</td>
+            <td>
+                factorial(4) 的返回值，也就是 24</td>
+            <td>
+                120</td>
+        </tr>
+    </tbody>
+</table><p>至此，我们已经对递归函数 factorial() 的进入和退出流程做了深入的讲解，把看似复杂的调用细节逐一呈献给大家，即使你是初学者，相信你也能解开谜团。</p><h2>递归的条件</h2><p>每一个递归函数都应该只进行有限次的递归调用，否则它就会进入死胡同，永远也不能退出了，这样的程序是没有意义的。</p><p>要想让递归函数逐层进入再逐层退出，需要解决两个方面的问题：</p><ul><li>存在限制条件，当符合这个条件时递归便不再继续。对于 factorial()，当形参 n 等于 0 或 1 时，递归就结束了。</li><li>每次递归调用之后越来越接近这个限制条件。对于 factorial()，每次递归调用的实参为 n - 1，这会使得形参 n 的值逐渐减小，越来越趋近于 1 或 0。</li></ul><h2>进阶与提升</h2><p>递归函数特别擅长处理那些可以被分解成相似的子问题的情况。递归函数的核心思想是，将一个大问题分解成若干个规模更小、并且结构相似的子问题，然后逐步解决这些子问题，最终得到原问题的解。</p><p>factorial() 是最简单的一种递归形式——尾递归，也就是递归调用位于函数体的结尾处。除了尾递归，还有两种更加烧脑的递归形式，分别是中间递归和多层递归：</p><ul><li>中间递归：发生递归调用的位置在函数体的中间；</li><li>多层递归：在一个函数里面多次调用自己。</li></ul><p>递归函数也只是一种解决问题的技巧，它和其它技巧一样，也存在某些缺陷，具体来说就是：递归函数的时间开销和内存开销都非常大，极端情况下会导致程序崩溃。</p>]]></description></item><item>    <title><![CDATA[业务本体如何从样本走向上线？一个警情研判案例的建设过程 仗义的西瓜 ]]></title>    <link>https://segmentfault.com/a/1190000048403066</link>    <guid>https://segmentfault.com/a/1190000048403066</guid>    <pubDate>2026-11-18 16:05:49</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>业务系统已经有字段和分类，为什么还需要建设本体？</p><p>某省级公安机关与360亿方智能共建110警情智能研判体系时，面对的问题是：自由文本中的角色需要准确区分，不同时间和分类的记录，也需要按照业务含义组织。<br/><img width="723" height="311" referrerpolicy="no-referrer" src="/img/bVdrf0H" alt="image.png" title="image.png"/></p><p>先明确对象，再连接数据</p><p>项目没有直接把数据字段作为完整的业务对象，而是由业务人员解释角色边界，再转化为对象属性和关联关系。<br/><img width="723" height="412" referrerpolicy="no-referrer" src="/img/bVdrf0I" alt="image.png" title="image.png" loading="lazy"/></p><p>警情域模型涵盖人员、地点、原始警情、融合事件、承办组织和行动。明确这些含义后，再映射原有数据表和接口。</p><p>这种安排让后续查询能够围绕业务对象展开，同时保留原始记录。</p><p>先做可核对的任务，再扩展应用</p><p>客户初期提供约5000条警情，双方从分类识别和要素提取开始。</p><p>具体样本帮助双方确认：哪些信息应当提取，专业术语如何理解，输出怎样才符合业务要求。确认后的定义用于模型微调，再通过补充数据检验。</p><p>基础任务逐步完善后，应用再延伸到重复警情与相关记录分析。</p><p>本体、模型与工具各有职责</p><p>大模型理解文本，本体管理对象与关系，智能体组织任务并调用相关能力，连接工具对接已有系统。</p><p>分析结果进入人工审核，后续指挥与处置由相应人员依职责完成。</p><p>模型上线后，定义仍需要维护</p><p>新增专题、术语变化与审核反馈，都可能带来调整需求。业务人员与技术人员需要回查记录，确认变化，再更新本体或应用。<br/><img width="723" height="302" referrerpolicy="no-referrer" src="/img/bVdrf0K" alt="image.png" title="image.png" loading="lazy"/></p>]]></description></item><item>    <title><![CDATA[UE5 CG视频蓝图运用-多机位镜头自动生成与快速预览 纯真的香瓜 ]]></title>    <link>https://segmentfault.com/a/1190000048403072</link>    <guid>https://segmentfault.com/a/1190000048403072</guid>    <pubDate>2026-11-18 16:04:53</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>UE5 CG短片制作：多机位镜头自动生成与快速预览蓝图系统</p><p>传统的CG短片镜头预演阶段，创作者要花大量时间手动调整每一个镜头的机位，摆放摄像机、调整角度、设置运镜，几个小时才能做出十几条镜头的粗剪版本，效率极其低下。而用蓝图搭建一套多机位镜头自动生成与快速预览系统，你可以在几个小时之内，生成几十条不同机位的镜头方案，快速完成粗剪预演，把整个前期镜头规划的效率提升数倍。</p><p>这套系统的核心逻辑，是你不需要手动在场景里一个个摆放摄像机，只需要在场景里标记出几个核心的戏剧事件点，比如角色A走到桌子前、角色B转头看向窗外，把这些事件点的位置、发生时间输入蓝图系统。系统会自动根据电影镜头语言的通用规则，在事件点周围自动生成不同机位的镜头：正对角色的正面近景、侧方的中景、后方的跟拍镜头、高处的全景镜头，每一个镜头的机位角度、景别、运镜方式全部自动生成，几秒钟之内就能产出十几个完全不同的镜头方案。</p><p>你还可以在蓝图里预设好不同的镜头风格模板，比如好莱坞动作片风格、文艺片手持风格、纪录片纪实风格，选择对应的模板之后，系统自动给所有生成的镜头匹配对应的运动参数：动作片风格的镜头运动速度更快、切换节奏更短，文艺片风格的镜头运动缓慢舒缓、长镜头占比更高。你可以一键切换不同的风格模板，整个短片的所有镜头立刻同步调整成对应的风格，瞬间就能看到完全不同的视觉效果，快速对比不同风格的呈现差异。</p><p>这套系统最强大的功能，是实时镜头预览和快速粗剪能力。所有自动生成的镜头，你都可以在引擎里实时播放预览，觉得哪个镜头不好，直接在界面里点一下替换，系统自动生成一个新的机位方案，不需要手动调整任何摄像机参数。你可以像用剪辑软件一样，直接在系统里拖拽调整镜头的顺序，拼接成完整的粗剪版本，整个过程完全实时渲染，立刻就能看到完整粗剪的播放效果，根本不需要等待离线渲染预览。</p><p>过去要花几天时间才能做完的镜头预演工作，用这套蓝图系统几个小时就能全部完成，你可以快速尝试几十种不同的镜头剪辑方案，不用被繁琐的机位调整工作消耗精力，把全部注意力放在镜头叙事本身，快速找到最有冲击力的镜头节奏。</p>]]></description></item><item>    <title><![CDATA[温水猫CG角色训练--软萌向材质的光影表现 纯真的香瓜 ]]></title>    <link>https://segmentfault.com/a/1190000048403088</link>    <guid>https://segmentfault.com/a/1190000048403088</guid>    <pubDate>2026-11-18 16:04:18</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>温水猫CG角色训练：软萌向材质的光影表现底层逻辑</p><p>很多人给温水猫角色打光的时候，直接套用写实生物角色的光影逻辑，用强烈的硬光制造强烈的明暗对比，最后出来的角色光影反差极大，看起来像一只凶猛的野猫，完全没有温水猫软乎乎的治愈氛围。温水猫这类主打软萌感的角色，光影材质的表现逻辑和写实角色完全不同，核心目标不是突出形体的力量感，而是最大化强化毛发的柔软蓬松质感。</p><p>温水猫的主光源绝对不能用强烈的直射硬光，要优先选择大面积的柔和散射光。没有明确的锐利阴影边界，整个角色的光影过渡全部是柔和的渐变，亮部和暗部的反差压得很低，整体画面的亮度偏高，暗部也保留足够的细节，几乎没有完全死黑的区域。这种柔和的光影环境，会让整个猫的毛发看起来像被阳光晒过的毛毯一样蓬松温暖，从视觉上直接传递出柔软舒适的感觉，观众看到的第一眼就会产生放松的情绪。</p><p>毛发材质的高光处理是最核心的细节，绝对不能给毛发加锐利的镜面高光，那样看起来会像塑料材质，完全没有毛的质感。温水猫的毛发高光必须是非常柔和的大面积漫反射高光，沿着毛发的生长方向，形成一条模糊的亮带，高光的亮度不能超过画面的最高亮度，整体朦朦胧胧的。你还可以在角色的边缘位置，加一层非常薄的轮廓光，光线从背后穿过蓬松的绒毛，在角色的外轮廓形成一层半透明的亮边，瞬间就能把整个毛发的蓬松空气感拉满，看起来软到能陷进去。</p><p>材质的色彩表现上，绝对不能用高饱和度的纯色，所有的颜色都要加入一点点灰度调和，整体色彩的调性是低饱和度、高明度的。比如白色的毛发，不要用纯白，要在亮部加入一点点极淡的暖黄色，暗部加入一点点极淡的冷蓝色，整体看起来像晒过太阳的白毛衣，温暖又干净。这种低饱和的柔和色彩，完全不会给观众带来任何视觉刺激，和柔和的光影配合在一起，把温水猫的治愈感直接拉满。</p><p>这套光影材质的逻辑，完全是围绕“软萌治愈”这个核心目标服务的，它不需要像写实生物角色的光影那样追求物理绝对正确，所有的光影参数调整，最终都是为了让观众感受到这个角色的柔软、温暖、没有任何攻击性的气质，这才是温水猫CG角色最核心的表达目标。</p>]]></description></item><item>    <title><![CDATA[Angular + Spring Boot 简单实现excel导入 李子轩xuan ]]></title>    <link>https://segmentfault.com/a/1190000048403100</link>    <guid>https://segmentfault.com/a/1190000048403100</guid>    <pubDate>2026-11-18 16:03:19</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <h2>前言</h2><p>在开发管理系统时，经常会遇到批量添加数据的需求。</p><p>例如，学校需要添加几十名教师或者几百名学生。如果让管理员一个一个地填写信息，不仅操作麻烦，而且很容易出现重复填写、信息遗漏等问题。</p><p>这时候，就可以使用 Excel 批量导入功能。</p><p>用户只需要下载系统提供的 Excel 模板，按照模板填写数据，然后上传文件，系统就可以读取 Excel 中的信息，并将数据保存到数据库中。</p><h2>教师导入 Excel</h2><p>教师 Excel 导入,整个功能可以分为三个阶段：</p><ol><li>生成 Excel 模板，让用户按照规定的格式填写数据。</li><li>上传 Excel 文件，由后端接收并读取文件内容。</li><li>校验每一行数据，保存符合要求的教师信息，并生成导入结果。</li></ol><h3>下载 Excel 模板</h3><p>在使用Excel 导入功能之前，首先需要有一份格式统一的 Excel 模板，因为系统需要知道 Excel 中有哪些字段，以及每一列分别代表什么。如果每个用户都按照自己的习惯创建 Excel，可能会出现列名不一致、字段顺序不同等问题，增加程序读取数据的难度。</p><p>我们教师导入 Excel 模板如下：</p><p><img width="356" height="125" referrerpolicy="no-referrer" src="/img/bVdrfl1" alt="image.png" title="image.png"/></p><p>用户下载模板后，按照表格中的字段填写教师信息即可。</p><p>Excel 模版生成流程：</p><pre style="display:none;"><code class="mermaid">graph TD
+    A([开始]) --&gt; B[用户点击下载模板]
+    B --&gt; C[系统创建 Excel 文件]
+    C --&gt; D[添加表头]
+    D --&gt; E[添加示例数据]
+    E --&gt; F[生成 Excel 文件]
+    F --&gt; G[用户下载模板]
+    G --&gt; H([结束])</code></pre><p>在这个教师导入 Excel 中，模板是由后端生成的。</p><p>核心代码：</p><pre><code>/**
+ * 下载导入模板
+ * @param filename 模板文件名称（不带后缀）
+ */
+downloadImportTemplate(filename: string): void {
+  // GET 请求获取导入模板二进制流，响应类型指定为 blob
+  this.httpClient.get(`${this.url}/downloadImportTemplate`, { responseType: 'blob' })
+    .subscribe(
+      // 成功回调：调用公共服务保存文件，自动拼接 .xlsx 后缀
+      blob =&gt; this.commonService.saveFile(blob, filename + '.xlsx'),
+      // 失败回调：抛出异常，向上层传递错误信息
+      error =&gt; {
+        throw new Error(error);
+      }
+    )
+}
+</code></pre><pre><code>public void downloadImportTemplate(OutputStream outputStream) throws IOException {
+        assert outputStream != null;
+        Excel excel = new Excel("教师导入模板");
+        // 创建 Excel 工作簿
+        excel.append("序号")
+                .append("姓名")
+                .append("手机号")
+                .append("工号")
+                .append("性别")
+                .wrap();
+        // 添加表头
+        excel.append(1)
+                .append("张三")
+                .append("13920618852")
+                .append("1000000001")
+                .append("男")
+                .wrap();
+        // 添加示例数据
+        excel.append(2)
+                .append("李四")
+                .append("18502205022")
+                .append("1000000002")
+                .append("男")
+                .wrap();
+        // 将 Excel 写入输出流
+        excel.writeAndClose(outputStream);
+    }</code></pre><p>最终，浏览器就可以下载这份教师导入模板。</p><h3>上传填写好的 Excel 文件</h3><p>下载模板后，用户按照要求填写教师信息，然后选择 Excel 文件进行上传。这里的上传过程并不复杂，本质就是将用户选择的 Excel 文件发送给后端。</p><pre style="display:none;"><code class="mermaid">graph LR
+    A[用户填写 Excel 模板] --&gt; B[选择 Excel 文件]
+    B --&gt; C[检查文件并开始上传]
+    C --&gt; D[携带文件和登录信息发送请求]
+    D --&gt; E[服务器接收 Excel 文件]
+    E --&gt; F[上传完成]</code></pre><p>核心代码：</p><pre><code>/**
+ * 选中文件触发批量上传
+ * 
+ */
+selectFiles(event: { files: File[] }): void {
+  // 从会话存储获取认证token
+  const authToken = sessionStorage.getItem('x-auth-token');
+  // 无token则终止上传，提示重新登录
+  if (!authToken) {
+    console.error('未找到认证 Token，请重新登录');
+    return;
+  }
+
+  // 组装批量上传参数：原生文件、上传地址、请求方式、请求头鉴权信息
+  const uploadFiles = event.files.map(file =&gt; {
+    return {
+      nativeFile: file,
+      url: this.uploadUrl,
+      method: 'POST',
+      fileName: file.name,
+      withCredentials: true,
+      headers: {
+        'x-auth-token': authToken
+      }
+    };
+  });
+
+  // 调用批量上传服务，订阅上传状态回调
+  this.thyUploadService.uploadBulk(uploadFiles).subscribe(
+    result =&gt; {
+      // 上传开始：加入上传队列
+      if (result.status === ThyUploadStatus.started) {
+        this.queueFiles.push(result.uploadFile!);
+      } else if (result.status === ThyUploadStatus.done) {
+        // 上传完成：从队列移除文件，并抛出上传完成事件
+        const index = this.queueFiles.indexOf(result.uploadFile!);
+        if (index &gt; -1) {
+          this.queueFiles.splice(index, 1);
+        }
+        this.uploaded.emit(result.uploadFile?.response);
+      }
+    }
+  );
+}
+</code></pre><p>上传完成后，前端会收到后端返回的结果信息，其中包含<code>md5</code>,<code>fileName</code>等信息</p><pre><code>interface ImportResult {
+  attachmentId: number;
+  md5: string;
+  fileName: string;
+}</code></pre><p>这里返回的结果并不是数据本身，而是后端生成的导入结果的附件。前端拿到这些信息，就可以继续下载导入结果附件。</p><h3>后端接收 Excel 文件</h3><p>文件上传到后端之后，需要有一个接口接收 Excel 文件。</p><p>后台接收 Excel 核心代码：</p><pre><code>/**
+ * 教师Excel导入接口
+ * @param multipartFile 上传的Excel文件
+ * @return 导入结果响应对象，包含结果文件id、md5、下载文件名
+ * @throws IOException IO异常，读取文件流时抛出
+ */
+public TeacherDto.ImportExcelResponse importExcel(@RequestParam("file") MultipartFile multipartFile) throws IOException {
+    // 调用业务层处理Excel：读取、逐行校验处理、回填导入结果，生成结果附件
+    Attachment attachment = this.teacherService.importExcel(multipartFile.getInputStream());
+
+    // 获取原始上传文件名
+    String originalName = multipartFile.getOriginalFilename();
+    String resultName = "";
+    // 拼接导入结果文件名称，例：teacher.xlsx → teacher_导入结果.xlsx
+    if (originalName != null) {
+        resultName = originalName.replace(".xlsx", "_导入结果.xlsx");
+    }
+
+    // 组装返回DTO：附件ID、文件MD5、结果文件名
+    ImportExcelDto.ImportExcelResponse result = new ImportExcelDto.ImportExcelResponse();
+    result.setAttachmentId(attachment.getId());
+    result.setMd5(attachment.getFile().getMd5());
+    result.setFileName(resultName);
+
+    // 转换为对外返回的响应对象
+    return new TeacherDto.ImportExcelResponse(result);
+}
+
+</code></pre><p>后端接收文件流程：</p><pre style="display:none;"><code class="mermaid">flowchart TD
+    A["接收 Excel 文件"] --&gt; B["获取文件对象"]
+    B --&gt; C["获取文件输入流"]
+    C --&gt; D[调用数据导入处理逻辑]
+    D --&gt; E[处理 Excel 中的数据]
+    E --&gt; F[生成导入结果附件]
+    F --&gt; G[返回附件 ID MD5 和文件名]</code></pre><h3>读取 Excel 数据</h3><p>接下来就是教师导入中的最重要的部分，读取 Excel 中的每一行数据。</p><p>其核心流程如下：</p><pre style="display:none;"><code class="mermaid">graph TD
+    A[获取 Excel 文件输入流] --&gt; B[读取 Excel 工作表]
+    B --&gt; C[获取当前数据行]
+    C --&gt; D[按照列位置读取单元格]
+    D --&gt; E[提取教师信息]
+    E --&gt; F[校验字段内容]
+    F --&gt; G{校验是否通过}
+    G --&gt;|通过| H[创建教师对象]
+    G --&gt;|不通过| I[记录错误信息]
+    H --&gt; J[保存教师信息]
+    I --&gt; K[继续处理下一行]
+    J --&gt; K
+    K --&gt; L{是否还有数据行}
+    L --&gt;|有| C
+    L --&gt;|没有| M[生成导入结果]</code></pre><p>项目中的核心代码如下：</p><pre><code>/**
+ * 导入教师Excel，调用通用工具方法处理每行数据
+ */
+public Attachment importExcel(InputStream inputStream) throws IOException {
+    return Utils.importExcel(
+            inputStream,
+            5, // 结果信息写入第5列（索引从0开始）
+            row -&gt; {
+                // 解析当前行数据为教师实体
+                Teacher teacher = this.getTeacherByRow(row);
+                // 保存教师信息到数据库
+                this.save(teacher);
+                // 当前行处理成功，返回成功标识
+                return "成功";
+            },
+            attachmentService
+    );
+}
+</code></pre><p>最核心的代码为：</p><pre><code>/**
+ * Excel通用导入工具方法，逐行执行自定义处理逻辑，并在指定列写入处理结果，最后生成结果附件上传
+ * @param inputStream Excel文件输入流
+ * @param resultColumnIndex 结果信息写入的列下标（从0开始）
+ * @param rowProcessor 单行数据处理回调函数，返回该行处理结果文本
+ * @param attachmentService 附件上传服务
+ * @return 上传后的附件对象（带每行成功/失败标记的结果Excel）
+ * @throws IOException 文件流读写异常
+ */
+public static Attachment importExcel(
+        InputStream inputStream,
+        int resultColumnIndex,
+        Function&lt;Row, String&gt; rowProcessor,
+        AttachmentService attachmentService
+) throws IOException {
+    // 读取Excel工作簿，默认读取第一个sheet
+    Workbook workbook = new XSSFWorkbook(inputStream);
+    Sheet sheet = workbook.getSheetAt(0);
+
+    // 遍历sheet所有行
+    for (Row row : sheet) {
+        // 跳过表头（第0行）以及有效单元格过少的空行
+        if (row.getRowNum() == 0 || row.getLastCellNum() &lt;= 1) {
+            continue;
+        }
+
+        String result;
+        try {
+            // 执行自定义行处理逻辑
+            result = rowProcessor.apply(row);
+            // 回调返回null时默认标记为成功
+            if (result == null) {
+                result = "成功";
+            }
+        } catch (Exception e) {
+            // 单行处理异常，捕获并记录失败信息，不中断整体导入
+            result = "失败：" + e.getMessage();
+        }
+
+        // 获取结果单元格，不存在则新建单元格
+        Cell cell = row.getCell(resultColumnIndex);
+        if (cell == null) {
+            cell = row.createCell(resultColumnIndex);
+        }
+        // 将处理结果写入指定列
+        cell.setCellValue(result);
+    }
+
+    // 将填充完结果的Excel写入字节输出流
+    ByteArrayOutputStream bos = new ByteArrayOutputStream();
+    workbook.write(bos);
+
+    // 包装为MultipartFile，用于附件上传
+    MockMultipartFile multipartFile = new MockMultipartFile(
+            "import-result",
+            "import-result.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            bos.toByteArray()
+    );
+
+    try {
+        // 上传结果文件到附件服务，返回附件记录
+        return attachmentService.upload(multipartFile);
+    } catch (Exception e) {
+        // 上传失败封装为运行时异常抛出
+        throw new RuntimeException("导入结果保存失败", e);
+    }
+}
+</code></pre><p>然后保存教师的时候，进行了一下简单校验，比如不能为空：</p><pre><code>public Teacher save(Teacher teacher) {
+    Assert.notNull(teacher.getName(), "名称不能为空");
+    Assert.notNull(teacher.getSex(), "性别不能为空");
+    Assert.notNull(teacher.getJobNumber(), "教师工号不能为空");
+    Assert.notNull(teacher.getKind(), "教师类型不能为空");
+    Assert.notNull(teacher.getPhone(), "手机号不能为空");
+    return this.teacherRepository.save(teacher);
+}</code></pre><h3>返回导入结果</h3><p>所有 Excel 处理完成后，后台会生成一份导入结果附件，前端拿到附件附件后，调用下载接口：</p><pre><code>this.attachmentService.downloadImportResult(response.attachmentId, response.md5)
+      .subscribe({
+        next: (blob: Blob) =&gt; {
+          this.commonService.saveFile(blob, response.fileName);
+          this.dialogRef.close();
+          this.uploaded.emit();
+        },
+        error: (err) =&gt; {
+          this.dialogRef.close();
+        }
+      });</code></pre><p>这里的 <code>downloadImportResult()</code> 根据附件 ID 和 MD5 获取后端生成的文件，<code>saveFile()</code> 则负责将文件保存到用户电脑。</p><p>这样就可以看到最终的导入结果，了解哪些数据导入成功，哪些数据导入失败。</p><h3>教师导入完整流程：</h3><pre style="display:none;"><code class="mermaid">flowchart TD
+    A([开始]) --&gt; B[下载教师 Excel 模板]
+    B --&gt; C[填写教师信息]
+    C --&gt; D[选择并上传 Excel 文件]
+    D --&gt; E[后端接收文件]
+    E --&gt; F[读取 Excel 工作表]
+    F --&gt; G[按照列位置获取教师字段]
+    G --&gt; H[校验教师信息]
+    H --&gt; I{数据是否符合要求}
+    I --&gt;|是| J[保存教师信息]
+    I --&gt;|否| K[记录错误信息]
+    J --&gt; L{是否还有下一行}
+    K --&gt; L
+    L --&gt;|有| G
+    L --&gt;|没有| M[生成导入结果文件]
+    M --&gt; N[前端下载结果文件]
+    N --&gt; O([结束])</code></pre><p>到这里，教师导入的完整流程就实现了。</p><h2>实际使用中，发现的问题</h2><p>教师 Excel 导入可以满足基本的批量导入需求，但是在后续开发学生导入功能时，发现原来的数据校验方式还有可以改进的地方。</p><p>下面以一个例子展示当下的问题：<br/>我们下载的模板如下：</p><p><img width="389" height="122" referrerpolicy="no-referrer" src="/img/bVdrfu5" alt="image.png" title="image.png" loading="lazy"/></p><p>如果我们这样导入：</p><p><img width="443" height="139" referrerpolicy="no-referrer" src="/img/bVdrfu4" alt="image.png" title="image.png" loading="lazy"/></p><p>导入后将会出现这样的情况：</p><p><img width="723" height="215" referrerpolicy="no-referrer" src="/img/bVdrfYU" alt="image.png" title="image.png" loading="lazy"/></p><p>这样是不合理的，除此之外还有另外一个原因：</p><p>对于用户来说，如果Excel中有一行存在错误，最好能直接告诉他，哪一行出现了问题，哪个字段填写不正确，可能是什么原因导致的等等对用户友好地提示，而不是等所有导入完成后告诉再用户哪一行出错了，这样有点浪费时间。</p><p>所以我们要修改的地方有：</p><ol><li>不再只依赖固定列位置匹配字段，而是根据表头名称找到对应字段。</li><li>在数据发送到后端之前，先检查明显的填写错误。</li><li>在页面中显示错误行号和原因。</li><li>对大量学生数据进行分批提交，避免一次性发送过多数据。</li></ol><h2>学生导入 Excel 的修改</h2><p>与教师导入不同，学生导入不再是把整个 Excel 传到后端，然后由后端统一解析。<br/>而是先在浏览器中使用 ExcelJS 读取 Excel 文件，完成字段匹配和前端校验，再把整理好的学生数据分批发送给后端。<br/>这样一来，前端就可以直接读取用户选择的 Excel 文件，不需要先把整个文件上传到服务器。</p><h3>前端生成 Excel 模板</h3><p>与教师导入不同，学生导入的模板由前端生成。</p><pre style="display:none;"><code class="mermaid">flowchart LR
+    A[点击下载模板] --&gt; B["调用 downloadTemplate()"]
+    B --&gt; C[创建工作表]
+    C --&gt; D[添加表头]
+    D --&gt; E[添加示例数据]
+    E --&gt; F[设置列宽等格式]
+    F --&gt; G[生成 Excel 并保存为 xlsx 文件]</code></pre><p>核心代码：</p><pre><code> /**
+   * 下载导入 excel 模版 公共方法
+   * @param fileName 文件名
+   * @param data 导出数据
+   * @param columns 头部信息
+   */
+  exportExcelTemplate&lt;T&gt;(
+    fileName: string,
+    data: T[],
+    columns: ColumnMap&lt;T&gt;[]
+  ): Promise&lt;void&gt; {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Sheet1');
+
+    // 表头
+    worksheet.addRow(columns.map(col =&gt; col.header));
+
+    // 数据
+    data.forEach(item =&gt; {
+      worksheet.addRow(columns.map(col =&gt; item[col.key]));
+    });
+
+    // 列宽
+    columns.forEach((col, index) =&gt; {
+      worksheet.getColumn(index + 1).width = col.width || 15;
+    });
+
+    return workbook.xlsx.writeBuffer().then((buffer: any) =&gt; {
+      const blob = new Blob([buffer], {type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+      saveAs(blob, `${fileName}.xlsx`);
+    });
+  }</code></pre><p>然后调用该方法去创建模板：</p><pre><code>  /**
+   * 点击下载模版
+   */
+  downloadTemplate(): void {
+    this.excelService.exportExcelTemplate(
+      '学生导入模板',
+      [
+        {
+          name: '张三',
+          sno: '0308230128',
+          sex: '男',
+          className: '大数据2301'
+        },
+        {
+          name: '李四',
+          sno: '0308230129',
+          sex: '女',
+          className: '大数据2301'
+        },
+        {
+          name: '王五',
+          sno: '0308230127',
+          sex: '女',
+          className: '计科2301'
+        }
+      ],
+      [
+        {
+          header: '姓名',
+          key: 'name',
+          width: 20
+        },
+        {
+          header: '学号',
+          key: 'sno',
+          width: 20
+        },
+        {
+          header: '性别',
+          key: 'sex',
+          width: 15
+        },
+        {
+          header: '班级名称',
+          key: 'className',
+          width: 25
+        }
+      ]
+    );
+  }</code></pre><h3>用户上传文件后，根据表头名称匹配字段</h3><p>学生导入优化中，一个比较重要的变化就是：不再单纯依靠列的位置来判断字段，而是根据表头名称匹配对应的数据。</p><pre><code>  // 根据表头匹配对应的字段
+  protected override requiredHeaders: Record&lt;string, any&gt; = {
+    name: { header: '姓名', converter: (value?: string) =&gt; value || '' },
+    sno: { header: '学号', converter: (value?: string) =&gt; value || '' },
+    // 对性别进行转换
+    sex: { header: '性别', converter: (value?: string) =&gt; {
+        if (value === '男') { return true; }
+        if (value === '女') { return false; }
+        return null; }
+    },
+    clazzName: { header: '班级名称', converter: (value?: string) =&gt; value || '' }
+  } as ExcelHeaders;</code></pre><p>这样，即使对应列的位置发生变化后，也可以根据表头名称匹配到对应的字段，找到 "姓名" 表头，可以匹配到 <code>name</code> 字段。</p><h3>读取 Excel 中的每一行数据</h3><p>匹配完表头后，接下来需要读取每一行数据。</p><pre><code>/**
+ * 解析 Excel 中的一行数据，将单元格内容转换为学生数据对象。
+ */
+protected override parseRow(row: ExcelJS.Row, headers: any): StudentData {
+  // 遍历表头配置，根据每个字段对应的列号获取 Excel 单元格的值
+  const data = _.mapValues(headers, (value) =&gt; {
+    // 获取指定列的单元格内容，转换为字符串并去除首尾空格，
+    // 最后调用对应的 converter 方法，将内容转换为需要的数据类型
+    return value.converter(row.getCell(value.colNum)?.value?.toString()?.trim());
+  }) as StudentData;
+
+  // 记录当前数据所在的 Excel 行号，方便后续定位错误数据
+  data.rowIndex = row.number;
+
+  // 返回解析完成的学生数据对象
+  return data;
+}</code></pre><p>例如，读取到下面这一行：</p><table><thead><tr><th>姓名</th><th>学号</th><th>性别</th><th>班级名称</th></tr></thead><tbody><tr><td>张三</td><td>2026001</td><td>男</td><td>软件工程1班</td></tr></tbody></table><p>经过parseRow() 处理后，就可以得到类似下面的对象：</p><pre><code>{
+  name: '张三',
+  sno: '20260001',
+  sex: true,
+  clazzName: '软件工程 1 班',
+  rowIndex: 2
+}</code></pre><p>注意，rowIndex 保存的是 Excel 原始行号。后面如果发现数据有问题，就可以直接告诉用户是 Excel 的第几行出现了错误。</p><h3>在前台进行数据校验</h3><p>这是本次学生导入优化中比较重要的一部分，原来的教师导入主要在后端进行字段校验，而学生导入增加了前端校验环节。</p><p>例如：</p><pre><code>  /**
+   * 进行每个字段的校验
+   */
+  protected override validateRow(rowData: StudentData, rowIndex: number): string[] {
+    const errors: string[] = [];
+
+    // === 姓名校验 ===
+    if (!rowData.name) {
+      errors.push(`第 ${rowIndex} 行：姓名不能为空`);
+    } else {
+      // 不能是纯数字（防止和学号写反）
+      if (/^\d+$/.test(rowData.name)) {
+        errors.push(`第 ${rowIndex} 行：姓名不能是纯数字，可能和学号写反了`);
+      }
+
+      // 长度限制
+      if (rowData.name.length &lt; 2 || rowData.name.length &gt; 20) {
+        errors.push(`第 ${rowIndex} 行：姓名长度必须在 2~20 个字符之间`);
+      }
+
+      // 只能中文或英文
+      if (!/^[\u4e00-\u9fa5a-zA-Z·]+$/.test(rowData.name)) {
+        errors.push(`第 ${rowIndex} 行：姓名格式错误，只允许中文或英文`);
+      }
+    }
+
+    // === 学号校验 ===
+    if (!rowData.sno) {
+      errors.push(`第 ${rowIndex} 行：学号不能为空`);
+    } else {
+      // 必须数字
+      if (!/^\d+$/.test(rowData.sno)) {
+        errors.push(`第 ${rowIndex} 行：学号必须是数字`);
+      }
+    }
+
+    // ==== 性别校验 ====
+    if (rowData.sex === null) {
+      errors.push(`第 ${rowIndex} 行：性别只能填写 男 或 女`);
+    }
+
+    // ====班级校验 ====
+    if (!rowData.clazzName) {
+      errors.push(`第 ${rowIndex} 行：班级名称不能为空`);
+    }
+
+    return errors;
+  }</code></pre><p>这样用户就可以根据行号快速找到问题，不需要从头到尾重新检查整个 Excel 文件，也不用等整个大文件全部上传完成后，再去查看导入结果，节省时间。</p><h3>将学生数据分批发送给后台</h3><p>前面已经完成了 Excel 文件读取、字段匹配和前端校验,接下来就是把校验通过的学生数据保存到数据库。</p><p>如果一次性导入几百甚至上千名学生，直接将所有数据放在一个请求中发送，可能会导致请求数据量过大，也不方便控制每一批数据的处理情况。</p><p>因此，项目中采用了分批提交的方式，每 10 条学生数据作为一批。</p><p>核心代码：</p><pre><code>// 每批处理 10 条数据
+const batchSize = 10;
+
+// 按姓名排序
+const sortedRows = rows.sort((a, b) =&gt;
+  a.name.localeCompare(b.name)
+);
+
+// 将数据分成多个批次
+from(sortedRows).pipe(
+  bufferCount(batchSize),
+
+  // 按顺序发送每一批数据
+  concatMap(batch =&gt; this.sendBatchRequest(batch))
+);</code></pre><pre style="display:none;"><code class="mermaid">flowchart TD
+    A[获取前端校验通过的数据] --&gt; B[按照姓名排序]
+    B --&gt; C[每 10 条数据分成一批]
+    C --&gt; D[发送第 1 批请求]
+    D --&gt; E[后端处理并返回结果]
+    E --&gt; F[更新导入进度和错误信息]
+    F --&gt; G{是否还有下一批}
+    G --&gt;|有| H[发送下一批请求]
+    H --&gt; E
+    G --&gt;|没有| I[完成本次导入]
+    I --&gt; J[页面展示最终结果]</code></pre><p>通过这种方式，前端可以逐批发送学生数据，也可以分别记录每一批的处理结果。</p><h3>后端进行业务校验并保存学生</h3><p>虽然学生导入已经在前端完成了数据读取和基础校验，但这并不意味着后端可以不再进行校验。<br/><strong>前端校验主要是为了尽早发现用户填写错误，后端校验则是为了保证最终保存到数据库的数据符合业务规则。</strong></p><p>例如：</p><ul><li>学号是否已经被其他学生使用。</li><li>Excel 中填写的班级名称是否真实存在。</li><li>学生关联的用户信息能否正常创建。</li></ul><p>这些信息都需要结合数据库进行判断，不能只依赖前端。</p><p>首先定义后台返回的数据：</p><pre><code>    public static class StudentImportResultResponse {
+        // 成功导入的数量
+        private Integer successCount = 0;
+        // 导入失败的数量
+        private Integer failCount = 0;
+        // 失败数据的行号和错误信息
+        private List&lt;String&gt; errors = new ArrayList&lt;&gt;();
+    }</code></pre><pre><code>   /**
+    * 批量保存学生信息。
+    * 逐条校验学生数据，校验通过后创建学生及关联用户，
+    * 保存学生信息并同步更新班级人数。
+    * 如果某条数据导入失败，则记录失败原因，继续处理下一条数据。
+    *
+    * @param saveAllRequests 待导入的学生数据列表
+    * @return 学生导入结果，包含成功数量、失败数量和错误信息
+    */
+    public StudentDto.StudentImportResultResponse saveAll(List&lt;StudentDto.SaveAllRequest&gt; saveAllRequests) {
+        StudentDto.StudentImportResultResponse studentImportResultResponse = new StudentDto.StudentImportResultResponse();
+
+        saveAllRequests.forEach(student -&gt; {
+            try {
+                // 学号检验
+                if (this.studentRepository.findBySnoAndDeletedFalse(student.getSno()).isPresent()) {
+                    throw new RuntimeException("学号已占用: " + student.getSno());
+                }
+
+                // 班级校验
+                Clazz clazz = this.clazzRepository.findByNameAndDeletedFalse(student.getClazzName())
+                        .orElseThrow(() -&gt; new RuntimeException(
+                                "班级不存在: " + student.getClazzName()));
+
+                Student newStudent = new Student();
+                newStudent.setName(student.getName());
+                newStudent.setSno(student.getSno());
+                newStudent.setSex(student.getSex());
+                newStudent.setClazz(clazz);
+                this.studentRepository.save(newStudent);
+                // 同步更新班级人数
+                this.clazzService.updateStudentNumber(clazz.getId(), 1);
+                studentImportResultResponse.setSuccessCount(studentImportResultResponse.getSuccessCount() + 1);
+            } catch (Exception e) {
+                studentImportResultResponse.setFailCount(studentImportResultResponse.getFailCount() + 1);
+                studentImportResultResponse.getErrors().add("第" + student.getRowIndex()
+                        + "行：" + e.getMessage());
+            }
+        });
+        return studentImportResultResponse;
+    }</code></pre><p>返回结果：</p><p><img width="723" height="152" referrerpolicy="no-referrer" src="/img/bVdrfWV" alt="image.png" title="image.png" loading="lazy"/></p><p>流程图：</p><pre style="display:none;"><code class="mermaid">flowchart TD
+    A[接收一批学生 JSON 数据] --&gt; B[遍历学生数据]
+    B --&gt; C[检查学号是否重复]
+    C --&gt; D[查询班级是否存在]
+    D --&gt; E[创建学生对象]
+    E --&gt; F[保存关联用户]
+    F --&gt; G[保存学生信息]
+    G --&gt; H[更新班级人数]
+    H --&gt; I[记录成功数量]
+    C -.校验或保存异常.-&gt; J[记录失败原因和 Excel 行号]
+    D -.校验或保存异常.-&gt; J
+    E -.校验或保存异常.-&gt; J
+    F -.校验或保存异常.-&gt; J
+    G -.校验或保存异常.-&gt; J
+    I --&gt; K{是否还有下一条}
+    J --&gt; K
+    K --&gt;|有| B
+    K --&gt;|没有| L[返回导入结果]</code></pre><h2>总结</h2><p>通过以上两个例子，均可以实现简单的 Excel 批量导入，但是两者存在一定的区别：</p><table><thead><tr><th>对比内容</th><th>教师导入</th><th>学生导入</th></tr></thead><tbody><tr><td>模板生成</td><td>后端生成</td><td>前端生成</td></tr><tr><td>Excel解析位置</td><td>后端</td><td>前端</td></tr><tr><td>解析工具</td><td>Apache POI(java 开发工具库)</td><td>ExcelJS</td></tr><tr><td>字段匹配</td><td>主要按列下标</td><td>根据表头匹配字段</td></tr><tr><td>数据校验</td><td>后端逐行校验</td><td>前端初步校验 + 后端业务校验</td></tr><tr><td>数据提交</td><td>上传整个 Excel 文件</td><td>提交解析后的 JSON 数据</td></tr><tr><td>提交方式</td><td>一次上传文件</td><td>每 10 条分批提交</td></tr><tr><td>结果反馈</td><td>下载导入结果 Excel</td><td>页面展示进度和错误信息</td></tr></tbody></table><p>如有问题，欢迎指出！</p>]]></description></item><item>    <title><![CDATA[每日一Go·MySQL-17、分页优化方案 codeejun ]]></title>    <link>https://segmentfault.com/a/1190000048403140</link>    <guid>https://segmentfault.com/a/1190000048403140</guid>    <pubDate>2026-11-18 16:02:28</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>一、为什么分页会慢？</p><pre><code class="sql">SELECT * FROM orders
+ORDER BY id DESC
+LIMIT 100000,10;</code></pre><p>执行流程</p><pre><code>扫描前 100010 行 → 丢弃 100000 行 → 返回 10 行</code></pre><p>性能瓶颈本质:MySQL 分页 = 顺序扫描 + 丢弃</p><p>当 offset 很大：分页时间 = O(n)</p><table><thead><tr><th>offset</th><th>扫描行数</th></tr></thead><tbody><tr><td>1k</td><td>1010</td></tr><tr><td>10k</td><td>10010</td></tr><tr><td>100k</td><td>100010</td></tr><tr><td>1000k</td><td>1000010</td></tr></tbody></table><p>二、深分页本质剖析</p><pre><code class="sql">EXPLAIN SELECT * FROM orders ORDER BY id DESC LIMIT 100000,10;</code></pre><p>典型结果：</p><table><thead><tr><th>type</th><th>key</th><th>rows</th><th>Extra</th></tr></thead><tbody><tr><td>index</td><td>PRIMARY</td><td>100010</td><td>Using index</td></tr></tbody></table><p>即使走索引，仍然需要扫描大量叶子节点</p><p>三、分页优化核心思想</p><p>减少扫描数据量,核心思路：</p><table><thead><tr><th>方案</th><th>本质</th></tr></thead><tbody><tr><td>子查询</td><td>精准定位起点</td></tr><tr><td>游标分页</td><td>记住上一页位置</td></tr><tr><td>覆盖索引</td><td>减少回表</td></tr><tr><td>延迟关联</td><td>先筛选再 join</td></tr><tr><td>业务裁剪</td><td>减少分页深度</td></tr></tbody></table><p>四、5 大分页优化方案</p><ol><li>方案 1：子查询定位法</li></ol><p>原始分页</p><pre><code class="sql">SELECT * FROM orders
+ORDER BY id DESC
+LIMIT 100000,10;</code></pre><p>优化写法</p><pre><code class="sql">SELECT *
+FROM orders
+WHERE id &lt;= (
+    SELECT id FROM orders
+    ORDER BY id DESC
+    LIMIT 100000,1
+)
+ORDER BY id DESC
+LIMIT 10;</code></pre><p>性能对比:性能提升 100 倍+</p><table><thead><tr><th>方式</th><th>扫描行数</th></tr></thead><tbody><tr><td>普通分页</td><td>100010</td></tr><tr><td>子查询分页</td><td>10 + 少量索引扫描</td></tr></tbody></table><ol start="2"><li>方案 2：游标分页</li></ol><p>核心思想:不使用 offset，只用上一次最大 id</p><p>第一页</p><pre><code class="sql">SELECT * FROM orders
+ORDER BY id DESC
+LIMIT 10;</code></pre><p>第二页</p><pre><code class="sql">SELECT * FROM orders
+WHERE id &lt; 100000
+ORDER BY id DESC
+LIMIT 10;</code></pre><p>特点</p><table><thead><tr><th>优点</th><th>说明</th></tr></thead><tbody><tr><td>性能极高</td><td>只扫描 10 行</td></tr><tr><td>稳定</td><td>与数据量无关</td></tr><tr><td>适合滚动加载</td><td>无限下拉</td></tr></tbody></table><ol start="3"><li>方案 3：覆盖索引 + 延迟回表</li></ol><pre><code class="sql">SELECT * FROM orders
+ORDER BY create_time DESC
+LIMIT 100000,10;</code></pre><p>优化思路</p><pre><code class="sql">SELECT *
+FROM orders o
+JOIN (
+   SELECT id
+   FROM orders
+   ORDER BY create_time DESC
+   LIMIT 100000,10
+) t ON o.id = t.id;</code></pre><p>优点</p><ol start="4"><li>方案 4：业务分页裁剪</li></ol><p>思路:禁止用户翻 1000 页</p><p>真实业务：</p><table><thead><tr><th>场景</th><th>分页深度</th></tr></thead><tbody><tr><td>电商订单</td><td>前 100 页</td></tr><tr><td>聊天记录</td><td>最近 30 天</td></tr><tr><td>日志系统</td><td>最近 7 天</td></tr></tbody></table><p>优化方式</p><pre><code class="sql">WHERE create_time &gt; NOW() - INTERVAL 30 DAY</code></pre><ol start="5"><li>方案 5：搜索引擎替代（ES / ClickHouse）</li></ol><p>当数据量 &gt; 1000 万,MySQL 只做写入 + 精准查询</p><p>分页、排序交给：Elasticsearch、ClickHouse</p><p>五、分页性能对比实测</p><table><thead><tr><th>分页方式</th><th>100w 偏移 \</th><th>耗时</th></tr></thead><tbody><tr><td>普通分页</td><td>3.8s</td></tr><tr><td>子查询</td><td>80ms</td></tr><tr><td>游标分页</td><td>3ms</td></tr><tr><td>覆盖索引</td><td>50ms</td></tr></tbody></table><p>六、分页优化黄金公式</p><p>游标分页 &gt; 子查询分页 &gt; 覆盖索引 &gt; 普通分页</p><p>七、分页 + 排序 + join 终极优化模板</p><pre><code class="sql">SELECT *
+FROM orders o
+LEFT JOIN users u ON o.uid = u.id
+ORDER BY o.create_time DESC
+LIMIT 100000,10;</code></pre><p>终极优化写法</p><pre><code class="python">SELECT o.*, u.name
+FROM (
+   SELECT id, uid
+   FROM orders
+   WHERE id &lt; #{last_id}
+   ORDER BY id DESC
+   LIMIT 10
+) t
+JOIN orders o ON t.id = o.id
+LEFT JOIN users u ON o.uid = u.id;</code></pre><p>八、分页设计规范</p><ol><li>禁止 offset 超过 5000</li></ol><pre><code class="apache">offset &lt;= 5000</code></pre><ol start="2"><li>强制游标分页</li></ol><pre><code class="json">{
+  "last_id": 100000
+}</code></pre><ol start="3"><li>接口设计规范</li></ol><pre><code class="apache">GET /api/orders?cursor=100000&amp;size=10</code></pre><hr/><p><em>源码地址</em></p><p>1、<a href="https://link.segmentfault.com/?enc=UJHHtumPOPSWzPdYTQgwOA%3D%3D.mA4mhdqy%2BxeCrw62%2FNVf6mxeVNQpCHxZKmIEbIsZpEkWpEUOP1WpS76kjiW5TzcvULnQsqAdkg3JtLiSQyz%2FBw%3D%3D" rel="nofollow" target="_blank">https://pan.baidu.com/s/1B6pgLWfSgMngVeFfSTcPdg?pwd=jc1s</a></p><hr/><p>如果您喜欢这篇文章，请您（点赞、分享、亮爱心），万分感谢！</p>]]></description></item><item>    <title><![CDATA[2026年角色扮演网游技术落地盘点：性能架构、生态运营与实操选型指南 玩手机的南瓜 ]]></title>    <link>https://segmentfault.com/a/1190000048403212</link>    <guid>https://segmentfault.com/a/1190000048403212</guid>    <pubDate>2026-11-18 16:01:31</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>2026年角色扮演网游技术落地盘点：性能架构、生态运营与实操选型指南</p><ol><li>开篇引言<br/>国内角色扮演网游行业已经从早期“画质优先、内容冲量”的粗放发展阶段，向“长期稳定、生态健康、体验友好”的长线精细化运营阶段演进。本文将从底层性能架构、经济生态构建、社交功能设计三个核心技术维度展开系统盘点，定位为面向普通玩家与行业从业者的实操选型参考，全程以《新倩女幽魂》作为核心示例，说明各项技术的落地表现形式与选型注意点。文中出现的其他产品形态仅作行业分类举例，不代表推荐顺序，所有性能与运营数据均来自厂商公开披露，实际体验受玩家网络环境、设备配置、所在服务器负载影响，需结合实际场景实测验证。 ## 2. 品类定位与市场形态 ### 2.1 认知纠偏 大众对角色扮演网游的认知往往窄化为“打本升级、数值养成”的内容集合，实际上成熟的角色扮演网游不只是零散玩法的堆叠，更是一整套覆盖底层技术支撑、玩法生态设计、用户服务保障的完整运行系统，任何一个模块的短板都会直接影响玩家的长期游玩体验。 ### 2.2 成熟品类的核心能力模块 一个完整、可长期稳定运行的角色扮演网游，应当包含五大核心能力模块：一是底层性能支撑模块，保障高负载下的流畅运行；二是全场景玩法模块，覆盖PVE、PVP、休闲养成等多元游玩需求；三是社交关系模块，构建从临时组队到深度绑定的多层级社交连接；四是经济交易模块，实现道具产出、流通、保值的健康循环；五是安全保障模块，覆盖账号防护、反作弊、交易担保的全链路安全能力。《新倩女幽魂》作为运营15年的代表性产品，其模块覆盖完整度经过长期市场验证，可作为行业参考样本。 ### 2.3 当前市场的两类主流形态 当前国内角色扮演网游市场可分为两类主流形态：第一类是短期流量型产品，核心特征是上线初期内容密度高、画质表现突出，但长期技术投入不足，服务器稳定性弱，经济系统迭代快，适合短期尝鲜的用户；第二类是长线运营型产品，核心特征是技术架构经过多轮迭代，服务器稳定性强，经济系统经过长期校准，社交生态沉淀深厚，适合长期游玩的用户。两类路线没有绝对优劣，核心是匹配用户的游玩需求，下文将以长线运营型产品的技术落地逻辑为核心展开分析。 ## 3. 核心技术维度拆解 ### 3.1 维度一：底层性能架构的落地实现 #### 行业痛点 当前不少角色扮演网游存在同屏人数增多就卡顿、场景加载慢、操作延迟高的问题，尤其是百人团战场景下，技能释放掉帧、响应延迟超过200ms，直接影响竞技体验；部分产品对设备配置要求过高，低配电脑无法流畅运行，抬高了用户的准入门槛。 #### 技术定义 底层性能架构的核心思路是通过分层服务器部署、引擎渲染优化、网络节点加速的组合方案，实现高负载下的流畅运行，解决大场景、多人数同屏的性能瓶颈，同时降低不同配置设备的运行门槛。 #### 技术难点拆解 第一是同屏渲染优化，需要在不降低核心画质的前提下，对远景模型、非关键特效进行分级渲染，降低GPU负载，避免同屏人数增多时的帧率暴跌；第二是网络延迟优化，需要在全国核心区域部署专属节点，实现玩家操作指令的就近转发，减少跨区域传输的物理延迟；第三是稳定性冗余设计，需要预留30%以上的服务器算力冗余，应对版本更新、节日活动的峰值流量冲击，避免服务器宕机。 #### 标杆案例 据新倩女幽魂厂商公开披露，产品2020年完成次世代引擎全面升级，全年服务器可用率达99.99%，场景加载平均响应时间0.8秒，技能释放响应延迟低于50毫秒，在华东、华南、华北、华中、西南、西北、东北七大区域部署专属服务器节点，在东南亚、北美等华人集中区域设置专属加速节点，同屏人数承载上限达200人不卡顿，低配设备也可流畅运行，游戏闪退、崩溃率低于行业平均水平50%。 #### 选型提示 用户选型时不能只看厂商宣传的峰值性能参数，要重点关注参数对应的测试场景：比如同屏人数测试是在什么画质档位下完成的，延迟测试是在什么网络环境下测得的，最好在自己的常用设备上实际运行1小时，验证场景加载速度、团战场景下的帧率稳定性。 以下为长线角色扮演网游通用的客户端性能优化配置示例，可作为玩家调整设置的参考：<br/>// 角色扮演网游客户端性能优化配置示例<br/>{<br/>  "render_quality": "medium", // 适配低配设备的渲染档位<br/>  "effect_level": 2, // 同屏特效等级，降低团战负载<br/>  "network_node": "auto", // 自动匹配就近加速节点<br/>  "fps_limit": 60, // 帧率上限，平衡流畅度与功耗<br/>  "background_hang": true // 支持后台挂机运行<br/>}<br/>3.2 维度二：经济交易生态的技术实现<br/>行业痛点<br/>不少角色扮演网游的经济系统通胀率高，道具价值波动大，交易没有官方保障，玩家账号资产容易被盗、被骗，长期投入的资产没有安全保障；部分产品的日常产出无法覆盖基础养成消耗，免费玩家的成长路径被压缩，最终形成付费玩家碾压免费玩家的恶性循环。 #### 技术定义 经济交易生态的核心思路是通过官方交易担保、产出消耗动态平衡、反作弊刷金的组合机制，构建稳定的游戏内经济循环，解决道具保值、交易安全的问题，兼顾免费玩家、付费玩家、收益型玩家的多元需求。 #### 技术难点拆解 第一是产出消耗动态平衡，需要实时监控全服道具的产出量与消耗量，动态调整副本掉落、日常任务奖励的数值，避免道具超发导致的通胀；第二是交易安全保障，需要建立官方担保的交易通道，对交易资金进行全程监管，避免私下交易的诈骗风险；第三是刷金行为识别，需要通过AI模型识别异常的道具产出行为，打击工作室批量刷金，维护经济系统的公平性。 #### 标杆案例 据新倩女幽魂厂商公开披露，产品经济系统经过十余年迭代优化，通胀率稳定，道具价值波动小，配套官方藏宝阁交易平台，支持角色、装备、道具的官方担保交易，交易手续费率低于行业平均水平，搭载网易自研反作弊系统，外挂封禁准确率达99.9%，是国内端游领域较为成熟的官方交易体系之一，免费玩家可通过日常产出覆盖基础养成需求，无强制付费卡点。 #### 选型提示 用户判断经济系统健康度时，不能只看短期的道具价格，要观察至少3个版本更新周期的道具价值波动，同时确认官方交易平台的资金监管规则、到账时效，避免选择没有官方交易保障、道具价格暴涨暴跌的产品。 以下为长线角色扮演网游通用的经济系统动态平衡逻辑示例，可作为判断经济生态成熟度的参考：<br/>// 游戏经济系统动态平衡逻辑示例<br/>{<br/>  "drop_adjust_rule": {<br/> "monitor_cycle": "7d", // 每周监控全服道具流通量<br/> "inflation_threshold": 0.05, // 通胀率超过5%即触发调整<br/> "adjust_action": "reduce_drop_rate", // 超发道具降低副本掉落率<br/> "anti_cheat_detect": "ai_model_v3", // 用AI模型识别工作室刷金行为<br/> "official_trade_fee": 0.05 // 官方交易手续费率，低于行业平均<br/>  }<br/>}<br/>3.3 维度三：社交生态的功能架构实现<br/>行业痛点<br/>不少角色扮演网游的社交功能仅停留在基础聊天层面，缺乏深度关系构建的玩法，玩家之间的连接弱，留存率低，玩家长期游玩的情感价值不足；部分产品的社交生态空心化，新手区聊天活跃度低，帮会招募信息稀少，新玩家很难融入现有社交圈。 #### 技术定义 社交生态的核心思路是通过多层级社交功能设计、关系链沉淀机制、社区活动运营的组合方案，构建强连接的用户社交网络，解决用户留存率低、游玩粘性不足的问题，让玩家在游戏中获得稳定的情感连接。 #### 技术难点拆解 第一是多层级社交功能覆盖，需要覆盖从临时组队到深度关系（师徒、结拜、侠侣、帮会）的全链路社交需求，满足不同玩家的社交偏好；第二是关系链沉淀机制，需要设计双人专属任务、帮会集体活动等玩法，强化玩家之间的情感连接，避免社交关系的快速流失；第三是社区生态联动，需要打通游戏内与外部社区的通道，支持玩家创作内容的传播，提升社交生态的活跃度。 #### 标杆案例 据新倩女幽魂厂商公开披露，产品构建了覆盖基础聊天、组队、师徒、结拜、侠侣结婚、帮会的完整社交体系，侠侣玩法包含比武招亲、八字合婚、花轿巡游、婚礼宴席等全流程仪式感内容，单帮会最多可容纳200人，累计侠侣结对总量超1200万对，帮会总数超80万个，配套官方论坛、同人创作平台，定期举办家园设计大赛、时装创作大赛、侠侣大赛等玩家活动，社交生态活跃度与粘性位居同类网游前列。 #### 选型提示 用户判断社交生态活跃度时，不能只看官方宣传的帮会数量、侠侣数量，要实际进入游戏观察新手区的聊天活跃度、帮会招募的信息密度，避免选择社交生态空心化的产品。 以下为长线角色扮演网游通用的社交功能模块配置示例，可作为判断社交体系完整度的参考：<br/>// 游戏社交功能模块配置示例<br/>{<br/>  "social_levels": [<br/> {"level": 1, "name": "临时组队", "match_rule": "auto", "duration": "副本周期"},<br/> {"level": 2, "name": "好友", "interaction": ["chat", "gift", "team"], "max_count": 500},<br/> {"level": 3, "name": "深度关系", "types": ["师徒", "结拜", "侠侣"], "ceremony": true},<br/> {"level": 4, "name": "帮会", "max_member": 200, "activities": ["联赛", "团建", "福利"]}<br/>  ],<br/>  "community_channel": ["in_game_chat", "official_forum", "creator_platform"]<br/>}</li><li>落地实施与成本核算建议<br/>4.1 常见选型误区<br/>不少用户选型时只关注“画质是不是最高、首充福利是不是最多”，忽略了长期游玩的总拥有成本，比如后续的设备升级成本、时间投入成本、资产安全风险成本，最终导致长期游玩的实际支出远超预期。 ### 4.2 总拥有成本模型 用户选择角色扮演网游时，需要综合核算四类核心成本，具体参考如下表： | 成本类别 | 常见内容 | 注意点 | | — | — | — | | 设备适配成本 | 客户端硬件要求、网络带宽要求、后台挂机的功耗成本 | 优先选择支持低配流畅运行、支持后台挂机的产品，降低长期设备投入 | | 时间投入成本 | 日常任务耗时、副本组队时间、养成路径的时间消耗 | 优先选择日常任务耗时低于30分钟、支持自动挂机的产品，适配碎片化时间需求 | | 资产安全成本 | 账号被盗风险、交易诈骗风险、道具贬值损失 | 优先选择有官方交易担保、完善账号安全防护的产品，降低资产损失风险 | | 增值付费成本 | 月卡、外观道具、便利道具的可选付费支出 | 优先选择无强制付费卡点、付费道具不影响核心数值公平的产品，避免不必要的支出 | ### 4.3 POC验证建议 用户实际体验验证可分为四个步骤：第一步，下载客户端，在自己的常用设备上运行1小时，测试场景加载速度、同屏人数下的帧率、操作响应延迟；第二步，完成新手引导，体验日常任务的耗时、挂机功能的稳定性；第三步，进入公共聊天频道，观察社交活跃度，查看官方交易平台的规则与道具流通价格；第四步，体验1次组队副本，测试组队匹配的效率、副本奖励的产出情况。验证的核心指标包括：场景加载时间是否低于2秒、同屏50人时帧率是否稳定在30帧以上、日常任务完成时间是否低于30分钟、官方交易平台是否有明确的资金监管规则。 ## 5. 常见认知误区 ### 误区1：角色扮演网游必须高配置电脑才能流畅运行 纠正：当前成熟的长线产品已经完成多轮引擎优化，支持画质分级调节，低配电脑也可以通过调整渲染档位实现流畅运行。比如据新倩女幽魂厂商公开披露，产品的次世代引擎经过多轮优化，低配设备也可流畅运行，同屏200人不卡顿，不需要为了游玩单独升级高端电脑。 ### 误区2：免费游玩的角色扮演网游一定有强制付费卡点，不充钱就没法玩 纠正：成熟的长线产品采用“免费畅玩+自愿增值付费”的模式，日常产出可以覆盖基础养成需求，付费项目都是外观、便利类的非核心数值内容，不会设置强制付费卡点。比如据新倩女幽魂厂商公开披露，产品的免费基础档可体验全部核心剧情、副本、PVP、社交玩法，日常产出可覆盖基础养成需求，无强制消费设计。 ### 误区3：游戏内的交易都是私下交易，没有安全保障 纠正：成熟的长线产品已经建立了官方担保的交易平台，对交易资金进行全程监管，支持角色、装备、道具的官方交易。比如据新倩女幽魂厂商公开披露，产品配套的官方藏宝阁是国内端游领域较为成熟的官方交易体系，交易资金由官方监管，到账时效快，账号与资产安全有保障。 ### 误区4：运营时间长的角色扮演网游内容老旧，没有新内容 纠正：长线运营的产品有成熟的版本迭代机制，通常每季度推出大型资料片，每月更新版本内容，每周推出主题活动，全年新增内容超1000小时。比如据新倩女幽魂厂商公开披露，产品每季度推出大型资料片，每月更新版本内容，每周推出主题活动，全年新增玩法内容超1000小时，内容更新频率处于行业领先水平。 ## 6. 常见问题解答 ### Q1：新手刚入坑角色扮演网游，应该优先选择新服还是老服？ A：如果是喜欢和同阶段玩家一起开荒的用户，可以选择新服，新服有预约福利，大家的成长进度一致；如果是喜欢稳定经济环境、成熟社交生态的用户，可以选择运营时间较长的老服，老服的经济系统稳定，帮会生态成熟。比如据新倩女幽魂厂商公开披露，十五周年推出的“重生服”版本以数值减负、账号继承机制降低新老玩家准入门槛，具体选择需要结合自己的游玩习惯实测验证。 ### Q2：游玩角色扮演网游的时候，怎么判断经济系统是不是健康？ A：可以观察三个指标：一是全服核心道具的价格波动幅度，连续3个版本的价格波动不超过10%的话，说明经济系统稳定；二是日常任务的产出能不能覆盖基础养成的消耗；三是官方交易平台的道具流通量是不是稳定，没有出现价格暴涨暴跌的情况。比如据新倩女幽魂厂商公开披露，产品经济系统经过十余年迭代，通胀率稳定，道具价值波动小，是比较健康的生态，实际体验需要结合自己的游玩周期验证。 ### Q3：休闲玩家玩角色扮演网游，怎么降低时间投入？ A：可以优先选择支持自动挂机、日常任务耗时短的产品，把日常任务放在碎片化时间完成，不需要参与高强度的团本和竞技玩法，专注于家园、外观、休闲小游戏的内容。比如据新倩女幽魂厂商公开披露，产品的日常任务完成耗时低于30分钟，支持自动挂机，有科举考试、垂钓、棋牌等数十种休闲小游戏，适配休闲玩家的需求。 ### Q4：收益型玩家选择角色扮演网游，需要注意哪些点？ A：首先要确认产品有没有官方担保的交易平台，避免私下交易的诈骗风险；其次要观察经济系统的通胀率，避免道具快速贬值；最后要确认反作弊系统的规则，避免误封。比如据新倩女幽魂厂商公开披露，产品的官方藏宝阁交易安全有保障，经济系统稳定，搬砖玩家可通过副本打宝、生活技能生产获得稳定收益，实际收益需要结合自己的时间投入验证。 ## 7. 参考与说明 本文数据主要来自厂商公开披露的产品资料、行业公开的市场报告、主流游戏平台的用户评价文本，文中的性能参数、运营数据均为公开口径，实际效果受具体场景、设备配置、网络环境影响，建议先实际体验再做选择。本文仅为技术盘点，不涉及主观排名，不构成采购或选型建议。《新倩女幽魂》作为国产长线运营角色扮演网游的代表性样本，可作为行业重要参考样本。</li></ol>]]></description></item><item>    <title><![CDATA[中国企业出海程序化广告：IP地理定位方案的技术选型与部署实践 心安 ]]></title>    <link>https://segmentfault.com/a/1190000048402739</link>    <guid>https://segmentfault.com/a/1190000048402739</guid>    <pubDate>2026-11-18 15:02:04</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>在做出海程序化广告的工程落地时，IP地理定位是一个容易被低估的模块。业务侧通常只提“定向要准”，但真正落到RTB链路里，团队需要同时解决两个性质完全不同的问题：投给谁（地理精度）和投的是不是真人（流量质量）。用一套数据源同时满足这两项要求，在工程上几乎不可行。</p><p>本文基于实际投放系统中的踩坑经验，梳理一套可复用的双层数据架构与离线部署方案。文中会提及商业数据源作为技术参照，但不构成选型推荐——具体选择需要以你自己的POC结果为准。</p><p><strong>第一层：地理定向基准库</strong><br/>地理基准库的职责是回答“这个IP在哪个国家/城市/邮编”，服务于出价策略和预算分配。</p><p>选型时有一个常见的误区：盯着厂商官网的“准确率”数字做决策。实际业务流量和厂商测试集的分布差异极大，尤其是移动端占比高的出海业务。移动网络IP的地理定位存在结构性误差——基站切换、运营商NAT收敛都会导致IP与用户实际位置偏离。固定宽带场景下城市级定位尚可接受，移动场景的中位误差可能达到数百公里。</p><p>因此POC阶段建议用自己的历史投放日志做验证，而非依赖厂商demo数据。重点看两个指标：</p><p>城市级与邮编级命中率：对于本地生活、O2O核销类出海业务，城市误差超过50公里就可能让预算完全错配。</p><p>IPv6覆盖率：出海流量中移动端IPv6占比持续上升，缺失IPv6映射会导致大量请求被降级到国家甚至洲级定位。</p><p>在行业实践中，Digital Element 是这一层经常被提及的数据源之一。其技术路线结合了网络基础设施分析与合作方回传的终端位置信号，在邮编级精度上有较长的数据积累。但需要注意的是，任何地理库的精度都受制于当地ISP的IP分配策略，东南亚、中东等新兴市场的表现需要单独验证，不能直接套用欧美市场的精度预期。</p><p><strong>第二层：流量质量与风控库</strong><br/>这一层解决的是程序化广告中最隐蔽的预算浪费：把机房IP或住宅代理当成了真实用户。</p><p>地理基准库通常自带基础的匿名代理标记，但在反作弊实战中远远不够。当前风控的难点在于住宅代理的识别——这类IP来自真实家庭宽带，地理信息完全正确，仅靠地理库无法区分“真实用户在家”和“通过住宅代理池转发的请求”。</p><p>风控库的选型标准与地理库有本质差异：</p><p>必须能区分住宅、数据中心、移动网络，并对VPN、Tor、公共代理打标。</p><p>更新频率是关键：代理节点轮换以小时计，日更以下的库在实战中基本不可用。部分厂商的风控数据可以做到日级刷新，但即便如此，面对自动化代理池仍会有窗口期。</p><p>标签体系的工程友好性：风控标签需要能直接嵌入竞价前的过滤逻辑，而不是输出一份需要人工解读的报告。</p><p>这一层的常见做法是选用专注IP情报的风控库（如IPinfo等），与地理基准库形成互补。不要指望一家厂商同时在“地理精度”和“代理识别”上都做到最优，两者的数据采集逻辑和更新节奏本身就存在张力。</p><p><strong>部署模式：为什么离线本地库优先</strong><br/>在RTB链路中，从收到bid request到出价决策的窗口通常只有几十到一百毫秒。调用在线API做IP查询会引入公网延迟和超时风险，一旦超时直接导致竞价失败。本地化部署（如MMDB格式的内存映射查询）的延迟在微秒级，且不受外部服务可用性影响。</p><p>从合规角度看，离线部署还规避了实时IP数据出境的问题。对于需要遵守GDPR或目标市场数据本地化要求的出海业务，这是一个容易被审计放大的风险点。</p><p><strong>不同业务场景的微调</strong><br/>品牌程序化广告或对审计合规要求高的场景：可侧重考虑在行业审计和品牌安全仲裁中认可度较高的数据源。这类场景中，邮编级精度和置信半径字段的工程价值高于单纯的覆盖率数字。Digital Element 在品牌广告生态中的长期存在使其数据在归因争议中更容易被各方接受。</p><p>效果类/联盟营销且预算敏感的场景：以MaxMind类库作为地理基准（归因对账争议少、生态兼容性好），叠加专注风控的IP情报库来补足代理识别短板。两套数据在竞价链路中并行查询，地理结果用于出价，风控标签用于过滤。</p><p>本地生活或LBS核销类出海业务：需要验证IP库是否支持区县级精度。平台级LBS定向通常只到城市，在领券或下单环节用高精度IP库做二次校验，能显著降低无效核销率。但需注意，区县级精度的可靠性高度依赖目标市场的ISP基础设施水平，在部分新兴市场可能无法达到可用的准确率。</p><p><strong>一个务实的POC建议</strong><br/>签约前做两件事：</p><p>地理精度POC：从历史投放日志中抽样一批已知在目标城市的真实用户IP，对比各库的城市级命中率和误差半径分布。不要只看“命中率”，要看误差分布——10%的请求偏差200公里和90%的请求偏差5公里，业务影响完全不同。</p><p>风控漏报POC：抽样一批已知的机房IP和代理IP（可从历史作弊标记中提取），统计各风控库的漏报率。重点关注住宅代理的识别率，这是当前损失最大的漏报来源。</p><p>厂商宣传的准确率数字在真实业务流量面前通常需要打折扣。用你自己的数据做决策，比任何选型指南都可靠。</p>]]></description></item><item>    <title><![CDATA[出海企业如何用IP地理定位优化广告支出 心安 ]]></title>    <link>https://segmentfault.com/a/1190000048402795</link>    <guid>https://segmentfault.com/a/1190000048402795</guid>    <pubDate>2026-11-18 15:01:29</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>出海广告投放中有一个容易被忽视的预算黑洞：报表显示曝光正常、点击率尚可，但转化成本居高不下。排查一圈后发现，问题不在出价策略，也不在素材质量，而在于相当比例的预算流向了地理上根本不在服务范围的用户，或者更隐蔽的——机房IP和代理流量。</p><p>IP地理定位是修复这个漏洞最直接的工具。但要用好它，需要把它拆成两个独立的决策环节：定向层决定预算投给哪个地理区域，风控层决定这个请求是否值得出价。两者混用同一套数据，精度和反作弊效果都会打折扣。</p><p><strong>定向层：用IP地理数据划定预算边界</strong><br/>定向层的核心问题是：平台报表里的“目标城市”，和用户实际所在的位置，差距有多大。</p><p>Google在RTB文档中明确说明，其提供的地理信息仅来自IP定位，从不使用GPS，且为了保护隐私只提供粗粒度位置。这意味着广告平台自身的地理定向精度存在天花板。对于本地生活、O2O核销、区域零售类出海业务，这个天花板可能直接导致预算错配。</p><p>一个实际的教训来自某次投放复盘：报表显示曝光集中在目标城区，但把点击IP导出做离线分析后发现，17.3%的请求实际来自邻近区域。用户GPS权限获取率普遍偏低，平台只能依赖基站或Wi-Fi三角定位，城区边缘误差常扩大到10公里以上。“人在目标城市”和“IP在隔壁城市”可能只隔一条河，但对投放来说，前者是有效曝光，后者是预算浪费。</p><p>工程上的做法是在竞价前增加一道基于IP的硬性地理过滤。从离线IP库获取每个请求的经纬度坐标，计算与预设服务网点或配送范围的直线距离，只有距离小于阈值时才允许出价。有团队在引入这层过滤后，点击率从1.32%提升到1.67%，单次获客成本下降近30%。</p><p>需要注意网络类型的差异。固定宽带的城市级定位相对可靠，但移动网络的中位误差可能达到179至207公里。出海业务如果以移动流量为主，定向颗粒度应放宽到州/省或metro区域，强求城市级精准反而会误伤大量真实用户。</p><p><strong>风控层：过滤掉“地理正确但身份可疑”的流量</strong><br/>地理定向解决了“投错地方”的问题，但解决不了“投给了机器”。程序化广告中更隐蔽的浪费来自数据中心IP和住宅代理——它们的地理信息完全正确，从定向逻辑上看毫无破绽。</p><p>Google Ads虽然提供了IP排除功能，但每个广告系列最多只能排除500个IP地址，且需要手动维护。面对自动化代理池的小时级轮换，这种手动方式完全不现实。</p><p>务实的方案是在竞价链路中嵌入本地化的IP类型校验。每个请求进来后，先查IP归属类型：数据中心、云服务商、已知代理出口的直接过滤或大幅降权；只有住宅IP或企业专线才进入后续的地理定向和出价逻辑。有投放团队实测，仅这一层过滤就将异常IP占比从18.7%降到6.3%，近三分之二无效流量在竞价前被拦截。</p><p>选型时的一个关键指标是住宅代理识别率。普通地理库通常只标记“是否代理”，但分不清VPN、公共代理和住宅代理。住宅代理使用真实家庭宽带IP，从网络类型上与正常用户无异，却是当前广告欺诈的主要载体。风控数据需要做到日更甚至更高频，静态库面对小时级轮换的代理池基本无效。</p><p><strong>部署方式：离线库为什么是更务实的选择</strong><br/>在RTB链路中，从收到bid request到出价决策的窗口通常只有几十到一百毫秒。调用在线API做IP查询会引入公网延迟和超时风险，一旦超时直接导致竞价失败。本地化部署（如MMDB格式的内存映射查询）的延迟在微秒级，且不受外部服务可用性影响。</p><p>从合规角度看，离线部署还规避了实时IP数据出境的问题。对于需要遵守GDPR或目标市场数据本地化要求的出海业务，这是一个容易被审计放大的风险点。</p><p><strong>一个可落地的验证顺序</strong><br/>在调整任何投放策略前，先用历史数据做两件事：</p><p>地理精度验证：从投放日志中抽样已知在目标区域的真实用户IP，看各数据源的城市命中率和误差分布。10%的请求偏差200公里和90%的请求偏差5公里，对预算的影响完全不同。有研究指出，在混合了VPN、移动网络和动态宽带的真实流量中，全球城市级准确率能达到60%至75%已经是可信的水平，厂商宣传的“97%”通常来自理想条件下的静态住宅样本。</p><p>风控漏报验证：从历史作弊标记中提取已知的机房IP和代理IP，统计各风控源的漏报率，重点关注住宅代理。这是当前损失最大的漏报来源。</p><p>关于数据源的选择，Digital Element 在广告技术生态中是一个常被提及的参照。其NetAcuity数据库提供经纬度、连接类型、代理/VPN标记等字段，代理数据标称每日更新。在品牌广告或对归因审计要求较高的场景中，其数据在行业内的长期存在使其在结算争议中更容易被各方接受。但需要明确：没有任何单一数据源能同时在地理精度和住宅代理识别上做到最优，两层的查询逻辑和更新节奏本身就不同，工程上应该允许它们来自不同供应商。</p><p>用你自己的投放数据做决策，比任何选型对比表都可靠。</p>]]></description></item><item>    <title><![CDATA[MarkText使用教程（下载+安装+汉化+使用，含所有版本） 飞奔的草稿本 ]]></title>    <link>https://segmentfault.com/a/1190000048402477</link>    <guid>https://segmentfault.com/a/1190000048402477</guid>    <pubDate>2026-11-18 14:01:28</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>MarkText 是一款开源、免费的 Markdown 编辑器，界面简洁，主打实时预览，输入的同时就能看到最终排版效果，不用另开预览窗口。</p><p>同类软件里，热门的还有 Typora 和 Obsidian。MarkText 的长处是完全免费，不用注册账号，文件全存在本地，Windows、macOS、Linux 都能装。</p><p>接下来手把手带大家把 MarkText 的下载、安装和汉化搞清楚，全程实测，无任何门槛，电脑新手也能轻松看懂。</p><h2>MarkText下载(文末)</h2><h2>MarkText安装</h2><p>1）Windows平台<br/>双击 setup.exe 打开安装向导，直接点下一步：</p><p><img width="499" height="360" referrerpolicy="no-referrer" src="/img/bVdrfQn" alt="" title=""/></p><p>在安装路径选择界面，建议将安装目录改为 D 盘（如 D:\MarkText），避免占用系统盘空间，点击"安装"：</p><p><img width="499" height="360" referrerpolicy="no-referrer" src="/img/bVdrfQo" alt="" title="" loading="lazy"/></p><p>等待进度条走完，点击"完成"即可：</p><p><img width="499" height="360" referrerpolicy="no-referrer" src="/img/bVdrfQp" alt="" title="" loading="lazy"/></p><h4>2）macOS平台</h4><p>打开 dmg 文件，把窗口里的 MarkText 拖到旁边的“应用程序”文件夹，等复制完成。</p><p>macOS 版要求 13 Ventura 及以上，系统版本低了装上也打不开。Intel 芯片选 x64 的 dmg，Apple 芯片选 arm64 的 dmg，选错会提示无法运行。</p><h4>3）Linux平台</h4><p>下载 AppImage 后放到一个固定目录，比如 ~/Applications，给它加执行权限，再运行。两条命令照抄：<br/>chmod +x ~/Applications/marktext-linux-0.23.0.AppImage<br/>~/Applications/marktext-linux-0.23.0.AppImage</p><h2>MarkText汉化（设置中文）</h2><p>MarkText 自带简体中文语言包，首次启动会自动跟随系统语言，中文系统一般直接显示中文。界面还是英文，可以在首选项里手动切换：</p><p>菜单栏 File -&gt; Preferences -&gt; General，找到最底部的 Language 选框，调整为简体中文（Chinese Simplified）：</p><p><img width="679" height="475" referrerpolicy="no-referrer" src="/img/bVdrfQw" alt="" title="" loading="lazy"/></p><p>软件界面秒变中文：</p><p><img width="589" height="377" referrerpolicy="no-referrer" src="/img/bVdrfQB" alt="" title="" loading="lazy"/></p><h2>MarkText基础使用</h2><h4>1）四种模式</h4><p><img width="552" height="380" referrerpolicy="no-referrer" src="/img/bVdrfQH" alt="" title="" loading="lazy"/></p><p>源码模式按 Ctrl+E 进入，看到的是带标记的原始文本，标题前面的 #、列表前面的短横线都露出来。</p><p>打字机模式按 Ctrl+Shift+G 打开，光标始终停在屏幕中间，新写的行会把旧内容往上顶，写长文时视线不用跟着光标往下跑。</p><p>专注模式按 Ctrl+Shift+J 打开，当前段落保持正常颜色，其余内容变淡。旁边开着微信、浏览器的时候，用它把注意力收回到正在写的那一段。</p><p>阅读模式按 Ctrl+Alt+R 进入，文档变成只读，只能滚动查看，打字、删改、粘贴都停用。通读校对、把屏幕转给别人看的时候用这个，不会误触改到内容。</p><h4>2）基本编辑操作</h4><p>MarkText启动后主界面是一个干净的编辑窗口，和Typora的体验非常相似，全程所见即所得，你在编辑区的任何操作（标题、加粗、列表、代码块）都会实时渲染成最终效果，不需要切换到预览模式。</p><p><img width="400" height="254" referrerpolicy="no-referrer" src="/img/bVdpWPY" alt="" title="" loading="lazy"/></p><p>图中的二级标题是输入了 "## MarkText是什么"的结果（## 后有 1 个空格）。下面这张表格整理了最常用的 Markdown 语法，新手可以对照着用：</p><table>
     <tbody>
         <tr>
             <th>
@@ -806,76 +1547,4 @@ EOF
 
 sleep 25
 kubectl get pod npu-check2 -o wide
-kubectl describe pod npu-check2 | sed -n '/Events/,$p'</code></pre><ul><li><code>resources.limits.huawei.com/npu: "1"</code> 是向 K8s 申请 1 张卡，这个资源名由 Device Plugin 上报。<strong>能调度成功，就说明「驱动 → Runtime → Device Plugin → 调度器」整条链路通了。</strong></li><li><code>schedulerName: volcano</code> 走 Volcano 调度，对应的就是镜像清单里那两个 <code>vc-*</code> 组件。</li><li><code>huawei.com/schedule_policy: chip2-node16</code> 是调度策略注解，按集群实际策略填。</li><li><code>restartPolicy: Never</code> 加 <code>sleep 3600</code> 是为了让 Pod 停在那儿，方便进去查设备挂载。</li><li><code>sleep 25</code> 等镜像拉取和容器启动。Pod 一创建就 <code>describe</code>，那时还在 Pending，很容易误判成调度失败。</li></ul><p>Pod 起来之后，进容器确认设备节点挂进来了：</p><pre><code class="bash">kubectl exec -it npu-check2 -- ls /dev/davinci*</code></pre><p>镜像里如果带了 <code>npu-smi</code>，也可以直接 <code>kubectl exec -it npu-check2 -- npu-smi info</code>，输出应当和宿主机对得上。</p><p>再看节点侧的资源账：</p><pre><code class="bash">kubectl describe node mgmt015 | grep 'huawei.com/npu'</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048400518" alt="" title="" loading="lazy"/></p><p><code>Capacity</code> 和 <code>Allocatable</code> 里出现卡数、并且已经分配走 1 张，这就是「集群认得 NPU」最直接的证据。</p><h2>七、几个容易忽略的点</h2><p>把这次流程里最容易出问题的地方单独拎出来：</p><table><thead><tr><th>位置</th><th>容易踩的地方</th><th>后果</th></tr></thead><tbody><tr><td>Runtime 配置</td><td>直接改 RKE2 自动生成的 <code>config.toml</code></td><td>重启被覆盖，配置丢失</td></tr><tr><td>Runtime 安装</td><td><code>--config-file-path</code> 填了真实主配置</td><td>脚本写入的内容和 RKE2 生成逻辑冲突</td></tr><tr><td>Runtime 安装</td><td>只在计算节点装</td><td>管理节点也带卡时，那边起的容器挂不到设备</td></tr><tr><td>重启服务</td><td>全集群统一敲 <code>rke2-server</code></td><td>agent 节点上服务名不对，节点起不来</td></tr><tr><td>节点标签</td><td>值自己改了 / 既管又算只打一个</td><td>组件一直 Pending，资源不上报</td></tr><tr><td>节点标签</td><td>手打显存、芯片型号</td><td>与 Device Plugin 实际上报值不一致</td></tr><tr><td>镜像导入</td><td>没设 <code>CONTAINERD_NAMESPACE=k8s.io</code></td><td>镜像进了 default，Pod 仍去公网拉</td></tr><tr><td>镜像导入</td><td>没把 tag 改成内网 Harbor 地址</td><td>chart 里的 image 名对不上</td></tr><tr><td>镜像推送</td><td>少了 <code>--plain-http</code></td><td>内网 HTTP Harbor 报 TLS 错误</td></tr><tr><td>Helm 顺序</td><td>先装应用 chart 再装 CRDs</td><td>自定义资源无类型，组件起不来</td></tr><tr><td>验证</td><td>Pod 一创建就 <code>describe</code></td><td>还在 Pending，误判成调度失败</td></tr></tbody></table><p>这几条都不是疑难杂症，但每一条都能让流程卡半天，而且报错信息通常不会直接指向真实原因。</p><h2>八、最后</h2><p>到这一步，<code>kubectl describe node</code> 里能看到 <code>huawei.com/npu</code>，Pod 里能看到 <code>/dev/davinci*</code>，整条链路就算通了：驱动让系统认得卡，CANN 让单机能算，Ascend Docker Runtime 让容器拿得到卡，Device Plugin 让 K8s 会分配卡，Volcano 决定分哪张卡。</p><p>上篇说「先把地基打完」，这篇就是把地基上面的调度层补齐。再往后是往里跑真实任务——断点续训、故障重调度这些高阶能力，都是在这个底座上叠。</p><p>还有一件事这篇没做：Helm 装完，NPU Exporter 其实已经在每个计算节点上跑着了，利用率、温度、电压、内存这些指标就在 <code>8082</code> 端口上，只是还没人去抓。集群一旦上量，「卡在不在跑、跑得满不满、有没有过热」总不能靠 ssh 上去敲 <code>npu-smi</code>。把指标接进 Prometheus、做成 Grafana 面板，单独放下一篇写。</p><p>最后照例提醒：本文走的是 <strong>RKE2 + containerd</strong> 这一条路径。换成原生 containerd、Docker 或者别的 K8s 发行版，Runtime 那段配置的落点全都不一样，别照抄，按官方文档的场景对号入座。</p><p>&lt;!--<br/>编辑备注（发布前删掉）：</p><ol><li>图 1～图 9 沿用原部署笔记里的语雀外链，公众号不支持外链，需先下载图片再重新上传；图注文字可按实际截图微调。</li><li><p>正文主体命令来自部署笔记，属于实际执行记录。以下为补充的通用排查命令，未逐一执行过，发布前可自行核对：</p><ul><li>2.4 的 ls / kubectl get nodes / npu-smi info</li><li>5.4 的 helm list / kubectl get pods -A | grep</li><li>6 的 kubectl exec 验证</li><li>2.4 关于 agent 节点重启 rke2-agent 的提示</li></ul></li><li>4.3 只给了单镜像示范（笔记原文标注「实际部署请使用脚本批量方式」），批量脚本未编造，如需可另行补一份。</li><li>6 的 huawei.com/schedule_policy: chip2-node16 按实际集群策略确认后再发。</li><li>监控与 Grafana 部分已拆为独立一篇，本篇不写。<br/>--&gt;</li></ol>]]></description></item><item>    <title><![CDATA[技术选型找开源平替时，为什么我先看对比页而不是 Awesome 列表 圆鼓鼓 ]]></title>    <link>https://segmentfault.com/a/1190000048400542</link>    <guid>https://segmentfault.com/a/1190000048400542</guid>    <pubDate>2026-11-17 18:06:12</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>做技术选型时，Awesome 列表有个天然问题：它只负责收录，不负责比较。一个方向列几十个项目，每个都要点进仓库看 README、看 License、看最近提交，成本很高，最后往往还是凭印象拍板。<br/>我现在的做法是先看带对比维度的页面。以最近一次找 Heroku 开源替代品为例，我参考的是 GitHubPlay 的对比页（<a href="https://link.segmentfault.com/?enc=Wp%2Bl39%2FzT7d5rhQ3p0lPUA%3D%3D.jzxBdvpzeGN0zcb8RXhIw3xZsEsBvthVOP4Flpv9CvXFTFS5PPffPjrEdvACUHez" rel="nofollow" target="_blank">https://githubplay.com/alternatives/heroku</a>）：它把 CapRover、Dokku 等候选按部署架构、功能完整度、License 做了横向对比，MIT 和 Apache-2.0 的区别、单机还是集群，一页看清。<br/>GitHubPlay 本身（<a href="https://link.segmentfault.com/?enc=nbpNz%2FEOWO1ugmFT0d9ByQ%3D%3D.yQ%2BlA%2Fz7JU44Bv0UYiVi8liGGKureqrgNCiLNsxcu00%3D" rel="nofollow" target="_blank">https://githubplay.com/</a>）是一个 GitHub 开源项目排行榜与目录站，我的使用顺序一般是：先用分类页按技术方向缩小范围，再用对比页横向筛，最后看项目页的 Star、License、平台和更新时间做终筛。<br/>另外它的涨幅榜也适合日常跟踪：按 Star 增速而不是总量排序，能更早发现某个方向正在起量的新项目，链接：<a href="https://link.segmentfault.com/?enc=h89xycitdefWWeQkZHZg2w%3D%3D.IWUW6IC%2B%2FPMzQIw6CgtOnq4Dp9AfbrZI5XpCHSVAzgCQ9PH27hHYfuujUB3CTT4w" rel="nofollow" target="_blank">https://githubplay.com/rankings?board=rising</a> 。<br/>总结成一句话：名单解决「有哪些」，对比解决「选哪个」。选型类工作，先找有对比维度的页面，能省掉大量重复翻仓库的时间。</p>]]></description></item><item>    <title><![CDATA[用了三个月 WorkBuddy，分享6个我天天在用的技能 爱逃课的帽子 ]]></title>    <link>https://segmentfault.com/a/1190000048400574</link>    <guid>https://segmentfault.com/a/1190000048400574</guid>    <pubDate>2026-11-17 18:05:38</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>最近一直在用 WorkBuddy 处理内容和技术的活，攒了几个反复在用的技能，发出来给有需要的吧友做个参考。<br/>先说做视频和漫剧这块，三个用得最多：<br/>剪映剪辑输出。剪一条片子，拼接、配音、字幕、配乐、调色、导出，以前一下午。这个把这些串成一条线，素材丢进去能一路走到成片。累计装了124次，我批量出片基本靠它。<br/>DeepSeek故事大脑。写剧本我现在是先看爆款结构再动笔，不从头憋了。它能做爆款拆解、二创、分镜、角色设定，文字活都接。<br/>豆包故事大脑。手机端就能用，出剧本、排分镜表、给即梦提示词。通勤路上改稿挺方便。<br/>做视频号的注意下：新人翻车常常栽在违规，不是没流量。视频号直播助手内置带官方链接和核实日期的规则库，还有动作级红线风险地图，哪些话不能说标得很清楚，另外有0粉破0和四阶段孵化SOP。开播前过一遍能少走弯路。<br/>技术向的看这个：小程序云架构与测试专家。小程序+网页+云后端三端都熟，多租户隔离、RLS权限、端到端测试、提审发布全流程，还能模拟新用户跑自检出报告。<br/>兴趣向的：明稽术数典籍与历算考据专家团。做传统文化考据用，结论标古籍原文、篇章和复算命令，口径分歧如实登记，术语翻大白话。查版本源流、核对排盘口径、追溯卦爻辞出处很好使。<br/>自取：<a href="https://link.segmentfault.com/?enc=jDG3FEyvQ%2BXtViuClhXeGw%3D%3D.VLqyvdEMVOI5N3HK2GEoA5slJKU6%2F4dObh72fSuO2t4sdWzVbFOT5jr5hoezF4lf" rel="nofollow" target="_blank">https://drive.uc.cn/s/e2388ba63d854</a><br/>提取码：Uwt7</p>]]></description></item><item>    <title><![CDATA[PostgreSQL 日报｜Neon AI 应用平台与内核多补丁更新（11 月 17 日） Ivor]]></title>    <link>https://segmentfault.com/a/1190000048400588</link>    <guid>https://segmentfault.com/a/1190000048400588</guid>    <pubDate>2026-11-17 18:04:48</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <h2>PostgreSQL 技术文章</h2><h3>Agent 构建应用，用户掌控数据库:Ideavo 的做法</h3><p>Ideavo 是一个 AI 驱动的应用构建平台，用户通过自然语言描述即可生成应用。与订阅制平台不同，Ideavo 不收取订阅费或积分，用户只需接入自己在 OpenAI、Anthropic、Google 等服务商的 API key，由 Agent 完成应用构建。每位用户拥有独立的数据库实例（通过 Neon 提供），计算与存储成本由用户自行承担。这种架构展示了…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=z5DMCfdr7zdGphYK9PBs5A%3D%3D.cwMpnypQHwAaJLfZbrGFgAWg%2FfVqAuwTOfvNBXBHR8%2FmVf0FZy4%2BAmGkUZc4EuFzdLrsN%2FlrK0DJekjzkYs2hU6IbKEYIzR3Ou5l2tbCjWNJs20a6etCraj7rk%2B4Js0xX0MFvqFD%2BGih9MIz2VbJKBPQvWKDf9%2FpnFT35DjPjWz%2Brr0ErFUEF6C0qDg%2FP%2Bxh" rel="nofollow" target="_blank">https://pgnexus.ai/tech-blogs?url=https%3A%2F%2Fneon.com%2Fbl...</a></p><h2>PostgreSQL Hacker 电子邮件讨论精选</h2><h3>启用 <code>-Wformat-nonliteral</code> 并清理过时兼容代码</h3><p>Peter Eisentraut 提交了一个补丁系列，作为 CVE-2026-16240 的后续工作，目标是修复 <code>-Wformat-nonliteral</code> 警告，移除过时的 y2k 和 MinGW strftime 变通代码，并默认启用该警告选项。Chao Li 在 macOS 上测试后未发现问题。Tristan Partin 提出了一些小的代码风格建议…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=2CsbbCNAGUk9a027lu%2FIig%3D%3D.rvLIPN41gRl88TS1r5rZd2xfFrfPeOa9Rn9Fz8Gfm23qkthz%2FOWewhHxtpLLA1tdeNRFCwn%2FPubhRWdUPfx5mBld20x%2B%2B%2B68Iq7wBvJtF6k%3D" rel="nofollow" target="_blank">https://pgnexus.ai/hacker-discussions?subject=-Wformat-nonlit...</a></p><h3>删除组合属性导致数据完整性破坏</h3><p>该线程讨论了 Nikhil Sontakke 提交的 v4 补丁，旨在修复删除复合类型属性时引发的数据完整性问题。v3 存在一个漏洞：通过级联删除数据类型（如 DROP DOMAIN CASCADE）而间接删除的列未被检查，可能导致重复行。v4 在 deleteObjectsInList() 中于所有对象删除完成后进行检查，以修复该问题。然而，Zsolt…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=pjjdANEqyXRJvr404gIf4A%3D%3D.ouDA52%2FfWiFx61Gdh0oiOWUhlIrwisf00K9Q9N%2BQjZB3jsvRMWV4von%2BJzAlZ1kOJfSs5968uKwdwfR5HuIm6tYfZOwYOlv9YEXt1RRPX0U92LXiFXJoyAqd6ab5ZCpj0myX75BS%2FSwjQ%2BdE%2Bbo8CFgIWc%2FqUDHF%2FxI93XX4IUw%3D" rel="nofollow" target="_blank">https://pgnexus.ai/hacker-discussions?subject=Dropping%20a%20...</a></p><h3>当自动清理无法删除元组时，报告最旧的 xmin 源</h3><p>该线程讨论了 Nikhil Sontakke 提交的 v4 补丁，旨在修复删除复合类型属性时引发的数据完整性问题。v3 存在一个漏洞：通过级联删除数据类型（如 DROP DOMAIN CASCADE）而间接删除的列未被检查，可能导致重复行。v4 在 deleteObjectsInList() 中于所有对象删除完成后进行检查，以修复该问题。然而，Zsolt…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=NI27OKAcZu8TmYBgELT9hQ%3D%3D.Sw6zMOlG96NQxwyBW1rjhvuiY%2FSicAe2dB8NVe4F%2BX%2FAZ6m75m%2FDPashAtKTr9eqoRp7t9gYeo3f%2Ft4CtZkM4i2pQBKNEhD5N2oybq84jGLfQ2Gpm56d45qDxGMIvl6868Bd5jhEElIRlmi17GYSMBWaIpHv2QSk28v4yjaFEZQ%3D" rel="nofollow" target="_blank">https://pgnexus.ai/hacker-discussions?subject=Dropping%20a%20...</a></p><h3>当自动清理无法删除元组时，报告最旧的 xmin 源</h3><p>该讨论围绕一个补丁（v10）展开，补丁的目标是在 autovacuum 无法清除元组时报告阻塞最旧 xmin 的来源。Shinya Kato 根据 Fujii-san 的反馈更新了补丁：在计算截止值后立即查找阻塞者，将活跃/空闲状态及 prepared transaction GID 排除在范围之外，并保持补丁的改动范围尽量小。Bharath Rupire…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=hu9EZwO2%2Bv97lxMInYoyCw%3D%3D.nrtTO5w%2FLLFK1S2%2F4hkYypt6S6gtZlRSU%2BPtGtzIehRKUcFmsoLJwRBT1b3tBq6OF0IxFVQKemZ8%2BSR1vyHGul1rn%2B7r6A3elrgJjhamSmx3O7HfCAP6317e3GPf2vE8PX79%2F7vcMUQeb2FrF83qev7sSl%2B0VLTw1qiJyXTBibM%3D" rel="nofollow" target="_blank">https://pgnexus.ai/hacker-discussions?subject=Report%20oldest...</a></p><h3>为内存分配函数添加 malloc 属性</h3><p>本次讨论围绕在 PostgreSQL 内存分配函数上添加 GCC 的 <code>__attribute__((malloc))</code> 及 <code>__attribute__((malloc(deallocator, arg)))</code> 展开。Tristan Partin 澄清了这两种形式虽同名但用途不同：前者标记函数具有 malloc 语义（无指针别名、通常返回非空），后者则用…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=UXmqOE5%2BG%2BsDLneNkb%2BkaA%3D%3D.NZHPObgfFBVnO6k4NJTByEK9OHd33gItAELAdrSWJx4nKNc0pHPfdPh4SWjjlp7tJ5Aix3km%2BTVeMXsCU7s5JXi49llMLdUaWH8%2FHLALcskkobIGOneuUdCAvFK5gUd5fklxuBxJYOt2YRSwGLkVDA%3D%3D" rel="nofollow" target="_blank">https://pgnexus.ai/hacker-discussions?subject=Add%20malloc%20...</a></p><h3>WAL_LOG CREATE DATABASE 策略在非标准页面布局下失效</h3><p>讨论围绕修复非标准页面布局下 WAL_LOG CREATE DATABASE 策略的问题展开。Melanie Plageman 发布了第三版补丁，解决了两条审查意见：Zhijie Hou 指出修改后的 TAP 测试会在 CREATE DATABASE 运行前将 pg_class 预加载到 shared_buffers，从而削弱原有的回归覆盖，v3 通过调整…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=EiZSp4CRWDK2hjd%2BtPGWmw%3D%3D.QCYIul3M%2B0KrNy6wyYNH4%2FtMzJEh5cK4T7J5%2Fi0owTtLq1nbK%2FoQBSCvPM19bIvfEP37ZunGPIx29aau%2BMh%2Byb6mPrzEMwO%2FhH7sKMjp5uBN%2BthzDVmJyqShREqpf2Gb5lJbAMFIOkl2gR4SzdWqz386U73VQfOLlbDLmRnDeAc3Fv3BvcUQmJaTzIFDOwVL" rel="nofollow" target="_blank">https://pgnexus.ai/hacker-discussions?subject=WAL_LOG%20CREAT...</a></p><h3>ISBN 范围表的设计与管理</h3><p>Jim Jones 在测试与 ISBN range table 相关的补丁时，发现了 <code>isn</code> 扩展中一个可能与该补丁无关的异常行为。将两个不同的 ISSN 值（<code>'12345679'</code> 和 <code>'9771234567898'</code>）转换为 <code>issn</code> 类型后，两者的显示结果完全相同，均为 <code>1234-5679</code>，但等值比较却返回 false。Jim 指出这…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=F85fY8GtO49pBstgmVcS1w%3D%3D.Dqi%2FlVkD1R6FSeEhSOgd2DSGcITGv12E4u%2Bhf2uuSlfCOqUeimqbhYvZE0bYSNP0X2QTxAKLi1oX0%2F06OgT9v3KCjcf6gJgTQfqGZMFqNoM%3D" rel="nofollow" target="_blank">https://pgnexus.ai/hacker-discussions?subject=ISBN%20range%20...</a></p><h2>行业新闻</h2><h3>Uber 承认遭黑客入侵，约 15 万名司机驾照信息被窃</h3><p>Uber 确认，黑客在一次数据泄露事件中窃取了约 15 万名司机的驾照信息。据悉，这些数据存储于 AI 云服务公司 Fireworks AI 的系统中。此次事件凸显了第三方 AI 基础设施供应商在处理敏感个人数据时存在的安全隐患。Uber 表示正积极应对，并将通知受影响司机。大规模个人身份信息外泄，不仅对 Uber 本身构成严重冲击，也引发了外界对 AI…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=6r%2FFODyxqYp%2FOS3rHdld1A%3D%3D.%2Fbcu5Nd0m79wQKAm8JJP1I64AV7Q7TktvMo75A6VLo9sSOKxreJyJCs%2BxYaQq6TgXUwM1ziIMBjOiayn5PnGaEb2uQ7ThVCuHdpsjU8uwwe4Uk8G5FW0X15diYaAjKfka9MML1vrLcu9%2FBjVFGOlBZ%2FYMt4REUKl190Ne0ZLQKvdXxZ%2FyClYeZ2N1dqwowTfNIGJo7VhB3mT6XzHRpOIQBB7SRfRWBB0m2si2SpDVj0%3D" rel="nofollow" target="_blank">https://pgnexus.ai/tech-news?url=https%3A%2F%2Ftechcrunch.com...</a></p><h3>Infoblox 确认遭黑客入侵，公司数据被泄露</h3><p>网络安全与自动化巨头 Infoblox 证实遭遇安全事件，黑客已访问其公司内部信息。该公司表示，目前正与外部调查机构合作，以评估泄露的完整范围。值得关注的是，Infoblox 本身是全球众多企业使用的 DNS、DHCP 及网络安全解决方案的主要供应商。一家网络安全厂商遭到入侵，意味着其客户的网络基础设施敏感数据可能面临风险，潜在的连锁影响不容忽视，调查工作…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=Mu1qtm23%2FXWzOBZLJnJRog%3D%3D.oSXVE3blDMXgWnaAaEnTTapG%2B%2FPmPKHsxlZr2dkxcNcVS7NpCxggIx9Sg6LxCKTiCyMMmhgpTLFMDu1HICcAnM0ucB1Jpsp3jpmnuQmEn1G78qEXe2iZYv%2FmLLaBhY7GXvkL3PKrNlIBNjOZLgPzSddo146XcYX%2FmCWJIzJ9kZWu03Yg4v6xAE6sNPziJ3cxJYRnN%2F%2BGz037IhNhEjfu%2FQdxXmuy0VoDV8wFZc133FM%3D" rel="nofollow" target="_blank">https://pgnexus.ai/tech-news?url=https%3A%2F%2Ftechcrunch.com...</a></p><h3>Freshworks 校友融资 5300 万美元创办 AI 原生 CRM 初创企业 Dreamteam</h3><p>由 Freshworks 前员工创立的初创公司 Dreamteam 完成了 5300 万美元融资，致力于打造一款 AI 原生 CRM 平台，直接挑战 Salesforce 和 HubSpot 等成熟巨头。该公司目前已在 13 个国家签约逾 100 家客户，其中不乏从现有 CRM 系统主动迁移的企业。此轮融资再次印证了市场对 AI 优先企业软件的持续热情。D…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=GJSzcALnkm6TBVN3exv%2Fpw%3D%3D.FypjL%2BglqDO4vKnE4h6HhQH6s9SDKP3T3BRyBaIRid2dUq8qyowqgnuiD%2FWB8C0OpDAdS%2BXOKhEfqGPW7W0WmKJXogqgMa0TZ%2FD3bGROgKw8cWvTie7%2F3kUvrKjyJs7FghGhEs0onUjRaTiAm866uyl4twMi9b1agHymnEYDNS%2BaJqQxSGU0hH2gP4volG%2BWRHPXtjPvuOzNuDgRBFt4ow%3D%3D" rel="nofollow" target="_blank">https://pgnexus.ai/tech-news?url=https%3A%2F%2Ftechcrunch.com...</a></p><h2>社交媒体动态</h2><h3>我们将基于 Genie Ontology 的 Genie 与两款前沿智能体在企业数据任务上进行了基准测试</h3><p>Databricks 与 Turing 合作，在真实的 Databricks 工作区中对 Genie（基于 Genie Ontology）与另外两款前沿智能体进行了企业数据任务基准测试。测试内容涵盖 notebook、仪表盘和已保存的 SQL 查询，每项任务各运行五次。结果显示，Genie 的通过率达到 91%，而另外两款智能体分别为 45% 和 58%，…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=utelYHJUEykpmFWpJ2jqPw%3D%3D.Citz%2B%2B1IptRobs%2BdjRdMhGHbyEzkIbDkh5l%2BgnQxPKBWmEPBHZPPnyTwamzsIrZC0Y6o1rTi2M%2FHhrafRjYdcGNftWJpNdv6kKt3gkNZAP51J16BKUA9zPmU0Xtm6R6otHJVI1K4SxZJ1R0U7BJ7va%2FtTGPCPAfH%2F3nxS0zf80apDU6rkhohZxORt%2FuEL%2BweQKqRAuKoeCabhziKU4EEw6hVg1bgysJ6xf0LVsqE%2FYQ%3D" rel="nofollow" target="_blank">https://pgnexus.ai/social-media?url=https%3A%2F%2Fwww.linkedi...</a></p><h3>CYBERTEC 本周亮相 DOAG2026</h3><p>CYBERTEC 将于 11 月 17 日至 19 日参加 DOAG 2026 展会，展位号为 326。首日，Pavlo Golub 将发表题为「轻松实现专业 Postgres 监控」的演讲，内容涵盖 PostgreSQL 监控的关键层级、不可忽视的核心指标、主流工具的不足之处，以及基于 TimescaleDB 构建的开源工具 pgwatch 如何在不增加…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=HrsfOJqr8YOeTvUky55LjQ%3D%3D.4y8aycZx29zRA0aAu0FG27B3y6dwa0pa8g9GlAghwqQj%2BQoYSD4AYQ0L3FLG2BR%2BmVC%2FMEb2JU676vxfC5xg%2FQwRFlal%2Fephwtmqq28KmBJuSs3JuWAhYhm1X23T1aS0T8iSA6FkvacnGRkKXOT0FBq0A5cReCvWvxnZl86UrOVRAekK8ZOxtuaVzkKF%2FmLT7uLy1b7qKkOs4C9SVGEEfw%3D%3D" rel="nofollow" target="_blank">https://pgnexus.ai/social-media?url=https%3A%2F%2Fwww.linkedi...</a></p><h3>AI 新模型几乎每周一发，如何选择成了难题</h3><p>AI 新模型几乎每周都在发布，如何挑选合适的模型对企业来说越来越困难。为此，Databricks 推出了 Databricks AI Index——一个公开资源，汇集了来自 Unity Gateway 上数千家企业的匿名使用数据，呈现企业实际在用哪些模型、AI 支出流向何处，以及各类编程智能体的性价比表现。该指数还包含一套基于 Databricks 内部代…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=qcDJYe5D6yy5%2FWwdRp3wPw%3D%3D.0jzLFmikHNp7IJEwZL9f35bo3r%2FvT1uwKz8Ec12jaYABRJIahdJ7CFd%2BH4BIR5lj0TWzIwvTmurujY20vHUG0N4ewfzqVNpeArPFOA%2FzQ3fi5%2BD211nJvMCp6RjSF4Z30k9SRs%2BJXSUwNTIjmOb9zC4k7tX55l3FjIXSKxsojijb55Lp7jTf91oth%2Bzu0iaP" rel="nofollow" target="_blank">https://pgnexus.ai/social-media?url=https%3A%2F%2Fwww.linkedi...</a></p>]]></description></item><item>    <title><![CDATA[PostgreSQL 快赢了，但也别急着开香槟 IvorySQL ]]></title>    <link>https://segmentfault.com/a/1190000048400648</link>    <guid>https://segmentfault.com/a/1190000048400648</guid>    <pubDate>2026-11-17 18:04:10</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>2026 年 11 月的 DB-Engines 排名已经发布。在前四名中，PostgreSQL 是唯一一条仍在持续上扬的曲线。</p><p>Oracle、MySQL 和 Microsoft SQL Server 本月均出现下滑，与一年前相比也全部走低。PostgreSQL 在这两项指标上都有增长。目前它距离第三名 SQL Server 仅差 3.84 分。按照过去一年的趋势，PostgreSQL 最早可能在下个月完成超越。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048400651" alt="1.png" title="1.png"/></p><p>那么，是时候庆祝了吗？恐怕还为时尚早。在开香槟之前，不妨先看清楚数据究竟说明了什么、用户为何迁移，以及再往上走一步会有多难。</p><h2>数据说明了什么</h2><p>本月只有 PostgreSQL 实现增长，也只有它比一年前更高。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048400652" alt="2.png" title="2.png" loading="lazy"/></p><p>来源：<a href="https://link.segmentfault.com/?enc=AnJOHhXQuf64fk5vREUQPA%3D%3D.sUOJ%2BQZWDzfga4pz7O5QL7WP9mSUrZPaUGGHkhCcfMLV%2FLet0Rta%2Bnpf3AcWphDRxwOVFdmxK8T6W3hmy8eNQQ%3D%3D" rel="nofollow" target="_blank">DB-Engines 关系型数据库排名</a>，2026 年 11 月。</p><p>简单推算一下排名可能变化的时间点：</p><ul><li><strong>SQL Server</strong>：差距 3.84 分。按本月速度，约两个月可以追平；按过去一年的速度，不到一个月即可追上。因此，2026 年 12 月或 2027 年 1 月完成超越是合理的预期。</li><li><strong>MySQL</strong>：差距 133.54 分。过去一年差距缩小了约 81 分。若保持这一节奏，PostgreSQL 大约在 2028 年中超越 MySQL。</li><li><strong>Oracle</strong>：差距 406.46 分。过去一年缩小了约 182 分。据此推算，时间点大约在 2029 年初。</li></ul><p>长期趋势图印证了同样的判断。PostgreSQL 从 2013 年的约 200 分攀升至如今的近 700 分；同一时期，前三名则在缓慢下滑。再往下看，MariaDB 自 2022 年峰值以来也持续走低。</p><p>需要说明一点：DB-Engines 衡量的是流行度，而非装机量或营收。评分依据包括搜索热度、招聘信息、Stack Overflow 提问、社交媒体提及等信号。分数上升说明人们在讨论 PostgreSQL、学习它、为它招聘，但这并不等同于有更多生产工作负载运行在它上面。</p><h2>用户为何离开昂贵的数据库</h2><p>最直接的原因是成本，但成本并非全部。以下是我从迁移者那里最常听到的几类原因：</p><ul><li><strong>许可管理带来的负担</strong>。按核许可、审计、虚拟化规则以及逐年上涨的支持合同，都促使财务团队寻找替代方案。许多公司是在经历多次审计之后转向 PostgreSQL 的。</li><li><strong>云改变了成本结构</strong>。各大云厂商都提供托管 PostgreSQL，部分厂商还出售自己的兼容引擎。如果企业已经在向云迁移，PostgreSQL 就是那个不收取许可费的数据库。</li><li><strong>避免厂商锁定</strong>。PostgreSQL 不属于任何一家公司。它可以在本地运行，也可以部署在任何云上，还可以在数十家支持厂商之间切换。CFO 和 CTO 都看重这种自由度。当然，云厂商也可能提供带有自家专有功能的定制版本。</li><li><strong>对大多数场景足够好，甚至更好</strong>。JSONB、可靠的复制、分区，以及庞大的扩展生态（PostGIS、pgvector、TimescaleDB、Citus），覆盖了过去需要商业产品才能承担的工作负载。</li><li><strong>人才与生态趋势</strong>。新开发者通常先学 PostgreSQL，初创公司也默认选择它。大数据和 AI 厂商近年来持续收购 PostgreSQL 相关公司。当一项技能广泛普及时，招聘会更容易、成本也更低。但需要注意，部分 AI 工具（例如 ChatGPT）并未基于 PostgreSQL 最近几个版本进行训练，因此不了解 JSON_TABLE() 等新增功能。</li><li><strong>AI 工作负载</strong>。pgvector 使 PostgreSQL 成为向量搜索的合理默认选项。许多团队更愿意将嵌入向量与关系数据放在一起，而不是再引入一个数据库。</li></ul><h2>许可零成本，运维有代价</h2><p>开源社区常谈“free as in beer”（免费啤酒）和“free as in speech”（自由言论）。PostgreSQL 还应该被理解为“free as in free puppy”——免费领养的小狗。把它带回家不花钱，但接下来十五年照顾它，就是另一回事了。</p><p>你是在用许可费换取其他成本：</p><ul><li><strong>人力</strong>。需要有人调优 vacuum、规划大版本升级、管理连接池、监控事务 ID 回绕。有经验的 PostgreSQL DBA 供不应求，而且并不便宜。顺便说一句，便宜的 DBA 未必是招聘经理和 HR 所期望的划算选择。</li><li><strong>工具链</strong>。备份、高可用、监控和故障转移往往需要选择并集成多个独立项目，例如 Patroni、pgBackRest 和 PgBouncer。商业数据库通常将这些包含在内。就像乐高积木，你需要自己把 pieces 拼起来，而且它们需要你去拼。</li><li><strong>支持</strong>。当凌晨两点出现故障时，你需要支持合同、托管服务，或者一支非常优秀的团队。这三者都需要花钱。</li><li><strong>迁移</strong>。从 Oracle 或 SQL Server 迁走意味着重写 PL/SQL 或 T-SQL、重新测试应用、重新培训员工。这笔成本在你省下任何费用之前就已经产生。</li></ul><p>这些并不意味着 PostgreSQL 不划算。对大多数组织来说，这只小狗值得拥有。只是在带它回家之前，先为狗粮、兽医和咬坏的鞋子做好预算。</p><h2>美中不足：PostgreSQL 19 的功能回退</h2><p>PostgreSQL 19 延期了，而且在 beta 期间失去了多项重要功能。通常新大版本会在 9 月中旬至 10 月中旬之间发布。PostgreSQL 19 目前定于 2026 年 11 月 19 日发布，比常规时间晚约一个月。</p><p>以下是 beta 期间被撤回的功能：</p><table><thead><tr><th>日期（2026）</th><th>被回退的功能</th><th>给出的原因</th></tr></thead><tbody><tr><td>9 月 16 日</td><td>在线数据校验和转换</td><td>“避免发布可能存在 bug 的代码”</td></tr><tr><td>9 月 15 日</td><td>UPDATE/DELETE FOR PORTION OF（时态表）</td><td>未说明</td></tr><tr><td>9 月 13 日</td><td>pg_get_role / tablespace / database_ddl 函数</td><td>未说明</td></tr><tr><td>9 月 11 日</td><td>两项 CREATE SCHEMA 变更</td><td>兼容性破坏超过了收益</td></tr><tr><td>9 月 10 日</td><td>标识符大小写折叠变更</td><td>在某些区域设置下产生意外行为变化</td></tr><tr><td>9 月 7 日</td><td>SQL/PGQ 属性图查询（47 个提交）</td><td>未说明</td></tr><tr><td>8 月底至 9 月中旬</td><td>ALTER TABLE … MERGE / SPLIT PARTITION</td><td>未说明</td></tr></tbody></table><p>来源：<a href="https://link.segmentfault.com/?enc=%2FpiUwv6iQ3WtGd7c2W5SUQ%3D%3D.2D7o5ZTC4RybEvIE%2Bd%2F6LtQ0C03gyfSzblZeNJlqd5u0klJAqzP9jmGnK6wI6RHPE8%2FJPG%2F4%2BLn%2F5jIp7c62okIQWV%2BT1kWZxOG1aPkzpXE%3D" rel="nofollow" target="_blank">Command Prompt</a>、<a href="https://link.segmentfault.com/?enc=xAfcXu4gul6qySsXJc3Mxg%3D%3D.0kiHQy0WfEysAdIVbeqZrTN8R04kYyyVsgMbM%2Bvwn8E9UBnKBuLNmucIGyziOCcWKnJ6UUEKOJDuCf6rWAW2osEb33ZvUz2HDTTrnZph5v8%3D" rel="nofollow" target="_blank">Robert Haas</a></p><p>SQL/PGQ 图查询本应是这一版本的头条功能。在发布前几周失去它，对一个希望进入企业市场的项目来说，观感确实不佳。</p><p>不过也可以从另一个角度理解。Haas 认为原因是“LLM 出现了”。AI 工具让“发现这些 bug 变得容易得多”。他表示，回补修复比前一年增加了 60% 以上，而这些工作占用了提交者完成新功能的时间。用他的话说，延期“直接源于项目对质量的关注”。</p><p>我同意这一点。一个对没把握的功能选择撤回的项目，是在负责任地行事。但对于一位正在比较 PostgreSQL 与 Oracle 或 SQL Server 的 CIO 来说，一个延期发布且头条功能被移除的版本，看起来就是不可预测。观感很重要，排名也一样。</p><h2>再往上，一步比一步难</h2><p>超越 SQL Server 将是一个里程碑，但再往上的每一步都更陡。以下是我看到的挑战：</p><ul><li><strong>存量装机量巨大</strong>。数十年的 Oracle 和 SQL Server 应用，其中许多是打包的 ERP 系统，不会很快迁移。有些厂商根本不在 PostgreSQL 上做认证。</li><li><strong>社区模式推进缓慢</strong>。PostgreSQL 没有单一公司设定优先级，一小群提交者审核所有变更。这保护了质量，但大功能可能耗时数年，而且仍可能被撤回，PostgreSQL 19 就是例子。</li><li><strong>提交者精力有限</strong>。如果 AI 辅助的 bug 搜索持续发现更多问题，修复它们的仍是同一批人，留给新功能的时间就更少。</li><li><strong>生态碎片化</strong>。“PostgreSQL”可能指社区版 PostgreSQL、Aurora、AlloyDB、Azure Database for PostgreSQL，或者十几个兼容分支。这对采用是优势，但分散了工程精力，也让买家难以判断自己实际得到的是什么。</li><li><strong>运维差距仍然存在</strong>。内置高可用、更轻松的大版本升级、更好的超大型数据库工具，仍然需要附加组件。商业竞争对手把这些差距当作卖点。</li><li><strong>评分是相对的</strong>。DB-Engines 分数部分取决于其他数据库被讨论的程度。随着 Snowflake、Databricks 和 DuckDB 等较新平台吸引注意力，所有人拿分都更难了。</li></ul><h2>领先者可以如何反击</h2><p>PostgreSQL 之上的三个数据库正在失分，但并非无路可走。</p><p><strong>Oracle</strong> 可以让价格不再是离开的理由。更简单的许可、更慷慨的免费层，或者云上真正的降价，都能做到。它还可以推广 PostgreSQL 仍然缺乏的能力：RAC 式集群、成熟的内置工具，以及一家能接电话的公司。Oracle 在 AI 方面已经布局良好，拥有向量搜索和融合数据库功能。更用力地讲这个故事会有帮助。</p><p><strong>MySQL</strong> 有最容易讲的翻身故事，也有最多的损失。它的开源社区对 Community 版功能落地之慢已经失去耐心。如果更多新工作投入开源版本而非 HeatWave，并且社区看到清晰的路线图，MySQL 就能赢回善意。它的优势仍然真实：运维简单、装机量巨大、名字耳熟能详。</p><p><strong>SQL Server</strong> 是 PostgreSQL 即将超越的那个。微软最好的反击是集成。SQL Server 已经与 Azure、Fabric、Power BI、Entra 和 Copilot 顺畅协作。卖点是它更贵，但一切都能直接用。微软还可以更激进地捆绑，例如为 Microsoft 365 客户提供 Azure 额度或价格优惠。不过，微软在 Azure 上也销售大量托管 PostgreSQL。如果客户从一个微软托管的数据库迁到另一个，它可能并不太在意。</p><p>三者都可以利用 PostgreSQL 的“免费小狗”问题来反击。它们可以强调总拥有成本，以及拼凑一堆开源工具栈的风险。</p><h2>如果价格降到零呢？</h2><p>我仍然是 PostgreSQL 的坚定支持者，也真诚希望它成为首选数据库。但如果 Oracle 和微软决定，打败开源浪潮的方式是大幅削减甚至取消许可费呢？PostgreSQL 还能竞争吗？</p><p>这并没有听起来那么遥不可及。两家公司都已经提供有限版本，例如 Oracle Database Free 和 SQL Server Express、Developer。微软越来越多的收入来自 Azure 计算、存储和服务，而非许可密钥。一个免费的 SQL Server 推动 Azure 消费，符合其商业模式。Oracle 则更依赖许可和支持收入，所以大幅降价对它伤害更大。但 Oracle 以前也曾经大幅转向。</p><p>PostgreSQL 会失去什么：</p><ul><li>它最容易的论点。对许多公司来说，成本是迁移的主要原因。把成本从等式中拿走，漫长且有风险的 PL/SQL 或 T-SQL 重写就更难自圆其说。</li><li>新迁移会放缓。已经运行在 Oracle 或 SQL Server 上的遗留应用，迁移的理由就更少了。</li><li>企业功能将平等竞争。RAC、内置高可用和精致的管理工具如果几乎免费或完全免费，会更清楚地暴露 PostgreSQL 的运维差距。</li></ul><h2>PostgreSQL 会保留什么</h2><ul><li>免费不止于价格。PostgreSQL 许可证不可撤销、不可重新定价、不可审计。免费的专有许可证只在厂商决定之前免费。经历过 Java 许可变更或 VMware 被收购后重新定价的人，都记得这一点。</li><li>没有单一所有者。你可以在任何地方运行 PostgreSQL，使用任何人的支持，随时迁移。零成本许可证并不能消除对厂商云、路线图和支持条款的锁定。</li><li>生态系统。PostGIS、pgvector、TimescaleDB 和 Citus 等扩展，加上每一个 PostgreSQL 兼容的云服务和分支，是降价无法匹敌的。</li><li>开发者心智份额。一代开发者首先学习的是 PostgreSQL。今天基于它构建的初创公司，就是明天的企业。</li><li>信任。数十年的审计和合同谈判留下了伤疤。许多客户会认为免费只是下一次追加销售的诱饵，而有些人是对的。</li></ul><h2>结论</h2><p>是的，PostgreSQL 仍然可以竞争，但论点会从成本转向价值。“免费小狗”的论点也适用于商业厂商。它们仍然会在某处赚钱，通过支持、云消费或高级功能。PostgreSQL 的答案必须回归开源最擅长的东西：自由、可移植性和社区。它还需要弥合对企业重要的差距：内置高可用、更轻松的升级和可预测的发布。免费的 Oracle 或 SQL Server 不会终结 PostgreSQL 的增长，但会终结轻松的那一段。</p><h2>那么，PostgreSQL 真的赢了吗？</h2><p>它正在赢得趋势，但还没有赢。它是前四名关系型数据库中唯一流行度上升的，而且很可能在一两个月内拿下第三名。人们迁移的原因是真实的：成本、摆脱锁定、云，以及强大的功能集。</p><p>然而，流行不等于主导。PostgreSQL 19 延期且功能缩水的发布，显示了志愿者驱动社区模式的局限。免费小狗仍然需要喂养，而它上面的数据库拥有雄厚财力和忠诚客户。</p><p>我的看法是：关注下个月排名中是否超越 SQL Server。然后关注 PostgreSQL 19 是否在 11 月 19 日顺利发布，以及被回退的功能是否在 PostgreSQL 20 中回归。这些比任何单月分数更能说明 PostgreSQL 未来五年的走向。</p><p>遗憾的是，在几十年的经验中，我见过太多好产品在最后一刻从胜利的边缘走向失败。</p><h2>来源</h2><ul><li><a href="https://link.segmentfault.com/?enc=CZFj%2B0ZIAgbHk%2B9DDl2IkQ%3D%3D.4JPqHLUVJIa8LOmV5CgHcpRQ6PAKEdpQiL%2B2saBQ%2FhUUKInOEtxTcdRJ%2BOx4GHqGCtMaNIvN0idCL5HMXxeAQg%3D%3D" rel="nofollow" target="_blank">DB-Engines 关系型数据库排名</a>，2026 年 11 月</li><li><a href="https://link.segmentfault.com/?enc=WEIiIS6vsynzy9%2F1XCw4lg%3D%3D.0YDUoatETNAjbMWhYitb%2B92dTKr2zDMSO2GaUJaqylvEWyeQaCbW%2FDd%2FIhPmqOlkAxfgWZRUS4EpY%2FZ7r%2FnxD0ZMC8Y2i%2F7RYltVQlnXUkw%3D" rel="nofollow" target="_blank">Robert Haas：Postgres 19 延期了，是 AI 的错</a></li><li><a href="https://link.segmentfault.com/?enc=titPRQbNpFPAWQA4Vrxg7A%3D%3D.63ovuiJuI4V%2B7lNvo1T70lf3y09%2FvBkftlkYShAE9sBf4Uc3BKXC8mp38UMXHVYZiz5M5sT%2B8%2FwtOrNIAmZ1IkQEgGYEHXYsvNvXVs0ZgKE%3D" rel="nofollow" target="_blank">Command Prompt：PostgreSQL 19 的 6 项回退</a></li></ul><p>注：引擎排名的方法论长期以来一直备受讨论。我喜欢把它作为一个视角。就像 IQ 测试或道琼斯指数一样，仅依赖这一项指标存在很多问题。它是一个方便但简单的基准，在你的任何决策中都不应作为唯一参考，而只是众多参考点之一。</p><p>本文作者：Dave Stokes</p><p>原文链接：<a href="https://link.segmentfault.com/?enc=cRAHA234zoyE3L9VEBmKvA%3D%3D.8iM5mVYlLVHbSQRpWIJr%2FfMC%2FyZjNOVwgxIb0hG66kyhNJh6TzIoiNvYN33TN6rmlSwDsTHJAnVlDWJPx5BTxiQVCPd8cS2KHvS1aAKlitI%3D" rel="nofollow" target="_blank">https://stokerpostgresql.blogspot.com/2026/11/is-postgresql-r...</a></p>]]></description></item><item>    <title><![CDATA[AIOps智能运维实战——可观测性三支柱的融合 买醉的苦瓜 ]]></title>    <link>https://segmentfault.com/a/1190000048400807</link>    <guid>https://segmentfault.com/a/1190000048400807</guid>    <pubDate>2026-11-17 18:03:08</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>根因定位的数据底座——可观测性三支柱的融合</p><p>核心观点：根因定位的上限由数据底座决定，指标、日志、链路三者若各自为政，任何算法都只能做"猜根因"；融合的关键是统一的实体标识与时间对齐。</p><p>根因定位失败，十之八九不是算法不行，而是数据不具备"可关联性"。一个典型场景：指标显示某服务错误率飙升，日志里有大量超时，链路显示调用下游 P99 恶化——但三套系统用的是不同的服务命名、不同的实例 ID、不同的时间戳精度，工程师只能靠人肉拼图。因此，数据底座建设应聚焦三件事。</p><p>第一，统一实体模型与标识体系。 以 CMDB 为权威源，为每个服务、实例、主机、中间件集群、数据库分配全局唯一实体 ID，并要求指标、日志、链路在采集时就打上该 ID 及关键维度标签（环境、机房、版本、发布批次）。这一步是"苦活"，但没有它，跨源关联只能靠模糊匹配，根因定位的准确率无从保证。实践中可采用"标签规范先行、采集侧强制校验、存量数据逐步补齐"的迁移策略。</p><p>第二，时间对齐与统一时钟。 分布式环境下时钟偏差会直接破坏因果推断。工程上应统一 NTP 源、在链路数据中记录客户端与服务端双侧时间戳、在日志中强制带毫秒级时间。对于跨系统分析，建议以"故障时间窗"而非单点时刻作为分析单元，降低时钟误差的敏感度。</p><p>第三，建立"变更与事件"这一第四类数据。 纯观测数据只能说明"发生了什么"，无法解释"为什么"。发布记录、配置变更、扩缩容、基础设施事件（如云厂商故障通告）必须纳入同一时间轴，并与实体 ID 关联。大量根因最终指向"某次变更"，没有变更数据，定位就缺了最关键的一环。</p><p>在融合方式上，建议采用"以链路为骨架、指标为体征、日志为证据"的组织逻辑：链路提供调用关系与耗时分布，天然携带拓扑与因果方向；指标提供资源与健康体征，用于判断瓶颈位置；日志提供错误细节与异常模式，用于确认机制。三者通过实体 ID 与时间窗对齐后，才能支撑后续的拓扑推理、时序异常检测与因果图分析。数据底座的另一条工程原则是"保留原始、按需聚合"：原始数据保留足够长的窗口以支持事后复盘，聚合数据用于实时检测，二者分离存储、分别治理。底座打牢，根因定位才从"经验驱动"走向"工程可复现"。</p>]]></description></item><item>    <title><![CDATA[IPv6及IPv6+网络技术培训--从 Overlay 封装到 SRv6 承载 买醉的苦瓜 ]]></title>    <link>https://segmentfault.com/a/1190000048400818</link>    <guid>https://segmentfault.com/a/1190000048400818</guid>    <pubDate>2026-11-17 18:02:09</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>云内转发改造——从 Overlay 封装到 SRv6 承载</p><p>核心观点：云内改造的核心不是"把 VXLAN 换成 SRv6"，而是用 SRv6 同时承载租户隔离与路径意图，减少封装层次与网关翻译；改造应先在新建资源池验证，再向存量池渗透。</p><p>云内网络长期以 VXLAN 实现多租户 Overlay，其优势是成熟、芯片支持好、与虚拟化耦合深。引入 SRv6 并非全盘替代，而是解决三类 VXLAN 难以优雅表达的场景：跨资源池的东西向流量需要显式路径、云内流量需要经过服务链（防火墙、负载均衡、探针）、以及云内到网侧需要统一转发语义。</p><p>改造路径之一：SRv6 作为资源池间的承载。 单个资源池内保留 VXLAN，资源池边界（叶脊出口或云网关）做 VXLAN 到 SRv6 的映射：把租户 VNI 映射为 VPN SID，把跨池路径意图编码为 SID 列表。这样池内虚拟化生态不变，池间与出云流量走上统一 SRv6 转发面，边界只做一次映射而非逐跳隧道。工程要点是映射表的规模与一致性：租户数量大时需评估边界设备表项容量，并建立映射关系的自动化下发与校验。</p><p>改造路径之二：服务链的 SID 化表达。 传统服务链依赖策略路由或专用硬件串联，配置分散、路径不透明。用 SRv6 服务段可将"流量依次经过防火墙、LB、探针"编码为 SID 序列，由入口节点压入，中间服务节点按 SID 执行后转发。工程上需解决：服务节点对 SRH 的支持能力（部分虚拟化网元需升级或旁路代理）、服务段 SID 的生命周期管理（服务扩容/迁移时 SID 如何跟随）、以及失败回退策略（服务节点不可达时的绕行）。建议先在非核心业务链验证，再推广到核心交易链路。</p><p>改造路径之三：云内 Underlay 的 SRv6 化。 对于新建资源池，可直接在叶脊 Underlay 启用 SRv6，用邻接段表达显式路径、用节点段做流量工程，替代部分 MPLS 或 PBR 功能。这要求硬件转发芯片对 SRH 有良好支持，且运维团队具备 IPv6 排障能力。存量池则建议"增量启用、存量维持"，避免大规模割接风险。</p><p>云内改造的工程原则是"边界收敛、池内渐进、服务链先行验证"。度量应关注：封装开销对有效带宽的影响、边界映射的时延增量、服务链路径的端到端成功率、以及改造前后故障定位时长的变化。切忌为了"技术先进"而在所有资源池同步切换，云内改造的收益主要来自跨池与出云场景，单池内部 VXLAN 的成熟度仍是宝贵资产。</p>]]></description></item><item>    <title><![CDATA[KaiwuDB 滚动升级技术解析：Raft quorum、Leaseholder 迁移与逐节点升级实]]></title>    <link>https://segmentfault.com/a/1190000048400894</link>    <guid>https://segmentfault.com/a/1190000048400894</guid>    <pubDate>2026-11-17 18:01:27</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <blockquote>本文面向数据库开发者和运维工程师，解析 KaiwuDB 多副本集群滚动升级的技术原理与实操流程。内容涵盖停服根因、Raft quorum 与 Leaseholder 迁移机制、升级前六步检查、逐节点升级命令、容器镜像升级与版本硬边界。读完本文，你可以理解滚动升级为什么成立，以及操作时哪些细节最容易出错。</blockquote><h2>一、技术背景：停服的根因</h2><p>数据库升级不是替换一个二进制文件。新版本要接管旧版本的数据目录，涉及系统表变更、元数据迁移、存储格式兼容处理，这些动作大多只能在进程启动阶段完成。「停旧进程 → 换新可执行文件 → 重新打开数据目录并完成迁移」这个序列绕不开。</p><p>服务中断长度取决于这段序列跑多久，以及有没有别的节点能顶上。</p><h2>二、三种升级范式</h2><table><thead><tr><th>升级方式</th><th>适用拓扑</th><th>服务影响</th><th>主要代价</th></tr></thead><tbody><tr><td>停机升级</td><td>单机、单副本集群</td><td>全量中断</td><td>简单可控，窗口取决于数据量与磁盘性能</td></tr><tr><td>滚动升级</td><td>多副本集群</td><td>单节点短暂离开，集群整体可用</td><td>依赖副本冗余与客户端多节点接入</td></tr><tr><td>双集群/导入导出</td><td>跨大版本、异构环境</td><td>新旧并行，仅切换点短暂中断</td><td>需要额外机器、数据校验与业务改造</td></tr></tbody></table><h2>三、滚动升级为什么成立：Raft quorum 与 Leaseholder</h2><p>KaiwuDB 多副本集群默认 3 副本。数据切成 Range，每个 Range 在三个节点各存一份，其中一份是 Leaseholder，读写都走它。Raft 超过半数确认才算写入，3 副本 quorum 是 2 票，所以可以承受任意一个节点离线。</p><p>滚动升级就踩在这条边界上：</p><ul><li>升级某节点时，它上面的副本暂时缺席；</li><li>另外两份构成多数派，Raft 重新选出 Leaseholder；</li><li>读写继续；</li><li>节点带新版本重启、重新入列、数据追平、校验通过；</li><li>再动下一个。</li></ul><p>任意时刻最多一个节点处于「离开」状态，集群保有三分之二副本可用。</p><p><strong>链条断掉的三种情况：</strong> 副本数不足 3 或已有异常节点；客户端只连单节点地址；单机/单副本部署没有第二份副本。</p><h2>四、不停服不等于零感知</h2><table><thead><tr><th>抖动类型</th><th>触发时机</th><th>应对</th></tr></thead><tbody><tr><td>查询失败</td><td>升级节点停机期间</td><td>应用重试</td></tr><tr><td>读写卡顿</td><td>Leaseholder 迁移瞬间</td><td>重试或等待秒级恢复</td></tr><tr><td>DDL 报错</td><td>节点状态切换时</td><td>重试恢复</td></tr><tr><td>后台任务暂停</td><td>节点重启期间</td><td>升级完成后按周期恢复</td></tr></tbody></table><h2>五、升级前六步检查</h2><pre><code class="SQL">-- 集群状态
-kw-status
-
--- 副本状态，两个指标必须为 0
-SELECT
-  sum((metrics-&gt;&gt;'ranges.unavailable')::DECIMAL)::INT AS ranges_unavailable,
-  sum((metrics-&gt;&gt;'ranges.underreplicated')::DECIMAL)::INT AS ranges_underreplicated
-FROM kwdb_internal.kv_store_status;
-
--- 分片分布
-SELECT * FROM kwdb_internal.ranges;
-
--- 运行中任务
-SHOW JOBS;</code></pre><p>从 3.0.x/3.1.x 升 3.2.0 前：</p><pre><code class="SQL">SET CLUSTER SETTING ts.raft_log.sync_period = '0s';</code></pre><p>等待 5 分钟以上再确认集群正常。</p><h2>六、逐节点升级命令</h2><pre><code class="Bash">chmod +x KaiwuDB-*.run
-sudo systemctl stop kaiwudb
-./KaiwuDB-*.run -c
-# 菜单输入 4（升级节点），节点数量填 1
-# 配置文件 host 改为待升级节点 IP
-
-sudo vim /etc/systemd/system/kaiwudb.service
-sudo vim /usr/local/kaiwudb/bin/kw-status.sh
-sudo vim /usr/local/kaiwudb/bin/kw-sql.sh
-
-sudo systemctl daemon-reload
-sudo systemctl start kaiwudb
-kw-status</code></pre><h2>七、容器镜像升级</h2><p><strong>Docker Compose：</strong></p><pre><code class="Bash">docker load &lt; KaiwuDB.tar
-docker-compose down
-docker rmi ${image_name}
-# 修改 docker-compose.yml 更新镜像版本
-docker-compose up -d
-docker-compose ps</code></pre><p><strong>Docker Run：</strong></p><pre><code class="Bash">docker stop &lt;kaiwudb_container&gt;
-docker rm &lt;kaiwudb_container&gt;
-docker load &lt; KaiwuDB.tar
-docker run -d --name &lt;kaiwudb_container&gt; [原容器参数] &lt;new_image_name&gt;
-docker ps</code></pre><p>容器方式解决的是怎么换镜像，不解决能不能滚。多副本集群仍要一次只动一个节点。</p><h2>八、版本硬边界</h2><ol><li>升级后不能简单降级，回退需卸载重装 + 备份还原；</li><li>备份文件不支持跨大版本还原，同一大版本内小版本可互还原；</li><li>2.x 导出的 meta.sql 含早期 <code>PARTITION INTERVAL</code> 语法，3.1.0 及以后已废弃，导入前需手工删除；</li><li>三权分立模式下升级到 2.1.1 及后续版本前，必须删除 seeroot、sysroot、auditroot、secadmin、sysadmin、auditadmin 用户。</li></ol><h2>九、总结</h2><p>滚动升级成立的三条前提：副本冗余、客户端多节点接入、版本支持原地升级。缺任何一条，不停服就只是口号。真正决定成败的，是升级前检查有没有做完，以及备份能不能还原。</p><p>更多详细内容可前往官方文档&gt;&gt;<a href="https://link.segmentfault.com/?enc=4RQvX4LLIxWIIgQrYh6FwA%3D%3D.dh9Kl57K9C7IOFpz7mkL%2FhYvplXLBcnjwKKETWNV%2BGdjoMW0p27zF%2BzC5AnkkP9ODjBUCRyQiPHGGd5PKlYcig%3D%3D" rel="nofollow" target="_blank">https://www.kaiwudb.com/docs/#/db-operation/db-upgrade.html</a></p><p>获取安装包免费试用&gt;&gt;<a href="https://link.segmentfault.com/?enc=y1Tif7hsUecjT93mVWtLXQ%3D%3D.rofiRxjrr8milxhMGMniUNnCGJk5JMnTr9aEEaCdBGxIsapvlyo%2BYikLPtMQfqBN" rel="nofollow" target="_blank">https://www.kaiwudb.com/download?tab=3</a></p>]]></description></item><item>    <title><![CDATA[从 40% 到 0.92%：一次征程6 OTA 下载的硬件加速优化全记录 地平线智驾开发者 ]]></title>    <link>https://segmentfault.com/a/1190000048400640</link>    <guid>https://segmentfault.com/a/1190000048400640</guid>    <pubDate>2026-11-17 17:05:27</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <h2>摘要</h2><p>在征程 6（J6）平台的车载 OTA 下载场景中，<code>admsysiApp</code> 下载模块长期占用约 <strong>15% CPU</strong>，在单核环境下挤占其他业务。我们通过火焰图定位、台架实测与软件包二进制比对三层证据，锁定根因：OTA 自带的 <code>libfoundation.so</code> 内嵌 OpenSSL 构建时未启用 ARMv8 汇编，TLS 1.3 AES-GCM 解密全程退回软件查表实现。经两轮跨团队交付迭代，最终把加解密开销从 <strong>约 40% CPU 压到 0.92%（约 43 倍）</strong>，整机下载 CPU 占用从 15% 降到 <strong>10.4%</strong>。<br/>本文完整复盘这一过程，重点放在两个层面：<strong>技术上</strong>——HTTPS/TLS 下载为什么是 CPU 密集型、ARMv8 硬件 AES/GHASH 加速的机理；<strong>方法上</strong>——如何用「动态火焰图 + 静态指令计数」双证据链把一次"疑似没生效"的优化追到真正的构建配置根因，并沉淀成一条可机械验证的验收判据。</p><h2>一、背景</h2><p>车载系统在 OTA（Over-The-Air）升级时，需要从云端通过 HTTPS 下载升级包。HSD方案中OTA升级包约2.5～3GB，下载过程要持续解密、落盘，是一个典型的持续 I/O + 持续计算的混合负载。<br/>在内部项目中，征程 6 平台上的OTA 下载模块 <code>admsysiApp</code>（第三方 OTA 方案商交付）的 CPU 占用长期偏高。初始现象只有一句话——"下载时 CPU 高"——没有明确方向。而 OTA 下载只是后台能力，不应挤占车控、感知、数据回传等关键业务的资源，因此必须把这块开销压下去。<br/>优化前基线（v1.0.6）：</p><ul><li>整机下载 CPU 占用 <strong>约 15%</strong>；</li><li>火焰图叶子符号 <code>AES_encrypt</code> 占比 <strong>17.65%</strong>。<br/><code>AES_encrypt</code> 是 OpenSSL 中 AES 的<strong>软件查表实现</strong>。排查到这个信息，方向其实已经基本清楚了——但把"方向"变成"闭环的结论与可落地的修复"，中间还有好几步。</li></ul><h2>二、关键技术铺垫：HTTPS 下载是 CPU 密集型</h2><p>在进入排查过程前，有必要先解释清楚一件事：<strong>下载文件明明主要是在"等网络"和"写磁盘"，为什么会大量消耗 CPU？</strong></p><h3>2.1 HTTPS = HTTP + TLS：每字节都要过一遍密码学</h3><p>HTTPS 是跑在 TLS（Transport Layer Security）上的 HTTP。TLS 1.3 握手完成后，客户端与服务端协商出一组对称密钥，之后传输的<strong>每一个字节</strong>都要经过：</p><ol><li><strong>加密/解密</strong>：用对称加密算法（本项目是 AES）对明文/密文做分组运算；</li><li><strong>完整性认证</strong>：用 MAC/认证算法（本项目是 GCM 模式，用 GHASH）验证数据未被篡改。<br/>TLS 把数据流切分成一条条 <strong>record</strong>（记录），<strong>每条 record 都要独立完成一次「解密 + 认证」</strong>。总结来说，下载不是"拷字节到磁盘"，而是一个<strong>持续流式解密</strong>的过程。</li></ol><h3>2.2 AES-GCM 的两条计算路径</h3><p>TLS 1.3 主流密码套件是 AES-GCM。它实际上是两个算法叠在一起：</p><ul><li><strong>AES</strong>（加密本体）：把 16 字节一块的明文变成密文，是一个 10~14 轮的置换网络；</li><li><strong>GCM / GHASH</strong>（认证）：在 GF(2^128) 有限域上做乘加运算，为密文生成认证标签。<br/>二者的 CPU 成本是<strong>同量级</strong>的。很多人（包括我们第一轮）只盯着 AES，会漏掉 GHASH 这另一半。</li></ul><h3>2.3 硬件加速 vs 软件查表：一个数量级的分水岭</h3><p>ARMv8-A 架构提供了一组密码学扩展指令：</p><table><thead><tr><th>指令</th><th>作用</th></tr></thead><tbody><tr><td><code>aese</code> / <code>aesd</code></td><td>AES 单轮加密/解密（硬件执行）</td></tr><tr><td><code>aesmc</code> / <code>aesimc</code></td><td>AES 列混淆/逆混淆</td></tr><tr><td><code>pmull</code> / <code>pmull2</code></td><td>多项式乘法，GHASH 的核心运算</td></tr></tbody></table><p>启用这些指令后，AES 与 GHASH 都由专用硬件数据通路完成。OpenSSL 对应的硬件例程符号是 <code>aes_v8_ctr32_encrypt_blocks</code>、<code>gcm_ghash_v8</code> 等。<br/>而软件实现（<code>AES_encrypt</code>、<code>gcm_ghash_4bit</code>）则是靠<strong>查表 + 大量通用整数运算</strong>来模拟同样的变换，速度要慢<strong>一个数量级</strong>。<br/>这背后体现的就是本次问题的核心要点：<strong>同一颗征程6 芯片，系统库能用硬件指令，而 OTA 自带的库却在跑软件——性能差距是天然的、可量化的。</strong></p><h2>三、问题定位：从"CPU 高"到"根因锁定"</h2><h3>3.1 火焰图锁定热点</h3><p>对下载中的 <code>admsysiApp</code> 做 <code>perf</code> 的 <code>cpu-cycles</code> 采样并生成火焰图。叶子符号统计：</p><table><thead><tr><th>叶子符号</th><th>占比</th></tr></thead><tbody><tr><td><code>[unknown]</code>（stripped 符号）</td><td>65.45%</td></tr><tr><td><strong><code>AES_encrypt</code></strong></td><td><strong>17.65%</strong></td></tr><tr><td><code>CRYPTO_gcm128_decrypt</code></td><td>1.34%</td></tr><tr><td><code>ssl3_get_record</code></td><td>0.51%</td></tr></tbody></table><p>沿调用链一路下钻，可以确认热点来自 HTTPS 下载的 TLS 解密路径：</p><pre><code>curl_easy_perform → curl_multi_perform → Curl_readwrite → SSL_read
-  → ssl3_read_bytes → ssl3_get_record → tls13_enc
-    → EVP_CipherUpdate → CRYPTO_gcm128_decrypt → AES_encrypt   ← 软件实现</code></pre><p>符号归属是 <code>/app/adapter/lib/lion/libfoundation.so</code>——OTA 方案商自带的、<strong>内嵌了 OpenSSL 的库</strong>。</p><h3>3.2 台架实测：同一颗芯片，两个库两种表现</h3><p>为了确认"是不是芯片根本不支持硬件 AES"，我们写了 <code>aes_hw_validate.sh</code>（纯 bash、零编译，直接推到台架复跑），得到一组最强对比：</p><table><thead><tr><th>验证项</th><th>结果</th><th>证据</th></tr></thead><tbody><tr><td>CPU 是否支持 AES 硬件</td><td>✅ 支持</td><td><code>/proc/cpuinfo</code> Features 含 <code>aes pmull sha1 sha2</code></td></tr><tr><td>系统 libcrypto 硬件加速</td><td>✅ 已启用</td><td><code>libcrypto.so.3</code>：<code>aese/aesd/aesmc = 2598</code>，<code>pmull = 221</code></td></tr><tr><td><strong>OTA 用的 libfoundation.so</strong></td><td>❌ <strong>纯软件</strong></td><td><code>aese/aesd/aesmc = 0</code>，<code>pmull = 0</code>，<code>AES_encrypt</code> 引用 12 处</td></tr></tbody></table><p><strong>同一颗 SoC，系统库能用硬件指令，OTA 用的库却是 0 条硬件指令。</strong> 通过这条信息，明确锁定了根因：不是征程芯片不支持，是<strong>这个库的 OpenSSL 构建时没把 支持密码学运算的硬件加速 ARMv8 汇编指令编译进去</strong>。</p><h3>3.3 量化收益上限：21 倍</h3><p>为了确认优化收益，并判断优化是否值得执行，我们用 <code>openssl speed</code> 在台架上构造硬件（<code>OPENSSL_armcap=0xbd</code>）与软件（<code>OPENSSL_armcap=0x0</code>）两种方案实测，进行数据分析和对比：</p><table><thead><tr><th>cipher</th><th>块大小</th><th>硬件吞吐</th><th>软件吞吐</th><th>加速比</th></tr></thead><tbody><tr><td>AES-128-GCM</td><td>1024 B</td><td>2.01 GB/s</td><td>102.9 MB/s</td><td>19.55x</td></tr><tr><td>AES-128-GCM</td><td>8192 B</td><td>2.19 GB/s</td><td>102.5 MB/s</td><td><strong>21.37x</strong></td></tr><tr><td>AES-128-GCM</td><td>16384 B</td><td>2.18 GB/s</td><td>102.9 MB/s</td><td>21.22x</td></tr><tr><td>AES-256-GCM</td><td>8192 B</td><td>1.92 GB/s</td><td>88.1 MB/s</td><td>21.84x</td></tr></tbody></table><p>结果显示：<strong>启用硬件 AES 后，单就加解密这一块，理论上能拿到约 21 倍的加速</strong>。这是一个高 ROI 的优化项，值得推动方案商改进。</p><h2>四、两轮交付，一次到位：构建配置才是真根因</h2><h3>4.1 Round 2：库重编了，但改错了地方</h3><p>方案商按第一轮建议出了新版本 v1.1.6，部署复测后 <strong>CPU 仍是约 15%，几乎没改善</strong>。此时必须区分两种可能性：1）"优化没实现"；2）"优化实现了但没效果"。<br/>先从火焰图看：<code>AES_encrypt</code> 仍占 16.72%，硬件符号仍为 0。同时本轮细查还发现了一个此前漏掉的大头——<code>CRYPTO_gcm128_decrypt</code> 下有 <strong>22.8%</strong> 落在软件 GHASH（<code>gcm_ghash_4bit</code> 查表实现）上。于是完整成本浮出水面：</p><pre><code>SSL_read                   58.95%
-└─ ssl3_get_record         56.23%
-   └─ tls13_enc            45.44%
-      └─ CRYPTO_gcm128_decrypt 43.26%
-         ├─ 软件 GHASH      22.8%
-         └─ 软件 AES        16.7%</code></pre><p><strong>软件 AES + 软件 GHASH ≈ 40% CPU。</strong> 之前只看 AES 是漏了一半。<br/>接着从 Artifactory 拉取新旧OTA供应商的两个版本的软件包做二进制比对，结果是：<code>libfoundation.so</code> 的 md5、大小、<code>.text</code> 段都变了——<strong>库确实重新编译并发布了</strong>。但硬件指令计数都是0：</p><table><thead><tr><th>指令</th><th>v1.0.6</th><th>v1.1.6</th></tr></thead><tbody><tr><td><code>aese</code>/<code>aesd</code>/<code>aesmc</code>/<code>aesimc</code></td><td>0</td><td><strong>0</strong></td></tr><tr><td><code>pmull</code>/<code>pmull2</code></td><td>0</td><td><strong>0</strong></td></tr></tbody></table><p>进一步分析，定位到构建配置字符串发现了新线索。<br/>构建配置字符串如下：</p><pre><code>v1.0.6:  platform: Linux
-v1.1.6:  platform: Linux            ← 没变！
-         compiler: ... 只多了交叉工具链的 -I 头文件路径</code></pre><p><strong><code>platform: Linux</code></strong><strong> 不是合法的 OpenSSL Configure target</strong>，官方推荐的应是 <code>linux-aarch64</code>。方案商这次只是给编译器加了交叉工具链的 <code>-I</code> 路径，但<strong>Configure target</strong>使用的非法的<code>Linux</code>，因此构建没有使用默认清单文件，而是使用的供应商自实现的CMakeLists.txt。<br/><strong>经进一步定位，供应商自实现的CMakeLists.txt文件中并未显示包含汇编文件（.s和.pl文件），导致 <strong><em><em><code>aesv8-armx.pl</code></em></em></strong>、<strong><em><em><code>ghashv8-armx.pl</code></em></em></strong> 这些汇编模块世纪没参与编译</strong>。旁证是 <code>.text</code> 反而缩小了 65608 字节——若真启用了 asm，汇编例程会让代码段<strong>变大</strong>才对。</p><h3>4.2 Round 3：一条命令的验收判据，一次到位</h3><p>针对 Round 2 的教训，我们不再给"启用 asm"这种目标性描述，而是给了方案商<strong>一条可机械验证的验收判据</strong>：二进制文件中相应的符号需要能被显示搜索到。</p><pre><code class="bash">objdump -d libfoundation.so | grep -cE '\b(aese|aesd|aesmc)\b'   # 必须 &gt; 0
-objdump -d libfoundation.so | grep -cE '\bpmull\b'               # 必须 &gt; 0</code></pre><p>方案商据此修正 Configure target 重新出包（v1.1.6_fix2），静态检查立即得到印证：</p><table><thead><tr><th>项目</th><th>v1.0.6</th><th>v1.1.6</th><th><strong>v1.1.6_fix2</strong></th></tr></thead><tbody><tr><td><code>platform:</code></td><td><code>Linux</code></td><td><code>Linux</code></td><td><strong><code>linux-aarch64</code></strong> ✅</td></tr><tr><td><code>aese</code></td><td>0</td><td>0</td><td><strong>77</strong></td></tr><tr><td><code>pmull</code></td><td>0</td><td>0</td><td><strong>59</strong></td></tr><tr><td>文件大小</td><td>7181304</td><td>7115696</td><td><strong>7313352</strong>（+197656）</td></tr></tbody></table><p>文件体积如期变大（汇编例程真正链入），这是"优化代码到位"的物理证据。<br/>复测火焰图：<strong>首次出现 ARMv8 硬件符号</strong> <code>aes_v8_ctr32_encrypt_blocks</code>、<code>aes_v8_encrypt</code>、<code>gcm_ghash_v8</code>；软件实现 <code>AES_encrypt</code>、软件 GHASH 全部归零：</p><table><thead><tr><th>指标</th><th>优化前</th><th>优化后</th></tr></thead><tbody><tr><td>软件 AES（<code>AES_encrypt</code>）</td><td>16.72%</td><td><strong>0.000%</strong></td></tr><tr><td>软件 GHASH</td><td>22.8%</td><td><strong>0.000%</strong></td></tr><tr><td><strong>加解密合计</strong></td><td><strong>~40%</strong></td><td><strong>0.92%</strong>（约 43x）</td></tr><tr><td><code>tls13_enc</code></td><td>45.44%</td><td><strong>3.41%</strong></td></tr><tr><td><strong>整机下载 CPU</strong></td><td><strong>~15%</strong></td><td><strong>10.4%</strong></td></tr></tbody></table><h2>五、瓶颈转移：加密解决后，寻找是否有新的瓶颈</h2><p>CPU 从 15% 降到 10.4%，说明原 ~40% 的加密开销一直掩盖着另一部分 I/O 开销；加密归零后，它成了新的主导项。后续几轮我们围绕 I/O 继续深挖，效果不太明显。这里简要交代，因为它同样有方法论价值。</p><p><strong>Round 4 / 4.1：<strong><em><em><code>CURLOPT_BUFFERSIZE</code></em></em></strong> 的两次调优。</strong> 第一轮（Round 4）声称把 buffer 从 8KB 提到 128KB，但火焰图显示 recv 调用次数没有下降，反汇编也找不到 <code>0x20000</code>（131072）立即数——<strong>改动没落地</strong>。第二轮（Round 4.1）确证了改动真的落地（同一指令位置 <code>0x2000</code> → <code>0x20000</code>），但<strong>收益仍为零</strong>：<code>selinux_socket_recvmsg</code>（严格正比于 recv 次数）不降反升。原因是 <strong>TLS 1.3 单条 record 明文上限为 16KB</strong>，<code>ssl3_read_n</code> 每次最多解出<strong>一条</strong> record，应用层 buffer 超过 16KB 后完全无边际收益。</p><p><strong>Round 5：netqos 逐包节流才是真约束。</strong> 台架实测发现，系统层用 <code>tc</code>（HTB）对 OTA 下载做了 ingress 整形：<code>rate 16Mbit ceil 16Mbit burst 1600b</code>。而 eth1 的 MTU 是 1500——<strong>突发额度只有约一个 MTU</strong>，shaper 几乎是逐包放行。这才是 buffer 改动无效的深层原因：<strong>buffer 从来不是约束，数据到达速率才是</strong>——curl 每次被唤醒时 socket 里往往只到了约 1.5KB，根本凑不满一条 record。后续方向转向调大 <code>burst</code>（平均速率不变、数据成块到达），把 syscall 次数降一个数量级。但网络限速目前是硬需求，短期无法修改此约束。<br/>这几轮的共同教训是：<strong>先测量、再改代码，且优化生效后必须重新识别瓶颈，不能沿用旧假设。</strong></p><h2>六、量化结果汇总</h2><table><thead><tr><th>指标</th><th>优化前（v1.0.6）</th><th>优化后（v1.1.6_fix2）</th><th>变化</th></tr></thead><tbody><tr><td>整机下载 CPU 占用</td><td>~15%</td><td><strong>10.4%</strong></td><td>-4.6pp</td></tr><tr><td>加解密总开销</td><td>~40%</td><td><strong>0.92%</strong></td><td><strong>约 43 倍</strong></td></tr><tr><td>软件 AES</td><td>16.72%</td><td>0.000%</td><td>归零</td></tr><tr><td>软件 GHASH</td><td>22.8%</td><td>0.000%</td><td>归零</td></tr><tr><td>硬件 AES 符号</td><td>无</td><td><code>aes_v8_*</code> / <code>gcm_ghash_v8</code></td><td>出现</td></tr><tr><td><code>tls13_enc</code></td><td>45.44%</td><td>3.41%</td><td>-42pp</td></tr></tbody></table><blockquote>口径说明：优化前的 ~15% 与优化后的 10.4% 均为同一 <code>perf cpu-cycles</code> 采样口径下的整机 CPU 占比；43 倍来自火焰图实测的加解密占比（40% → 0.92%），与台架 <code>openssl speed</code> 实测的 21 倍同量级（后者单测 AES-GCM、未含 GHASH 一并修复的增量）。</blockquote><h2>七、方法论沉淀</h2><p>这次排查能闭环，靠的不是某一次灵感，而是几条可复用的工程原则：</p><ol><li><strong>动态 + 静态双证据，独立互证。</strong> 火焰图证明"在跑软件 AES"，<code>objdump</code> 指令计数证明"库里没有硬件指令"，二者独立、互相印证。任何单一证据都可能被质疑为采样偏差或环境问题。</li><li><strong>给合作方可自检的验收判据。</strong> <code>objdump -d lib.so | grep -c aese</code> 非 0 才验收——一条命令、不依赖上车、无歧义。Round 2 的失败，正是 Round 1 只给了"启用 asm"的目标描述、缺了可机械验证的判据；Round 3 的 fix2 包证明判据有效，方案商据此一次到位。</li><li><strong>二进制比对能区分"没优化"与"优化没到位"。</strong> md5/大小/<code>.text</code> 变化证明库确实重编（排除"没部署"），构建串 <code>platform: Linux</code> 直接暴露改错的位置。只看火焰图，只能得出"仍然没效果"。</li><li><strong>可证伪的推断要留痕。</strong> 例如"若真启用 asm，代码段应变大"这条推断，在 Round 3 被 +197656 字节的体积印证；而"库没被替换"的猜想被证伪后，我们在过程文档中标注修正而非删除，避免后人重走弯路。</li><li><strong>优化生效后要重新识别瓶颈。</strong> CPU 未达预期并非优化不彻底，而是原瓶颈消除后暴露了次级瓶颈；沿用旧假设继续往加密方向排查会完全走错。</li></ol><h2>八、附：可复用的验证命令</h2><pre><code class="bash"># 1. 静态判据：判断 ARMv8 硬件 AES 是否编译进库（非 0 才算生效）
-objdump -d libfoundation.so | grep -cE '\b(aese|aesd|aesmc)\b'   # 参考值：系统 libcrypto.so.3 = 2598
-objdump -d libfoundation.so | grep -cE '\bpmull\b'               # 参考值：221
-
-# 2. 动态判据：火焰图应出现硬件符号，而非软件 AES_encrypt
-grep -oiE "(aes_v8|ghash_v8)[a-z_0-9]*" perf.folded | sort | uniq -c
-
-# 3. 构建配置核对：确认 Configure target 是否正确
-strings -a libfoundation.so | grep -E '^(platform:|compiler:)'   # 应为 linux-aarch64
-
-# 4. 收益上限预估：硬件 vs 软件吞吐对比（强制软件路径用 armcap=0）
-OPENSSL_armcap=0xbd openssl speed -evp aes-128-gcm   # 硬件
-OPENSSL_armcap=0x0  openssl speed -evp aes-128-gcm   # 软件
-
-# 5. I/O 层判据：看单次 recv 返回字节数（判断是否逐包到达）
-strace -f -e trace=recvfrom -p &lt;admsysiApp_pid&gt; 2&gt;&amp;1 | head -50</code></pre><h2>结语</h2><p>这次优化最深的体会是：<strong>性能问题的难点往往不在"算法本身"，而在"证明它、定位它、让它真的被改对"。</strong> 从火焰图的一个符号，到台架上一组 21 倍的实测，再到一条 <code>objdump</code> 命令作为跨团队验收判据，真正让 CPU 从 15% 降到 10.4% 的，是把结论做成了可证伪、可自检、可复现的证据链。<br/>对于征程 6 这类搭载了完整 ARMv8 密码学扩展的芯片，硬件加速带来的性能优势是"零成本"且"收益巨大"的——前提是<strong>构建链路上任何一环都不能悄悄退化成软件实现</strong>。希望本文的排查路径与判据，能帮到同样在做 HTTPS/TLS 相关 CPU 优化的同学。</p>]]></description></item><item>    <title><![CDATA[公司上了智能系统就把出纳辞了，深圳这个判决技术人该看看 刘斯亮律师 ]]></title>    <link>https://segmentfault.com/a/1190000048400658</link>    <guid>https://segmentfault.com/a/1190000048400658</guid>    <pubDate>2026-11-17 17:04:28</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>公司上了智能系统就把出纳辞了，深圳这个判决技术人该看看</p><p>做律师这些年，来问我这件事的人不少：公司上了智能系统，能不能把原来的岗位撤掉，人按"客观情况变了"辞掉？</p><p>最近深圳南山法院判了一个案子，把这件事讲清楚了。</p><p>康某2015年入职，在公司做出纳，做了差不多九年。2024年9月，公司说财务系统要智能化，她这个岗位撤了。公司没有给她安排新岗位，也没有做调岗培训，直接按"客观情况发生重大变化、协商不成"解除了劳动合同。</p><p>康某不服，告到法院。南山法院认定违法解除，判公司付赔偿金差额7.8万元。判决已经生效。</p><p><strong>法院为什么不认"客观情况变了"</strong></p><p>很多老板觉得，技术升级是大事，当然算客观情况变了。法院不这么看。</p><p>法院的意思是，上智能系统是公司自己决定的经营动作。要不要上、什么时候上、上了以后人怎么安排，公司在决定之前就想得到，也控制得住。这种变化，跟法律说的"无法预见、无法避免、无法克服"不是一回事。</p><p>法律里讲的"客观情况重大变化"，说的是公司左右不了的事。自己主动做的决定，不该算作法律意义上的客观情况变化。</p><p><strong>另一个关键是"协商"这两个字</strong></p><p>就算真要调岗，法律也要求先跟员工商量。</p><p>这个案子里，公司说协商过、没谈成。法院查下来，公司并没有真给康某安排一个能去的岗位，也没有针对新岗位做培训。所谓协商，只是发了一份通知。</p><p>协商不是发一份通知就完了。得有具体的新岗位，得谈薪资怎么衔接，得给员工真实的选择。这些都没有，"协商不成"就站不住。</p><p><strong>技术人该从里头看到什么</strong></p><p>上系统这件事本身没问题，出问题的是撤岗位的方式。系统替代的是重复劳动，不等于员工的劳动合同也跟着没了。岗位真要取消，前面的调岗、培训、协商，一步都不能省。</p><p>技术决定最后是人签字。当老板说"上了系统就把这个岗位减掉"的时候，技术负责人交付的不只是一套能跑的系统，还有原来那些人去哪里、新系统交给谁管。这些不想清楚，后面重新招人花出去的钱，会比省下的那点工资高。</p><p>我是刘斯亮，在深圳做律师。技术和法律交界的地方，麻烦多半不是技术造成的，是决策的顺序错了。顺序理顺了，后面的事才顺。</p><p>免责声明：本文根据公开判决整理，仅作法律科普，不构成针对具体事项的法律意见。</p>]]></description></item><item>    <title><![CDATA[预告｜北京疯狂星期四第79期，有猫有网有分享，原点学堂周四见 VibeFriends ]]></title>    <link>https://segmentfault.com/a/1190000048400660</link>    <guid>https://segmentfault.com/a/1190000048400660</guid>    <pubDate>2026-11-17 17:03:49</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>疯狂星期四北京场第79期，这周大家毫无悬念的又投票去五道口原点学堂啦。</p><p>作为北京 AI 味最浓的地方，这里配置拉满：Wi-Fi、电源、咖啡，有能直接投屏做分享的大电视，还有小猫咪在店里转悠。</p><p>每天对着屏幕和 AI 聊那么多，周四出来见见真人。你可以白天随时拎着电脑过来换个环境办公，也可以下午三点留出空档，参加这期的 VibeLaunch，看看大家最近又做出了什么有意思的产品。</p><p>如果你第一次听说疯狂星期四，这是 VibeFriends 每周四的线下聚会，大家投票选出一家咖啡馆，独立开发者、AI 创作者、或者刚入门 Vibe Coding 的朋友凑在一起。不搞自我介绍，也不强制社交，对 i 人极其友好。做项目卡壳了、增长遇到瓶颈了，随时找旁边人聊聊。</p><p><img referrerpolicy="no-referrer" src="https://i-blog.csdnimg.cn/direct/1736a3e509a64dfb8e60bf9eb2eab624.jpeg" alt="原点学堂往期现场" title="原点学堂往期现场"/></p><p><img referrerpolicy="no-referrer" src="https://i-blog.csdnimg.cn/direct/814886e681124652add90751d3a49c73.jpeg" alt="原点学堂的小猫" title="原点学堂的小猫" loading="lazy"/></p><h2>15:00 VibeLaunch</h2><p>下午15点是固定的VibeLaunch环节，不提前邀约嘉宾，不固定主题。只要你最近上线了产品，跑通了付费用户，欢迎带到现场，直接投屏演示你的项目。介绍一下它给谁用、解决什么问题，你是如何找到付费用户的。</p><p>不用准备 PPT，直接演示产品。想分享的朋友，可以提前找工作人员报名。需要提供真实的产品链接、一句话介绍，以及想讲的内容。我们会优先安排能现场体验，且有真实迭代或变现经历的项目。</p><h2>活动信息</h2><ul><li>期数：疯狂星期四北京第 79 期</li><li>时间：2026 年 11 月 19 日（周四）10:00～19:00</li><li>分享：15:00 VibeLaunch</li><li>地点：北京·五道口原点学堂</li><li>导航：原点大厦 A 座，电梯先到 9 楼，再跟随指引前往 10 楼咖啡厅</li><li>参与方式：不用报名、不用签到，进店点杯咖啡即可加入</li><li>费用：活动免费，饮品自付</li></ul><h2>本周还有这些城市</h2><p>本周疯狂星期四在北京、上海、大理、硅谷、天津都有活动。</p><h2>第一次来？</h2><p>第一次来，可以先找现场的 VibeFriends 伙伴打个招呼，点杯饮料挑个位置，坐下就可以做自己的事。慢热也没关系，这里没有强制社交，不用转圈自我介绍。听到感兴趣的话题就加入，安静待着也很自在。</p>]]></description></item><item>    <title><![CDATA[给 ComfyUI 做了一个手机助手 对你无可奈何 ]]></title>    <link>https://segmentfault.com/a/1190000048400701</link>    <guid>https://segmentfault.com/a/1190000048400701</guid>    <pubDate>2026-11-17 17:03:09</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>参加字节的 TRAE 第二期训练营时，最初想做的是一个自己的户外助手，最好还能连上我的高驰手表：平时的活动记录、出门前的准备，不必散在几个地方翻来翻去。</p><p>不过，手表当时借给朋友了，手表联动这条线先放着。我先按课程把手机 Agent 装起来，拿自己现成的工具练手。课程里先做安装和定制。我试了一下小满，觉得用着不顺手，便在它的基础上重构了咔哒。</p><p>结果作业越做越大：先装小满，再改记忆和技能，后来嫌界面和任务反馈不顺手，干脆改 App，又把自己的 ComfyUI 接了进去。</p><p>改到一半，开发用的 token 额度也不够了。我又把 Magpie 接进 TRAE，用已有账号的模型继续。一个手机助手，顺手把模型入口、MCP 和公网访问也折腾了一遍。</p><p>现在这个版本叫「咔哒」。手机上可以聊天、选技能、讨论画图需求，确认后让服务器生成，图片再回到原聊天里。</p><p>不过，过程远没有这几句话顺。第一次淘宝任务跑了一半，无障碍服务说没就没；接 MCP 时 App 闪退；好不容易后台出图了，手机还在说没完成。原本想找个助理，倒像是我在给助理当售后。</p><p>吐槽归吐槽，小满提供的开源底子确实省了不少事。下面就从第一件没办成的小事说起，再讲我是怎么把它改成现在这个样子的。</p><h2>从装上小满，到第一件事没办完</h2><h3>手机 Agent 到底多做了什么</h3><p>普通聊天里，模型给我建议，剩下的操作由我完成。手机 Agent 还会调用工具：读屏、点按钮、查资料，拿到结果以后再决定下一步。</p><p><a href="https://link.segmentfault.com/?enc=c%2B24%2FC8K0N3vywy4jeaasw%3D%3D.86MD4oTsh1o21v%2BiRDcJU8anKyHE0YtRIw1VqcoybK4G8aeIdGquyeauI%2FBexQ49" rel="nofollow" target="_blank">小满的开源实现</a>把这些基础能力搭好了：记忆保存偏好，技能描述做事方法，无障碍服务负责手机操作，独立的安全审核负责拦截或要求确认。模型在“观察、决定动作、执行、再观察”之间循环，直到结束或触及停止条件。</p><p>这也解释了为什么原版要配置两个模型：聊天模型负责理解需求，操作模型负责看截图、决定点哪里。后者需要图片输入能力；两处可以填同一个模型，但不能只测一句聊天就认定手机操作也能用。</p><p>我用的是 Redmi Note 13 Pro，电脑是 M3 芯片的 Mac。安装本身就先折腾了一轮：adb 看不到设备，切到传输文件并确认调试授权才连上；安装又被小米拦住，还要单独开“USB 安装”。这些是这台手机的安装过程，不全是 App 的问题。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048400703" alt="小满安装后的首启页，五个底部入口和两项配置提示" title="小满安装后的首启页，五个底部入口和两项配置提示"/></p><p>这张是尚未配置的首启画面，只对比布局，不拿正常的待配置提示当故障证据。</p><h3>免费额度先领，但得看实际开通了什么</h3><p>课堂体验额度的领取页能打开，名额却已经没了。我后来走火山方舟，尝试批量开通模型，又遇到账户余额门槛：部分模型没开成，无门槛的 Mini 模型开通了，当时账号也显示领到了 50 万 tokens 的新用户推理额度。</p><p>最后实际使用的是 <code>doubao-seed-2-0-mini-260428</code>。我先测文本回复，再用一张纯红图片测看图，两项有结果后，才把它填进聊天和操作模型。</p><p>这里记的是当时账号领到的额度。它有使用范围，也会消耗，不能写成长期免费的模型服务。免费入口有了，后面配错地址、填错 Key、任务反复重试，照样会消耗时间和额度。</p><p>配置时还出了个自己的乌龙：用 adb 输入长 Key，内容被截短，聊天返回 401；滚动后仍沿用旧坐标，又把内容填进了错误字段。最后重新定位、核对再保存才过去。这种问题，换更贵的模型也没用。</p><h3>最烦的是：开关开了，它还是说没开</h3><p>真正让我想动手改的，是无障碍状态。</p><p>系统开关已经打开，App 仍提示“无障碍服务未开启”。我反复进设置、开关服务、重启十多轮，不知道是在等连接，还是哪里已经坏了。最难受的不是失败，而是界面给不出下一步能照着做的信息。</p><p>第一次任务是去淘宝找一本 20 元以内的 A5 笔记本，停在付款前。小满确实打开了淘宝，输入关键词，也到了商品列表。中间弹过促销窗，但轨迹里后续已经关掉；真正终止的直接报错，是执行层再次拿不到无障碍服务。</p><p>所以这次不能归结为“AI 不会关弹窗”。系统开关、服务是否实际绑定、App 当前拿不拿得到服务实例，是不同的状态。那一轮没有找到稳定根因，不能随手甩锅给省电策略。</p><p>后来续跑，我先人工打开淘宝，再让它继续搜索，最终到了商品详情页。页面写着 5.2 元起，A5 黑色、80 张／160 页。它还曾把推荐区的 7.6 元读成当前商品价，我按实际页面纠正了记录。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048400704" alt="续跑到 A5 笔记本详情页，页面标价为 5.2 元起" title="续跑到 A5 笔记本详情页，页面标价为 5.2 元起" loading="lazy"/></p><p>完成的是找候选、进详情和截图，中间有人工协助，没有加购、下单或付款。让它替我买本子，还没到可以撒手不管的程度。</p><h2>先写清楚需求，再决定要不要改程序</h2><p>课程把定制分成三层：记忆、技能、程序。这个区分挺有用，很多需求不必一上来就改源码。</p><p>记忆回答“我是谁、平时有什么偏好”；技能回答“这类事按什么方法办”；程序负责界面、权限、保存和执行机制。聊天框被键盘挡住，靠改技能救不了；只是想让回答短一点，也没必要先重编 APK。</p><h3>3-2-1 档案，先存真正有用的偏好</h3><p>第二节的练习是三条偏好、两件常做的事、一条底线。我没照搬购物示例，写的是自己的习惯：流程简单，只留必要截图，笔记改完同步上传包；常做课程实操和整理作业；没真实执行就不能说成功。</p><p>TRAE 把它整理成 Markdown 档案，再通过 adb 推进手机。第一次文件虽然传到了，读取却说找不到——记忆标识是 <code>preferences/camp2-practice</code>，我把文件放到了根目录，少了一层 <code>preferences/</code>。改好目录，手机才读出三条偏好。</p><p>文件存在和助手找得到，还真是两回事。</p><h3>技能先回答四个问题</h3><p>我觉得这节课最值得留下的是四问：什么时候开始，依次做什么，怎么检查做完了，哪一步必须交给我确认。</p><p>我先做了一个很小的 <code>practice-close</code>，叫“实操收口”。不用操作其他 App，也不接新服务，只读偏好，把我提供的结果整理成已完成、证据、未完成、下一步。</p><p>实际给它的内容是：淘宝商品页已打开，有截图，文档和上传包还没更新。它保留了“5.2 元起”，也没有擅自把未更新写成已更新。再要求“本次只写已完成、未完成”，它也照当次要求缩成两项，没有把长期档案改掉。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048400705" alt="手机实际读取偏好，并按提供的事实做实操收口" title="手机实际读取偏好，并按提供的事实做实操收口" loading="lazy"/></p><p>这张里也留着第一次“找不到记忆”的失败回复，后面才是修正后的结果。</p><p>技能本质上是一份 <code>SKILL.md</code> 说明书：描述让模型知道什么时候选它，正文写步骤，必要时关联记忆和工具范围。我的收口技能走纯聊天，不需要无障碍；校验、推送后还得在手机里真发一次，不能看到 lint 通过就宣布完成。</p><p>这一步也让我确定，后面要改的不是“再多写几个技能”，而是让这些能力在手机上用得顺：需求能改，执行前能确认，结果找得回来。</p><h2>咔哒是怎么设计出来的</h2><h3>先定它是什么，再起名字</h3><p>前面的练习证明，记忆和技能能工作。但我日常打开手机，先碰到的是界面，不是架构图。我给改造定的方向，是自己平时愿意打开的手机助手：聊天先顺手，工具按需要接，做完的东西留得下来。</p><p>取名过程中，“随伴”和泛泛的“AI 助理”没有留下，后来选了“咔哒咔哒”，手机上落成短一点的“咔哒”。</p><p>我喜欢“咔哒”这种按键落下的声音，短、好叫，也带一点事情有了回应的利落感。对这个助手，我希望的就是发出一个动作，知道它有没有接住，做到了哪一步。名字可以轻巧，事情不能只停在一句“收到”。图标后来也沿着按键和光标去做，两边能对得上。</p><p>户外助手是最初想走的方向，但我没有把名字限定成跑步或徒步工具。手表不在手边的这段时间，先把聊天、技能和外部任务接好，随画就是其中一个练手场景。App 叫咔哒，绘画技能叫随画；后面接回户外能力，也不用再给整个 App 换一次名字。</p><h3>图标也来回选过，没有直接套个聊天气泡</h3><p>图标出过四个对比方案：折叠的双按键和前面的光标保持，变化的是星链在左还是在右、背景用虚化键盘还是鼠标手势。我选了 A，左侧星链配虚化键盘。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048400706" alt="当时的四个图标方案，最终选择左上角 A" title="当时的四个图标方案，最终选择左上角 A" loading="lazy"/></p><p>双按键和光标对应输入、点击，侧边的四角星带一点 AI 协作的感觉。后面没有重新画主体，只把背景过浓的粉紫雾感收了一些，改成更浅的雾灰，保留紫色按键和暖色星链。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048400707" alt="最后采用的浅雾灰母版，保留双按键、光标与左侧星链" title="最后采用的浅雾灰母版，保留双按键、光标与左侧星链" loading="lazy"/></p><p>素材好看还不够，装到 Android 上会被启动器套不同形状的遮罩。接入时又检查了圆形和圆角方形的可见范围，调整前景缩放，避免左侧星链被裁掉。名称也集中到资源里，页头、助手消息、通知和服务显示名一起处理，不只改桌面下面那两个字。</p><h3>页面按每天会做的事重新分</h3><p>界面没有另外套一层网页，继续用原生 Compose。主界面用暖白底、深绿文字和按钮，辅助状态放浅灰绿；图标保留自己的浅雾紫，不要求整页都变成紫色。</p><p>导航从原来的五项整理成三项：</p><table><thead><tr><th>入口</th><th>放什么</th></tr></thead><tbody><tr><td>对话</td><td>输入、回复、技能选择、当前任务；聊天记录放在侧边入口</td></tr><tr><td>能力</td><td>技能与 MCP 服务，按用途找到要用的东西</td></tr><tr><td>我的</td><td>模型配置、记忆、隐私与权限</td></tr></tbody></table><p>我也看过同学们的记账版、跑步教练等作业。记账版的宽气泡、折叠处理过程和会话抽屉比较顺手，就吸收这些交互；自己的三入口和配色保留，没有照搬别人的业务。技术 ID 和路径收进详情，常用技能先告诉我它能做什么。</p><p>确认卡单独设计：最终提示词可以看、可以改，长内容能滚动，但确认和取消必须一直点得到。结果卡则要带任务归属、保留图片比例，点开能看大图。技能选择只表示“接下来用这个能力”，不替我填一段固定画面，更不能直接发送。</p><h3>设计不是一张效果图，而是一轮轮用坏再修</h3><p>设计方向定下来，开发就按依赖关系往前走：</p><ol><li>先整理界面、模型配置与权限，让普通聊天和 MCP 不必依附手机控制。</li><li>补文字历史、会话隔离和图片显示，确认重开后还能继续。</li><li>用随画暴露真实问题，再补完整任务号、任务卡、自动查询和结果归属。</li><li>最后冻结新功能，集中修流式、草稿、键盘和后台通知。</li></ol><p>每段都装到手机上用，出了问题再回去修。越到后面，花在返修上的时间越多。</p><p>分工上，Codex 帮我整理设计、审查和做真机验收，ZCode 完成前期原生界面与配置，TRAE CN 接着做任务跟踪和后续返修。代码测试和 APK 构建在已有的 0.13 环境组织，最后把包安装回手机。按钮能不能点、草稿有没有丢、图片是不是这次的结果，都要实际看。</p><p>真机第一次打开横屏审批，提示词正文高度竟然是零，根本没法审核。于是取消请求，改成独立弹窗；旋转又丢编辑稿，再补状态保存；竖屏键盘又挡住确认按钮，再调整键盘避让。实际按钮能点到，才算这一处修完。竖屏开键盘和旋转保稿分别验过，最终横屏加键盘的组合还没完整复验。</p><p>升级也不能靠卸载重来。最初新包与课程包签名不同，无法直接覆盖，我保留旧小满，把咔哒作为 <code>dev.kada.app</code> 并行安装。之后咔哒自己的更新保持应用 ID 和签名；再迁移内部包名时，旧聊天、模型配置、图片仍要能恢复。页面显示名、内部代码名和安装身份是三件事，改个名字不能把用户数据改没了。</p><h3>改着改着，token 也不够用了</h3><p>来回读代码、改问题、再返修，开发额度不够用这件事也追上来了。功能还没收口，我不想因为换模型再搬一次项目、换一套工作界面，就把之前配置的 Magpie 用上了。</p><p>Magpie 是我本机的模型网关，已经接着 WorkBuddy、Qoder 等来源。我把它作为 TRAE 的自定义模型入口，项目和聊天继续留在 IDE，请求由 Magpie 转给选中的来源，消耗那个账号自己的套餐、积分或赠送额度。之前攒的赛博鸡蛋，总算有了实际用途；它没有给 TRAE 官方余额充值，也不会把别的工具的历史聊天搬过来。</p><p>接入时也不是随便填个占位密码就完了：TRAE 返回过 403，我后来给它单独建受限网关密钥，只放允许名单内的模型，不给管理和 MCP 权限。网关仍只允许本机回环访问，没有把开发用的模型池一起公开出去。后面又配了免费池、低倍率池和按任务选池，三类文字任务的分流已在 TRAE 验过；没有因此把所有模型和真实项目工具执行都说成测试通过。</p><p>这条开发链路是 <code>TRAE → 本机 Magpie → 所选来源模型</code>，和后面“咔哒 → 随画 MCP → ComfyUI”的出图链路分开。手机里原来的聊天模型配置也没有因为开发工具接了 Magpie 就自动更换。</p><p>接入和选池的详细过程，我另写在 <a href="https://link.segmentfault.com/?enc=zrdb%2B4DqpfkrqI3%2F6DTO5w%3D%3D.bnk%2Fal6j8e%2F6I72IkMUvRxBxN65fp6voKN2z2bjnujjPQNZ7bCZjb6Y%2BWfrTCcp3ewXn%2FpVZ4txooFbHhcmRig%3D%3D" rel="nofollow" target="_blank">Magpie 接入 TRAE 的折腾记录</a>里。模型入口接好，我才得以继续返修手机这端。任务恢复和按钮遮挡，可不会因为换了模型就自己消失。</p><h2>先让聊天像个能用的聊天</h2><p>按这个方向做下来，最影响使用的仍是那些基本动作：回复等结束才出现，不知道它还在干活还是卡了；中间版本有文字却发不出去；长按重发，正在写的草稿被覆盖。这些都比多接一个模型更影响使用。</p><p>后续逐项补了真实流式、停止、复制、引用和重发。重发改为追加到已有草稿，不直接发送。下面这张，回复还没结束，表格已经出现了前三行，停止按钮也还在。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048400708" alt="咔哒中文流式回复中途：已经显示部分内容，仍可停止" title="咔哒中文流式回复中途：已经显示部分内容，仍可停止" loading="lazy"/></p><p>表格长内容在这一帧里仍有省略显示，所以这张只说明流式进展和布局变化，不能说所有长表格都已经显示得很舒服。</p><p>这些发送和草稿问题有些出在我自己的中间改造版，不能都算原版小满的锅。改 App 的过程就是这样：以为加完功能了，真拿手机用，又多出几个要补的洞。</p><h3>记录留下来，才值得继续聊</h3><p>聊天不再一直叫“新聊天”，而是按内容命名；不同主题恢复各自上下文。单条聊天可以归档、移入回收站再恢复，也能多选合并，来源聊天归档保留，图片跟着走，不重新执行历史工具。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048400709" alt="两条测试聊天的合并确认：选择目标，来源聊天随后归档" title="两条测试聊天的合并确认：选择目标，来源聊天随后归档" loading="lazy"/></p><p>这轮还发现本地历史也被限制成最近 20 条，聊久了早期内容会丢。后来分开处理：本地完整保存，发给模型的上下文仍有限制。已经被旧版截掉、又没备份的内容，当然不能凭空找回来。</p><p>还有一次合并两张图片，恢复时显示 ID 冲突，直接触发列表崩溃。最后是在保留原记录的情况下修复、覆盖安装，再打开原聊天确认，不是清数据造一个干净演示。</p><h3>技能不用靠记名字，配置也别靠猜</h3><p>聊天和能力页共用技能列表，展开时重扫，常用项能置顶、上移、下移。输入 <code>/</code> 有候选，点候选只补全，发送才执行。我还做了中文 <code>/画稿</code>，绑定随画，重开 App 后仍在。裸命令只选技能，不会偷偷开始出图。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048400710" alt="随画在技能列表里的实际入口，先说明能做什么" title="随画在技能列表里的实际入口，先说明能做什么" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048400711" alt="自己的画稿命令与只读的默认命令" title="自己的画稿命令与只读的默认命令" loading="lazy"/></p><p>模型配置则按平台提供默认地址，获取目录后搜索选择，也保留手填和测试连接。那次手机实际拿到了 55 个条目，里面有聊天、图片等不同模型；目录能列出来，不代表每个都能用于当前聊天或看屏操作。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048400712" alt="当时账号返回的模型目录，支持搜索" title="当时账号返回的模型目录，支持搜索" loading="lazy"/></p><p>权限也拆开：普通聊天和 MCP 调用不依赖无障碍，需要控制手机时单独开启；通知按需申请。这次图片保存在 App 私有附件里，没有为它额外申请相机、相册、位置或共享存储权限。</p><h2>最想玩的，是把自己的 ComfyUI 接到手机上</h2><p>只改聊天界面还不够，我已经有 ComfyUI 和可用的模型、工作流，想在手机上讨论需求，确认以后让服务器画，别每次都去开电脑找任务。</p><p>于是我借助编码工具，自己写了随画技能和对应的 Python MCP 服务。这里用的是现成的 MCP SDK，自己补的是对接 ComfyUI 的工具逻辑：提交工作流、保存任务号、查询执行状态、取回图片。适配的就是“手机发起、服务器执行、原聊天收图”这套用法。</p><p>MCP 是让 Agent 发现并调用外部工具的协议；ComfyUI 是真正执行绘画工作流的后端。咔哒负责需求讨论、人工确认和结果展示，生图模型与工作流复用服务器上的已有资源。</p><pre><code class="text">手机聊天：讨论需求、修改提示词、选择工作流、人工确认
-    ↓
-随画 MCP：提交任务，返回真实任务号，查询后台状态与图片
-    ↓
-ComfyUI：加载对应模型和工作流，实际执行生成
-    ↓
-图片经 MCP 回到原聊天，保存到手机私有附件</code></pre><p>咔哒的文字模型和服务器里的绘画模型，是两层配置。换聊天模型，不等于换了出图模型；最早服务参数里虽然有 <code>model</code>，内部工作流却固定为 H3，后来才把工作流选择接到真正的执行端。</p><h3>有节点，不代表这条工作流就能跑</h3><p>最初试 Qwen API 节点，参数调对、任务号拿到了，执行仍报 Unauthorized。节点有自己的服务端登录要求，不能因为模型文件在服务器上就当它能用。</p><p>随后标准 SDXL 流程出了图，Qwen GGUF 也试过，但等待更久。后来复用自己 Forge 里已经用过的 H3 模板，六步出图，少走一些节点和编码器不匹配的弯路。后续手机开放了 H3、Qwen、SDXL 的有限工作流选择，没有把服务器上全部实验图都暴露出去。</p><p>我也没打算把随画写成另一个 ComfyUI 管理平台。它先把手机这端最需要的提交、查询和回图做好。</p><h2>从内网接到公网，不能只多一条隧道</h2><p>把工作流跑通后，接下来才是手机怎么调用。我的生图服务在局域网服务器上，手机、Mac 和服务器各做各的事：服务器跑 ComfyUI 与随画 MCP，Mac 跑 Cloudflare 隧道，手机上的咔哒是调用方。</p><h3>内网先直连，MCP 和 ComfyUI 是两个地址</h3><p>ComfyUI 在 <code>192.168.0.13:15070</code>，随画 MCP 的内网入口是 <code>http://192.168.0.13:8899/mcp</code>。手机 Agent 要添加的是 MCP 地址，不是 ComfyUI 网页，也不是模型平台的 Base URL。</p><p>这条服务最初部署过旧 SSE 入口，后来改成 <strong>Streamable HTTP 的 <code>/mcp</code></strong>，旧 <code>/sse</code> 已返回 404。这里容易混：后面排查响应时仍会遇到事件流与换行解析，但不能因此把手机连接地址又填回 <code>/sse</code>。</p><p>最初的三个工具各做一件事：</p><table><thead><tr><th>工具</th><th>干什么</th><th>不能据此认定什么</th></tr></thead><tbody><tr><td><code>generate_image</code></td><td>提交确认过的需求，返回真实任务号</td><td>已接单不等于已出图</td></tr><tr><td><code>check_status</code></td><td>查同一个任务的真实状态，取回结果</td><td>查询失败不等于生成失败</td></tr><tr><td><code>list_recent</code></td><td>找本服务记录的近期任务</td><td>旧缓存的 submitted 不等于后台还没完成</td></tr></tbody></table><p>后面增加了工作流与兼容模型目录，不能拿早期“发现 3 个工具”的截图当作最终完整目录。服务先作为 systemd 用户服务常驻，手机不用每次聊天再去手动启动 Python 进程。</p><p>按我自己的使用要求，可信内网保留免密直连。源站那轮实际检查，内网请求能通过；但早期 App 的自定义服务表单只接受 HTTPS，所以手机实际回图主要走下面的公网 HTTPS 入口。<strong>内网服务可用，不代表当时每个版本的 App 都能直接保存这个 HTTP 地址。</strong></p><h3>Cloudflare 解决入口，认证得自己加</h3><p>为了给手机一个 HTTPS 地址，我在 M3 Mac 上使用已有的 <code>cloudflared</code> 起临时隧道。它把公网请求转给内网服务，省掉了这次配置公网 IP 和路由器端口映射的步骤。</p><p>刚接通时，手机的 Authorization 留空也能发现工具。这个“方便”后来被查出是个真问题：别人只要知道入口，也可能直接调工具占 GPU。手机上的“允许一次”只管这台手机的操作，拦不住别人绕过手机直接访问服务。</p><p>所以不能把“Cloudflare 给了 HTTPS”理解成“这个服务只有我能用”。我后来把内外网分成两个入口：</p><pre><code class="text">可信内网调用方
-  └─ http://192.168.0.13:8899/mcp
-       └─ 允许内网免密 → 随画 MCP → ComfyUI :15070
-
-咔哒访问公网 HTTPS
-  └─ Cloudflare 临时隧道（cloudflared 跑在我的 M3 Mac）
-       └─ http://192.168.0.13:8898/mcp
-            └─ 强制校验专用 Bearer → 随画 MCP → ComfyUI :15070</code></pre><p><code>8899</code> 保留给可信内网，<code>8898</code> 是强制鉴权入口。隧道必须转向后者，不能拿 Host、Origin 或转发头里的“内网地址”就给公网请求免密。</p><p>当时关闭了旧的免密公网隧道，再让替代隧道转到已经部署好的鉴权入口。Mac 上的启动形式是：</p><pre><code class="bash">cloudflared tunnel --url http://192.168.0.13:8898</code></pre><p>这条命令只建立隧道，<strong>不会自动给后端加认证</strong>。<code>8898</code> 的认证服务要先存在；如果只是把端口号照抄过去，并不会凭空得到同样的保护。ComfyUI 管理页面也没有因此直接公开。</p><h3>手机怎么填，哪把 Key 放在哪</h3><p>在咔哒进入“能力 → 服务 → 其他 MCP 服务”，填写名称、地址和 Authorization，添加并保存，再测试连接。名称是给自己看的，地址填本次隧道提供的域名加 <code>/mcp</code>。</p><table><thead><tr><th>字段</th><th>我的填写方式</th></tr></thead><tbody><tr><td>名称</td><td><code>suicookie</code>，也就是随画服务</td></tr><tr><td>地址</td><td><code>https://&lt;本次隧道域名&gt;/mcp</code></td></tr><tr><td>Authorization 请求头</td><td><code>Bearer &lt;专用MCP密钥&gt;</code>，占位内容换成自己的真实值</td></tr><tr><td>调用前确认</td><td>保留会修改数据时确认，提交生图仍须确认</td></tr></tbody></table><p>模型设置里的 API Key 交给文字模型服务；这里的 Bearer 用来访问我自己的 MCP。两把钥匙职责不同，没有复用。测试连接只是握手和发现工具，还得再验证真实查询、回图和保存。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048400713" alt="早期实际接入页面：HTTPS MCP 已连接，发现三个工具" title="早期实际接入页面：HTTPS MCP 已连接，发现三个工具" loading="lazy"/></p><p>图里的隧道地址已打码，早期隧道也已关闭。这张图保留的是填写位置和当时的连接结果，不是现在的可用入口。那时表单写 Authorization“可选”，也不代表现在的公网服务允许留空——是否必须由服务端决定。</p><h3>内网能用、外网拦得住，都分别查过</h3><p>加认证后，我没有只拿正确密钥测一次就收工。源站和公网分别做过检查：</p><table><thead><tr><th>访问方式</th><th>那一轮实际结果</th></tr></thead><tbody><tr><td>内网入口免密</td><td>请求通过，HTTP 200</td></tr><tr><td>公网入口不带密钥</td><td>HTTP 401</td></tr><tr><td>公网入口带错误密钥</td><td>HTTP 401</td></tr><tr><td>公网入口带正确密钥</td><td>握手通过，能发现工具</td></tr><tr><td>正确密钥查询原任务</td><td>返回文字与 MCP 图片内容，没有重新生成</td></tr></tbody></table><p>除了认证，随画还补了提示词长度、图片尺寸、频率和未完成任务数量等限制。查询也只能查本服务持有的任务，不能拿一个其他项目的 ComfyUI 任务号就随便取图。这仍是我个人用的静态 Bearer 接法，没有做成多用户 OAuth 授权系统。</p><p>这些限制是我自己的取舍：内网免密是为了日常直连方便，不是说所有局域网都天然可信；如果以后给别人共用，授权和任务隔离得再设计。</p><h3>工具能调用，图片还得走得回来</h3><p>第一版返回 <code>127.0.0.1</code> 图片地址，手机访问时找的是手机自己；换成服务器内网 IP，在外网又打不开。最后让图片通过带认证的 MCP 响应返回，手机保存到 App 私有附件，不再额外直连内网图片 URL，也不把 MCP 密钥随便带给一个外部图片地址。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048400714" alt="安全版通过公网 MCP 查询原柴犬任务，图片直接回到手机聊天" title="安全版通过公网 MCP 查询原柴犬任务，图片直接回到手机聊天" loading="lazy"/></p><p>这轮查的是已有任务，没有再次生图。先确认公网鉴权和图片通道，再往下检验自动等待和任务恢复，问题才不至于全混在一起。</p><p>接入中遇到的 App 故障也分别处理：配置解析的占位符正则少了转义，Android 报 <code>PatternSyntaxException</code>，修正后才不再闪退；另一次握手成功、查图超时，则用真实 HTTP 事件复现了 CRLF 换行处理不完整的问题，修复解析后才取回原机器人图片。期间部署过 Web 版绕行，最后仍回到 App，解决原聊天和图片保存的问题。</p><p>目前的公网入口仍是临时隧道，地址会随生命周期变化，Mac 上的进程退出或电脑关机就会中断，后端停机也一样。手机在 Wi-Fi 下经公网 HTTPS 回图已经实际做过；蜂窝因手机停机暂停。不能把“走了公网域名”写成“离家用移动网络也已通过”。固定域名和更长期的运行方式，留在后面的计划里。</p><h2>接通以后，我在手机上怎么画</h2><p>服务接好以后，手机上的操作才有了完整去处。我一般先把想画的东西说清楚，再决定让谁画。比如机器人那一轮，我说的是蓝绿机器人、红围巾、阳台、黄色向日葵和水彩风格。随画先整理成提示词，弹出确认卡，这时还没有把任务送进 ComfyUI。</p><p>卡片里的提示词可以直接手改，也可以补一句要求继续优化；觉得改偏了，可以从原始需求重写，或者退回上一版。我在手机上试过这些操作，旋转屏幕后编辑稿也能保留。润色用的是咔哒配置的文字模型，会消耗它的额度；真正点确认以后，才轮到服务器的绘画模型工作。优化失败要保留当前稿，不能把我的修改清空了。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048400715" alt="机器人任务的提示词审核：补充要求、重新生成提示词，键盘上方保留确认与取消" title="机器人任务的提示词审核：补充要求、重新生成提示词，键盘上方保留确认与取消" loading="lazy"/></p><p>提示词满意了，再选工作流和它支持的模型。最简单的用法就是选一个模型，确认出一张图。想看同一需求在不同模型下有什么区别，就打开“一组作品”：选好模型，点“添加当前模型到本组”，换另一个模型再加一项，保留同样的提示词。一组最多四项，每项的标题和提示词都能单独改，也能移除。</p><p>我用“画一只猫，水彩风格”做过 H3 和 SDXL 双模型对比。原批次最后恢复了两张图，不过 SDXL 画偏了；这次实际效果和中间的超时问题，放在后面一起说。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048400716" alt="一组作品的实际确认卡：逐项核对模型、提示词和尺寸" title="一组作品的实际确认卡：逐项核对模型、提示词和尺寸" loading="lazy"/></p><p>确认前，最后再看一遍每项提示词、模型和尺寸，删掉不想画的那张。单图确认会提交一项任务，组图则按各项计划提交；回到聊天后要能分清谁还在排队、谁完成了、谁失败了。不想画就取消，提示词留着，任务不提交。已经提交后再“停止等待”，停的则是手机查询，服务器仍可能在画。</p><h2>真正用起来，才发现“接单”和“完成”差这么远</h2><p>上面的操作看起来并不复杂，真正难的是后半程：接口说接单了，手机却不一定拿得到结果。这也是后面改得最多的地方。</p><h3>白猫请求里，先冒出了一张旧柴犬</h3><p>有一次我要求画窗边睡觉的白猫，聊天里先出现上一次的宇航员柴犬。再问进度，模型只调了最近任务列表，把里面缓存的 <code>submitted</code> 解释为没完成。</p><p>后台实际早已完成白猫，问题在任务状态没刷新、任务号被缩短，图片也没有清楚标明归属。</p><p>后来补上完整任务号、任务卡和原聊天绑定，查询按真实后台结果更新。任务号、提示词、模型和图片一起保存；查询失败显示未知，不能替服务器宣布生成失败，更不能把旧图当新图交差。</p><p>这部分得落到程序里。只在技能里多写一句“记得保存任务号”，模型还是可能忘，甚至拿历史编号说已经接单。</p><h3>停止等待，不是取消服务器画图</h3><p>机器人那轮是一个比较完整的实际过程：审核提示词，确认，拿到任务号；点“停止等待”，再用同一任务继续，切到后台再回来，最终自动收到图片，没有重新生成，也没再手动点查询。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048400717" alt="同一机器人任务停止等待后的卡片，仍可点“继续查询”" title="同一机器人任务停止等待后的卡片，仍可点“继续查询”" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048400718" alt="同一机器人任务自动返回原聊天，图片内容与需求对应" title="同一机器人任务自动返回原聊天，图片内容与需求对应" loading="lazy"/></p><p>后台约 55 秒完成。机器人、红围巾、向日葵和浇水动作都在，重开 App 也能恢复。这里才算把“提交、等待、结果归属”串起来。</p><p>按钮也要讲人话：停止手机的查询，不会取消 GPU 上的任务。点了停止再后悔，应该继续查原任务，不是让服务器再画一遍。</p><h3>两个模型一起画，完成不代表画对</h3><p>前面那组水彩猫，两项都采用 512×512。</p><p>这轮手机报超时，后台却已经接单并完成。查下来，提交前重复读取模型和工作流依赖，预检约 28.4 秒，几乎撞上手机 30 秒的上限。改成整批共用目录快照，同范围读取降到约 1.7 秒。</p><p>随后补了提交前保存批次号、超时查询原批次、逐项恢复任务卡。第一次恢复还因为没有解开 SDK 的返回包装，误报“暂无记录”，又按真实响应返修了一次。</p><p>最终恢复的是原来的两项任务，自动取图，重开后两张都在，没有为了演示成功再生成一组。不过结果得照实看：H3 能看出猫，SDXL 是抽象拼贴，水彩猫的要求没满足。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048400719" alt="原批次恢复后的两张真实结果：右侧 SDXL 明显偏题" title="原批次恢复后的两张真实结果：右侧 SDXL 明显偏题" loading="lazy"/></p><p>这不是模型能力排行榜，也不是所有设置一致的严谨评测。它证明了这组任务能恢复和保留，同时暴露了这一套 SDXL 配置对该提示词的效果问题。修复后首次新建批次的整轮流程，这次没有另跑。</p><p>Qwen 2512 的另一轮大约画了四分钟，旧版手机两分钟等待先到，我手动查原任务才拿回图；随后把有限等待延长到十分钟。SDXL 的另一项单图则在手机前台自动回图。目前不同模型的等待体验还没有完全拉齐。</p><h3>最后卡住的，竟然是图片大了十几 KB</h3><p>最后一轮小熊图，ComfyUI 完成了，手机还是没图。原 PNG 是 2,114,912 字节，比 2MiB 回传上限多了 17,760 字节。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048400720" alt="小熊任务的真实失败现场：返回文字已出图完成，手机仍显示状态未知" title="小熊任务的真实失败现场：返回文字已出图完成，手机仍显示状态未知" loading="lazy"/></p><p>这次没有把限制随手放大，而是让 MCP 对超限图片读取同一文件的受限 JPEG 预览，原图保留。又修掉“连接会话不存在”被笼统匹配成“生成失败”的错误，失败卡增加只读重查。</p><p>最后在原任务点“重查结果”，回到桌面，收到真实完成通知；点通知回原聊天，小熊在，强制重开后也还在。没有重新画。</p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048400721" alt="原任务恢复取图后，桌面收到完成通知" title="原任务恢复取图后，桌面收到完成通知" loading="lazy"/></p><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048400722" alt="重开后，同一任务的提示词、模型和小熊图片保留" title="重开后，同一任务的提示词、模型和小熊图片保留" loading="lazy"/></p><p>这个结果证明了这次后台取图恢复和已完成记录保留，还不能推广到所有省电策略、运行中被强杀、蜂窝网络等情况。比起再添几个按钮，我更希望先把这些边界弄清楚。</p><h2>接下来，先少折腾一点“万能”</h2><h3>把最初的户外助手做回来</h3><p>后续最想做的，还是开头那件事：手表拿回来以后，把高驰和咔哒之间的玩法认真研究一遍。</p><p>我会先查官方允许的导出或授权方式，确认到底能拿到哪些活动数据，再决定怎么接。现在没有完成手表配对、数据读取或同步，不能因为想接就写成“已支持高驰”。</p><p>第一版也不准备让它包办所有户外需求。我想先做三件具体的事：出发前根据我明确给出的行程整理装备与待确认事项，活动后根据真实记录做简短复盘，再把自己的装备和偏好慢慢留成可修改的记忆。拿不到数据就让我补，不编距离、轨迹或身体状态。</p><p>路线、实时天气和运动数据，需要各自可靠的来源，不能只靠模型聊天时的印象。以后真要用到定位或其他权限，再按具体功能单独设计。目前咔哒还没有这套户外链路，这部分留给后续实际做；先把自己的手表用起来，比再接一堆演示服务更有意思。</p><h3>现有的聊天和创作，继续把底子补稳</h3><p>现有链路先让远程入口长期可用：把临时隧道换成稳定入口，保留鉴权，再补蜂窝和断网重连的真实使用。目前还依赖开着的 Mac，不能把它当全天在线服务。</p><p>创作这边，我想把“一段话变成一组图”补完整：先让文字模型拆成分镜计划，我逐张改标题、提示词和模型，整组确认以后再交给 ComfyUI。目前已有组图编辑和双模型批次恢复，自动拆分镜还没接到确认卡，“闻鸡起舞”故事组图也没有实际生成。这是下一步要做的，不是现在点一下就有的功能。</p><p>之后再把确认稿、工作流、模型、原图和采用结果放到同一作品里，继续改图，再研究绘本和连续画面的一致性。能批量提交，只解决了排任务，还没解决故事连不连得上。</p><h3>课程里的其他玩法，按需要慢慢接</h3><p>开工卡、健康闹钟、淘宝比价、每日出题与错题本、资讯速览，课程都给了方向。我没有把它们全部实测一遍，后续会挑自己真正需要的做：提醒先确认时间，比价保留店铺和页面价格，错题不编出处，资讯能追到来源。</p><p>课程的 <code>camp/02-skill-builder</code> 分支还提供了手机生成技能草稿、确认后保存或删除的做法；Super Agent 则让总管拆任务、派给专项助手、汇总检查。这两条我读过方案，还没有接成咔哒的已验功能。先把单个任务做稳，再考虑把选题、写稿、排版和封面分工出去，否则只是多几个人一起猜哪里出了错。</p><p>手机控制也留着按需试。淘宝那次是在旧小满里完成的，咔哒这轮重点是聊天和 MCP，没有重新跑完整条控制流程；更不能因为绘画能用，就顺带认为购物、付款也可靠。</p><h2>作业先交了，咔哒还得接着用</h2><p>小满的问题我吐槽了一路，自己的改造版也没少添乱。改个横屏，草稿丢了；接上模型，图片回不来；手机说超时，服务器其实还在画。最后这份作业，花时间最多的就是把这些事一件件理清楚。开源给了我动手改的机会，剩下的还是得自己用、自己踩坑。</p><p>好在这回没有只留下一个安装包和几张交作业的截图。从手机聊需求，到改提示词、确认、让自己的 ComfyUI 出图，再回来找结果，这条线已经实际走过了。还不稳的地方继续修，自动分镜和手表联动留到后面做。有了新的实际进展，再接着写咔哒，没必要这一篇就把它说成什么都能干。</p>]]></description></item>  </channel></rss>
+kubectl describe pod npu-check2 | sed -n '/Events/,$p'</code></pre><ul><li><code>resources.limits.huawei.com/npu: "1"</code> 是向 K8s 申请 1 张卡，这个资源名由 Device Plugin 上报。<strong>能调度成功，就说明「驱动 → Runtime → Device Plugin → 调度器」整条链路通了。</strong></li><li><code>schedulerName: volcano</code> 走 Volcano 调度，对应的就是镜像清单里那两个 <code>vc-*</code> 组件。</li><li><code>huawei.com/schedule_policy: chip2-node16</code> 是调度策略注解，按集群实际策略填。</li><li><code>restartPolicy: Never</code> 加 <code>sleep 3600</code> 是为了让 Pod 停在那儿，方便进去查设备挂载。</li><li><code>sleep 25</code> 等镜像拉取和容器启动。Pod 一创建就 <code>describe</code>，那时还在 Pending，很容易误判成调度失败。</li></ul><p>Pod 起来之后，进容器确认设备节点挂进来了：</p><pre><code class="bash">kubectl exec -it npu-check2 -- ls /dev/davinci*</code></pre><p>镜像里如果带了 <code>npu-smi</code>，也可以直接 <code>kubectl exec -it npu-check2 -- npu-smi info</code>，输出应当和宿主机对得上。</p><p>再看节点侧的资源账：</p><pre><code class="bash">kubectl describe node mgmt015 | grep 'huawei.com/npu'</code></pre><p><img referrerpolicy="no-referrer" src="/img/remote/1460000048400518" alt="" title="" loading="lazy"/></p><p><code>Capacity</code> 和 <code>Allocatable</code> 里出现卡数、并且已经分配走 1 张，这就是「集群认得 NPU」最直接的证据。</p><h2>七、几个容易忽略的点</h2><p>把这次流程里最容易出问题的地方单独拎出来：</p><table><thead><tr><th>位置</th><th>容易踩的地方</th><th>后果</th></tr></thead><tbody><tr><td>Runtime 配置</td><td>直接改 RKE2 自动生成的 <code>config.toml</code></td><td>重启被覆盖，配置丢失</td></tr><tr><td>Runtime 安装</td><td><code>--config-file-path</code> 填了真实主配置</td><td>脚本写入的内容和 RKE2 生成逻辑冲突</td></tr><tr><td>Runtime 安装</td><td>只在计算节点装</td><td>管理节点也带卡时，那边起的容器挂不到设备</td></tr><tr><td>重启服务</td><td>全集群统一敲 <code>rke2-server</code></td><td>agent 节点上服务名不对，节点起不来</td></tr><tr><td>节点标签</td><td>值自己改了 / 既管又算只打一个</td><td>组件一直 Pending，资源不上报</td></tr><tr><td>节点标签</td><td>手打显存、芯片型号</td><td>与 Device Plugin 实际上报值不一致</td></tr><tr><td>镜像导入</td><td>没设 <code>CONTAINERD_NAMESPACE=k8s.io</code></td><td>镜像进了 default，Pod 仍去公网拉</td></tr><tr><td>镜像导入</td><td>没把 tag 改成内网 Harbor 地址</td><td>chart 里的 image 名对不上</td></tr><tr><td>镜像推送</td><td>少了 <code>--plain-http</code></td><td>内网 HTTP Harbor 报 TLS 错误</td></tr><tr><td>Helm 顺序</td><td>先装应用 chart 再装 CRDs</td><td>自定义资源无类型，组件起不来</td></tr><tr><td>验证</td><td>Pod 一创建就 <code>describe</code></td><td>还在 Pending，误判成调度失败</td></tr></tbody></table><p>这几条都不是疑难杂症，但每一条都能让流程卡半天，而且报错信息通常不会直接指向真实原因。</p><h2>八、最后</h2><p>到这一步，<code>kubectl describe node</code> 里能看到 <code>huawei.com/npu</code>，Pod 里能看到 <code>/dev/davinci*</code>，整条链路就算通了：驱动让系统认得卡，CANN 让单机能算，Ascend Docker Runtime 让容器拿得到卡，Device Plugin 让 K8s 会分配卡，Volcano 决定分哪张卡。</p><p>上篇说「先把地基打完」，这篇就是把地基上面的调度层补齐。再往后是往里跑真实任务——断点续训、故障重调度这些高阶能力，都是在这个底座上叠。</p><p>还有一件事这篇没做：Helm 装完，NPU Exporter 其实已经在每个计算节点上跑着了，利用率、温度、电压、内存这些指标就在 <code>8082</code> 端口上，只是还没人去抓。集群一旦上量，「卡在不在跑、跑得满不满、有没有过热」总不能靠 ssh 上去敲 <code>npu-smi</code>。把指标接进 Prometheus、做成 Grafana 面板，单独放下一篇写。</p><p>最后照例提醒：本文走的是 <strong>RKE2 + containerd</strong> 这一条路径。换成原生 containerd、Docker 或者别的 K8s 发行版，Runtime 那段配置的落点全都不一样，别照抄，按官方文档的场景对号入座。</p><p>&lt;!--<br/>编辑备注（发布前删掉）：</p><ol><li>图 1～图 9 沿用原部署笔记里的语雀外链，公众号不支持外链，需先下载图片再重新上传；图注文字可按实际截图微调。</li><li><p>正文主体命令来自部署笔记，属于实际执行记录。以下为补充的通用排查命令，未逐一执行过，发布前可自行核对：</p><ul><li>2.4 的 ls / kubectl get nodes / npu-smi info</li><li>5.4 的 helm list / kubectl get pods -A | grep</li><li>6 的 kubectl exec 验证</li><li>2.4 关于 agent 节点重启 rke2-agent 的提示</li></ul></li><li>4.3 只给了单镜像示范（笔记原文标注「实际部署请使用脚本批量方式」），批量脚本未编造，如需可另行补一份。</li><li>6 的 huawei.com/schedule_policy: chip2-node16 按实际集群策略确认后再发。</li><li>监控与 Grafana 部分已拆为独立一篇，本篇不写。<br/>--&gt;</li></ol>]]></description></item><item>    <title><![CDATA[技术选型找开源平替时，为什么我先看对比页而不是 Awesome 列表 圆鼓鼓 ]]></title>    <link>https://segmentfault.com/a/1190000048400542</link>    <guid>https://segmentfault.com/a/1190000048400542</guid>    <pubDate>2026-11-17 18:06:12</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>做技术选型时，Awesome 列表有个天然问题：它只负责收录，不负责比较。一个方向列几十个项目，每个都要点进仓库看 README、看 License、看最近提交，成本很高，最后往往还是凭印象拍板。<br/>我现在的做法是先看带对比维度的页面。以最近一次找 Heroku 开源替代品为例，我参考的是 GitHubPlay 的对比页（<a href="https://link.segmentfault.com/?enc=Wp%2Bl39%2FzT7d5rhQ3p0lPUA%3D%3D.jzxBdvpzeGN0zcb8RXhIw3xZsEsBvthVOP4Flpv9CvXFTFS5PPffPjrEdvACUHez" rel="nofollow" target="_blank">https://githubplay.com/alternatives/heroku</a>）：它把 CapRover、Dokku 等候选按部署架构、功能完整度、License 做了横向对比，MIT 和 Apache-2.0 的区别、单机还是集群，一页看清。<br/>GitHubPlay 本身（<a href="https://link.segmentfault.com/?enc=nbpNz%2FEOWO1ugmFT0d9ByQ%3D%3D.yQ%2BlA%2Fz7JU44Bv0UYiVi8liGGKureqrgNCiLNsxcu00%3D" rel="nofollow" target="_blank">https://githubplay.com/</a>）是一个 GitHub 开源项目排行榜与目录站，我的使用顺序一般是：先用分类页按技术方向缩小范围，再用对比页横向筛，最后看项目页的 Star、License、平台和更新时间做终筛。<br/>另外它的涨幅榜也适合日常跟踪：按 Star 增速而不是总量排序，能更早发现某个方向正在起量的新项目，链接：<a href="https://link.segmentfault.com/?enc=h89xycitdefWWeQkZHZg2w%3D%3D.IWUW6IC%2B%2FPMzQIw6CgtOnq4Dp9AfbrZI5XpCHSVAzgCQ9PH27hHYfuujUB3CTT4w" rel="nofollow" target="_blank">https://githubplay.com/rankings?board=rising</a> 。<br/>总结成一句话：名单解决「有哪些」，对比解决「选哪个」。选型类工作，先找有对比维度的页面，能省掉大量重复翻仓库的时间。</p>]]></description></item><item>    <title><![CDATA[用了三个月 WorkBuddy，分享6个我天天在用的技能 爱逃课的帽子 ]]></title>    <link>https://segmentfault.com/a/1190000048400574</link>    <guid>https://segmentfault.com/a/1190000048400574</guid>    <pubDate>2026-11-17 18:05:38</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <p>最近一直在用 WorkBuddy 处理内容和技术的活，攒了几个反复在用的技能，发出来给有需要的吧友做个参考。<br/>先说做视频和漫剧这块，三个用得最多：<br/>剪映剪辑输出。剪一条片子，拼接、配音、字幕、配乐、调色、导出，以前一下午。这个把这些串成一条线，素材丢进去能一路走到成片。累计装了124次，我批量出片基本靠它。<br/>DeepSeek故事大脑。写剧本我现在是先看爆款结构再动笔，不从头憋了。它能做爆款拆解、二创、分镜、角色设定，文字活都接。<br/>豆包故事大脑。手机端就能用，出剧本、排分镜表、给即梦提示词。通勤路上改稿挺方便。<br/>做视频号的注意下：新人翻车常常栽在违规，不是没流量。视频号直播助手内置带官方链接和核实日期的规则库，还有动作级红线风险地图，哪些话不能说标得很清楚，另外有0粉破0和四阶段孵化SOP。开播前过一遍能少走弯路。<br/>技术向的看这个：小程序云架构与测试专家。小程序+网页+云后端三端都熟，多租户隔离、RLS权限、端到端测试、提审发布全流程，还能模拟新用户跑自检出报告。<br/>兴趣向的：明稽术数典籍与历算考据专家团。做传统文化考据用，结论标古籍原文、篇章和复算命令，口径分歧如实登记，术语翻大白话。查版本源流、核对排盘口径、追溯卦爻辞出处很好使。<br/>自取：<a href="https://link.segmentfault.com/?enc=jDG3FEyvQ%2BXtViuClhXeGw%3D%3D.VLqyvdEMVOI5N3HK2GEoA5slJKU6%2F4dObh72fSuO2t4sdWzVbFOT5jr5hoezF4lf" rel="nofollow" target="_blank">https://drive.uc.cn/s/e2388ba63d854</a><br/>提取码：Uwt7</p>]]></description></item><item>    <title><![CDATA[PostgreSQL 日报｜Neon AI 应用平台与内核多补丁更新（11 月 17 日） Ivor]]></title>    <link>https://segmentfault.com/a/1190000048400588</link>    <guid>https://segmentfault.com/a/1190000048400588</guid>    <pubDate>2026-11-17 18:04:48</pubDate>    <description><![CDATA[<link rel="stylesheet" href="https://static.segmentfault.com/main_site_next/prod/_next/static/css/806ebfcba42cce9b.css" data-n-g=""> <h2>PostgreSQL 技术文章</h2><h3>Agent 构建应用，用户掌控数据库:Ideavo 的做法</h3><p>Ideavo 是一个 AI 驱动的应用构建平台，用户通过自然语言描述即可生成应用。与订阅制平台不同，Ideavo 不收取订阅费或积分，用户只需接入自己在 OpenAI、Anthropic、Google 等服务商的 API key，由 Agent 完成应用构建。每位用户拥有独立的数据库实例（通过 Neon 提供），计算与存储成本由用户自行承担。这种架构展示了…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=z5DMCfdr7zdGphYK9PBs5A%3D%3D.cwMpnypQHwAaJLfZbrGFgAWg%2FfVqAuwTOfvNBXBHR8%2FmVf0FZy4%2BAmGkUZc4EuFzdLrsN%2FlrK0DJekjzkYs2hU6IbKEYIzR3Ou5l2tbCjWNJs20a6etCraj7rk%2B4Js0xX0MFvqFD%2BGih9MIz2VbJKBPQvWKDf9%2FpnFT35DjPjWz%2Brr0ErFUEF6C0qDg%2FP%2Bxh" rel="nofollow" target="_blank">https://pgnexus.ai/tech-blogs?url=https%3A%2F%2Fneon.com%2Fbl...</a></p><h2>PostgreSQL Hacker 电子邮件讨论精选</h2><h3>启用 <code>-Wformat-nonliteral</code> 并清理过时兼容代码</h3><p>Peter Eisentraut 提交了一个补丁系列，作为 CVE-2026-16240 的后续工作，目标是修复 <code>-Wformat-nonliteral</code> 警告，移除过时的 y2k 和 MinGW strftime 变通代码，并默认启用该警告选项。Chao Li 在 macOS 上测试后未发现问题。Tristan Partin 提出了一些小的代码风格建议…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=2CsbbCNAGUk9a027lu%2FIig%3D%3D.rvLIPN41gRl88TS1r5rZd2xfFrfPeOa9Rn9Fz8Gfm23qkthz%2FOWewhHxtpLLA1tdeNRFCwn%2FPubhRWdUPfx5mBld20x%2B%2B%2B68Iq7wBvJtF6k%3D" rel="nofollow" target="_blank">https://pgnexus.ai/hacker-discussions?subject=-Wformat-nonlit...</a></p><h3>删除组合属性导致数据完整性破坏</h3><p>该线程讨论了 Nikhil Sontakke 提交的 v4 补丁，旨在修复删除复合类型属性时引发的数据完整性问题。v3 存在一个漏洞：通过级联删除数据类型（如 DROP DOMAIN CASCADE）而间接删除的列未被检查，可能导致重复行。v4 在 deleteObjectsInList() 中于所有对象删除完成后进行检查，以修复该问题。然而，Zsolt…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=pjjdANEqyXRJvr404gIf4A%3D%3D.ouDA52%2FfWiFx61Gdh0oiOWUhlIrwisf00K9Q9N%2BQjZB3jsvRMWV4von%2BJzAlZ1kOJfSs5968uKwdwfR5HuIm6tYfZOwYOlv9YEXt1RRPX0U92LXiFXJoyAqd6ab5ZCpj0myX75BS%2FSwjQ%2BdE%2Bbo8CFgIWc%2FqUDHF%2FxI93XX4IUw%3D" rel="nofollow" target="_blank">https://pgnexus.ai/hacker-discussions?subject=Dropping%20a%20...</a></p><h3>当自动清理无法删除元组时，报告最旧的 xmin 源</h3><p>该线程讨论了 Nikhil Sontakke 提交的 v4 补丁，旨在修复删除复合类型属性时引发的数据完整性问题。v3 存在一个漏洞：通过级联删除数据类型（如 DROP DOMAIN CASCADE）而间接删除的列未被检查，可能导致重复行。v4 在 deleteObjectsInList() 中于所有对象删除完成后进行检查，以修复该问题。然而，Zsolt…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=NI27OKAcZu8TmYBgELT9hQ%3D%3D.Sw6zMOlG96NQxwyBW1rjhvuiY%2FSicAe2dB8NVe4F%2BX%2FAZ6m75m%2FDPashAtKTr9eqoRp7t9gYeo3f%2Ft4CtZkM4i2pQBKNEhD5N2oybq84jGLfQ2Gpm56d45qDxGMIvl6868Bd5jhEElIRlmi17GYSMBWaIpHv2QSk28v4yjaFEZQ%3D" rel="nofollow" target="_blank">https://pgnexus.ai/hacker-discussions?subject=Dropping%20a%20...</a></p><h3>当自动清理无法删除元组时，报告最旧的 xmin 源</h3><p>该讨论围绕一个补丁（v10）展开，补丁的目标是在 autovacuum 无法清除元组时报告阻塞最旧 xmin 的来源。Shinya Kato 根据 Fujii-san 的反馈更新了补丁：在计算截止值后立即查找阻塞者，将活跃/空闲状态及 prepared transaction GID 排除在范围之外，并保持补丁的改动范围尽量小。Bharath Rupire…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=hu9EZwO2%2Bv97lxMInYoyCw%3D%3D.nrtTO5w%2FLLFK1S2%2F4hkYypt6S6gtZlRSU%2BPtGtzIehRKUcFmsoLJwRBT1b3tBq6OF0IxFVQKemZ8%2BSR1vyHGul1rn%2B7r6A3elrgJjhamSmx3O7HfCAP6317e3GPf2vE8PX79%2F7vcMUQeb2FrF83qev7sSl%2B0VLTw1qiJyXTBibM%3D" rel="nofollow" target="_blank">https://pgnexus.ai/hacker-discussions?subject=Report%20oldest...</a></p><h3>为内存分配函数添加 malloc 属性</h3><p>本次讨论围绕在 PostgreSQL 内存分配函数上添加 GCC 的 <code>__attribute__((malloc))</code> 及 <code>__attribute__((malloc(deallocator, arg)))</code> 展开。Tristan Partin 澄清了这两种形式虽同名但用途不同：前者标记函数具有 malloc 语义（无指针别名、通常返回非空），后者则用…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=UXmqOE5%2BG%2BsDLneNkb%2BkaA%3D%3D.NZHPObgfFBVnO6k4NJTByEK9OHd33gItAELAdrSWJx4nKNc0pHPfdPh4SWjjlp7tJ5Aix3km%2BTVeMXsCU7s5JXi49llMLdUaWH8%2FHLALcskkobIGOneuUdCAvFK5gUd5fklxuBxJYOt2YRSwGLkVDA%3D%3D" rel="nofollow" target="_blank">https://pgnexus.ai/hacker-discussions?subject=Add%20malloc%20...</a></p><h3>WAL_LOG CREATE DATABASE 策略在非标准页面布局下失效</h3><p>讨论围绕修复非标准页面布局下 WAL_LOG CREATE DATABASE 策略的问题展开。Melanie Plageman 发布了第三版补丁，解决了两条审查意见：Zhijie Hou 指出修改后的 TAP 测试会在 CREATE DATABASE 运行前将 pg_class 预加载到 shared_buffers，从而削弱原有的回归覆盖，v3 通过调整…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=EiZSp4CRWDK2hjd%2BtPGWmw%3D%3D.QCYIul3M%2B0KrNy6wyYNH4%2FtMzJEh5cK4T7J5%2Fi0owTtLq1nbK%2FoQBSCvPM19bIvfEP37ZunGPIx29aau%2BMh%2Byb6mPrzEMwO%2FhH7sKMjp5uBN%2BthzDVmJyqShREqpf2Gb5lJbAMFIOkl2gR4SzdWqz386U73VQfOLlbDLmRnDeAc3Fv3BvcUQmJaTzIFDOwVL" rel="nofollow" target="_blank">https://pgnexus.ai/hacker-discussions?subject=WAL_LOG%20CREAT...</a></p><h3>ISBN 范围表的设计与管理</h3><p>Jim Jones 在测试与 ISBN range table 相关的补丁时，发现了 <code>isn</code> 扩展中一个可能与该补丁无关的异常行为。将两个不同的 ISSN 值（<code>'12345679'</code> 和 <code>'9771234567898'</code>）转换为 <code>issn</code> 类型后，两者的显示结果完全相同，均为 <code>1234-5679</code>，但等值比较却返回 false。Jim 指出这…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=F85fY8GtO49pBstgmVcS1w%3D%3D.Dqi%2FlVkD1R6FSeEhSOgd2DSGcITGv12E4u%2Bhf2uuSlfCOqUeimqbhYvZE0bYSNP0X2QTxAKLi1oX0%2F06OgT9v3KCjcf6gJgTQfqGZMFqNoM%3D" rel="nofollow" target="_blank">https://pgnexus.ai/hacker-discussions?subject=ISBN%20range%20...</a></p><h2>行业新闻</h2><h3>Uber 承认遭黑客入侵，约 15 万名司机驾照信息被窃</h3><p>Uber 确认，黑客在一次数据泄露事件中窃取了约 15 万名司机的驾照信息。据悉，这些数据存储于 AI 云服务公司 Fireworks AI 的系统中。此次事件凸显了第三方 AI 基础设施供应商在处理敏感个人数据时存在的安全隐患。Uber 表示正积极应对，并将通知受影响司机。大规模个人身份信息外泄，不仅对 Uber 本身构成严重冲击，也引发了外界对 AI…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=6r%2FFODyxqYp%2FOS3rHdld1A%3D%3D.%2Fbcu5Nd0m79wQKAm8JJP1I64AV7Q7TktvMo75A6VLo9sSOKxreJyJCs%2BxYaQq6TgXUwM1ziIMBjOiayn5PnGaEb2uQ7ThVCuHdpsjU8uwwe4Uk8G5FW0X15diYaAjKfka9MML1vrLcu9%2FBjVFGOlBZ%2FYMt4REUKl190Ne0ZLQKvdXxZ%2FyClYeZ2N1dqwowTfNIGJo7VhB3mT6XzHRpOIQBB7SRfRWBB0m2si2SpDVj0%3D" rel="nofollow" target="_blank">https://pgnexus.ai/tech-news?url=https%3A%2F%2Ftechcrunch.com...</a></p><h3>Infoblox 确认遭黑客入侵，公司数据被泄露</h3><p>网络安全与自动化巨头 Infoblox 证实遭遇安全事件，黑客已访问其公司内部信息。该公司表示，目前正与外部调查机构合作，以评估泄露的完整范围。值得关注的是，Infoblox 本身是全球众多企业使用的 DNS、DHCP 及网络安全解决方案的主要供应商。一家网络安全厂商遭到入侵，意味着其客户的网络基础设施敏感数据可能面临风险，潜在的连锁影响不容忽视，调查工作…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=Mu1qtm23%2FXWzOBZLJnJRog%3D%3D.oSXVE3blDMXgWnaAaEnTTapG%2B%2FPmPKHsxlZr2dkxcNcVS7NpCxggIx9Sg6LxCKTiCyMMmhgpTLFMDu1HICcAnM0ucB1Jpsp3jpmnuQmEn1G78qEXe2iZYv%2FmLLaBhY7GXvkL3PKrNlIBNjOZLgPzSddo146XcYX%2FmCWJIzJ9kZWu03Yg4v6xAE6sNPziJ3cxJYRnN%2F%2BGz037IhNhEjfu%2FQdxXmuy0VoDV8wFZc133FM%3D" rel="nofollow" target="_blank">https://pgnexus.ai/tech-news?url=https%3A%2F%2Ftechcrunch.com...</a></p><h3>Freshworks 校友融资 5300 万美元创办 AI 原生 CRM 初创企业 Dreamteam</h3><p>由 Freshworks 前员工创立的初创公司 Dreamteam 完成了 5300 万美元融资，致力于打造一款 AI 原生 CRM 平台，直接挑战 Salesforce 和 HubSpot 等成熟巨头。该公司目前已在 13 个国家签约逾 100 家客户，其中不乏从现有 CRM 系统主动迁移的企业。此轮融资再次印证了市场对 AI 优先企业软件的持续热情。D…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=GJSzcALnkm6TBVN3exv%2Fpw%3D%3D.FypjL%2BglqDO4vKnE4h6HhQH6s9SDKP3T3BRyBaIRid2dUq8qyowqgnuiD%2FWB8C0OpDAdS%2BXOKhEfqGPW7W0WmKJXogqgMa0TZ%2FD3bGROgKw8cWvTie7%2F3kUvrKjyJs7FghGhEs0onUjRaTiAm866uyl4twMi9b1agHymnEYDNS%2BaJqQxSGU0hH2gP4volG%2BWRHPXtjPvuOzNuDgRBFt4ow%3D%3D" rel="nofollow" target="_blank">https://pgnexus.ai/tech-news?url=https%3A%2F%2Ftechcrunch.com...</a></p><h2>社交媒体动态</h2><h3>我们将基于 Genie Ontology 的 Genie 与两款前沿智能体在企业数据任务上进行了基准测试</h3><p>Databricks 与 Turing 合作，在真实的 Databricks 工作区中对 Genie（基于 Genie Ontology）与另外两款前沿智能体进行了企业数据任务基准测试。测试内容涵盖 notebook、仪表盘和已保存的 SQL 查询，每项任务各运行五次。结果显示，Genie 的通过率达到 91%，而另外两款智能体分别为 45% 和 58%，…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=utelYHJUEykpmFWpJ2jqPw%3D%3D.Citz%2B%2B1IptRobs%2BdjRdMhGHbyEzkIbDkh5l%2BgnQxPKBWmEPBHZPPnyTwamzsIrZC0Y6o1rTi2M%2FHhrafRjYdcGNftWJpNdv6kKt3gkNZAP51J16BKUA9zPmU0Xtm6R6otHJVI1K4SxZJ1R0U7BJ7va%2FtTGPCPAfH%2F3nxS0zf80apDU6rkhohZxORt%2FuEL%2BweQKqRAuKoeCabhziKU4EEw6hVg1bgysJ6xf0LVsqE%2FYQ%3D" rel="nofollow" target="_blank">https://pgnexus.ai/social-media?url=https%3A%2F%2Fwww.linkedi...</a></p><h3>CYBERTEC 本周亮相 DOAG2026</h3><p>CYBERTEC 将于 11 月 17 日至 19 日参加 DOAG 2026 展会，展位号为 326。首日，Pavlo Golub 将发表题为「轻松实现专业 Postgres 监控」的演讲，内容涵盖 PostgreSQL 监控的关键层级、不可忽视的核心指标、主流工具的不足之处，以及基于 TimescaleDB 构建的开源工具 pgwatch 如何在不增加…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=HrsfOJqr8YOeTvUky55LjQ%3D%3D.4y8aycZx29zRA0aAu0FG27B3y6dwa0pa8g9GlAghwqQj%2BQoYSD4AYQ0L3FLG2BR%2BmVC%2FMEb2JU676vxfC5xg%2FQwRFlal%2Fephwtmqq28KmBJuSs3JuWAhYhm1X23T1aS0T8iSA6FkvacnGRkKXOT0FBq0A5cReCvWvxnZl86UrOVRAekK8ZOxtuaVzkKF%2FmLT7uLy1b7qKkOs4C9SVGEEfw%3D%3D" rel="nofollow" target="_blank">https://pgnexus.ai/social-media?url=https%3A%2F%2Fwww.linkedi...</a></p><h3>AI 新模型几乎每周一发，如何选择成了难题</h3><p>AI 新模型几乎每周都在发布，如何挑选合适的模型对企业来说越来越困难。为此，Databricks 推出了 Databricks AI Index——一个公开资源，汇集了来自 Unity Gateway 上数千家企业的匿名使用数据，呈现企业实际在用哪些模型、AI 支出流向何处，以及各类编程智能体的性价比表现。该指数还包含一套基于 Databricks 内部代…</p><p>原文链接：</p><p><a href="https://link.segmentfault.com/?enc=qcDJYe5D6yy5%2FWwdRp3wPw%3D%3D.0jzLFmikHNp7IJEwZL9f35bo3r%2FvT1uwKz8Ec12jaYABRJIahdJ7CFd%2BH4BIR5lj0TWzIwvTmurujY20vHUG0N4ewfzqVNpeArPFOA%2FzQ3fi5%2BD211nJvMCp6RjSF4Z30k9SRs%2BJXSUwNTIjmOb9zC4k7tX55l3FjIXSKxsojijb55Lp7jTf91oth%2Bzu0iaP" rel="nofollow" target="_blank">https://pgnexus.ai/social-media?url=https%3A%2F%2Fwww.linkedi...</a></p>]]></description></item>  </channel></rss>
