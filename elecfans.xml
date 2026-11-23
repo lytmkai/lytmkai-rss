@@ -1,4 +1,89 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[南芯科技发布车规级TMR磁角度传感器SCS5130]]></title>    <link>https://www.elecfans.com/d/8963627.html</link>    <guid>https://www.elecfans.com/d/8963627.html</guid>    <pubDate>2026-11-23 17:52:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[实测踩坑半年，飞思卡尔K10工业级MCU设计干货全分享]]></title>    <link>https://www.elecfans.com/d/8963623.html</link>    <guid>https://www.elecfans.com/d/8963623.html</guid>    <pubDate>2026-11-23 17:50:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8963623" value="https://file1.elecfans.com/web2/M00/F3/90/wKgaomZ5-gmAa80iAB5nDzhbymQ023.pdf"/><h1>实测踩坑半年，飞思卡尔K10工业级<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>设计干货全分享</h1>
+<p>最近在做一款工业现场的低功耗<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>采集网关，前前后后和飞思卡尔K10系列（MK10DX256VLH7）打交道快半年， datasheet 翻了不下十遍，踩了一堆坑，今天整理点实打实的设计经验，给同用这款芯片的兄弟们避避坑。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8963623" target="_blank">MK10DX64VLH7.pdf</a></p>
+<hr/>
+<h2>一、选型为啥挑K10？我的实际需求匹配逻辑</h2>
+<p>当时选款的要求很明确：</p>
+<ol>
+<li>工业宽温：要扛-40~105℃的现场环境，消费级MCU直接pass</li>
+<li>低功耗：电池供电要撑2年以上，休眠功耗必须够低</li>
+<li>外设够用：要有<a href="https://www.hqchip.com/app/2004" target="_blank"><u>CAN</u></a><a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>接工业总线、16位<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>接小<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>传感器、足够的<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>接<a href="https://m.elecfans.com/v/tag/9979/" target="_blank"><u>4G</u></a>和传感器</li>
+<li>算力够：要跑数字滤波<a href="https://m.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>，最好带Cortex-M4的<a href="https://m.hqchip.com/app/1378" target="_blank"><u>DSP</u></a>指令</li>
+<li>好画板、好采购：64脚封装就行，供货稳定价格别太离谱</li>
+</ol>
+<p>对比下来K10刚好卡中所有需求点：72M主频Cortex-M4带DSP，宽温范围刚好符合，64LQFP封装引脚密度不高，两层板就能搞定，我们选的256K Flash/32K <a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>版本，批量价才二十多块，比同配置的<a href="https://www.elecfans.com/v/tag/751/" target="_blank"><u>STM32</u></a>F4还便宜点，供货也没出过幺蛾子。</p>
+<blockquote>
+<p>提一嘴型号命名规则，别买错：比如<code>MK10DX256VLH7</code></p>
+<ul>
+<li>M=量产级 / P=预产，别买P后缀的样品</li>
+<li>D=带DSP无FPU / F=带DSP+FPU，不需要FPU选D省5块钱</li>
+<li>X=带FlexMemory可模拟EEP<a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a> / N=只有普通Flash</li>
+<li>256=256K Flash，还有64/128K版本可选</li>
+<li>V=-40~105℃ / C=-40~85℃，工业场景必选V</li>
+<li>LH=64LQFP封装，7=最高72M主频</li>
+</ul>
+</blockquote>
+<hr/>
+<h2>二、核心参数里的暗坑，别光看标称最大值</h2>
+<p>很多人看datasheet只看参数范围，其实里面藏了不少需要自己算的坑：</p>
+<h3>1. 温度与散热余量计算</h3>
+<p>标称环境温-40~105℃，但结温上限是125℃，给大家算个实际账：
+满负载72M跑，全外设开，3.3V供电下典型<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>31mA，64LQFP单面板热阻59℃/W，满负载105℃环境下结温=105 + (0.031<em>3.3)</em>59 ≈ 111℃，还有14℃余量，只要不是密封外壳完全够用，要是用四层板热阻降到41℃/W，余量更大。</p>
+<blockquote>
+<p>踩坑提醒：要是把PGA、<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>C、<a href="https://www.elecfans.com/tags/dac/" target="_blank"><u>DAC</u></a>全打开跑，功耗会多5mA左右，散热要多留余量。</p>
+</blockquote>
+<h3>2. Flash擦写寿命的正确用法</h3>
+<p>普通Flash标称最小擦写次数1万次，要是直接存频繁更新的参数，几个月就挂。K10带的FlexMemory可以<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>EEPROM，只要把备份比设成512，最小写入寿命直接拉到127万次，用个十年都没问题，这个功能很多新手都忽略了，还要外挂EEPROM纯纯浪费BOM。</p>
+<h3>3. 供电的注意点</h3>
+<p>标称1.71~3.6V宽压，但是：</p>
+<ul>
+<li>要是用内部1.2V参考电压，供电低于2.4V时精度会下降，做<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>采集建议最低2.7V供电</li>
+<li>数字和模拟供电压差不能超过100mV，最好用磁珠隔离，别直接短接，不然ADC精度会飘</li>
+</ul>
+<hr/>
+<h2>三、外设实测体验：哪些是真香，哪些要避坑</h2>
+<h3>1. 模拟部分：小信号采集神器，但精度有前提</h3>
+<p>两个16位SAR ADC带最高64倍PGA，做mV级小信号采集真的香，但是<strong>只有差分引脚ADCx_DP0/DM0能达到16位精度，其他通道最多13位差分/12位单端</strong>，我一开始没注意，把<a href="https://www.elecfans.com/tags/压力传感器/" target="_blank"><u>压力传感器</u></a>接了普通通道，怎么调精度都上不去，翻了3遍datasheet才看到这句话，白白浪费了两周时间。
+其他模拟外设的实用点：</p>
+<ul>
+<li>12位DAC高功率模式下建立时间15μs，做4-20mA输出刚好，记得输出挂47pF负载<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>，不然纹波会很大</li>
+<li>3个片上<a href="https://www.hqchip.com/app/1737" target="_blank"><u>比较器</u></a>自带6位DAC，做过流、过压保护完全不用外挂电路，省了好几个器件</li>
+<li>内部电压参考温漂典型值3.7μV/℃，要求不高的场合不用外挂参考源</li>
+</ul>
+<h3>2. <a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>部分：足够用，但速率有上限</h3>
+<ul>
+<li>CAN接口是标准CAN2.0B，实测125kbps下-40℃跑72小时没丢包，工业场景完全够用，要注意CAN<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>最好用外部晶振，别用内部FLL，不然精度不够容易丢包</li>
+<li>SPI全电压范围下主模式最高12.5MHz，接SPI Flash没问题，但做从机的话全电压下最高只有6.25MHz，别超上限</li>
+<li>3路UART、2路<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>，大部分场景都够，I2C上拉<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>建议用4.7k，别用10k，高速模式下波形容易烂</li>
+</ul>
+<h3>3. 低功耗部分：真的能打，但要会调</h3>
+<p>这是我最满意的部分，实测下来：</p>
+<ul>
+<li>正常跑72M全外设开，3.3V下31mA</li>
+<li>VLPS极低压停止模式，25℃下典型值26.1μA，RTC常开的情况下平均功耗不到50μA，用两节AA电池定时1秒唤醒采一次数，能撑2年以上
+<blockquote>
+<p>踩坑提醒：进入低功耗前一定要把所有不用的外设时钟全部关掉，我一开始忘关ADC时钟，休眠功耗多了1mA，查了3天才找到问题。
+RTC备份域电流才0.67μA，挂个100mAh的纽扣电池，断电撑5年都没问题。</p>
+</blockquote></li>
+</ul>
+<hr/>
+<h2>四、引脚复用避坑指南</h2>
+<p>64脚版本大部分引脚都有3~4个复用功能，这几个坑别踩：</p>
+<ol>
+<li>默认JTAG引脚：PTA0~PTA4默认是JTAG功能，要是用SWD调试，一定要在代码里先重映射成普通IO，不然你怎么拉高拉低都没反应</li>
+<li>TSI触摸引脚：和ADC、I2C复用，要是不用触摸功能，这些引脚别悬空，最好接个100k上下拉，不然容易有干扰导致ADC采样飘</li>
+<li>复位引脚：别随便当普通IO用，上电的时候外部加个10k上拉+100nF去耦，不然容易误复位</li>
+<li>要是引脚不够用，JTAG的TDI、TDO、TRST都可以释放成普通IO，只用SWD的4个引脚就行，能省出3个IO</li>
+</ol>
+<hr/>
+<h2>最后给新手的几个建议</h2>
+<ol>
+<li>开发别自己手写<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>，直接用飞思卡尔官方的K<a href="https://m.hqchip.com/app/1522" target="_blank"><u>SD</u></a>K库，例程很全，省很多时间</li>
+<li>擦写Flash的时候一定要关全局中断，不然很容易跑飞</li>
+<li>建议打开内部低电压检测（LVD），阈值设为2.5V，电压低于阈值直接复位，比外部<a href="https://m.hqchip.com/app/1702" target="_blank"><u>电源监控</u></a>芯片还方便</li>
+<li>官方有个ADC精度校准工具，直接导入生成的参数就行，不用自己瞎调</li>
+</ol>
+<p>我最近整理了K10的最小系统板原理图、低功耗测试代码，还有常用外设的驱动例程，有需要的兄弟可以评论区留邮箱，我发你。
+你们用K10都踩过什么奇葩坑？评论区聊聊大家一起避坑~</p>]]></description></item><item>    <title><![CDATA[南芯科技发布车规级TMR磁角度传感器SCS5130]]></title>    <link>https://www.elecfans.com/d/8963627.html</link>    <guid>https://www.elecfans.com/d/8963627.html</guid>    <pubDate>2026-11-23 17:52:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
 	今日，南芯科技（证券代码：688484）发布磁角度<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a> SCS5130。该产品基于隧道磁阻 (TMR) 技术，凭借低功耗、双路冗余输出与全温区低角度误差等核心优势，为<a href="https://www.elecfans.com/v/tag/293/" target="_blank"><u>新能源</u></a>汽车、工业伺服等高可靠性场景，提供精准可靠的无接触角度测量方案。</p>
 <p style="text-indent:2em;">
 	TMR角度感知：低功耗，<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a></p>
@@ -3501,35 +3586,4 @@ MCG的PLL锁相环锁定时间最长150μs，初始化的时候一定要等MCG_S
 <p style="text-indent:2em;">
 	大会现场，千曙科技生态合作<a href="https://m.hqchip.com/tags" target="_blank"><u>中心</u></a>副总经理倪鹏分享重庆自动驾驶重卡H2H示范运营线路实践。</p>
 <p style="text-indent:2em;">
-	面向未来，千方科技将稳步推进AI技术在交通运输领域的规模化应用，持续沉淀可复制、可推广的落地经验，助力行业智能化转型。</p>]]></description></item><item>    <title><![CDATA[千方集团重卡充电站运营管理平台的核心功能]]></title>    <link>https://www.elecfans.com/d/8963449.html</link>    <guid>https://www.elecfans.com/d/8963449.html</guid>    <pubDate>2026-11-23 17:17:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	在<a href="https://m.elecfans.com/v/tag/293/" target="_blank"><u>新能源</u></a>重卡政策引导与货运电动化转型的双重驱动下，重卡充电站建设提速。千方集团重卡充电站运营管理平台面向充电站运营商，提供建桩配置、接桩纳管、日常运营、计费分润、结算开票全链路一站式SaaS服务，并依托内置<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>智能体助力场站运营提质增效。</p>
-<p style="text-indent:2em;">
-	行业痛点：运营效率与收益受限</p>
-<p style="text-indent:2em;">
-	当前重卡充电配套处于发展初期，场站运营面临多重挑战：一是重卡<a href="https://www.elecfans.com/tags/充电桩/" target="_blank"><u>充电桩</u></a>功率高、故障多发，人工运维压力大；二是多品牌桩接入数据割裂，且客户以车队为单位集中结算，人工对账难度大；三是物流运输受发车、装卸、待货时间约束，补能需求高度集中，易造成场站峰时排队、闲时资产闲置。行业缺少具备车队管理、重卡数据支撑、智能体调度能力的一体化平台，难以充分释放场站收益潜力。</p>
-<p style="text-indent:2em;">
-	千方集团长期服务商用车群体，深入物流实际业务，对车队组织管控、司机运营、动态补能调度、跨主体结算等业务场景具备深度理解，能为充电站运营商提供真正贴合重卡场景的管理工具。同时，依托集团旗下日活200万的货车司机综合服务APP以及长期沉淀的运营社群，平台可精准触达司机群体，为充电场站高效衔接补能需求奠定基础。</p>
-<p style="text-indent:2em;">
-	核心功能：全流程数字化管桩管账</p>
-<p style="text-indent:2em;">
-	千方集团重卡充电站运营管理平台可实现充电桩总体经营数据、实时设备状态、近30天运营趋势一屏统揽，服务覆盖充电前、充电中、充电后全运营流程。</p>
-<p style="text-indent:2em;">
-	充电前：客源拓展与价格策略</p>
-<p style="text-indent:2em;">
-	平台通过对接集团自有流量渠道和主流图商，为场站拓展稳定的订单来源。依托内置定价引擎，支持配置企业专属折扣与分时促销，自动适配尖、峰、平、谷、深谷五段分时电价，引导车队错峰补能，提升峰平时段桩位利用率。</p>
-<p style="text-indent:2em;">
-	充电中：设备管理与故障预警</p>
-<p style="text-indent:2em;">
-	平台可对多品牌充电桩实现统一管理，覆盖7kW至720kW全功率段。充电过程中实时展示设备状态、充电进度、充电时长等信息；同时依托电桩安全、车辆状态、交易异常三级自动告警机制，当温度、漏电、绝缘等指标出现异常时自动触发停充，降低人工值守压力。</p>
-<p style="text-indent:2em;">
-	充电后：自动结算与账务追溯</p>
-<p style="text-indent:2em;">
-	平台可按规则自动处理异常订单，确保进入结算订单信息准确。通过实现订单生成、支付清分、对账开票等环节线上流转，完成账单自动拆分与多方分润。同时支持多级组织架构物流企业资产统一管理，实现账务全程可追溯。</p>
-<p style="text-indent:2em;">
-	AI亮点：智能体驱动降本增效</p>
-<p style="text-indent:2em;">
-	平台搭载自研场站智能体，以自然语言交互简化场站日常运营，覆盖两大核心场景：数据查询方面，可跨场站汇总对比营收、充电量、单桩利用率、毛利、欠费等指标，为错峰优惠等经营决策提供支撑；站桩问诊方面，可自动定位故障桩位并生成问题清单，让运维从逐台排查升级为定向工单处置。</p>
-<p style="text-indent:2em;">
-	后续场站智能体将延伸至经营环节：基于充电时段、复购频次、运营线路等多维度数据构建用户画像，挖掘周边有稳定补能需求但尚未入驻的车队资源，实施客户分层运营，输出客户流失预警及智能定价策略，支撑场站存量客户维系与增量客源拓展。</p>
-<p style="text-indent:2em;">
-	目前，重卡充电站运营管理平台已服务多名场站运营商，依托自动化告警实现运营效率提升30%，依托差异化定价、低谷引流带动场站收益增长15%，异常订单处理减少约80%人工干预，推动充电站运营数字化、智能化发展。</p>]]></description></item>  </channel></rss>
+	面向未来，千方科技将稳步推进AI技术在交通运输领域的规模化应用，持续沉淀可复制、可推广的落地经验，助力行业智能化转型。</p>]]></description></item>  </channel></rss>
