@@ -1,4 +1,860 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子产品世界</title>      <link>https://m.eepw.com.cn/</link>      <description>电子产品世界</description>      <generator>python eepw.py @Pi20</generator>      <item>    <title><![CDATA[贸泽开售适用于边缘、AI和物联网应用的Nordic Semiconductor nRF54L15标签原型设计平台-电子产品世界]]></title>    <link>https://m.eepw.com.cn/article/202611/484838.html</link>    <guid>https://m.eepw.com.cn/article/202611/484838.html</guid>    <pubDate>2026-11-23 15:03:48.340374</pubDate>    <description><![CDATA[<h2>贸泽开售适用于边缘、AI和物联网应用的Nordic Semiconductor nRF54L15标签原型设计平台</h2>		
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子产品世界</title>      <link>https://m.eepw.com.cn/</link>      <description>电子产品世界</description>      <generator>python eepw.py @Pi20</generator>      <item>    <title><![CDATA[0.25ms扫描周期，米尔RK3588 四轴EtherCAT实时性全拆解-电子产品世界]]></title>    <link>http://m.eepw.com.cn/article/202611/484841.html</link>    <guid>http://m.eepw.com.cn/article/202611/484841.html</guid>    <pubDate>2026-11-23 16:03:47.344360</pubDate>    <description><![CDATA[<h2>0.25ms扫描周期，米尔RK3588 四轴EtherCAT实时性全拆解</h2>		
+		<div class="time_source news-info">
+		
+				<a href="/m/list/special/control" class="news-lb">工控自动化</a> 
+		 
+				<span> 时间：2026-11-23 15:10</span>
+				</div>
+				<div class="content" id="con1" style="overflow:hidden;">
+		<p>EtherCAT 用来在控制板与伺服驱动器之间交换指令和反馈。在米尔 MYD-YR3588（RK3588）上，四台汇川 SV630N 以 600 r/min 连续实转，扫描周期为 0.25 ms，每个周期更新一次控制指令。</p><p>在 0.25 ms 扫描周期下，四轴完成了 12 h 无额外系统压力与 2 h 系统高负载两场独立长测，均未观察到周期超时或跳周期。无额外系统压力组的线程周期抖动最大绝对值为 1.993 µs，高负载组为 5.493 µs；两组 DC 同步监测差值最大均为 127 ns。</p><p>单轮执行时间指 EtherCAT 线程从本轮循环开始，到发送函数 ecrt_master_send 返回后的计时点之间的耗时。它包含本轮接收、状态检查、控制计算、PDO 更新与提交发送等处理，不是相邻两轮的时间间隔，也不是报文在线路上传输的时间。</p><p>在全部有效周期中，无额外系统压力组的单轮执行时间最小为 11.374 µs、最大为 21.583 µs；高负载组最小为 11.958 µs、最大为 50.457 µs。这些是各组记录到的最小值和最大值，并不表示每轮耗时都相同。该计时不含周期之间的休眠、下一轮前的忙等，以及计时点之后的统计和日志工作，因此不能直接换算为整核利用率。</p><p><img width="658" height="280" src="https://editerupload.eepw.com.cn/fetch/202611/fe6ef4f858aab3d9a02d1ec1dfdc0cbc.png"/> </p><p>本文按「测试流程 → 实现原理 → 线程指标与测试结果 → 结论边界」展开。先看 EtherCAT 线程能否按扫描周期完成工作，再看 MAC 发帧节拍与 DC 同步。图 3 为原理示意，图 4–8 根据已核验的历史记录重新排版，不代表新增测试。</p><p>核心结果：在本次 0.25 ms 扫描周期的 CSV 实测中，两场长测的线程周期抖动绝对值 P99 均不超过 0.300 µs（按 0.1 µs 分档的上界），但最大值高于 P99。零超时、线程抖动、单轮执行时间、发帧时刻和 DC 同步，应分别评价。</p><h2>流程：一场长测是怎么跑起来的</h2><p>先把平台和链路摆清楚。测试对象是 MYD-YR3588 核心板加评估底板，八个 CPU 核、两路独立千兆 MAC，一路给 EtherCAT，一路留给业务网络。</p><p style="text-align: center;"><img width="514" height="277" src="https://editerupload.eepw.com.cn/fetch/202611/57402f924d9dc368497df457b094c209.png"/> </p><p style="text-align: center;">图 1　米尔 MYD-YR3588 产品图</p><p>本次已完成的数据来自 CSV（周期同步速度）模式：四台 SV630N 的目标速度均为 600 r/min，电机轴未连接机械负载。测试扫描周期为 1 ms、0.25 ms、0.125 ms（对应 1000 Hz、4000 Hz、8000 Hz）。下文优先使用扫描周期描述工况。线程周期抖动 = 相邻两次循环起点间隔 − 目标扫描周期；单轮执行时间则是本轮开始到发送调用返回所花的时间，两者含义不同。</p><p>八个计算核心中，CPU7 留给 EtherCAT 实时控制线程，其余 CPU0–6 承担普通任务或测试压力。普通 LAN 用于调试和业务通信，普通网络联网不是 EtherCAT 运行的前提；EtherCAT 专用链路仍须连接正常。</p><p style="text-align: center;"><img width="658" height="307" src="https://editerupload.eepw.com.cn/fetch/202611/e1c78416a109370d35d5c5cb9c1b0fa5.png"/> </p><p style="text-align: center;">图 2　四轴 EtherCAT 与普通网络共存。GMAC0 专用于四台 SV630N 串联通信，GMAC1 保留普通 LAN1–LAN5。</p><p>独立 GMAC0 专用网口接第一台驱动器的 EtherCAT IN，前一台 OUT 接下一台 IN，四台 SV630N 依次串联，末端 OUT 不再级联。动力线从驱动器接向对应电机，编码器反馈回本轴驱动器；普通 LAN1–LAN5 仍用于 SSH 登录与网络通信，两者在物理上完全分开。</p><p>优先检查 EtherCAT 线程的周期抖动和单轮执行时间，再用 MAC 与 DC 指标分析通信和时钟同步：</p><p style="text-align: center;">表 1. 线程、发帧与时钟同步的测量口径</p><table align="center"><tbody><tr style="break-inside: avoid" class="firstRow"><td width="132" style="padding: 7px; border-width: 1px; border-color: rgb(217, 217, 217); background: rgb(22, 56, 88);"><p><span style="color: rgb(255, 255, 255);">指标</span></p></td><td width="219" style="padding: 7px; border-width: 1px; border-color: rgb(217, 217, 217); background: rgb(22, 56, 88);"><p><span style="color: rgb(255, 255, 255);">测的是什么</span></p></td><td width="306" style="padding: 7px; border-width: 1px; border-color: rgb(217, 217, 217); background: rgb(22, 56, 88);"><p><span style="color: rgb(255, 255, 255);">能说明什么</span></p></td></tr><tr style="break-inside: avoid"><td width="132" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(255, 255, 255);"><p>EtherCAT 线程周期抖动</p></td><td width="219" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(255, 255, 255);"><p>相邻两轮循环起点间隔减去目标周期</p></td><td width="306" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(255, 255, 255);"><p>控制程序是否按节拍开工，反映调度与软件循环稳定性</p></td></tr><tr style="break-inside: avoid"><td width="132" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(240, 244, 248);"><p>线程单轮执行时间</p></td><td width="219" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(240, 244, 248);"><p>从循环开始到 ecrt_master_send 返回后的计时点</p></td><td width="306" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(240, 244, 248);"><p>检查单轮处理耗时范围；不含休眠、下一周期忙等和计时点后的统计/日志工作，也不代表完整 CPU 占用</p></td></tr><tr style="break-inside: avoid"><td width="132" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(255, 255, 255);"><p>发帧节拍偏差（MAC）</p></td><td width="219" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(255, 255, 255);"><p>相邻两帧硬件发送时间戳间隔减去目标周期</p></td><td width="306" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(255, 255, 255);"><p>指令是否真的按节拍发出，比"调用发送接口的时刻"更贴近网线</p></td></tr><tr style="break-inside: avoid"><td width="132" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(240, 244, 248);"><p>驱动器时钟差值（DC）</p></td><td width="219" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(240, 244, 248);"><p>读从站 0x092c 的同步误差估计，每秒 100 次</p></td><td width="306" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(240, 244, 248);"><p>各轴是否对上同一个时基；不等于轴间角度误差或机械同步精度</p></td></tr></tbody></table><p>采集与判读方法也固定下来：每轮循环记主机时间戳，每帧取 MAC 硬件发送时间戳，DC 每秒读 100 次；偏差按 0.1 µs一档统计，看 99% 分位与最大值，并把每分钟里最差的那一次单独画出来（图 6、图 8）。平均值会掩盖尖峰，只看平均等于什么都没说。</p><h2>原理：稳定节拍靠四件事</h2><p>① 内核可抢占。PREEMPT_RT 提高内核可抢占性，并将大量中断处理线程化，减少实时任务被长时间阻塞的机会。实际延迟仍要结合驱动、IRQ 分配和系统负载测量；本文没有通用内核的同条件对照，不能据此推算两种内核的差值。</p><p>② 实时核隔离。把 CPU7 从通用调度、中断、RCU 回调里摘出来，只跑控制循环，命令行参数如下：</p><p>内核命令行（CONFIG_CMDLINE 或 U-Boot 传入）</p><p>isolcpus=domain,managed_irq,7<br/>nohz_full=7<br/>rcu_nocbs=7<br/>irqaffinity=0-6</p><p>③ 定时发送（TBS）。程序提前把数据和目标发送时刻交给网卡，网卡根据硬件时钟安排发送，在提交余量足够时降低软件处理波动对发帧节拍的影响。TBS 不直接降低 CPU 唤醒延迟。忙等是在目标唤醒时刻前由 CPU 轮询等待，作用于线程起点，会额外占用 CPU；两种机制作用位置不同。</p><p style="text-align: center;"><img width="658" height="346" src="https://editerupload.eepw.com.cn/fetch/202611/101eac03681a6a3f6ca77fde45fb5b12.png"/> </p><p style="text-align: center;">图 3　原理示意，不是实测波形。定时发送需要提前准备；若数据已迟到，网卡也无法补回过去的发送时刻。</p><p>④ 分布式时钟（DC）。主站配置并校准从站 DC，从站依据同步后的本地时钟产生 SYNC0；本次长测 SYNC0 周期为 0.25 ms。监测从站 0x092c 寄存器得到的同步误差估计，最大为 127 ns。这不是编码器角度误差，也不是机械轴间同步精度。</p><p>一句话：软件少受干扰、硬件替软件守时、全链路共用一把尺子。</p><h2>效果：先看线程抖动与执行时间</h2><p>表 2. 各组测试条件（均为四轴 CSV 实转，机械空载）</p><table><tbody><tr style="break-inside: avoid" class="firstRow"><td width="129" style="padding: 7px; border-width: 1px; border-color: rgb(217, 217, 217); background: rgb(22, 56, 88);"><p><span style="color: rgb(255, 255, 255);">测试组</span></p></td><td width="204" style="padding: 7px; border-width: 1px; border-color: rgb(217, 217, 217); background: rgb(22, 56, 88);"><p><span style="color: rgb(255, 255, 255);">扫描周期 / 时长</span></p></td><td width="325" style="padding: 7px; border-width: 1px; border-color: rgb(217, 217, 217); background: rgb(22, 56, 88);"><p><span style="color: rgb(255, 255, 255);">系统压力与配置</span></p></td></tr><tr style="break-inside: avoid"><td width="129" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(255, 255, 255);"><p>TBS 对照</p></td><td width="204" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(255, 255, 255);"><p>1 / 0.25 / 0.125 ms；立即发送、TBS 各 30 s</p></td><td width="325" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(255, 255, 255);"><p>CPU0–6 高负载；相同版本程序与驱动</p></td></tr><tr style="break-inside: avoid"><td width="129" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(240, 244, 248);"><p>短时实转</p></td><td width="204" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(240, 244, 248);"><p>1 / 0.25 / 0.125 ms；各 300 s</p></td><td width="325" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(240, 244, 248);"><p>CPU0–6 高负载；TBS 开启</p></td></tr><tr style="break-inside: avoid"><td width="129" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(255, 255, 255);"><p>12 h 长测</p></td><td width="204" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(255, 255, 255);"><p>0.25 ms；43200 s</p></td><td width="325" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(255, 255, 255);"><p>无额外 stress-ng；TBS 开启；后台任务与日志正常运行</p></td></tr><tr style="break-inside: avoid"><td width="129" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(240, 244, 248);"><p>2 h 高负载长测</p></td><td width="204" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(240, 244, 248);"><p>0.25 ms；7200 s</p></td><td width="325" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(240, 244, 248);"><p>CPU0–6 高负载；TBS 开启；20 µs 尾部忙等；持续 ftrace 关闭</p></td></tr></tbody></table><p> 共用平台：MYD-YR3588，Linux 6.1 PREEMPT_RT + IgH；独立 GMAC0 连接四台 SV630N，CSV 目标速度 600 r/min，262144 counts/rev；EtherCAT 实时线程运行在 CPU7、SCHED_FIFO 优先级 99。普通网络只用于调试。两场长测配置不同，不能视为同条件 A/B 对照。</p><p>高负载组使用 stress-ng --cpu 8 --io 8 --vm 4 --vm-bytes 256M --vm-keep，限制在 CPU0–6。8 个 CPU 运算任务、8 个 I/O 同步任务和 4 个内存读写任务共同使用这些核心；任务数不等于核心数，也不代表 GPU/NPU 满载。</p><p><strong>线程核心指标：抖动、执行时间与 CPU7 负载</strong></p><p style="text-align: center;">表 3. 0.25 ms 扫描周期下的 EtherCAT 线程实测</p><table align="center"><tbody><tr style="break-inside: avoid" class="firstRow"><td width="132" style="padding: 7px; border-width: 1px; border-color: rgb(217, 217, 217); background: rgb(22, 56, 88);"><p><span style="color: rgb(255, 255, 255);">工况</span></p></td><td width="185" style="padding: 7px; border-width: 1px; border-color: rgb(217, 217, 217); background: rgb(22, 56, 88);"><p><span style="color: rgb(255, 255, 255);">周期抖动最小 / 最大</span></p></td><td width="208" style="padding: 7px; border-width: 1px; border-color: rgb(217, 217, 217); background: rgb(22, 56, 88);"><p><span style="color: rgb(255, 255, 255);">单轮执行时间最小 / 最大</span></p></td><td width="132" style="padding: 7px; border-width: 1px; border-color: rgb(217, 217, 217); background: rgb(22, 56, 88);"><p><span style="color: rgb(255, 255, 255);">CPU7 平均利用率</span></p></td></tr><tr style="break-inside: avoid"><td width="132" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(255, 255, 255);"><p>12 h 无额外压力</p></td><td width="185" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(255, 255, 255);"><p>-1.799 至 +1.993 µs</p></td><td width="208" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(255, 255, 255);"><p>11.374–21.583 µs</p></td><td width="132" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(255, 255, 255);"><p>25.398%</p></td></tr><tr style="break-inside: avoid"><td width="132" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(240, 244, 248);"><p>2 h 高负载</p></td><td width="185" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(240, 244, 248);"><p>-5.298 至 +5.493 µs</p></td><td width="208" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(240, 244, 248);"><p>11.958–50.457 µs</p></td><td width="132" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(240, 244, 248);"><p>34.105%</p></td></tr></tbody></table><p> 两组线程周期抖动绝对值的 P99 均 ≤0.300 µs；单轮执行时间均值分别为 12.772 µs、14.706 µs。CPU7 利用率来自系统遥测的整核平均值，包含实时线程、忙等及该核其他活动，不能用单轮执行时间除以扫描周期替代。12 h 组 CPU0–6 各核平均利用率为 0.810%–8.241%；2 h 组为 99.956%–100%。</p><p><strong>30 s对照：定时发送把偏差压到 1/47</strong></p><p>在相同版本的程序与驱动下，四轴实转，CPU0–6 各核平均利用率为 99.901%–100%。按 1 ms、0.25 ms、0.125 ms 三种扫描周期，分别对比立即发送与 TBS，每组采样 30 s。这里比较的是 MAC 发帧节拍，不能当成线程唤醒延迟。</p><p style="text-align: center;"><img width="658" height="329" src="https://editerupload.eepw.com.cn/fetch/202611/bc96d4baf575415febb271c4ea80c043.png"/> </p><p style="text-align: center;">图 4　扫描周期 1 ms、0.25 ms、0.125 ms 下，MAC 发帧间隔最大绝对偏差的对照，单位 µs，越小越好。全部来自四轴 CSV 实转，横轴范围一致。</p><p>扫描周期为 0.25 ms 时，立即发送的发帧间隔最大绝对偏差为 26.480 µs，TBS 为 0.560 µs，约为原来的 1/47。这是该组有限样本中的 MAC 节拍改善，不代表线程抖动同比下降。短时对照共记录 117 万个控制周期，与 300 s 测试分开统计。</p><p>四轴实转 300 s：三项指标一起看</p><p>按 1 ms、0.25 ms、0.125 ms 三种扫描周期各运行 300 s，累计记录 390 万个控制周期；以下保留通信与 DC 的辅助指标：</p><p style="text-align: center;">表 4. 各扫描周期实转 300 s 的最大绝对偏差</p><table align="center"><tbody><tr style="break-inside: avoid" class="firstRow"><td width="113" style="padding: 7px; border-width: 1px; border-color: rgb(217, 217, 217); background: rgb(22, 56, 88);"><p><span style="color: rgb(255, 255, 255);">扫描周期</span></p></td><td width="163" style="padding: 7px; border-width: 1px; border-color: rgb(217, 217, 217); background: rgb(22, 56, 88);"><p><span style="color: rgb(255, 255, 255);">线程周期抖动</span></p></td><td width="163" style="padding: 7px; border-width: 1px; border-color: rgb(217, 217, 217); background: rgb(22, 56, 88);"><p><span style="color: rgb(255, 255, 255);">MAC 间隔偏差</span></p></td><td width="106" style="padding: 7px; border-width: 1px; border-color: rgb(217, 217, 217); background: rgb(22, 56, 88);"><p><span style="color: rgb(255, 255, 255);">DC 时钟</span></p></td><td width="113" style="padding: 7px; border-width: 1px; border-color: rgb(217, 217, 217); background: rgb(22, 56, 88);"><p><span style="color: rgb(255, 255, 255);">周期数</span></p></td></tr><tr style="break-inside: avoid"><td width="113" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(255, 255, 255);"><p>1 ms</p></td><td width="163" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(255, 255, 255);"><p>3.889 µs</p></td><td width="163" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(255, 255, 255);"><p>1.000 µs</p></td><td width="106" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(255, 255, 255);"><p>127 ns</p></td><td width="113" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(255, 255, 255);"><p>30 万</p></td></tr><tr style="break-inside: avoid"><td width="113" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(240, 244, 248);"><p>0.25 ms</p></td><td width="163" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(240, 244, 248);"><p>3.743 µs</p></td><td width="163" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(240, 244, 248);"><p>0.680 µs</p></td><td width="106" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(240, 244, 248);"><p>127 ns</p></td><td width="113" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(240, 244, 248);"><p>120 万</p></td></tr><tr style="break-inside: avoid"><td width="113" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(255, 255, 255);"><p>0.125 ms</p></td><td width="163" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(255, 255, 255);"><p>7.170 µs</p></td><td width="163" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(255, 255, 255);"><p>1.320 µs</p></td><td width="106" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(255, 255, 255);"><p>103 ns</p></td><td width="113" style="padding: 7px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(217, 217, 217) rgb(217, 217, 217); background: rgb(255, 255, 255);"><p>240 万</p></td></tr></tbody></table><p> 这三组 300 s 测试中，未观察到周期超时、跳周期、WKC 或 OP 检查异常，阶段前后主站累计丢帧计数未增加。0.125 ms 扫描周期组的线程周期抖动最大绝对值为 7.170 µs；该结果说明选型时需要检查尾部偏差与处理余量，不能仅凭更短扫描周期判断效果。</p><p><strong>12 h空载：99% 与最大值</strong></p><p>四台 SV630N 在机械空载条件下，以 600 r/min、0.25 ms 扫描周期、CSV + TBS 连续实转 12 h。本阶段没有额外启动系统压力任务。线程周期与 MAC 时间戳各记录 1.728 亿条，按位置反馈累计行程，各轴约转过 43.2 万圈。CPU7 平均利用率为 25.398%。</p><p style="text-align: center;"><img width="564" height="446" src="https://editerupload.eepw.com.cn/fetch/202611/71e9183fba5eb86f996acf68a22f8ce5.png"/> </p><p style="text-align: center;">图 5　横轴是实际间隔与约定 250 µs的差距，取绝对值；越靠近 0，节拍越准。柱子越高，表示落在该范围的周期越多。上下两幅各统计 172799999 个相邻间隔，每档宽 0.1 µs。</p><p>按 0.1 µs一档统计，至少 99% 的程序周期偏差不超过 0.300 µs，至少 99% 的网卡发帧周期偏差不超过 0.500 µs；12 h记录中的最大偏差分别为 1.993 µs、2.120 µs。最大值是整段记录里最差的一次，出现概率极低，但做余量设计时必须按它来。</p><p style="text-align: center;"><img width="649" height="446" src="https://editerupload.eepw.com.cn/fetch/202611/e366483a94c2fafc11332e02f185e7d0.png"/> </p><p style="text-align: center;">图 6　按时间观察控制节拍。每个点取一分钟内偏差最大的一次，上图是控制程序，下图是网卡发帧；因此它展示每分钟的最差记录，而不是平均值，偶发较大的偏差也保留在图中。</p><p>运行期间未观察到控制周期超时、跳周期、数据交换异常或驱动器运行状态异常，每秒 100 次的四轴状态记录未发现失能异常；阶段前后主站累计丢帧计数未增加，SoC 最高记录温度 40.692 °C。DC 按每秒 100 次监测，共记录 432 万个样本，最大时钟差值 127 ns。</p><p><strong>2 h高负载：压力下的第二次长考</strong></p><p>2 h 组同时施加 CPU、内存和 I/O 压力，CPU0–6 各核平均利用率为 99.956%–100%，CPU7 平均为 34.105%。四轴仍为机械空载，CSV 目标速度 600 r/min，扫描周期 0.25 ms，TBS 开启。实际测量 7200.105 s，线程周期与 MAC 时间戳各记录 2880 万条；按 100 Hz 位置反馈积分，各轴约转过 7.2 万圈，平均速度为 599.968–600.123 r/min。</p><p style="text-align: center;"><img width="564" height="446" src="https://editerupload.eepw.com.cn/fetch/202611/8e5e92e58bdb0159e78feaaf0a3dca5a.png"/> </p><p style="text-align: center;">图 7　偏差分布的读法与图 5 相同。灰色虚线标出 99% 样本参考值，彩色点线标出最大值。上下两幅各统计 28799999 个相邻间隔，每档宽 0.1 µs；小图放大主要集中区域，完整范围及偶发大偏差均保留。</p><p>按 0.1 µs 一档统计，2 h 组的线程周期抖动绝对值 P99 ≤0.300 µs，MAC 间隔偏差绝对值 P99 ≤0.500 µs；最大绝对值分别为 5.493 µs、1.320 µs。两组的 P99 分档上界相同，线程抖动最大值不同；由于忙等与追踪配置也不同，不能将差异单独归因于压力或散热。</p><p style="text-align: center;"><img width="649" height="446" src="https://editerupload.eepw.com.cn/fetch/202611/b927e044261e1061d463fdb907523485.png"/> </p><p style="text-align: center;">图 8　每个点取一分钟内偏差最大的一次，共 120 个点。上图为程序周期，下图为网卡发帧周期；两图纵轴范围不同，读数请看各自刻度。这是每分钟的最差记录，不是平均值。</p><p>运行期间未观察到周期超时、跳周期、数据交换检查异常或驱动器运行状态异常；72 万条四轴稳态反馈记录均保持使能，未观察到失能或反馈清零，SoC 最高记录温度 52.692 °C。测试结束后四轴正常停止，13 项恢复检查全部通过；本阶段记录 72 万个 DC 监测样本，最大时钟差值 127 ns。</p><p>统计边界：两场长测分别完成，不能拼成一次连续 14 h 运行。“零超时”仅指记录中 deadline 和跳周期计数为 0。独立的严格发帧资格要求 |实际发帧误差| + 配时不确定度 ≤1000 ns；12 h 组有 64 次、2 h 组有 5 次超过该门限，因此两组均未通过这项严格资格。上界含不确定度，不能当作实际误差。</p><h2>总结：能说明什么，不能说明什么</h2><p>能说明：本平台在四轴机械空载、CSV 600 r/min、0.25 ms 扫描周期、TBS 开启时，完成了 12 h 无额外系统压力与 2 h 高负载两场独立长测，记录中均未出现周期超时或跳周期。线程周期抖动、执行时间和 CPU7 利用率见表 3；DC 同步监测差值最大为 127 ns。结果反映这些具体配置与样本，不能外推为所有工况的最坏情况保证。</p><p>边界：机械空载结果不等于机械运动精度；CPU/内存/I/O 压力不等于 GPU/NPU 满载；两组配置不同，不可拼接或直接归因；严格 1000 ns 发帧资格未通过。本文没有 12 h 高负载验收结果；LAN2–LAN5 未逐口验收，TBS 属实验版本，稳定镜像默认关闭。</p><p>落地检查：先确定工艺扫描周期与控制模式，再设置 PREEMPT_RT、CPU/IRQ 隔离和 EtherCAT 独立 MAC。验收同时查看线程周期抖动、执行时间最小/最大值、CPU7 利用率、deadline/跳周期/WKC/OP，以及 MAC/DC 指标；应用层另测位置跟随误差和轴间相位误差。P99 与平均值不能替代最大值，也不能替代独立的资格门限。</p>		<center>
+					</center>
+	<p class="keyp">关键词：
+				<a href="https://www.eepw.com.cn/tech/s/k/RK3588">RK3588</a>
+			<a href="https://www.eepw.com.cn/tech/s/k/RK3588%E5%BC%80%E5%8F%91%E6%9D%BF">RK3588开发板</a>
+			<a href="https://www.eepw.com.cn/tech/s/k/%E7%B1%B3%E5%B0%94RK3588">米尔RK3588</a>
+			<a href="https://www.eepw.com.cn/tech/s/k/EtherCAT">EtherCAT</a>
+		</p>
+
+<div class="content" style="margin-top:20px;">
+	<!--ad start-->
+	<div style="width: 100%;margin-bottom:1em;">
+	<!-- 广告位：M02 -->
+		<script type="text/javascript">&lt;!--//&lt;![CDATA[
+   var m3_u = (location.protocol=='https:'?'https://ad.eepw.com.cn/www/delivery/ajs.php':'http://ad.eepw.com.cn/www/delivery/ajs.php');
+   var m3_r = Math.floor(Math.random()*99999999999);
+   if (!document.MAX_used) document.MAX_used = ',';
+   document.write ("&lt;scr"+"ipt type='text/javascript' src='"+m3_u);
+   document.write ("?zoneid=123");
+   document.write ('&amp;amp;cb=' + m3_r);
+   if (document.MAX_used != ',') document.write ("&amp;amp;exclude=" + document.MAX_used);
+   document.write (document.charset ? '&amp;amp;charset='+document.charset : (document.characterSet ? '&amp;amp;charset='+document.characterSet : ''));
+   document.write ("&amp;amp;loc=" + escape(window.location));
+   if (document.referrer) document.write ("&amp;amp;referer=" + escape(document.referrer));
+   if (document.context) document.write ("&amp;context=" + escape(document.context));
+   if (document.mmm_fo) document.write ("&amp;amp;mmm_fo=1");
+   document.write ("'&gt;&lt;\/scr"+"ipt&gt;");
+//]]&gt;--&gt;</script><noscript><a href="http://ad.eepw.com.cn/www/delivery/ck.php?n=a3ee0761&amp;cb=INSERT_RANDOM_NUMBER_HERE" target="_blank"><img src="http://ad.eepw.com.cn/www/delivery/avw.php?zoneid=123&amp;cb=INSERT_RANDOM_NUMBER_HERE&amp;n=a3ee0761" border="0" alt=""/></a></noscript>
+	</div>
+	<!--ad end-->
+	
+<script>
+var $oBanana=$('#banana');
+$($oBanana).animate({'font-size':'24'},300);
+</script>	
+</div>	
+	
+	<!-- 相关文章-->	
+	<div style="text-align: left; padding-left:10px;max-width:960px;margin: 0 auto;font-size: 1.25em;">
+			<h3>相关文章</h3>							
+	</div>
+	<section class="clear">
+		<div id="new_conwrap">
+			<ul>
+						
+				&#13;
+&#13;
+&#13;
+<li class="news2 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484841.html">0.25ms扫描周期，米尔RK3588 四轴</a></div>					&#13;
+<div class="news-info">&#13;
+<a href="/m/list/special/control" class="news-lb">&#13;
+工控自动化</a>&#13;
+<span class="news-time">2026-11-23</span></div>																						&#13;
+					</div>	&#13;
+					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202611/484841.html">&#13;
+					<img src="https://editerupload.eepw.com.cn/fetch/202611/fe6ef4f858aab3d9a02d1ec1dfdc0cbc.png"/>&#13;
+					</a></div>	&#13;
+				</li>&#13;
+&#13;
+&#13;
+	&#13;
+&#13;
+&#13;
+<li class="news2 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484685.html">新品！兼容全球载板生态，米尔 SMARC 2</a></div>					&#13;
+<div class="news-info">&#13;
+<a href="/m/list/special/embedded" class="news-lb">&#13;
+嵌入式系统</a>&#13;
+<span class="news-time">2026-11-16</span></div>																						&#13;
+					</div>	&#13;
+					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202611/484685.html">&#13;
+					<img src="https://editerupload.eepw.com.cn/202611/1794797678957941.png"/>&#13;
+					</a></div>	&#13;
+				</li>&#13;
+&#13;
+&#13;
+	&#13;
+&#13;
+&#13;
+<li class="news2 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484476.html">Microchip 推出面向PolarFir</a></div>					&#13;
+<div class="news-info">&#13;
+<a href="/m/list/special/network" class="news-lb">&#13;
+网络与存储</a>&#13;
+<span class="news-time">2026-11-05</span></div>																						&#13;
+					</div>	&#13;
+					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202611/484476.html">&#13;
+					<img src="https://editerupload.eepw.com.cn/fetch/202611/6223d2e52722c43a6a5edd8d498bf5ab.png"/>&#13;
+					</a></div>	&#13;
+				</li>&#13;
+&#13;
+&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484423.html">Microchip推出面向PolarFire</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/embedded" class="news-lb">嵌入式系统</a>&#13;
+<span class="news-time">2026-11-03</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202610/484186.html">米尔新品！更适合工业开发的RK3588开发板</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/control" class="news-lb">工控自动化</a>&#13;
+<span class="news-time">2026-10-22</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+&#13;
+<li class="news2 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202610/484179.html">研华RK3588强固型AI视觉控制器</a></div>					&#13;
+<div class="news-info">&#13;
+<a href="/m/list/special/smart" class="news-lb">&#13;
+智能计算</a>&#13;
+<span class="news-time">2026-10-22</span></div>																						&#13;
+					</div>	&#13;
+					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202610/484179.html">&#13;
+					<img src="https://editerupload.eepw.com.cn/fetch/202610/bd2656bd2f6cb953f65e22ed0ff82c36.png"/>&#13;
+					</a></div>	&#13;
+				</li>&#13;
+&#13;
+&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202610/484065.html">立功科技基于恩智浦 i.MX RT118x打</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/control" class="news-lb">工控自动化</a>&#13;
+<span class="news-time">2026-10-16</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202606/482035.html">具身机器人量产前夜 研华RK3588 RTX</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/robot" class="news-lb">机器人</a>&#13;
+<span class="news-time">2026-06-24</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+								
+				
+				
+			</ul>												
+		</div>						
+	</section>
+		<div class="computer">
+	<a href="https://www.eepw.com.cn/article/202611/484841.htm" target="_blank">查看电脑版</a>
+	</div>
+	<!-- footer begin -->
+	<footer>		
+		<p class="fontArial">Copyright © 电子产品世界  京ICP备12027778号-2</p>
+	</footer>
+	<!-- footer end -->
+	<!--百度推送-->
+	<script>
+	(function(){
+	    var bp = document.createElement('script');
+	    bp.src = '//push.zhanzhang.baidu.com/push.js';
+	    var s = document.getElementsByTagName("script")[0];
+	    s.parentNode.insertBefore(bp, s);
+	})();
+	</script>
+	<!--百度推送-->
+	<div style="display:none;">
+	<script type="text/javascript">
+	var keywords = document.querySelector('meta[name="keywords"]').getAttribute('content');
+	document.write("&lt;script language='JavaScript' src='http://datasheet.eepw.com.cn/count/index?title="+document.title+"&amp;keyword="+keywords+"&amp;url="+location.href+"&amp;refer="+document.referrer+"'&gt;&lt;\/script&gt;");
+	</script>
+	
+	<script>
+    var _hmt = _hmt || [];
+    (function() {
+      var hm = document.createElement("script");
+      hm.src = "https://hm.baidu.com/hm.js?c6033714cc2a1e329fdce55d9ceb29bd";
+      var s = document.getElementsByTagName("script")[0]; 
+      s.parentNode.insertBefore(hm, s);
+    })();
+    </script>
+	
+</div>
+
+ 
+<script src="https://www.eepw.com.cn/event/ad/m_right_box.js"/>
+</div>]]></description></item><item>    <title><![CDATA[PD-Link：简化楼宇自动化中的供电与通信-电子产品世界]]></title>    <link>http://m.eepw.com.cn/article/202611/484842.html</link>    <guid>http://m.eepw.com.cn/article/202611/484842.html</guid>    <pubDate>2026-11-23 16:03:38.086589</pubDate>    <description><![CDATA[<h2>PD-Link：简化楼宇自动化中的供电与通信</h2>		
+		<div class="time_source news-info">
+		
+				<a href="/m/list/special/component" class="news-lb">元件/连接器</a> 
+		 
+				<span> 时间：2026-11-23 15:22</span>
+				</div>
+				<div class="content" id="con1" style="overflow:hidden;">
+		<h2>引言：迈向分布式楼宇智能</h2><p>楼宇自动化正在经历根本性转变。以往，智能功能集中部署在中央控制器内，中央控制器仅对接数量相对有限的现场器件。如今，智能端点广泛部署于商业楼宇、教育场馆、医院以及产业园区内。</p><p>智能终端包括室内空气质量(IAQ)传感器、人员检测传感器、智能温控器、变风量(VAV)控制器、照明控制节点、门禁读卡器、对讲系统、能耗监测器件等。随着楼宇智能化水平持续提高，系统架构师需要兼顾更低的安装成本、更高的能效、更多联网端点、更简便的维护操作，并兼顾未来扩展能力。</p><p>其中一大难点在于，供电功能与通信功能往往被划分为相互独立的架构层级。二者相互独立会增加布线复杂度，造成重复的设计工作，部署新端点的成本也随之上升。</p><h2>挑战：供电与通信架构相互割裂</h2><p>在传统的楼宇自动化系统中，边缘器件一般需要独立的通信线路、独立的供电线路、本地电源转换电路和连接器，同时会产生相应安装人力成本。端点数量较少时，这种方案尚且可行，但随着器件部署密度增加，成本与复杂度会快速上升。</p><p>• 供电线路与通信线路分开布设，会增加线缆与连接器的使用数量。</p><p>• 在多处重复配置本地电源转换电路，会增大电路板面积、增加散热设计工作量。</p><p>• 新增节点时，往往需要对基础设施进行改造。</p><p>• 供电系统与通信系统分开设计，故障排查难度更高。</p><p>上述难点在暖通空调(HVAC)系统中体现得尤为明显。VAV控制器、区域控制器和分布式传感器网络通常分散部署在楼宇各处，有时还需要安装在空间受限的吊顶内或既有建筑改造场景中。为此，行业亟需能够同时简化通信与供电的架构。许多商业楼宇已铺设大量二线制线路，这类线路最初用于传统控制与传感应用。楼宇开展现代化改造时，业主希望新增传感器、智能功能与连接能力，同时规避布设新线缆带来的高额成本与施工干扰。PD-Link可在单条线路上同时传输电力与数据，由此带来一条平滑的升级路径，复用既有的布线基础设施，同时满足现代楼宇自动化器件更高的带宽与供电需求。依托这项技术，用户能够以可扩展、高性价比的方式改造老旧系统，部署新一代楼宇技术。</p><h2>PD-Link简介</h2><p>PD-Link是面向分布式楼宇自动化节点的数据线供电技术。这项技术可通过单条物理链路，同时传输电力与数据，减少边缘侧对两套独立基础设施的需求。</p><p>• 依托多点链路实现电力与数据的合并传输</p><p>• 最高通信速率可达2.5Mbps</p><p>• 与协议无关，且不依赖特定软件</p><p>• 面向分布式节点架构进行了成本优化</p><p>• 适配低至中等带宽的楼宇自动化应用场景</p><p>PD-Link的价值并不局限于物理传输链路本身。PD-Link在节点接口处整合供电与通信能力，影响整个端点的设计方式，包括本地电源稳压电路、微控制器单元(MCU)选型、I/O资源划分以及系统级维护方案。</p><h2>PD-Link工作原理</h2><p>在控制器侧，电力与数据完成合并后，经由单条物理链路传输。在每个端点处，节点获取电力、维持数据通信、搭载本地MCU，并对接各类应用专属传感器、执行器或I/O模块。参见图1。</p><p style="text-align: center;"><img width="326" height="190" src="https://editerupload.eepw.com.cn/fetch/202611/95d33ea435c6d987398681745b1e6bf1.png"/> </p><p style="text-align: center;">图1：PD-Link原理示意图，展示了数据线供电耦合、ADM6100接口、输入转换、线路配套器件，用到了LT6100、MAX17571、LT8602/LT8603/LT8603A及MAX32670/MAX32672</p><p>在简化的系统架构中，楼宇控制器或边缘控制器通过PD-Link连接至各个分布式节点。所有节点均可完成传感、控制或执行动作，而且共用同一套供电与通信架构。</p><h2>HVAC/VAV控制器详细架构</h2><p>HVAC是PD-Link重要的应用领域之一，因为VAV控制器、区域级节点分散部署在建筑内部。这些节点需要和控制器通信、支持本地传感、驱动或对接执行器，并且必须在受限的机壳空间与严苛的温度条件下稳定运行。</p><p style="text-align: center;"><img width="325" height="190" src="https://editerupload.eepw.com.cn/fetch/202611/eec7d212f861879d4f858abd5ed0eab1.png"/> </p><p style="text-align: center;">图2：HVAC/VAV控制器详细架构以太网或10BASE-T1L负责控制器与骨干网之间的连接，PD-Link则将供电与通信链路延伸至分布式VAV节点。</p><p>这种架构（图2）将PD-Link部署在贴近现场器件的层级。以太网与10BASE-T1L依然是控制器、网关和回传链路的核心，而PD-Link用于简化边缘控制器与分布式HVAC节点之间的布线。整套方案采用分层设计，各类连接技术均部署在能够最大化系统价值的位置。</p><h2>VAV控制器电源架构与ADI产品配套机会</h2><p>虽然PD-Link归类为通信技术，但它改变了设计人员对节点供电架构的设计思路。单链路同时承载供电与通信，使节点供电更具可预测性和一致性，设计人员可借此在多款HVAC端点上统一配置保护电路、转换电路、稳压电路、MCU及接口电路。</p><p style="text-align: center;"><img width="324" height="205" src="https://editerupload.eepw.com.cn/fetch/202611/10f7398ef22474a828cdbdd97b010e98.png"/> </p><p style="text-align: center;">图3：VAV控制器PD-Link节点电源树示例</p><p>在这个电源树示例（图3）中，前端模块包含可选的电流检测电路、适配交流输入的可选整流电路、输入转换电路、PD-Link接口电路、线路耦合器件和本地稳压电路。借助这些模块，可围绕PD-Link架构配套接入电源、MCU及通信相关器件。子系统示例及ADI配套技术参见表1。</p><p style="text-align: center;">表1：楼宇节点子系统配套机会</p><table align="center"><tbody><tr style="height: 36px" class="firstRow"><td width="97" style="padding: 2px; border-width: medium 1px 1px medium; border-style: none solid solid none; border-color: currentcolor rgb(255, 255, 255) rgb(255, 255, 255) currentcolor; background: rgb(0, 111, 185);"><p><span style="color: rgb(255, 255, 255);">子系统</span></p></td><td width="133" style="padding: 2px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(255, 255, 255) rgb(255, 255, 255); background: rgb(0, 111, 185);"><p><span style="color: rgb(255, 255, 255);">ADI配套器件示例</span></p></td><td width="162" style="padding: 2px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(255, 255, 255) rgb(255, 255, 255); background: rgb(0, 111, 185);"><p><span style="color: rgb(255, 255, 255);">重要价值</span></p></td></tr><tr style="height: 49px"><td width="97" style="padding: 2px; border-width: medium 1px 1px medium; border-style: none solid solid none; border-color: currentcolor rgb(255, 255, 255) rgb(255, 255, 255) currentcolor; background: rgb(241, 242, 245);"><p>通信</p></td><td width="133" style="padding: 2px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(255, 255, 255) rgb(255, 255, 255); background: rgb(241, 242, 245);"><p>PD-Link接口、以太网、10BASE-T1L</p></td><td width="162" style="padding: 2px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(255, 255, 255) rgb(255, 255, 255); background: rgb(241, 242, 245);"><p>ADI产品覆盖骨干网、边缘侧及现场连接领域</p></td></tr><tr style="height: 76px"><td width="97" style="padding: 2px; border-width: medium 1px 1px medium; border-style: none solid solid none; border-color: currentcolor rgb(255, 255, 255) rgb(255, 255, 255) currentcolor; background: rgb(225, 227, 233);"><p>供电</p></td><td width="133" style="padding: 2px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(255, 255, 255) rgb(255, 255, 255); background: rgb(225, 227, 233);"><p>保护电路、直流-直流转换、负载点稳压、可选隔离</p></td><td width="162" style="padding: 2px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(255, 255, 255) rgb(255, 255, 255); background: rgb(225, 227, 233);"><p>将方案讨论从通信协议层面拓展至节点供电架构层面</p></td></tr><tr style="height: 63px"><td width="97" style="padding: 2px; border-width: medium 1px 1px medium; border-style: none solid solid none; border-color: currentcolor rgb(255, 255, 255) rgb(255, 255, 255) currentcolor; background: rgb(241, 242, 245);"><p>计算处理</p></td><td width="133" style="padding: 2px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(255, 255, 255) rgb(255, 255, 255); background: rgb(241, 242, 245);"><p>ADI MCU/MAX32系列控制模块与本地智能模块</p></td><td width="162" style="padding: 2px; border-width: medium 1px 1px; border-style: none solid solid; border-color: currentcolor rgb(255, 255, 255) rgb(255, 255, 255); background: rgb(241, 242, 245);"><p>在节点处实现控制、传感、诊断及软件对接</p></td></tr></tbody></table><h2>PD-Link在ADI楼宇自动化生态体系中的定位</h2><p>PD-Link定位为ADI通信技术的补充方案，而非以太网、10BASE-T1L或是传统现场总线的替代方案。要传达的核心要点是分层架构（图4）：以太网与10BASE-T1L承担骨干网与控制器层级通信；PD-Link服务于靠近边缘的器件；ADI电源与MCU产品补齐整套节点平台。</p><p style="text-align: center;"><img width="322" height="153" src="https://editerupload.eepw.com.cn/fetch/202611/5989e370ab60609d8c6de497f3c2650d.png"/> </p><p style="text-align: center;">图4：ADI楼宇自动化通信生态体系PD-Link满足边缘节点的供电与通信需求，作为以太网、10BASE-T1L及传统现场总线的补充。</p><p>从生态体系视角介绍方案有助于商业落地，使沟通重心从单一接口器件延伸至整套子系统。客户在评估PD-Link的同时，也需要确定电源转换、保护电路、本地稳压、MCU选型、软件集成接口、应用I/O等。</p><h2>应用示例</h2><p><strong>HVAC控制器</strong></p><p>VAV控制器与区域控制器分散部署在楼宇内部，且经常安装在空间狭小的位置。PD-Link能够降低布线复杂度，搭建可复制的节点架构，将通信、供电与控制功能整合到一起。</p><p><strong>传感器网络</strong></p><p>IAQ传感器、人员检测传感器、温度传感器、湿度传感器和气流传感器，均可受益于简化的规模化部署。标准化PD-Link节点可集成本地传感、基于MCU的计算处理和经过优化的稳压电路。</p><p><strong>门禁控制与对讲系统</strong></p><p>门禁控制器、读卡器、对讲主机均属于分布式端点，布线方案需要适应具体安装条件。PD-Link可以简化边缘侧通信线路，同时支持不同类型的器件复用同一套节点设计。</p><h2>赋能新一代楼宇节点</h2><p>楼宇自动化的发展趋势是接入更多互联设备、提升边缘智能能力、实现不间断传感，并采用更加灵活的部署模式。为此，配套的基础设施需要具备高性价比、可扩展、易安装、易维护的特点。</p><p>PD-Link将供电与通信整合为统一连接模式，为上述转型提供了技术基础。搭配ADI电源管理器件、MCU、以太网及10BASE-T1L方案后，PD-Link可构成新一代楼宇系统整体平台方案的重要一环。</p><h2>结语</h2><p>分布式智能的普及正在重塑楼宇自动化的设计思路。随着楼宇内部部署的传感器、控制器、联网端点持续增多，供电与通信相互分离的传统方案会不断推高成本与设计复杂度。</p><p>PD-Link依靠单条链路同时传输电力与数据，解决这一痛点，能够简化部署流程、减少线缆用量，搭建扩展性更强的节点架构。针对HVAC与VAV控制器场景，PD-Link也可作为合适的切入点，探讨优化型电源、MCU和通信子系统的选型。因此，PD-Link不只是一种通信连接技术，更可作为重要的平台支撑，助力打造具备成本优势的楼宇自动化节点。</p><h2>作者简介</h2><p>John Warder是ADI的产品应用首席工程师，拥有丰富的行业经验，覆盖楼宇自动化、安全、防务、航空航天领域，这些领域均需要关键任务系统。他协助客户将新一代网络技术集成至自有产品，推动客户产品线落地新技术。John拥有The Citadel的电气工程硕士学位。</p><p>Suravi Karmacharya是ADI的首席工程师/战略营销经理，专注于楼宇自动化、工业通信及智能边缘网络解决方案。她与客户及生态合作伙伴协作，推动单对以太网与新一代网络技术在智能楼宇中的落地。Suravi拥有南达科他州立大学的电气工程硕士学位。</p>		<center>
+					</center>
+	<p class="keyp">关键词：
+				<a href="https://www.eepw.com.cn/tech/s/k/ADI">ADI</a>
+			<a href="https://www.eepw.com.cn/tech/s/k/%E6%A5%BC%E5%AE%87%E8%87%AA%E5%8A%A8%E5%8C%96%E7%B3%BB%E7%BB%9F">楼宇自动化系统</a>
+			<a href="https://www.eepw.com.cn/tech/s/k/PD-Link">PD-Link</a>
+			<a href="https://www.eepw.com.cn/tech/s/k/%E9%80%9A%E4%BF%A1%E7%BA%BF%E8%B7%AF">通信线路</a>
+			<a href="https://www.eepw.com.cn/tech/s/k/%E4%BE%9B%E7%94%B5%E7%BA%BF%E8%B7%AF">供电线路</a>
+			<a href="https://www.eepw.com.cn/tech/s/k/%E6%95%B0%E6%8D%AE%E7%BA%BF%E4%BE%9B%E7%94%B5%E6%8A%80%E6%9C%AF">数据线供电技术</a>
+		</p>
+<!--阅读全文-->
+	<div class="login-read" style="display: block;" id="con2">
+		<div class="linear-block"/>
+	    <div class="read-all-btn-box">
+	    	<a href="https://passport.eepw.com.cn/auth/login?url=https://m.eepw.com.cn/article/202611/484842.html" target="_blank" class="read-all-btn">阅读全文</a>
+	    </div>
+	</div>
+<script type="text/javascript" src="//webstorage.eepw.com.cn/js/2014/m/check_login.js"/>  
+<!--阅读全文end-->
+</div>
+
+<div class="content" style="margin-top:20px;">
+	<!--ad start-->
+	<div style="width: 100%;margin-bottom:1em;">
+	<!-- 广告位：M02 -->
+		<script type="text/javascript">&lt;!--//&lt;![CDATA[
+   var m3_u = (location.protocol=='https:'?'https://ad.eepw.com.cn/www/delivery/ajs.php':'http://ad.eepw.com.cn/www/delivery/ajs.php');
+   var m3_r = Math.floor(Math.random()*99999999999);
+   if (!document.MAX_used) document.MAX_used = ',';
+   document.write ("&lt;scr"+"ipt type='text/javascript' src='"+m3_u);
+   document.write ("?zoneid=123");
+   document.write ('&amp;amp;cb=' + m3_r);
+   if (document.MAX_used != ',') document.write ("&amp;amp;exclude=" + document.MAX_used);
+   document.write (document.charset ? '&amp;amp;charset='+document.charset : (document.characterSet ? '&amp;amp;charset='+document.characterSet : ''));
+   document.write ("&amp;amp;loc=" + escape(window.location));
+   if (document.referrer) document.write ("&amp;amp;referer=" + escape(document.referrer));
+   if (document.context) document.write ("&amp;context=" + escape(document.context));
+   if (document.mmm_fo) document.write ("&amp;amp;mmm_fo=1");
+   document.write ("'&gt;&lt;\/scr"+"ipt&gt;");
+//]]&gt;--&gt;</script><noscript><a href="http://ad.eepw.com.cn/www/delivery/ck.php?n=a3ee0761&amp;cb=INSERT_RANDOM_NUMBER_HERE" target="_blank"><img src="http://ad.eepw.com.cn/www/delivery/avw.php?zoneid=123&amp;cb=INSERT_RANDOM_NUMBER_HERE&amp;n=a3ee0761" border="0" alt=""/></a></noscript>
+	</div>
+	<!--ad end-->
+	
+<script>
+var $oBanana=$('#banana');
+$($oBanana).animate({'font-size':'24'},300);
+</script>	
+</div>]]></description></item><item>    <title><![CDATA[XL-FLASH的演进：冲刺1亿 IOPS，拓展CXL内存层级-电子产品世界]]></title>    <link>http://m.eepw.com.cn/article/202611/484843.html</link>    <guid>http://m.eepw.com.cn/article/202611/484843.html</guid>    <pubDate>2026-11-23 16:03:32.867977</pubDate>    <description><![CDATA[<h2>XL-FLASH的演进：冲刺1亿 IOPS，拓展CXL内存层级</h2>		
+		<div class="time_source news-info">
+		
+				<a href="/m/list/special/network" class="news-lb">网络与存储</a> 
+		 
+				<span> 时间：2026-11-23 15:43</span>
+				</div>
+				<div class="content" id="con1" style="overflow:hidden;">
+		<p>XL-FLASH是铠侠基于BiCS FLASH 3D闪存技术打造的存储级内存（SCM）解决方案，定位于DRAM与传统NAND闪存之间，因此它既保留了NAND的非易失特性，在容量和每bit成本上相较DRAM更具优势，又通过面向低延迟、高并行访问的设计，提供比常规TLC闪存更高的性能，从而填补内存与存储之间的性能、容量和成本鸿沟。</p><p>特别当AI基础设施对数据访问速度和内存扩展能力提出更高要求，XL-FLASH的应用也从低延迟SSD进一步延伸至GPU直接访问和CXL内存模块，成为铠侠连接高性能存储与内存层级扩展的重要技术底座。</p><p>在FMS 2026期间，铠侠展示了XL-FLASH未来的演进计划，在支持高性能GPU负载的同时，也在持续探索闪存在系统内存扩容中的新价值，为高性能存储解决方案提供了更为广阔的想象力。</p><p><img width="554" height="315" src="https://editerupload.eepw.com.cn/fetch/202611/d13f72ea88f7a01bd4f0ff9b7ae857e1.png"/> </p><p> </p><h2>从千万级向亿级IOPS演进</h2><p>计算的范式已然发生了质变，以GPU和专用加速器为中心的数据密集型工作负载，其数据访问模式从“大块顺序”转向了“海量、细粒度、高度并行”的小随机访问。传统百万级IOPS的企业级SSD在这种模式下会直接导致昂贵的计算单元陷入空转状态，存储因此从被动的数据仓库，变成了决定系统整体效率的主动性能组件。</p><p>为此，铠侠推出了GP系列产品持续向超高IOPS演进，XL-FLASH在其中扮演着非常关键的角色，目标是解决闪存介质对低延迟和高并行访问的问题。XL-FLASH定位于DRAM与传统NAND闪存之间，在保留NAND非易失特性及容量、成本优势的同时，提供比常规TLC闪存更高的性能。对于针对GPU直接访问优化的GP系列而言，XL-FLASH因而不只是容量载体，更是缩短数据访问路径、支撑高并发小块读取的底层基础。</p><p>在今年，铠侠开始送样基于第二代XL-FLASH的GP1系列，结合PCIe 6.0接口，将512字节随机读取性能推进至1000万IOPS，并提供SLC和MLC两种版本，第二代XL-FLASH不仅延续SLC路线，也通过2-bit MLC提供更高容量和更具成本收益的选择。</p><p>而下一个阶段，铠侠的GP系列将引入第三代XL-FLASH，并将接口升级至PCIe 7.0，把512字节随机读取目标进一步抬升至1亿IOPS。这相当于十倍的目标增幅，但它并非单纯依靠闪存介质换代实现，而是XL-FLASH、接口和SSD架构协同演进的结果。</p><p>目前，铠侠已经通过软件和系统生态提前为这一代际跃迁做准备，通过模拟GP系列性能，配合NVIDIA SCADA测试GPU发起I/O，验证了亿级IOPS的可行性。</p><p><img width="554" height="311" src="https://editerupload.eepw.com.cn/fetch/202611/4000905f09cc1201fbc943ff3e123933.png"/> </p><h2>把XL-FLASH纳入内存层级</h2><p>AI工作负载正在同时放大内存容量与成本压力，而DRAM和传统SSD之间仍存在明显的性能、成本落差。DRAM适合承载高频访问数据，却不适合无节制扩张。传统的SSD虽然具备容量和成本优势，但访问延迟与使用方式又难以直接承担内存扩展任务。这时候，XL-FLASH与CXL的结合，正是为了在两者之间增加一个新的层级，而不是简单地用闪存取代DRAM。</p><p>这套方案在明显的冷热分化存储需求中最为有用。例如，当80%的访问集中在20%的数据上，其余数据只是偶尔被访问的时候，系统可以把热数据继续留在DRAM，低频访问数据转移到由XL-FLASH与CXL技术组成的XL1模块上，从而让XL-FLASH承担起更大容量的温冷数据层，进一步释放DRAM空间，并提高利用效率。</p><p><img width="554" height="311" src="https://editerupload.eepw.com.cn/fetch/202611/fa456122e8fa25e61a722818a21ba89b.png"/> </p><p>在这个过程中，XL-FLASH负责缩小闪存与DRAM之间的性能差距，CXL则负责将其纳入内存扩展体系，两者共同填补传统DRAM与SSD之间的空档。其价值不在于让这一层达到DRAM的绝对性能，而是在可接受的性能损失下，换取更大的内存容量和更优的成本结构。</p><p>把XL-FLASH接入CXL只是硬件基础，能否准确识别并调度冷热数据也同样重要。在FMS 2026期间，铠侠也专门介绍了Linux DAMON相关的增强内容，以加强系统对长延迟CXL访问热度的监测和管理。通过软硬件结合，达到更理想的效果。</p><h2>向未来存储进发</h2><p>可以看到，铠侠XL-FLASH已经展现出一条清晰的技术演进主线，在GP系列中，它通过第二、第三代产品的接续，配合PCIe 6.0向PCIe 7.0升级，推动SSD的512字节随机读取性能从1000万IOPS向1亿IOPS目标迈进。与此同时，高IOPS模拟器又提前承担起软件栈适配和系统研究的任务，让介质、接口、架构与生态共同为下一代GPU数据访问做好准备。</p><p>XL-FLASH与CXL内存扩展的结合，还展示了XL-FLASH超越传统存储介质的另一种可能性。通过承接低频访问数据、释放DRAM空间，在性能、容量和成本之间建立更合理的内存层级。</p><p><img width="554" height="312" src="https://editerupload.eepw.com.cn/fetch/202611/aa010a3ef9e5fbed24b84d744e135321.png"/> </p><p>从支撑GPU高并发读取，到参与系统内存扩容，铠侠所做的并非单纯追求某一项性能纪录，而是在持续拓展闪存的能力边界，让数据能够在更合适的层级中流动与存放。在AI基础设施不断追求更高效率与更大规模的今天，这种贯穿存储与内存体系的创新，也正是铠侠为 AI 发展提供高性能、可扩展且更具成本效益的数据底座的重要价值所在。</p>		<center>
+					</center>
+	<p class="keyp">关键词：
+				<a href="https://www.eepw.com.cn/tech/s/k/%E9%93%A0%E4%BE%A0">铠侠</a>
+			<a href="https://www.eepw.com.cn/tech/s/k/XL-FLASH">XL-FLASH</a>
+			<a href="https://www.eepw.com.cn/tech/s/k/DRAM">DRAM</a>
+			<a href="https://www.eepw.com.cn/tech/s/k/NAND">NAND</a>
+			<a href="https://www.eepw.com.cn/tech/s/k/BiCSFLASH3D%E9%97%AA%E5%AD%98">BiCSFLASH3D闪存</a>
+			<a href="https://www.eepw.com.cn/tech/s/k/GPU">GPU</a>
+			<a href="https://www.eepw.com.cn/tech/s/k/%E5%AD%98%E5%82%A8%E7%BA%A7%E5%86%85%E5%AD%98">存储级内存</a>
+		</p>
+
+<div class="content" style="margin-top:20px;">
+	<!--ad start-->
+	<div style="width: 100%;margin-bottom:1em;">
+	<!-- 广告位：M02 -->
+		<script type="text/javascript">&lt;!--//&lt;![CDATA[
+   var m3_u = (location.protocol=='https:'?'https://ad.eepw.com.cn/www/delivery/ajs.php':'http://ad.eepw.com.cn/www/delivery/ajs.php');
+   var m3_r = Math.floor(Math.random()*99999999999);
+   if (!document.MAX_used) document.MAX_used = ',';
+   document.write ("&lt;scr"+"ipt type='text/javascript' src='"+m3_u);
+   document.write ("?zoneid=123");
+   document.write ('&amp;amp;cb=' + m3_r);
+   if (document.MAX_used != ',') document.write ("&amp;amp;exclude=" + document.MAX_used);
+   document.write (document.charset ? '&amp;amp;charset='+document.charset : (document.characterSet ? '&amp;amp;charset='+document.characterSet : ''));
+   document.write ("&amp;amp;loc=" + escape(window.location));
+   if (document.referrer) document.write ("&amp;amp;referer=" + escape(document.referrer));
+   if (document.context) document.write ("&amp;context=" + escape(document.context));
+   if (document.mmm_fo) document.write ("&amp;amp;mmm_fo=1");
+   document.write ("'&gt;&lt;\/scr"+"ipt&gt;");
+//]]&gt;--&gt;</script><noscript><a href="http://ad.eepw.com.cn/www/delivery/ck.php?n=a3ee0761&amp;cb=INSERT_RANDOM_NUMBER_HERE" target="_blank"><img src="http://ad.eepw.com.cn/www/delivery/avw.php?zoneid=123&amp;cb=INSERT_RANDOM_NUMBER_HERE&amp;n=a3ee0761" border="0" alt=""/></a></noscript>
+	</div>
+	<!--ad end-->
+	
+<script>
+var $oBanana=$('#banana');
+$($oBanana).animate({'font-size':'24'},300);
+</script>	
+</div>	
+	
+	<!-- 相关文章-->	
+	<div style="text-align: left; padding-left:10px;max-width:960px;margin: 0 auto;font-size: 1.25em;">
+			<h3>相关文章</h3>							
+	</div>
+	<section class="clear">
+		<div id="new_conwrap">
+			<ul>
+						
+				&#13;
+&#13;
+&#13;
+<li class="news2 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484843.html">XL-FLASH的演进：冲刺1亿 IOPS，</a></div>					&#13;
+<div class="news-info">&#13;
+<a href="/m/list/special/network" class="news-lb">&#13;
+网络与存储</a>&#13;
+<span class="news-time">2026-11-23</span></div>																						&#13;
+					</div>	&#13;
+					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202611/484843.html">&#13;
+					<img src="https://editerupload.eepw.com.cn/fetch/202611/4000905f09cc1201fbc943ff3e123933.png"/>&#13;
+					</a></div>	&#13;
+				</li>&#13;
+&#13;
+&#13;
+	&#13;
+&#13;
+&#13;
+<li class="news2 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484775.html">JEDEC公布DDR6 DRAM内存规范预览</a></div>					&#13;
+<div class="news-info">&#13;
+<span class="news-time">2026-11-19</span></div>																						&#13;
+					</div>	&#13;
+					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202611/484775.html">&#13;
+					<img src="https://editerupload.eepw.com.cn/202611/ebc87ea645b4058afc02d9fc9aa3d53c.png"/>&#13;
+					</a></div>	&#13;
+				</li>&#13;
+&#13;
+&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484730.html">佩恩：当下正是重新思考 GPU 与数据中心算</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/smart" class="news-lb">智能计算</a>&#13;
+<span class="news-time">2026-11-18</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484623.html">台积电否认 3D DRAM 相关传闻：三大存</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/network" class="news-lb">网络与存储</a>&#13;
+<span class="news-time">2026-11-13</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+&#13;
+<li class="news2 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484603.html">双十一Token打五折，大模型市场为何“量价</a></div>					&#13;
+<div class="news-info">&#13;
+<span class="news-time">2026-11-12</span></div>																						&#13;
+					</div>	&#13;
+					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202611/484603.html">&#13;
+					<img src="https://editerupload.eepw.com.cn/202611/b769f22b4af6412f16cc20a7a09b653f.png"/>&#13;
+					</a></div>	&#13;
+				</li>&#13;
+&#13;
+&#13;
+	&#13;
+&#13;
+&#13;
+<li class="news2 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484559.html">存储巨头抢购EUV：先进DRAM的光刻路线切</a></div>					&#13;
+<div class="news-info">&#13;
+<span class="news-time">2026-11-10</span></div>																						&#13;
+					</div>	&#13;
+					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202611/484559.html">&#13;
+					<img src="https://editerupload.eepw.com.cn/202611/e9630e0c6d6960a626790668bbcb839f.png"/>&#13;
+					</a></div>	&#13;
+				</li>&#13;
+&#13;
+&#13;
+	&#13;
+&#13;
+&#13;
+<li class="news2 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484511.html">台积电回应进军DRAM市场传闻</a></div>					&#13;
+<div class="news-info">&#13;
+<span class="news-time">2026-11-08</span></div>																						&#13;
+					</div>	&#13;
+					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202611/484511.html">&#13;
+					<img src="https://editerupload.eepw.com.cn/202611/ae7f07f5917cc530fb229a3576461375.png"/>&#13;
+					</a></div>	&#13;
+				</li>&#13;
+&#13;
+&#13;
+	&#13;
+&#13;
+&#13;
+<li class="news2 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484461.html">芯原推出面向可穿戴设备的新一代GCNanoO</a></div>					&#13;
+<div class="news-info">&#13;
+<a href="/m/list/special/consume" class="news-lb">&#13;
+消费电子</a>&#13;
+<span class="news-time">2026-11-05</span></div>																						&#13;
+					</div>	&#13;
+					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202611/484461.html">&#13;
+					<img src="https://editerupload.eepw.com.cn/202611/1793860057781203.png"/>&#13;
+					</a></div>	&#13;
+				</li>&#13;
+&#13;
+&#13;
+	&#13;
+								
+				
+				
+			</ul>												
+		</div>						
+	</section>
+		<div class="computer">
+	<a href="https://www.eepw.com.cn/article/202611/484843.htm" target="_blank">查看电脑版</a>
+	</div>
+	<!-- footer begin -->
+	<footer>		
+		<p class="fontArial">Copyright © 电子产品世界  京ICP备12027778号-2</p>
+	</footer>
+	<!-- footer end -->
+	<!--百度推送-->
+	<script>
+	(function(){
+	    var bp = document.createElement('script');
+	    bp.src = '//push.zhanzhang.baidu.com/push.js';
+	    var s = document.getElementsByTagName("script")[0];
+	    s.parentNode.insertBefore(bp, s);
+	})();
+	</script>
+	<!--百度推送-->
+	<div style="display:none;">
+	<script type="text/javascript">
+	var keywords = document.querySelector('meta[name="keywords"]').getAttribute('content');
+	document.write("&lt;script language='JavaScript' src='http://datasheet.eepw.com.cn/count/index?title="+document.title+"&amp;keyword="+keywords+"&amp;url="+location.href+"&amp;refer="+document.referrer+"'&gt;&lt;\/script&gt;");
+	</script>
+	
+	<script>
+    var _hmt = _hmt || [];
+    (function() {
+      var hm = document.createElement("script");
+      hm.src = "https://hm.baidu.com/hm.js?c6033714cc2a1e329fdce55d9ceb29bd";
+      var s = document.getElementsByTagName("script")[0]; 
+      s.parentNode.insertBefore(hm, s);
+    })();
+    </script>
+	
+</div>
+
+ 
+<script src="https://www.eepw.com.cn/event/ad/m_right_box.js"/>
+</div>]]></description></item><item>    <title><![CDATA[为什么英特尔 EMIB 技术对微软 Azure 至关重要-电子产品世界]]></title>    <link>http://m.eepw.com.cn/article/202611/484844.html</link>    <guid>http://m.eepw.com.cn/article/202611/484844.html</guid>    <pubDate>2026-11-23 16:03:17.620575</pubDate>    <description><![CDATA[<h2>为什么英特尔 EMIB 技术对微软 Azure 至关重要</h2>		
+		<div class="time_source news-info">
+		
+				<a href="/m/list/special/eda" class="news-lb">EDA/PCB</a> 
+		 
+				<span> 时间：2026-11-23 15:52</span>
+				</div>
+				<div class="content" id="con1" style="overflow:hidden;">
+		<p>微软与英特尔正在拓展双方长达数十年的合作关系，这份多年合作协议中影响最为深远的部分，或许是微软未来 Azure 自研芯片的集成组装方式。微软是首家公开宣布计划采用英特尔代工厂嵌入式多裸片互连桥接技术（EMIB），为 Azure 云服务自研芯片的企业。该技术让微软可以更加灵活地在同一个封装内整合不同功能芯片裸片，针对自身云与 AI 业务的需求定制芯片设计。</p><p>EMIB 技术将一块小型桥接芯片嵌入芯片封装内部，用于连接多个独立裸片 —— 也就是实现不同功能的硅芯片单元。举个例子：一套设计中，一颗裸片负责算力运算，另一颗裸片负责对接系统其余部分。桥接芯片让二者可以在封装内部，通过短距离、高密度互连通道完成数据交互。这赋予工程师更高设计自由度：决定哪些功能集成在一起、哪些可以分开独立开发，以及裸片之间需要多大的带宽。</p><p>这种灵活性意义重大，因为不同云业务负载对硬件的需求千差万别。一项 AI 服务的大部分运行时间都消耗在内存与计算单元之间的数据搬运；另一类应用则需要处理大量高频请求，同时不能让响应时间恶化。当微软可以把芯片封装方案，和服务器、软件设计同步考量，就拥有更多手段应对各类业务约束。例如在未来设计里，如果带宽成为性能瓶颈，就可以分配更多硬件资源用于数据传输。开发者能够像设计芯片组件本身一样，精心规划组件之间的互连通路。</p><p>它还具备长期设计优势。把整套芯片拆分为多颗裸片之后，当业务需求发生改变，工程师可以迭代更新其中部分裸片，其余满足需求的裸片可以继续沿用。比如下一代产品可能需要调整算力与互连能力的配比。可以在封装层面完成这类调整，让 Azure 工程师能够更好应对不断演变的业务负载。本次合作将英特尔的先进封装技术能力引入研发流程，同时结合微软对大规模云服务运行特征的深度理解。</p><p>在自研芯片推进的同时，这份大范围合作协议还为微软提供多项优化 Azure 云平台的手段。协议保障英特尔至强（Xeon）处理器的多年供货产能，包含下一代 Diamond Rapids 系列产品。两家企业还将开展多项联合研发：借助Compute Express Link（CXL）实现更加灵活的服务器内存架构；依托英特尔QuickAssist（QAT）加速技术实现 SQL 数据库更快备份；支持机密虚拟机在主机之间迁移，迁移过程中内存与处理器状态全程加密。这些技术落地之后，客户将受益于更加灵活的虚拟机配置、更短的备份耗时，敏感业务负载的维护工作也会更加便捷。</p><p>重要意义</p><p>云客户将通过基于 EMIB 打造的 Azure 云服务，切身感受到这项技术带来的价值。如果先进封装能够让业务负载最常调用的组件之间拥有更快的数据通路，那么同等时间内可以完成更多计算任务；业务访问量上涨时，也能够获得更稳定的性能表现。无论是负责 AI 服务扩容的团队，还是需要保证成熟业务在业务高峰期响应流畅的团队，都将从中获益。</p><p>总结：对于英特尔晶圆代工厂而言，微软的官宣意味着 EMIB 正式进入一家头部云厂商自研芯片的技术路线图。对于微软来说，当业务负载触及现有硬件的性能天花板，EMIB 极大拓宽了它的设计选择空间。两家公司暂未公布具体哪些 Azure 业务会采用这套封装芯片，也没有披露客户可以获得多大性能提升。但依然有充分理由看好这次合作：微软清楚当前哪些云业务负载在现有系统上面临瓶颈，而英特尔提供了重构芯片内部硅单元互连集成的技术手段。双方协同设计，为 Azure 指明一条可行路径：随着客户需求持续演进，持续构建速度更快、效率更高的下一代云基础设施。</p>		<center>
+					</center>
+	<p class="keyp">关键词：
+				<a href="https://www.eepw.com.cn/tech/s/k/%E8%8B%B1%E7%89%B9%E5%B0%94">英特尔</a>
+			<a href="https://www.eepw.com.cn/tech/s/k/EMIB">EMIB</a>
+			<a href="https://www.eepw.com.cn/tech/s/k/%E5%BE%AE%E8%BD%AF">微软</a>
+			<a href="https://www.eepw.com.cn/tech/s/k/Azure">Azure</a>
+		</p>
+
+<div class="content" style="margin-top:20px;">
+	<!--ad start-->
+	<div style="width: 100%;margin-bottom:1em;">
+	<!-- 广告位：M02 -->
+		<script type="text/javascript">&lt;!--//&lt;![CDATA[
+   var m3_u = (location.protocol=='https:'?'https://ad.eepw.com.cn/www/delivery/ajs.php':'http://ad.eepw.com.cn/www/delivery/ajs.php');
+   var m3_r = Math.floor(Math.random()*99999999999);
+   if (!document.MAX_used) document.MAX_used = ',';
+   document.write ("&lt;scr"+"ipt type='text/javascript' src='"+m3_u);
+   document.write ("?zoneid=123");
+   document.write ('&amp;amp;cb=' + m3_r);
+   if (document.MAX_used != ',') document.write ("&amp;amp;exclude=" + document.MAX_used);
+   document.write (document.charset ? '&amp;amp;charset='+document.charset : (document.characterSet ? '&amp;amp;charset='+document.characterSet : ''));
+   document.write ("&amp;amp;loc=" + escape(window.location));
+   if (document.referrer) document.write ("&amp;amp;referer=" + escape(document.referrer));
+   if (document.context) document.write ("&amp;context=" + escape(document.context));
+   if (document.mmm_fo) document.write ("&amp;amp;mmm_fo=1");
+   document.write ("'&gt;&lt;\/scr"+"ipt&gt;");
+//]]&gt;--&gt;</script><noscript><a href="http://ad.eepw.com.cn/www/delivery/ck.php?n=a3ee0761&amp;cb=INSERT_RANDOM_NUMBER_HERE" target="_blank"><img src="http://ad.eepw.com.cn/www/delivery/avw.php?zoneid=123&amp;cb=INSERT_RANDOM_NUMBER_HERE&amp;n=a3ee0761" border="0" alt=""/></a></noscript>
+	</div>
+	<!--ad end-->
+	
+<script>
+var $oBanana=$('#banana');
+$($oBanana).animate({'font-size':'24'},300);
+</script>	
+</div>	
+	
+	<!-- 相关文章-->	
+	<div style="text-align: left; padding-left:10px;max-width:960px;margin: 0 auto;font-size: 1.25em;">
+			<h3>相关文章</h3>							
+	</div>
+	<section class="clear">
+		<div id="new_conwrap">
+			<ul>
+						
+				&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484844.html">为什么英特尔 EMIB 技术对微软 Azur</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/eda" class="news-lb">EDA/PCB</a>&#13;
+<span class="news-time">2026-11-23</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484773.html">全球半导体公司TOP20最新排名</a></div>					&#13;
+<div class="news-info">&#13;
+<span class="news-time">2026-11-19</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484763.html">Microsoft Azure Cobalt</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/embedded" class="news-lb">嵌入式系统</a>&#13;
+<span class="news-time">2026-11-19</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+&#13;
+<li class="news2 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484742.html">贸泽赞助的2026年“创造未来”设计大赛决赛</a></div>					&#13;
+<div class="news-info">&#13;
+<a href="/m/list/special/embedded" class="news-lb">&#13;
+嵌入式系统</a>&#13;
+<span class="news-time">2026-11-18</span></div>																						&#13;
+					</div>	&#13;
+					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202611/484742.html">&#13;
+					<img src="https://editerupload.eepw.com.cn/202611/1794983357116361.jpg"/>&#13;
+					</a></div>	&#13;
+				</li>&#13;
+&#13;
+&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484735.html">传英特尔Razor Lake推出纯 12 性</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/embedded" class="news-lb">嵌入式系统</a>&#13;
+<span class="news-time">2026-11-18</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484719.html">英特尔携手RadixArk深度优化SGLan</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/smart" class="news-lb">智能计算</a>&#13;
+<span class="news-time">2026-11-17</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484711.html">Linux 7.5 内核将移除 MMX 优化</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/embedded" class="news-lb">嵌入式系统</a>&#13;
+<span class="news-time">2026-11-17</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484710.html">Terafab迎来首位核心高管：拥有18A工</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/eda" class="news-lb">EDA/PCB</a>&#13;
+<span class="news-time">2026-11-17</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+								
+				
+				
+			</ul>												
+		</div>						
+	</section>
+		<div class="computer">
+	<a href="https://www.eepw.com.cn/article/202611/484844.htm" target="_blank">查看电脑版</a>
+	</div>
+	<!-- footer begin -->
+	<footer>		
+		<p class="fontArial">Copyright © 电子产品世界  京ICP备12027778号-2</p>
+	</footer>
+	<!-- footer end -->
+	<!--百度推送-->
+	<script>
+	(function(){
+	    var bp = document.createElement('script');
+	    bp.src = '//push.zhanzhang.baidu.com/push.js';
+	    var s = document.getElementsByTagName("script")[0];
+	    s.parentNode.insertBefore(bp, s);
+	})();
+	</script>
+	<!--百度推送-->
+	<div style="display:none;">
+	<script type="text/javascript">
+	var keywords = document.querySelector('meta[name="keywords"]').getAttribute('content');
+	document.write("&lt;script language='JavaScript' src='http://datasheet.eepw.com.cn/count/index?title="+document.title+"&amp;keyword="+keywords+"&amp;url="+location.href+"&amp;refer="+document.referrer+"'&gt;&lt;\/script&gt;");
+	</script>
+	
+	<script>
+    var _hmt = _hmt || [];
+    (function() {
+      var hm = document.createElement("script");
+      hm.src = "https://hm.baidu.com/hm.js?c6033714cc2a1e329fdce55d9ceb29bd";
+      var s = document.getElementsByTagName("script")[0]; 
+      s.parentNode.insertBefore(hm, s);
+    })();
+    </script>
+	
+</div>
+
+ 
+<script src="https://www.eepw.com.cn/event/ad/m_right_box.js"/>
+</div>]]></description></item><item>    <title><![CDATA[台积电供应商大奖聚焦制造落地执行-电子产品世界]]></title>    <link>http://m.eepw.com.cn/article/202611/484845.html</link>    <guid>http://m.eepw.com.cn/article/202611/484845.html</guid>    <pubDate>2026-11-23 16:03:03.409762</pubDate>    <description><![CDATA[<h2>台积电供应商大奖聚焦制造落地执行</h2>		
+		<div class="time_source news-info">
+		
+				<a href="/m/list/special/eda" class="news-lb">EDA/PCB</a> 
+		 
+				<span> 时间：2026-11-23 15:54</span>
+				</div>
+				<div class="content" id="con1" style="overflow:hidden;">
+		<p>台积电董事长暨总裁魏哲家博士表示：“在宏观经济充满不确定性的环境下，台积电之所以敢于持续投资、追求增长，源于我们与供应链伙伴之间深厚的互信。我们的目标始终是释放客户的创新活力，助力客户取得成功。唯有整个产业联盟紧密、高效协同，我们才能克服重重挑战，把技术突破转化为推动行业向前发展的强大动力。”</p><p>半导体技术突破，人们通常会用更小的晶体管、速度更快的处理器、更先进的封装技术来衡量。但想要真正落地这些技术进步，离不开由设备厂商、材料专家、工程建设承包商以及生产配套企业共同组成的庞大产业网络。台积电供应商大奖给行业带来重要启示：制造领域的领先地位，取决于这套产业网络的整体运转效率。</p><p>在 2025 年供应链管理论坛上，台积电对一批供应商予以表彰，这些供应商助力台积电先进工艺研发、封装业务、产能扩张以及海外制造布局。同时台积电进一步提高对工程施工安全、可持续发展、本土化配套的重视程度。随着半导体制造的门槛持续抬升，这些优先方向共同反映出：优秀供应商的评判标准正在不断拓宽。</p><p>一切的根基在于<strong>落地执行</strong>。一份制造路线图，只有对应的工艺可以在大规模量产条件下稳定运行，才具备商业价值。设备需要按期到货、满足规格指标并保持持续产出；材料性能必须稳定一致；厂房设施要满足精密制造工艺所需的工作条件。以上任意一个环节出现短板，都会拖累整体项目进度。</p><p>因此，这份供应商表彰所看重的能力，很少出现在芯片性能宣传稿里，却直接决定交付周期、制造成本与客户信心。即便没有实现晶体管密度这类夺目的技术提升，更可靠的设备安装调试、更快的技术响应、性能管控更优异的材料，同样能够提升生产表现。</p><p>先进封装让这种产业相互依存关系变得尤为突出。将多个元器件集成到最终芯片产品，会带来更多制造交互环节与协同要求。现实意义在于：单纯扩大晶圆生产规模，并不能保证成品产出同步增长。封装设备、封装材料、检测手段以及配套作业，都必须和晶圆前端工艺同步迭代发展。</p><p>台积电 2024 年度供应商奖项，就已经专门表彰先进封装配套、技术协同、自动化、全球生产保障相关的供应商。奖项覆盖范围充分说明：供应商生态本身就是制造平台不可分割的一部分。整套体系能否高效运转，取决于各家独立企业之间跨领域协同能力。</p><p>海外建厂扩张带来另一重挑战。复刻制造能力，不只是复制厂房建筑、安装同款设备。还要求供应商具备配套服务覆盖能力、训练有素的技术人员、完善物流方案，并且熟悉当地的运营法规要求。本土化配套可以提升响应速度，但搭建一套能力完备的本地供应链，需要持续投入与严格资质认证。</p><p>对客户而言，这里有很现实的区别：<strong>对外公布的规划产能，和稳定可靠的实际产出，是完全不同的里程碑</strong>。供应商决定一座新建工厂多久可以实现稳定量产；供应商的准备程度，直接关系到全球化布局能否给到客户预期的供应链抗风险能力。</p><p>工程建设安全同样不可忽视。台积电 2025 年明确将承包商安全记录纳入评选标准，并增设独立的工程安全管理专项奖项。这释放一个信号：项目成功，不光要看产能何时投产，同样要看产能是以怎样的安全方式建设完成。</p><p>更深一层来看，安全应当纳入整体运营规划。落后的施工方式会引发安全事故、造成工程中断，还会削弱外界对项目执行的信心。表彰优秀的安全管理，能够激励承包商建立标准化可复用作业流程，而不是只盯着工程完工节点。</p><p>可持续发展同样会对实际生产运营产生影响。提升设备能效、降低资源消耗，可以缓解产能扩张带来的各类资源压力。对于供应商来说，这也带来新机遇：除了基础加工性能，还可以凭借产品全生命周期内的运行表现，形成差异化竞争力。</p><p><strong>总结：</strong>这场论坛展现了台积电眼中，保障制造成功所需要的各项核心能力。技术研发依旧必不可少，但可靠的供应链配套、安全生产建设、资源利用效率、各地区本地化配套能力，正越来越深刻地影响项目落地执行效果。</p><p>所以这份奖项的意义，远不止获奖企业本身。它揭示半导体行业的竞争力建立在整套协同的工业能力之上：既要能够研发技术，也要能够建设产能，并且实现稳定持续生产。正是这些供应商提供支撑，宏大的技术路线图，才能够转化为客户可以实际采购到手的芯片产品。</p><p><br/></p>		<center>
+					</center>
+	<p class="keyp">关键词：
+				<a href="https://www.eepw.com.cn/tech/s/k/%E5%8F%B0%E7%A7%AF%E7%94%B5">台积电</a>
+			<a href="https://www.eepw.com.cn/tech/s/k/%E5%88%B6%E9%80%A0%E8%90%BD%E5%9C%B0%E6%89%A7%E8%A1%8C">制造落地执行</a>
+		</p>
+
+<div class="content" style="margin-top:20px;">
+	<!--ad start-->
+	<div style="width: 100%;margin-bottom:1em;">
+	<!-- 广告位：M02 -->
+		<script type="text/javascript">&lt;!--//&lt;![CDATA[
+   var m3_u = (location.protocol=='https:'?'https://ad.eepw.com.cn/www/delivery/ajs.php':'http://ad.eepw.com.cn/www/delivery/ajs.php');
+   var m3_r = Math.floor(Math.random()*99999999999);
+   if (!document.MAX_used) document.MAX_used = ',';
+   document.write ("&lt;scr"+"ipt type='text/javascript' src='"+m3_u);
+   document.write ("?zoneid=123");
+   document.write ('&amp;amp;cb=' + m3_r);
+   if (document.MAX_used != ',') document.write ("&amp;amp;exclude=" + document.MAX_used);
+   document.write (document.charset ? '&amp;amp;charset='+document.charset : (document.characterSet ? '&amp;amp;charset='+document.characterSet : ''));
+   document.write ("&amp;amp;loc=" + escape(window.location));
+   if (document.referrer) document.write ("&amp;amp;referer=" + escape(document.referrer));
+   if (document.context) document.write ("&amp;context=" + escape(document.context));
+   if (document.mmm_fo) document.write ("&amp;amp;mmm_fo=1");
+   document.write ("'&gt;&lt;\/scr"+"ipt&gt;");
+//]]&gt;--&gt;</script><noscript><a href="http://ad.eepw.com.cn/www/delivery/ck.php?n=a3ee0761&amp;cb=INSERT_RANDOM_NUMBER_HERE" target="_blank"><img src="http://ad.eepw.com.cn/www/delivery/avw.php?zoneid=123&amp;cb=INSERT_RANDOM_NUMBER_HERE&amp;n=a3ee0761" border="0" alt=""/></a></noscript>
+	</div>
+	<!--ad end-->
+	
+<script>
+var $oBanana=$('#banana');
+$($oBanana).animate({'font-size':'24'},300);
+</script>	
+</div>	
+	
+	<!-- 相关文章-->	
+	<div style="text-align: left; padding-left:10px;max-width:960px;margin: 0 auto;font-size: 1.25em;">
+			<h3>相关文章</h3>							
+	</div>
+	<section class="clear">
+		<div id="new_conwrap">
+			<ul>
+						
+				&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484845.html">台积电供应商大奖聚焦制造落地执行</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/eda" class="news-lb">EDA/PCB</a>&#13;
+<span class="news-time">2026-11-23</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484837.html">BIS新规上路 台积电回应暂停大陆16纳米订</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/eda" class="news-lb">EDA/PCB</a>&#13;
+<span class="news-time">2026-11-23</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484762.html">黄仁勋时代结束... 台积电张晓强表态为英伟</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/eda" class="news-lb">EDA/PCB</a>&#13;
+<span class="news-time">2026-11-19</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484736.html">无黄仁勋英伟达首份财报：存储、封装产能已敲定</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/smart" class="news-lb">智能计算</a>&#13;
+<span class="news-time">2026-11-18</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484703.html">台积电将设立风险投资部门</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/eda" class="news-lb">EDA/PCB</a>&#13;
+<span class="news-time">2026-11-17</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484626.html">侯永清：台积电先进封装 采购比重逾两成</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/eda" class="news-lb">EDA/PCB</a>&#13;
+<span class="news-time">2026-11-13</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484625.html">台积电员工信息遭兜售？ 公司：无证据显示系统</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/eda" class="news-lb">EDA/PCB</a>&#13;
+<span class="news-time">2026-11-13</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484624.html">台积电拟向Anthropic、OpenAI合</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/smart" class="news-lb">智能计算</a>&#13;
+<span class="news-time">2026-11-13</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+								
+				
+				
+			</ul>												
+		</div>						
+	</section>
+		<div class="computer">
+	<a href="https://www.eepw.com.cn/article/202611/484845.htm" target="_blank">查看电脑版</a>
+	</div>
+	<!-- footer begin -->
+	<footer>		
+		<p class="fontArial">Copyright © 电子产品世界  京ICP备12027778号-2</p>
+	</footer>
+	<!-- footer end -->
+	<!--百度推送-->
+	<script>
+	(function(){
+	    var bp = document.createElement('script');
+	    bp.src = '//push.zhanzhang.baidu.com/push.js';
+	    var s = document.getElementsByTagName("script")[0];
+	    s.parentNode.insertBefore(bp, s);
+	})();
+	</script>
+	<!--百度推送-->
+	<div style="display:none;">
+	<script type="text/javascript">
+	var keywords = document.querySelector('meta[name="keywords"]').getAttribute('content');
+	document.write("&lt;script language='JavaScript' src='http://datasheet.eepw.com.cn/count/index?title="+document.title+"&amp;keyword="+keywords+"&amp;url="+location.href+"&amp;refer="+document.referrer+"'&gt;&lt;\/script&gt;");
+	</script>
+	
+	<script>
+    var _hmt = _hmt || [];
+    (function() {
+      var hm = document.createElement("script");
+      hm.src = "https://hm.baidu.com/hm.js?c6033714cc2a1e329fdce55d9ceb29bd";
+      var s = document.getElementsByTagName("script")[0]; 
+      s.parentNode.insertBefore(hm, s);
+    })();
+    </script>
+	
+</div>
+
+ 
+<script src="https://www.eepw.com.cn/event/ad/m_right_box.js"/>
+</div>]]></description></item><item>    <title><![CDATA[贸泽开售适用于边缘、AI和物联网应用的Nordic Semiconductor nRF54L15标签原型设计平台-电子产品世界]]></title>    <link>https://m.eepw.com.cn/article/202611/484838.html</link>    <guid>https://m.eepw.com.cn/article/202611/484838.html</guid>    <pubDate>2026-11-23 15:03:48.340374</pubDate>    <description><![CDATA[<h2>贸泽开售适用于边缘、AI和物联网应用的Nordic Semiconductor nRF54L15标签原型设计平台</h2>		
 		<div class="time_source news-info">
 		
 				<a href="/m/list/special/embedded" class="news-lb">嵌入式系统</a> 
@@ -10472,886 +11328,4 @@ for(var i = 0; i &lt; video.length; i++){&#13;
 	var $oBanana=$('#banana');&#13;
 	$($oBanana).animate({'font-size':'24'},300);&#13;
 	</script>&#13;
-</div>	&#13;]]></description></item><item>    <title><![CDATA[AC220V 开关电源 EMC 设计：从原理到方案全解析--电子产品世界手机版]]></title>    <link>https://m.eepw.com.cn/article/diagram/178847.html</link>    <guid>https://m.eepw.com.cn/article/diagram/178847.html</guid>    <pubDate>2026-11-20 16:03:54.669315</pubDate>    <description><![CDATA[<h2>AC220V 开关电源 EMC 设计：从原理到方案全解析</h2>		&#13;
-		<div class="time_source news-info">&#13;
-				<span>   发布人：amy2025</span>&#13;
-				<span> 时间：2026-09-22</span></div>&#13;
-		&#13;
-<div class="content" id="con1" style="overflow:hidden;">&#13;
-		<p style="--tw-border-spacing-x: 0; --tw-border-spacing-y: 0; --tw-translate-x: 0; --tw-translate-y: 0; --tw-rotate: 0; --tw-skew-x: 0; --tw-skew-y: 0; --tw-scale-x: 1; --tw-scale-y: 1; --tw-pan-x: ; --tw-pan-y: ; --tw-pinch-zoom: ; --tw-scroll-snap-strictness: proximity; --tw-gradient-from-position: ; --tw-gradient-via-position: ; --tw-gradient-to-position: ; --tw-ordinal: ; --tw-slashed-zero: ; --tw-numeric-figure: ; --tw-numeric-spacing: ; --tw-numeric-fraction: ; --tw-ring-inset: ; --tw-ring-offset-width: 0px; --tw-ring-offset-color: #fff; --tw-ring-color: rgba(59,130,246,.5); --tw-ring-offset-shadow: 0 0 #0000; --tw-ring-shadow: 0 0 #0000; --tw-shadow: 0 0 #0000; --tw-shadow-colored: 0 0 #0000; --tw-blur: ; --tw-brightness: ; --tw-contrast: ; --tw-grayscale: ; --tw-hue-rotate: ; --tw-invert: ; --tw-saturate: ; --tw-sepia: ; --tw-drop-shadow: ; --tw-backdrop-blur: ; --tw-backdrop-brightness: ; --tw-backdrop-contrast: ; --tw-backdrop-grayscale: ; --tw-backdrop-hue-rotate: ; --tw-backdrop-invert: ; --tw-backdrop-opacity: ; --tw-backdrop-saturate: ; --tw-backdrop-sepia: ; -webkit-font-smoothing: antialiased; box-sizing: border-box; line-height: 1.5; text-wrap-mode: wrap;">在电子设备的运行中，AC220V 交流电是常见的电源输入形式。而开关电源的 EMC（电磁兼容）设计对于设备的稳定运行至关重要。本文将详细介绍一种 AC220V 开关电源的 EMC 设计方案，同时包含 2KV 防雷滤波设计。</p><p style="text-align: center; --tw-border-spacing-x: 0; --tw-border-spacing-y: 0; --tw-translate-x: 0; --tw-translate-y: 0; --tw-rotate: 0; --tw-skew-x: 0; --tw-skew-y: 0; --tw-scale-x: 1; --tw-scale-y: 1; --tw-pan-x: ; --tw-pan-y: ; --tw-pinch-zoom: ; --tw-scroll-snap-strictness: proximity; --tw-gradient-from-position: ; --tw-gradient-via-position: ; --tw-gradient-to-position: ; --tw-ordinal: ; --tw-slashed-zero: ; --tw-numeric-figure: ; --tw-numeric-spacing: ; --tw-numeric-fraction: ; --tw-ring-inset: ; --tw-ring-offset-width: 0px; --tw-ring-offset-color: #fff; --tw-ring-color: rgba(59,130,246,.5); --tw-ring-offset-shadow: 0 0 #0000; --tw-ring-shadow: 0 0 #0000; --tw-shadow: 0 0 #0000; --tw-shadow-colored: 0 0 #0000; --tw-blur: ; --tw-brightness: ; --tw-contrast: ; --tw-grayscale: ; --tw-hue-rotate: ; --tw-invert: ; --tw-saturate: ; --tw-sepia: ; --tw-drop-shadow: ; --tw-backdrop-blur: ; --tw-backdrop-brightness: ; --tw-backdrop-contrast: ; --tw-backdrop-grayscale: ; --tw-backdrop-hue-rotate: ; --tw-backdrop-invert: ; --tw-backdrop-opacity: ; --tw-backdrop-saturate: ; --tw-backdrop-sepia: ; -webkit-font-smoothing: antialiased; box-sizing: border-box; line-height: 1.5; text-wrap-mode: wrap;"><img src="https://uphotos.eepw.com.cn/fetch/20260119/scjs_3_6_0.jpg" onclick="window.open(this.src)"/></p><p><br/></p><p class="auto-hide-last-sibling-br paragraph_40c5d paragraph-element" style="--tw-border-spacing-x: 0; --tw-border-spacing-y: 0; --tw-translate-x: 0; --tw-translate-y: 0; --tw-rotate: 0; --tw-skew-x: 0; --tw-skew-y: 0; --tw-scale-x: 1; --tw-scale-y: 1; --tw-pan-x: ; --tw-pan-y: ; --tw-pinch-zoom: ; --tw-scroll-snap-strictness: proximity; --tw-gradient-from-position: ; --tw-gradient-via-position: ; --tw-gradient-to-position: ; --tw-ordinal: ; --tw-slashed-zero: ; --tw-numeric-figure: ; --tw-numeric-spacing: ; --tw-numeric-fraction: ; --tw-ring-inset: ; --tw-ring-offset-width: 0px; --tw-ring-offset-color: #fff; --tw-ring-color: rgba(59,130,246,.5); --tw-ring-offset-shadow: 0 0 #0000; --tw-ring-shadow: 0 0 #0000; --tw-shadow: 0 0 #0000; --tw-shadow-colored: 0 0 #0000; --tw-blur: ; --tw-brightness: ; --tw-contrast: ; --tw-grayscale: ; --tw-hue-rotate: ; --tw-invert: ; --tw-saturate: ; --tw-sepia: ; --tw-drop-shadow: ; --tw-backdrop-blur: ; --tw-backdrop-brightness: ; --tw-backdrop-contrast: ; --tw-backdrop-grayscale: ; --tw-backdrop-hue-rotate: ; --tw-backdrop-invert: ; --tw-backdrop-opacity: ; --tw-backdrop-saturate: ; --tw-backdrop-sepia: ; -webkit-font-smoothing: antialiased; box-sizing: border-box; line-height: 1.5; text-wrap-mode: wrap;">交流电源接口通过电源线与电网相连，为电气设备提供电能。然而，在产品工作过程中，会产生各种干扰，如电源变换电路、高频变压器、数字电路等产生的干扰。这些干扰不仅会通过电源接口形成对电网的传导干扰，还会对空间产生辐射干扰。此外，当电网上有大功率感性负载通断或电网遭受雷击时，电源接口会产生瞬态的脉冲干扰和浪涌干扰。如果电源接口不进行防护滤波设计，这些干扰很容易影响产品的正常工作，严重时雷电干扰甚至会损坏设备。因此，交流电源接口的电磁兼容设计是确保设备稳定运行的关键。</p><p><br/></p><p class="auto-hide-last-sibling-br paragraph_40c5d paragraph-element" style="--tw-border-spacing-x: 0; --tw-border-spacing-y: 0; --tw-translate-x: 0; --tw-translate-y: 0; --tw-rotate: 0; --tw-skew-x: 0; --tw-skew-y: 0; --tw-scale-x: 1; --tw-scale-y: 1; --tw-pan-x: ; --tw-pan-y: ; --tw-pinch-zoom: ; --tw-scroll-snap-strictness: proximity; --tw-gradient-from-position: ; --tw-gradient-via-position: ; --tw-gradient-to-position: ; --tw-ordinal: ; --tw-slashed-zero: ; --tw-numeric-figure: ; --tw-numeric-spacing: ; --tw-numeric-fraction: ; --tw-ring-inset: ; --tw-ring-offset-width: 0px; --tw-ring-offset-color: #fff; --tw-ring-color: rgba(59,130,246,.5); --tw-ring-offset-shadow: 0 0 #0000; --tw-ring-shadow: 0 0 #0000; --tw-shadow: 0 0 #0000; --tw-shadow-colored: 0 0 #0000; --tw-blur: ; --tw-brightness: ; --tw-contrast: ; --tw-grayscale: ; --tw-hue-rotate: ; --tw-invert: ; --tw-saturate: ; --tw-sepia: ; --tw-drop-shadow: ; --tw-backdrop-blur: ; --tw-backdrop-brightness: ; --tw-backdrop-contrast: ; --tw-backdrop-grayscale: ; --tw-backdrop-hue-rotate: ; --tw-backdrop-invert: ; --tw-backdrop-opacity: ; --tw-backdrop-saturate: ; --tw-backdrop-sepia: ; -webkit-font-smoothing: antialiased; box-sizing: border-box; line-height: 1.5; text-wrap-mode: wrap;">本方案从 EMC 原理出发，进行了相关的抑制干扰和抗敏感度设计，同时兼容接口防雷设计。其防雷电路设计可通过 IEC61000 - 4 - 5 标准，共模 2000V，差摸 1000V 的接口防雷测试。</p><h4>电路 EMC 设计说明</h4><p><br/></p><ol class="auto-hide-last-sibling-br list-paddingleft-2" style="--tw-border-spacing-x: 0; --tw-border-spacing-y: 0; --tw-translate-x: 0; --tw-translate-y: 0; --tw-rotate: 0; --tw-skew-x: 0; --tw-skew-y: 0; --tw-scale-x: 1; --tw-scale-y: 1; --tw-pan-x: ; --tw-pan-y: ; --tw-pinch-zoom: ; --tw-scroll-snap-strictness: proximity; --tw-gradient-from-position: ; --tw-gradient-via-position: ; --tw-gradient-to-position: ; --tw-ordinal: ; --tw-slashed-zero: ; --tw-numeric-figure: ; --tw-numeric-spacing: ; --tw-numeric-fraction: ; --tw-ring-inset: ; --tw-ring-offset-width: 0px; --tw-ring-offset-color: #fff; --tw-ring-color: rgba(59,130,246,.5); --tw-ring-offset-shadow: 0 0 #0000; --tw-ring-shadow: 0 0 #0000; --tw-shadow: 0 0 #0000; --tw-shadow-colored: 0 0 #0000; --tw-blur: ; --tw-brightness: ; --tw-contrast: ; --tw-grayscale: ; --tw-hue-rotate: ; --tw-invert: ; --tw-saturate: ; --tw-sepia: ; --tw-drop-shadow: ; --tw-backdrop-blur: ; --tw-backdrop-brightness: ; --tw-backdrop-contrast: ; --tw-backdrop-grayscale: ; --tw-backdrop-hue-rotate: ; --tw-backdrop-invert: ; --tw-backdrop-opacity: ; --tw-backdrop-saturate: ; --tw-backdrop-sepia: ; -webkit-font-smoothing: antialiased; box-sizing: border-box; margin-bottom: 8px; margin-top: 0px; padding-left: 1.5em; text-wrap-mode: wrap;"><li><p>电路滤波设计要点</p></li></ol><ul><li><p>级滤波电路由 L1、C1、C3、C4 组成。其中，C1 作为差模滤波电容，主要用于滤除差模干扰；C3、C4 为共模滤波电容，为共模干扰提供低阻抗回路；L1 是共模滤波电感，对共模干扰进行抑制。</p></li><li><p>第二级滤波电路由 L2、C2、C5、C6 组成。C2 同样是差模滤波电容，负责滤除差模干扰；C5、C6 为共模滤波电容，为共模干扰提供低阻抗回路；L2 为共模滤波电感，抑制共模干扰。如果产品功率大、干扰强，单级滤波插入损耗有限，在设计前期就需要考虑多级滤波。</p></li><li><p>C19 是整流桥的高频滤波电容，通常采用小电容，主要为整流桥的高频谐波电流提供回流路径。C20 是变压器的高频滤波电容，一般也采用小电容，为变压器的高频谐波电流提供回流路径。</p></li><li><p>C15 和 R13 组成续流管上的削尖峰电路，C15 电容典型取值为 1000pF，R13 电阻典型取值为 10Ω。C12 和 R12 组成 PWM 控制线上的滤波电路，C12 电容典型取值为 47pF，R12 电阻典型取值为 10Ω，其值可根据后续测试情况进行调整。</p></li><li><p>L4 和 C8 组成输出端滤波电路，主要对输出端口进行共模和差模滤波。各种功能地通过电容连接，电容典型取值为 1000pF，同样可根据后续测试情况进行调整。</p></li></ul><li><p>电路防护设计要点</p></li><ul><li><p>RV1、RV2、RV3、GDT1 组成级防护电路，其中 RV1 进行差模防护，RV2、RV3、GDT1 进行共模防护。需要注意的是，RV2、RV3、GDT1 防护器件可能会导致绝缘耐压试验不能通过，当接口需要考虑绝缘耐压试验时，建议去掉这三个元器件。</p></li></ul><li><p>特殊要求</p></li><ul><li><p>电路中所有的电容都应符合安规要求。差模电容应选取额定电压 250V 以上的 X 电容，共模电容应选取额定电压 250V 的 Y 电容。</p></li><li><p>由于压敏电阻失效模式为短路，可能会造成大电流，所以需要增加保险丝 F1，并且保险丝 F1 的位置要靠近接口放置。</p></li></ul><li><p>器件选型要点</p></li><ul><li><p>交流电源接口电路中的 Y 电容（C3、C4 和 C5、C6）容值选取范围为 100pF ~ 4700pF，典型值选取 2200pF。</p></li><li><p>交流电源接口电路中的 X 电容（C1 和 C2）容值选举范围为 0.1μF ~ 2.0μF，级中的 X 电容 C1 典型值选取 0.33μF，第二级滤波中的 X 电容 C2 典型值选取 1.0μF。</p></li><li><p>L1、L2、L4 为共模电感，共模电感感值范围为 100μH ~ 30mH，典型值选取 15mH。</p></li><li><p>输出端的滤波电容 C8 取值范围为 100PF ~ 0.1uF，典型取值为 10nF。</p></li><li><p>RV1、RV2、RV3 压敏电阻选择压敏电压范围 466V ~ 616V，典型值选取 550V，压敏电阻 RV1 的通流量（10 次冲击）选择大于等于 167A，压敏电阻 RV2、RV3 的通流量（10 次冲击）选择大于等于 167A。</p></li><li><p>GDT1 气体放电管选择直流击穿电压为 466V ~ 616V，典型值选取 550V，通流量选择大于等于 167A。</p></li></ul><p><br/></p><p class="auto-hide-last-sibling-br paragraph_40c5d paragraph-element" style="--tw-border-spacing-x: 0; --tw-border-spacing-y: 0; --tw-translate-x: 0; --tw-translate-y: 0; --tw-rotate: 0; --tw-skew-x: 0; --tw-skew-y: 0; --tw-scale-x: 1; --tw-scale-y: 1; --tw-pan-x: ; --tw-pan-y: ; --tw-pinch-zoom: ; --tw-scroll-snap-strictness: proximity; --tw-gradient-from-position: ; --tw-gradient-via-position: ; --tw-gradient-to-position: ; --tw-ordinal: ; --tw-slashed-zero: ; --tw-numeric-figure: ; --tw-numeric-spacing: ; --tw-numeric-fraction: ; --tw-ring-inset: ; --tw-ring-offset-width: 0px; --tw-ring-offset-color: #fff; --tw-ring-color: rgba(59,130,246,.5); --tw-ring-offset-shadow: 0 0 #0000; --tw-ring-shadow: 0 0 #0000; --tw-shadow: 0 0 #0000; --tw-shadow-colored: 0 0 #0000; --tw-blur: ; --tw-brightness: ; --tw-contrast: ; --tw-grayscale: ; --tw-hue-rotate: ; --tw-invert: ; --tw-saturate: ; --tw-sepia: ; --tw-drop-shadow: ; --tw-backdrop-blur: ; --tw-backdrop-brightness: ; --tw-backdrop-contrast: ; --tw-backdrop-grayscale: ; --tw-backdrop-hue-rotate: ; --tw-backdrop-invert: ; --tw-backdrop-opacity: ; --tw-backdrop-saturate: ; --tw-backdrop-sepia: ; -webkit-font-smoothing: antialiased; box-sizing: border-box; line-height: 1.5; text-wrap-mode: wrap;">通过以上详细的设计方案和器件选型要点，可以有效提高 AC220V 开关电源的电磁兼容性，保障设备的稳定运行。</p>	<p class="keyp">关键词：&#13;
-			<a href="https://www.eepw.com.cn/tech/c/k/%E5%BC%80%E5%85%B3%E7%94%B5%E6%BA%90">开关电源</a>&#13;
-		</p> &#13;
-&#13;
-	<div class="login-read" style="display: block;" id="con2">&#13;
-	<div class="linear-block"/>&#13;
-    <div class="read-all-btn-box">&#13;
-    	<a href="https://passport.eepw.com.cn/auth/login?url=https://m.eepw.com.cn/article/diagram/178847.html" target="_blank" class="read-all-btn">阅读全文</a>&#13;
-    </div>&#13;
-</div>&#13;
-<script type="text/javascript" src="//webstorage.eepw.com.cn/js/2014/m/check_login.js"/>       &#13;
-</div>&#13;
-&#13;
-&#13;
-&#13;
-&#13;
-<div class="content" style="margin-top:20px;">&#13;
-		<!--ad start-->&#13;
-	<div style="width: 100%;margin-bottom:1em ;">&#13;
-	<!-- 广告位：M02 -->&#13;
-		<script type="text/javascript">&lt;!--//&lt;![CDATA[&#13;
-   var m3_u = (location.protocol=='https:'?'https://ad.eepw.com.cn/www/delivery/ajs.php':'http://ad.eepw.com.cn/www/delivery/ajs.php');&#13;
-   var m3_r = Math.floor(Math.random()*99999999999);&#13;
-   if (!document.MAX_used) document.MAX_used = ',';&#13;
-   document.write ("&lt;scr"+"ipt type='text/javascript' src='"+m3_u);&#13;
-   document.write ("?zoneid=123");&#13;
-   document.write ('&amp;amp;cb=' + m3_r);&#13;
-   if (document.MAX_used != ',') document.write ("&amp;amp;exclude=" + document.MAX_used);&#13;
-   document.write (document.charset ? '&amp;amp;charset='+document.charset : (document.characterSet ? '&amp;amp;charset='+document.characterSet : ''));&#13;
-   document.write ("&amp;amp;loc=" + escape(window.location));&#13;
-   if (document.referrer) document.write ("&amp;amp;referer=" + escape(document.referrer));&#13;
-   if (document.context) document.write ("&amp;context=" + escape(document.context));&#13;
-   if (document.mmm_fo) document.write ("&amp;amp;mmm_fo=1");&#13;
-   document.write ("'&gt;&lt;\/scr"+"ipt&gt;");&#13;
-//]]&gt;--&gt;</script><noscript><a href="http://ad.eepw.com.cn/www/delivery/ck.php?n=a3ee0761&amp;cb=INSERT_RANDOM_NUMBER_HERE" target="_blank"><img src="http://ad.eepw.com.cn/www/delivery/avw.php?zoneid=123&amp;cb=INSERT_RANDOM_NUMBER_HERE&amp;n=a3ee0761" border="0" alt=""/></a></noscript>&#13;
-	</div>&#13;
-	<!--ad end-->&#13;
-	&#13;
-&#13;
-	<script>&#13;
-	var $oBanana=$('#banana');&#13;
-	$($oBanana).animate({'font-size':'24'},300);&#13;
-	</script>&#13;
-</div>	&#13;]]></description></item><item>    <title><![CDATA[人形机器人量产前夜，供应链如何支撑规模化交付-电子产品世界]]></title>    <link>http://m.eepw.com.cn/article/202611/484818.html</link>    <guid>http://m.eepw.com.cn/article/202611/484818.html</guid>    <pubDate>2026-11-20 16:03:18.344051</pubDate>    <description><![CDATA[<h2>人形机器人量产前夜，供应链如何支撑规模化交付</h2>		
-		<div class="time_source news-info">
-		
-				<a href="/m/list/special/robot" class="news-lb">机器人</a> 
-		 
-				<span> 时间：2026-11-20 15:06</span>
-				<span>来源：大联大</span>		
-				</div>
-				<div class="content" id="con1" style="overflow:hidden;">
-		<p style="text-indent: 2em; text-align: left;">近年来，人形机器人热度持续走高，各类原型样机密集发布，产业化拐点备受期许。喧嚣之下，工程化适配难题、供应链良率瓶颈、软硬件协同短板等现实挑战依旧横亘在量产之前。作为串联半导体原厂与整机制造企业的中间环节，电子分销商的角色正在发生深刻变化，从传统元器件流通向提供关节模组、运动控制等技术方案的方向延伸，逐渐成为协助样机走向落地的重要赋能枢纽。</p><p style="text-align: center;"><img src="https://editerupload.eepw.com.cn/fetch/202611/20a4b5b78a9d16db4d368cf1b7edb696.jpeg" width="500" height="333" border="" title="" alt=""/></p><p style="text-indent: 2em; text-align: left;">相较于消费电子等高度成熟的产业，人形机器人是一条横跨机械结构、传感器、半导体算力、人工智能算法等多领域的复合赛道。产业演进过程中，终端整机厂商的重心，逐步从追求演示效果转向解决工程落地难题。转换过程中，上游半导体供应链的协同水平，是决定产品能否从原型样机走向小批量试产乃至规模交付的关键前置条件之一。分销商身处产业链中间环节，既要承接原厂器件资源，又要直面整机厂商多样化的研发痛点，其服务模式也将迎来重塑。</p><p style="text-indent: 2em; text-align: left;">面对人形机器人从实验室走向产业化的关键拐点，大联大加快从传统分销商向人形机器人产业生态服务商全面转型。大联大世平集团中国营运区资深副总邵元中表示，集团以“1+4+2”战略为牵引，构建覆盖脑、关节、传感、能源的全栈技术能力，打造“器件+方案+生态”三位一体的本地化服务体系。“未来三年，我们将聚焦B端场景落地，推动国产与国际双供应链协同，助力中国机器人产业实现从原型验证到规模量产的跨越。”</p><p style="text-indent: 2em; text-align: left;">大联大诠鼎集团中国客户行销S事业群副总经理林明勋表示，人形机器人正从概念验证迈向工程化落地，这不仅是终端产品的竞赛，更是对上游半导体供应链系统整合能力的一次“大考”。为此，大联大把AE/FAE能力前置到整机厂研发早期，围绕关节执行器、灵巧手等核心单元做系统级方案孵化，为整机厂商快速迭代技术产品提供有效支撑。</p><p style="text-align: center;"><img src="https://editerupload.eepw.com.cn/fetch/202611/3ec12a18bcb7219542a7f80905b64956.jpeg" width="500" height="333" border="" title="" alt=""/></p><p style="text-indent: 2em; text-align: left;"><strong>1.人形机器人量产需要全周期技术支撑</strong></p><p style="text-indent: 2em; text-align: left;">近年来，大量机器人厂商密集发布样机产品，各类演示视频层出不穷，但是距离市场期待的大规模商业化量产依旧存在距离。</p><p style="text-indent: 2em; text-align: left;">在大联大世平集团陆商工业行销群总监刘汉看来，2026至2030年，人形机器人产业将处于小批量试点爬坡阶段。这一阶段的核心任务，是破解硬件工程化、供应链良率、机器人基础作业能力等瓶颈，期间会诞生万台级产能产线。到2030年前后，行业有望迈入规模量产阶段，实现B端市场的批量落地。</p><p style="text-indent: 2em; text-align: left;">“现阶段，整机厂商可以造出不少样机，但产业尚未形成支撑大规模商业化量产的成熟条件。”刘汉认为，判断人形机器人产业是否成熟，不是看单点技术能否达成演示效果，而要看供应链配套、软件智能算法、商业落地模型、行业标准体系等各环节是否同步成熟。单点技术的突破不等于产品化、商业化的成功，任何一块短板都会制约规模量产。</p><p style="text-indent: 2em; text-align: left;">基于对一线的长期观察，大联大中国区总裁沈维中指出，当前人形机器人厂商呈现两种技术路线，一种是选择全链路技术自研，另一种则是选择与专业IDH（Independent Design House，独立设计公司）开展分工协作。他认为，无论哪种研发路径，整机厂商都迫切需要优质产线与技术方案，并在迈入量产阶段后保持稳定的供应链支持，这也是产业链服务商需要承接的核心价值。</p><p style="text-indent: 2em; text-align: left;">以人形机器人的芯片选型为例，首先要匹配应用场景，不同场景需要适配不同方案。除功能适配之外，性价比、配套技术支持、产品迭代升级能力、软件兼容性等，都是选型阶段需要权衡的关键要素。沈维中指出，人形机器人厂商的痛点不只是芯片采购，更重要的是获得覆盖选型、算法调优、散热、电磁兼容等全方位的技术支持。</p><p style="text-indent: 2em; text-align: left;">原型样机阶段，整机厂商多关注性能指标能否满足演示需求，可一旦进入量产阶段，就需要兼顾更多复杂的工程问题。因此，供应链的支撑能力要贯穿选型、原型开发、验证测试、小批量试产全周期。</p><p style="text-indent: 2em; text-align: left;"><strong>2.三类硬件本体市场增长突出</strong></p><p style="text-indent: 2em; text-align: left;">大联大诠鼎集团产品行销副执行长室总监曾英平指出，人形机器人关节执行器、灵巧手，以及工业用人形机器人/移动操作臂复合机器人，是市场增速较快的三个细分方向。</p><p style="text-indent: 2em; text-align: left;">关节执行器是人形机器人产业价值量最高、需求释放最快的板块之一。伴随多家厂商进入早期量产阶段，针对电机驱动、MCU、电源管理、位置传感器的采购量明显抬升，已经脱离单纯样品验证，开启小批量试产。</p><p style="text-indent: 2em; text-align: left;">灵巧手属于从0到1的增量市场。随着人机交互、物体抓取等需求持续提升，微型驱动芯片、触觉传感器/柔性传感器需求快速增长。</p><p style="text-indent: 2em; text-align: left;">工业用人形机器人/移动操作臂复合机器人的商业化落地节奏快于家用服务人形机器人，在工厂物料搬运、机台辅助作业场景已开始落地应用，对边缘AI主控、动力电源、安全感知器件的需求保持稳定增长。</p><p style="text-indent: 2em; text-align: left;">曾英平指出，三类硬件产品的技术侧重点存在明显区分。关节执行器聚焦功率驱动、热管理，以及设备长期运行的可靠性；灵巧手追求器件微型化、低噪声、多通道触感采集能力；工业用人形机器人/移动操作臂复合机器人则把系统功能安全、边缘推理性能、器件宽温工作能力、抗干扰能力等作为核心指标。</p><p style="text-indent: 2em; text-align: left;">针对上述三类硬件产品，大联大不局限于单颗元器件供应，而是专注提供系统级解决方案。例如，针对关节执行器，诠鼎集团AE团队联合高校开展研发合作，依托ST、Infineon等上游厂商器件，搭建完整的关节参考设计方案，并整合电机驱动、电源、位置传感、热管理全套系统测试。下游厂商可基于参考方案迭代开发，大幅缩短研发周期。</p><p style="text-indent: 2em; text-align: left;">刘汉表示，大联大的工作重点是帮助人形机器人等新兴领域厂商降低整机硬件开发门槛，通过国际产品线与国产产品线并行策略，探索兼顾产品可靠性与降本诉求的清晰路径。</p><p style="text-indent: 2em; text-align: left;">计算与AI是技术长期竞争的焦点如果说硬件解决的是机器人的执行能力，那么想要把人形机器人从一台会动的机械装置，转化为可以自主理解环境、规划任务、与人交互的智能体，核心就落在计算与AI。同样一台机器人本体，算力平台、AI能力的差距，会造就完全不一样的任务处理能力与应用边界。随着产业脱离运动演示，走向真实生产服务场景，边缘端低延迟推理、多模态感知融合、本地安全计算的需求将持续攀升，这将成为整机厂商长期竞争的焦点。</p><p style="text-indent: 2em; text-align: left;">曾英平表示，面向计算与AI这一长期技术高地，世平、诠鼎协同配合，深度对接上游算力与存储厂商，推出了多款面向具身智能的边缘计算参考平台，打通算力层、感知层、执行端技术链路，为企业提供从核心算力到底层执行器的一站式解决方案。</p><p style="text-indent: 2em; text-align: left;">早在2025年，大联大就启动了组织架构重组，形成以世平和诠鼎为核心的两大业务集团。曾英平表示，调整的初衷是推动组织提效，实现资源精准配置，但是落地之后恰好适配人形机器人产业的发展特性。人形机器人产业链横跨硬件与AI 两大核心领域，世平、诠鼎两个业务单元，可以瞄准软硬方向调动资源，匹配整机厂商从“大脑”到“四肢”的全链需求。</p><p style="text-indent: 2em; text-align: left;">沈维中表示，大联大积极推行全国“一盘棋”概念，设立面向各应用市场的专属业务团队。一方面希望持续输出专业供应链服务，另一方面则是希望提升集团对上游厂商的话语权，从而为下游企业争取更多原厂侧的技术与资源支持。</p><p style="text-align: center;"><img src="https://editerupload.eepw.com.cn/202611/1795158350709585.png" title="1795158350709585.png" alt="1795158350709585.png" width="500" height="281" border=""/></p><p style="text-indent: 2em; text-align: left;"><strong>3.短期内值得关注的三个产业趋势</strong></p><p style="text-indent: 2em; text-align: left;">刘汉提出，未来三年有三个关键趋势值得关注，分别是具身智能带来硬件架构变革、器件模组化推动交付能力提升、客户分化叠加大模型整合。</p><p style="text-indent: 2em; text-align: left;">基于产业公开信息来看，具身智能浪潮会自上而下重塑机器人硬件整体架构。传统机器人硬件架构多服务于预设运动指令，而具身智能强调基于多模态环境感知进行任务理解、决策与行动闭环，这会促使算力分布、感知布局、驱动控制、通信链路等硬件子系统重新设计或调整，并推动形成“认知计算—实时控制—智能执行—多模态感知”的分层架构。</p><p style="text-indent: 2em; text-align: left;">器件与子系统模组化正在成为重要趋势。部分整机厂商，尤其是希望加快迭代、降低重复开发投入或聚焦上层算法与场景的厂商，更倾向于采用经过验证的关节、灵巧手、感知、计算、电源、通信等子系统模组，而非全部从零散元器件自行集成。因此，这将对供应链的模组级整合交付能力提出更高要求，包括跨器件整合、软硬件协同、系统验证、功能安全、量产一致性和快速定制能力。同时，不同厂商会根据自身战略，在自研与外购模组之间做分层选择。</p><p style="text-indent: 2em; text-align: left;">机器人产业下游厂商与参与者正持续分化，并形成不同的战略侧重。一部分企业聚焦B端垂直行业场景落地，一部分投入通用人形整机研发，还有一部分专注关节、灵巧手、感知、计算等核心部件与模组。同时，大模型能力正逐步向机器人端侧或边端下沉，但受算力、功耗、实时性和安全等约束，短期内更多呈现云边端协同形态。大模型与机器人本体的深度整合，有望成为产品差异化的重要来源之一。</p>		<center>
-					</center>
-	<p class="keyp">关键词：
-				<a href="https://www.eepw.com.cn/tech/s/k/%E5%A4%A7%E8%81%94%E5%A4%A7">大联大</a>
-			<a href="https://www.eepw.com.cn/tech/s/k/%E4%BA%BA%E5%BD%A2%E6%9C%BA%E5%99%A8%E4%BA%BA">人形机器人</a>
-		</p>
-
-<div class="content" style="margin-top:20px;">
-	<!--ad start-->
-	<div style="width: 100%;margin-bottom:1em;">
-	<!-- 广告位：M02 -->
-		<script type="text/javascript">&lt;!--//&lt;![CDATA[
-   var m3_u = (location.protocol=='https:'?'https://ad.eepw.com.cn/www/delivery/ajs.php':'http://ad.eepw.com.cn/www/delivery/ajs.php');
-   var m3_r = Math.floor(Math.random()*99999999999);
-   if (!document.MAX_used) document.MAX_used = ',';
-   document.write ("&lt;scr"+"ipt type='text/javascript' src='"+m3_u);
-   document.write ("?zoneid=123");
-   document.write ('&amp;amp;cb=' + m3_r);
-   if (document.MAX_used != ',') document.write ("&amp;amp;exclude=" + document.MAX_used);
-   document.write (document.charset ? '&amp;amp;charset='+document.charset : (document.characterSet ? '&amp;amp;charset='+document.characterSet : ''));
-   document.write ("&amp;amp;loc=" + escape(window.location));
-   if (document.referrer) document.write ("&amp;amp;referer=" + escape(document.referrer));
-   if (document.context) document.write ("&amp;context=" + escape(document.context));
-   if (document.mmm_fo) document.write ("&amp;amp;mmm_fo=1");
-   document.write ("'&gt;&lt;\/scr"+"ipt&gt;");
-//]]&gt;--&gt;</script><noscript><a href="http://ad.eepw.com.cn/www/delivery/ck.php?n=a3ee0761&amp;cb=INSERT_RANDOM_NUMBER_HERE" target="_blank"><img src="http://ad.eepw.com.cn/www/delivery/avw.php?zoneid=123&amp;cb=INSERT_RANDOM_NUMBER_HERE&amp;n=a3ee0761" border="0" alt=""/></a></noscript>
-	</div>
-	<!--ad end-->
-	
-<script>
-var $oBanana=$('#banana');
-$($oBanana).animate({'font-size':'24'},300);
-</script>	
-</div>	
-	
-	<!-- 相关文章-->	
-	<div style="text-align: left; padding-left:10px;max-width:960px;margin: 0 auto;font-size: 1.25em;">
-			<h3>相关文章</h3>							
-	</div>
-	<section class="clear">
-		<div id="new_conwrap">
-			<ul>
-						
-				&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484818.html">人形机器人量产前夜，供应链如何支撑规模化交付</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/robot" class="news-lb">机器人</a>&#13;
-<span class="news-time">2026-11-20</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484815.html">量产爬坡期，芯片分销商正在变成机器人厂商的“</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/robot" class="news-lb">机器人</a>&#13;
-<span class="news-time">2026-11-20</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484812.html">大联大人形机器人布局曝光，行业商机或不在整机</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/robot" class="news-lb">机器人</a>&#13;
-<span class="news-time">2026-11-20</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484806.html">专访回顾 | 揭秘大联大人形机器人战略布局！</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/robot" class="news-lb">机器人</a>&#13;
-<span class="news-time">2026-11-20</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-&#13;
-<li class="news2 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484732.html">迈来芯推出用于人形机器人的MLX90901触</a></div>					&#13;
-<div class="news-info">&#13;
-<a href="/m/list/special/robot" class="news-lb">&#13;
-机器人</a>&#13;
-<span class="news-time">2026-11-18</span></div>																						&#13;
-					</div>	&#13;
-					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202611/484732.html">&#13;
-					<img src="https://editerupload.eepw.com.cn/202611/1794972993435565.png"/>&#13;
-					</a></div>	&#13;
-				</li>&#13;
-&#13;
-&#13;
-	&#13;
-&#13;
-&#13;
-<li class="news2 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484686.html">实时电机控制：人形机器人运动的基础</a></div>					&#13;
-<div class="news-info">&#13;
-<a href="/m/list/special/robot" class="news-lb">&#13;
-机器人</a>&#13;
-<span class="news-time">2026-11-16</span></div>																						&#13;
-					</div>	&#13;
-					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202611/484686.html">&#13;
-					<img src="https://editerupload.eepw.com.cn/fetch/202611/d5f01e72d7ec1fc297786a9ef3e82b5b.png"/>&#13;
-					</a></div>	&#13;
-				</li>&#13;
-&#13;
-&#13;
-	&#13;
-&#13;
-&#13;
-<li class="news2 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484677.html">Melexis推出首款触觉指尖模组，赋能人形</a></div>					&#13;
-<div class="news-info">&#13;
-<a href="/m/list/special/robot" class="news-lb">&#13;
-机器人</a>&#13;
-<span class="news-time">2026-11-13</span></div>																						&#13;
-					</div>	&#13;
-					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202611/484677.html">&#13;
-					<img src="https://editerupload.eepw.com.cn/202611/1794559739829770.jpg"/>&#13;
-					</a></div>	&#13;
-				</li>&#13;
-&#13;
-&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484597.html">工业机器人芯片集成度提高后 系统开发还要验证</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/robot" class="news-lb">机器人</a>&#13;
-<span class="news-time">2026-11-11</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-								
-				
-				
-			</ul>												
-		</div>						
-	</section>
-		<div class="computer">
-	<a href="https://www.eepw.com.cn/article/202611/484818.htm" target="_blank">查看电脑版</a>
-	</div>
-	<!-- footer begin -->
-	<footer>		
-		<p class="fontArial">Copyright © 电子产品世界  京ICP备12027778号-2</p>
-	</footer>
-	<!-- footer end -->
-	<!--百度推送-->
-	<script>
-	(function(){
-	    var bp = document.createElement('script');
-	    bp.src = '//push.zhanzhang.baidu.com/push.js';
-	    var s = document.getElementsByTagName("script")[0];
-	    s.parentNode.insertBefore(bp, s);
-	})();
-	</script>
-	<!--百度推送-->
-	<div style="display:none;">
-	<script type="text/javascript">
-	var keywords = document.querySelector('meta[name="keywords"]').getAttribute('content');
-	document.write("&lt;script language='JavaScript' src='http://datasheet.eepw.com.cn/count/index?title="+document.title+"&amp;keyword="+keywords+"&amp;url="+location.href+"&amp;refer="+document.referrer+"'&gt;&lt;\/script&gt;");
-	</script>
-	
-	<script>
-    var _hmt = _hmt || [];
-    (function() {
-      var hm = document.createElement("script");
-      hm.src = "https://hm.baidu.com/hm.js?c6033714cc2a1e329fdce55d9ceb29bd";
-      var s = document.getElementsByTagName("script")[0]; 
-      s.parentNode.insertBefore(hm, s);
-    })();
-    </script>
-	
-</div>
-
- 
-<script src="https://www.eepw.com.cn/event/ad/m_right_box.js"/>
-</div>]]></description></item><item>    <title><![CDATA[深化机器人产业布局：大联大以“双核心引擎”构建从器件到系统的全链路服务能力-电子产品世界]]></title>    <link>http://m.eepw.com.cn/article/202611/484819.html</link>    <guid>http://m.eepw.com.cn/article/202611/484819.html</guid>    <pubDate>2026-11-20 16:03:03.101501</pubDate>    <description><![CDATA[<h2>深化机器人产业布局：大联大以“双核心引擎”构建从器件到系统的全链路服务能力</h2>		
-		<div class="time_source news-info">
-		
-				<a href="/m/list/special/robot" class="news-lb">机器人</a> 
-		 
-				<span> 时间：2026-11-20 15:15</span>
-				<span>来源：大联大</span>		
-				</div>
-				<div class="content" id="con1" style="overflow:hidden;">
-		<p style="text-indent: 2em; text-align: left;">2026年10月23日，致力于亚太地区市场的国际领先半导体元器件分销商---大联大控股宣布。</p><p style="text-indent: 2em; text-align: left;">其在人形机器人产业的战略布局已进入全面深化阶段。公司已组建专门服务团队，并持续增加投入，以加速人形机器人相关技术的商业化落地与生态构建。同时，借助旗下世平、诠鼎两大集团协同效能，大联大致力于打造从元器件供应到系统方案落地的全链路服务能力，助力客户实现从原型验证迈向规模量产。</p><p style="text-indent: 2em; text-align: center;"><strong>具身智能量产爆发前夜</strong></p><p style="text-indent: 2em; text-align: center;"><strong>大联大构建“器件+方案+生态”服务</strong></p><p style="text-indent: 2em; text-align: left;">人形机器人产业链条横跨芯片原厂、方案商、零部件企业、整机厂商及终端应用客户等多个环节，各方协同的重要性日益凸显。在此背景下，半导体元器件分销商的价值正从单一的器件供应，向技术支持与方案服务延伸，系统整合能力成为产业链竞争的关键要素。</p><p style="text-indent: 2em; text-align: left;">作为立足亚太、辐射全球的先进半导体分销商，大联大代理产线超250条，能够将计算、通信、消费、汽车、工业、储能等多个领域的技术沉淀，迁移至具身智能这一新兴场景。面对全球半导体行业周期波动，大联大自2025年启动全球转型计划，并于2026年起正式确立世平、诠鼎两大集团“双核心引擎”运营格局，以更加精简高效的组织架构、优化的资源配置，把握新兴产业发展机遇。2026年8月，大联大营收创历年同期新高，累计首度突破兆元新台币大关，展现强劲的成长动能。</p><p style="text-indent: 2em; text-align: left;">大联大中国区总裁沈维中指出，大联大已组建专属业务团队，对代理的相关产线进行整合，并依据人形机器人各功能区块，面向客户推广适配的产品。与此同时，大联大还将通过在线研讨会、产业论坛、机器人相关展会交流等方式，推动技术方案向终端渗透。具体而言，这一布局由旗下世平与诠鼎两大集团分工推进：世平聚焦“整机+控制+传感+能源”技术框架，诠鼎则在GaN电源、灵巧手微型化等方向提供技术支持。</p><p style="text-indent: 2em; text-align: left;">大联大世平集团中国营运区资深副总邵元中表示，集团以“1+4+2”战略为牵引，构建覆盖脑、关节、传感、能源的全栈技术能力，打造“器件+方案+生态”三位一体的本地化服务体系。未来三年，大联大将聚焦B端场景落地，推动国产与国际双供应链协同，助力中国机器人产业实现从原型验证到规模量产的跨越。</p><p style="text-indent: 2em; text-align: left;">大联大诠鼎集团中国客户行销S事业群副总经理林明勋表示，过去分销商比拼的是货源与交期，如今客户需要的是从“大脑算力”到“四肢执行”的全链路协同。为此，诠鼎把AE/FAE能力前置到整机厂商研发早期，围绕关节执行器、灵巧手等核心单元做系统级方案孵化，为整机厂商快速迭代技术产品提供有效支撑。</p><p style="text-indent: 2em; text-align: center;"><strong>从被动交付到协同研发</strong></p><p style="text-indent: 2em; text-align: center;"><strong>大联大重塑分销商价值边界</strong></p><p style="text-indent: 2em; text-align: left;">人形机器人产业正处于百家争鸣的早期阶段，全链路自研与专业分工两种模式并行，客户需求高度分化。这一阶段，分销商能否提供稳定的供应链保障与适配的技术方案，往往比单纯的价格与交期更具价值。</p><p style="text-indent: 2em; text-align: left;">大联大世平集团陆商工业行销群总监刘汉指出，人形机器人行业的分销商角色转变路径可以分为半导体贸易商→技术增值分销商→人形机器人产业链生态服务商三个阶段，其核心竞争力是工艺理解、样机验证、项目协同能力以及生态运营能力。他表示，经过一年半的深耕，世平已经跨过第一阶段的门槛，在同质化元器件的选型及开拓能力上显著提升。</p><p style="text-indent: 2em; text-align: left;">大联大诠鼎集团产品行销副执行长室总监曾英平表示，人形机器人横跨计算、控制、驱动、传感、通信与能源管理，行业客户的核心痛点并非缺乏高性能单芯片，而是难以实现各类器件在复杂整机系统中的高效协同、稳定适配与联动工作。因此，诠鼎正在打造机器人执行端系统方案能力，推动自身从元器件分销商向执行端系统方案协同伙伴转型。</p><p style="text-indent: 2em; text-align: center;"><strong>技术方案落地</strong></p><p style="text-indent: 2em; text-align: center;"><strong>世平、诠鼎双线并进赋能机器人核心单元</strong></p><p style="text-indent: 2em; text-align: left;">作为重点布局的新兴增量市场之一，人形机器人将与车用、工业、储能、电源等既有领域协同推进，形成资源共享、技术共振的发展格局。大联大旗下世平、诠鼎分别推出面向机器人核心执行单元的成熟方案，展示公司从“器件供应”向“系统方案交付”升级的实质性进展。</p><p style="text-indent: 2em; text-align: left;"><strong>WPI</strong></p><p style="text-indent: 2em; text-align: left;"><strong>大联大世平推出基于NXP i.MX RT1189的11自由度灵巧手方案</strong></p><p style="text-indent: 2em; text-align: left;">此方案以恩智浦（NXP）i.MX RT1189 MCU为核心，搭载总驱动自由度达11个，其中包含6个主动自由度，能够实现握拳、张开、胜利等多种手势控制。方案采用连杆与蜗轮蜗杆传动方式，整手最大钩握负载可达40公斤。其指尖部分通过搭载光学压力传感器，能够实时感知抓握力大小，实现针对不同物体的精准力控抓取。</p><p style="text-align: center;"><img src="https://editerupload.eepw.com.cn/202611/1795158489553187.png" title="1795158489553187.png" alt="1795158489553187.png" width="500" height="312" border=""/></p><p style="text-indent: 2em; text-align: center;">大联大世平以NXP产品为核心的11自由度灵巧手方案的场景应用图</p><p style="text-indent: 2em; text-align: left;"><strong>AIT</strong></p><p style="text-indent: 2em; text-align: left;"><strong>大联大诠鼎携手ST打造人形机器人执行器全链路方案</strong></p><p style="text-indent: 2em; text-align: left;">此方案涵盖基于STM32的电机控制、MOSFET/氮化镓（GaN）功率器件、STDRIVE栅极驱动器、STSPIN封装系统级电机驱动器，同时配套通信、惯性测量单元、传感器及PMIC芯片和DC/DC转换芯片等，适用于关节驱动、动力控制、信号感知与边缘计算等多个环节，旨在以高集成、易部署、可量产的完整技术生态，助力人形机器人企业加速产品落地与性能跃升。</p><p style="text-align: center;"><img src="https://editerupload.eepw.com.cn/fetch/202611/3ddfb1d3824ba5f21875106325497885.jpeg" width="500" height="283" border="" title="" alt=""/></p><p style="text-indent: 2em; text-align: center;">大联大诠鼎携手ST推出的人形机器人系统级技术布局框架图</p><p style="text-indent: 2em; text-align: left;">在人形机器人产业化浪潮下，大联大将以半导体元器件分销为底座，向上延伸子系统参考方案与产业链生态服务，不仅持续提供客户稳定的供货需求和强大的技术支持，更携手上、下游伙伴，共同打通从芯片选型、系统集成到整机落地的路径，推动具身智能产业生态加速成熟。</p>		<center>
-					</center>
-	<p class="keyp">关键词：
-				<a href="https://www.eepw.com.cn/tech/s/k/%E5%A4%A7%E8%81%94%E5%A4%A7">大联大</a>
-			<a href="https://www.eepw.com.cn/tech/s/k/%E4%BA%BA%E5%BD%A2%E6%9C%BA%E5%99%A8%E4%BA%BA">人形机器人</a>
-		</p>
-
-<div class="content" style="margin-top:20px;">
-	<!--ad start-->
-	<div style="width: 100%;margin-bottom:1em;">
-	<!-- 广告位：M02 -->
-		<script type="text/javascript">&lt;!--//&lt;![CDATA[
-   var m3_u = (location.protocol=='https:'?'https://ad.eepw.com.cn/www/delivery/ajs.php':'http://ad.eepw.com.cn/www/delivery/ajs.php');
-   var m3_r = Math.floor(Math.random()*99999999999);
-   if (!document.MAX_used) document.MAX_used = ',';
-   document.write ("&lt;scr"+"ipt type='text/javascript' src='"+m3_u);
-   document.write ("?zoneid=123");
-   document.write ('&amp;amp;cb=' + m3_r);
-   if (document.MAX_used != ',') document.write ("&amp;amp;exclude=" + document.MAX_used);
-   document.write (document.charset ? '&amp;amp;charset='+document.charset : (document.characterSet ? '&amp;amp;charset='+document.characterSet : ''));
-   document.write ("&amp;amp;loc=" + escape(window.location));
-   if (document.referrer) document.write ("&amp;amp;referer=" + escape(document.referrer));
-   if (document.context) document.write ("&amp;context=" + escape(document.context));
-   if (document.mmm_fo) document.write ("&amp;amp;mmm_fo=1");
-   document.write ("'&gt;&lt;\/scr"+"ipt&gt;");
-//]]&gt;--&gt;</script><noscript><a href="http://ad.eepw.com.cn/www/delivery/ck.php?n=a3ee0761&amp;cb=INSERT_RANDOM_NUMBER_HERE" target="_blank"><img src="http://ad.eepw.com.cn/www/delivery/avw.php?zoneid=123&amp;cb=INSERT_RANDOM_NUMBER_HERE&amp;n=a3ee0761" border="0" alt=""/></a></noscript>
-	</div>
-	<!--ad end-->
-	
-<script>
-var $oBanana=$('#banana');
-$($oBanana).animate({'font-size':'24'},300);
-</script>	
-</div>	
-	
-	<!-- 相关文章-->	
-	<div style="text-align: left; padding-left:10px;max-width:960px;margin: 0 auto;font-size: 1.25em;">
-			<h3>相关文章</h3>							
-	</div>
-	<section class="clear">
-		<div id="new_conwrap">
-			<ul>
-						
-				&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484819.html">深化机器人产业布局：大联大以“双核心引擎”构</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/robot" class="news-lb">机器人</a>&#13;
-<span class="news-time">2026-11-20</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484818.html">人形机器人量产前夜，供应链如何支撑规模化交付</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/robot" class="news-lb">机器人</a>&#13;
-<span class="news-time">2026-11-20</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484815.html">量产爬坡期，芯片分销商正在变成机器人厂商的“</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/robot" class="news-lb">机器人</a>&#13;
-<span class="news-time">2026-11-20</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484812.html">大联大人形机器人布局曝光，行业商机或不在整机</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/robot" class="news-lb">机器人</a>&#13;
-<span class="news-time">2026-11-20</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484806.html">专访回顾 | 揭秘大联大人形机器人战略布局！</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/robot" class="news-lb">机器人</a>&#13;
-<span class="news-time">2026-11-20</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-&#13;
-<li class="news2 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484732.html">迈来芯推出用于人形机器人的MLX90901触</a></div>					&#13;
-<div class="news-info">&#13;
-<a href="/m/list/special/robot" class="news-lb">&#13;
-机器人</a>&#13;
-<span class="news-time">2026-11-18</span></div>																						&#13;
-					</div>	&#13;
-					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202611/484732.html">&#13;
-					<img src="https://editerupload.eepw.com.cn/202611/1794972993435565.png"/>&#13;
-					</a></div>	&#13;
-				</li>&#13;
-&#13;
-&#13;
-	&#13;
-&#13;
-&#13;
-<li class="news2 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484686.html">实时电机控制：人形机器人运动的基础</a></div>					&#13;
-<div class="news-info">&#13;
-<a href="/m/list/special/robot" class="news-lb">&#13;
-机器人</a>&#13;
-<span class="news-time">2026-11-16</span></div>																						&#13;
-					</div>	&#13;
-					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202611/484686.html">&#13;
-					<img src="https://editerupload.eepw.com.cn/fetch/202611/d5f01e72d7ec1fc297786a9ef3e82b5b.png"/>&#13;
-					</a></div>	&#13;
-				</li>&#13;
-&#13;
-&#13;
-	&#13;
-&#13;
-&#13;
-<li class="news2 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484677.html">Melexis推出首款触觉指尖模组，赋能人形</a></div>					&#13;
-<div class="news-info">&#13;
-<a href="/m/list/special/robot" class="news-lb">&#13;
-机器人</a>&#13;
-<span class="news-time">2026-11-13</span></div>																						&#13;
-					</div>	&#13;
-					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202611/484677.html">&#13;
-					<img src="https://editerupload.eepw.com.cn/202611/1794559739829770.jpg"/>&#13;
-					</a></div>	&#13;
-				</li>&#13;
-&#13;
-&#13;
-	&#13;
-								
-				
-				
-			</ul>												
-		</div>						
-	</section>
-		<div class="computer">
-	<a href="https://www.eepw.com.cn/article/202611/484819.htm" target="_blank">查看电脑版</a>
-	</div>
-	<!-- footer begin -->
-	<footer>		
-		<p class="fontArial">Copyright © 电子产品世界  京ICP备12027778号-2</p>
-	</footer>
-	<!-- footer end -->
-	<!--百度推送-->
-	<script>
-	(function(){
-	    var bp = document.createElement('script');
-	    bp.src = '//push.zhanzhang.baidu.com/push.js';
-	    var s = document.getElementsByTagName("script")[0];
-	    s.parentNode.insertBefore(bp, s);
-	})();
-	</script>
-	<!--百度推送-->
-	<div style="display:none;">
-	<script type="text/javascript">
-	var keywords = document.querySelector('meta[name="keywords"]').getAttribute('content');
-	document.write("&lt;script language='JavaScript' src='http://datasheet.eepw.com.cn/count/index?title="+document.title+"&amp;keyword="+keywords+"&amp;url="+location.href+"&amp;refer="+document.referrer+"'&gt;&lt;\/script&gt;");
-	</script>
-	
-	<script>
-    var _hmt = _hmt || [];
-    (function() {
-      var hm = document.createElement("script");
-      hm.src = "https://hm.baidu.com/hm.js?c6033714cc2a1e329fdce55d9ceb29bd";
-      var s = document.getElementsByTagName("script")[0]; 
-      s.parentNode.insertBefore(hm, s);
-    })();
-    </script>
-	
-</div>
-
- 
-<script src="https://www.eepw.com.cn/event/ad/m_right_box.js"/>
-</div>]]></description></item><item>    <title><![CDATA[佰维企业级 DDR5 RDIMM：以高带宽、高可靠支撑AI服务器与数据中心稳定运行-电子产品世界]]></title>    <link>https://m.eepw.com.cn/article/202611/484802.html</link>    <guid>https://m.eepw.com.cn/article/202611/484802.html</guid>    <pubDate>2026-11-20 15:05:07.454782</pubDate>    <description><![CDATA[<h2>佰维企业级 DDR5 RDIMM：以高带宽、高可靠支撑AI服务器与数据中心稳定运行</h2>		
-		<div class="time_source news-info">
-		
-				<a href="/m/list/special/network" class="news-lb">网络与存储</a> 
-		 
-				<span> 时间：2026-11-20 13:51</span>
-				</div>
-				<div class="content" id="con1" style="overflow:hidden;">
-		<p>AI 推理与智能体工作流正持续加剧内存压力——上下文频繁访问、KV 缓存持续占用、CPU 核心与通道密度不断提升，服务器对带宽、容量和访问效率的要求日益提高。佰维企业级 DDR5 RDIMM 以6400MT/s 高速传输、最大 128GB单条容量和企业级可靠性，面向服务器、云计算/数据中心、AI训练与推理、高性能计算、边缘计算场景，提升系统吞吐效率，保障算力集群稳定运行与关键业务连续性。</p><p><img width="484" src="https://editerupload.eepw.com.cn/fetch/202611/e46a252203c2f28a104ea1a847577d9a.png" alt="图片" height="758" border="0" title="图片"/></p><p><br/></p><p>01高速率 + 低延迟，提升服务器系统吞吐效率</p><p>佰维企业级 DDR5 RDIMM 提供 6400MT/s 高速传输，单条峰值带宽达51.2GB/s，并采用双独立 32bit I/O 子通道设计，实现更宽、更快的数据通道，提升高并发场景下的任务处理效率，显著降低内存访问延迟。</p><p>产品遵循 JEDEC 标准时序 CL52，兼顾高频带宽与稳定时序，适配服务器长期高负载运行。容量覆盖64GB/96GB/128GB 多规格，可支持百亿级参数模型加载，减少 I/O 等待，保障训练与推理任务顺畅运行。</p><p><img width="484" src="https://editerupload.eepw.com.cn/fetch/202611/81d55d59ab01aa2bfc4eca3629db54b4.png" alt="图片" height="836" border="0" title="图片"/></p><p>02企业级RAS设计，全维度可靠性验证：守护关键业务连续性</p><p>佰维企业级 DDR5 RDIMM 围绕数据完整性与安全性、信号完整性、供电稳定性及系统兼容性进行了企业级架构设计与验证。</p><ul><li><p>产品支持RCD 缓冲，并集成模组级 ECC（EC8）与颗粒内 On-die ECC双重纠错机制，从模组到颗粒多层保障数据传输准确性，满足AI 工作负载对 RAS（Reliability, Availability, Serviceability） 能力的要求。</p></li><li><p>板载 PMIC 电源管理芯片实现更精准电压调控，128GB容量下负载功耗≤13W，保障高频、高负载运行下的供电稳定性与信号稳定性。</p></li><li><p>0℃~ +95℃ 工作温度，金手指触点采用镀金工艺，抗氧化能力更强，插拔寿命更长。</p></li></ul><p><img width="484" src="https://editerupload.eepw.com.cn/fetch/202611/d3151356ed76c4807e925a83390caf9b.png" alt="图片" height="968" border="0" title="图片"/></p><p>产品依托自有封测工厂及佰维企业级存储测试实验室，开展覆盖产品全生命周期的可靠性验证。测试包括成品功能与电气性能测试、老化测试及系统级验证，并覆盖信号完整性、电压与温度压力、上下电循环、震动、冲击、弯曲/扭曲等测试用例。</p><p>针对不同容量占用、读写比例及长时间运行场景，佰维企业级存储实验室还通过多种混合型工作负载测试用例，对企业级SSD与服务器内存的持续读写能力、错误处理机制与数据一致性进行全面验证，助力提升产品在复杂运行环境下的可靠性，降低内存故障对业务稳定性的影响。</p><p>03  100%原厂颗粒 广泛兼容，快速导入与部署</p><p>佰维企业级 DDR5 RDIMM 严选 100% 原厂颗粒，采用成熟制程 DDR5 颗粒与耐高温、高可靠性元器件，确保品质稳定与供应连续。</p><p><img width="484" src="https://editerupload.eepw.com.cn/fetch/202611/881e49b4ef77153d266b4d83c8d50be6.png" alt="图片" height="710" border="0" title="图片"/></p><p>产品兼容主流服务器/CPU平台与操作系统，支持快速测试导入与规模化部署。依托覆盖北京、上海、深圳、杭州、西安、成都、重庆等核心城市的 FAE 服务团队，佰维可全程配合客户完成产品验证、平台适配与部署支持，降低导入风险与成本。</p><p>04结语</p><p>佰维面向 AI 服务器、云计算、数据中心及边缘计算等场景，构建了覆盖企业级 SSD、RDIMM 服务器内存与 CXL 内存扩展模块的全栈存储解决方案。依托自研企业级固件与系统架构设计，产品在性能、功耗、延迟与可靠性之间实现更优平衡。</p><p>在供应链方面，公司与主流存储晶圆厂签署长期采购协议，并建立合理的动态库存水位管理机制；结合自有封测制造能力，保障企业级产品稳定供货与一致品质，且核心 SATA、PCIe、RDIMM 产品已通过主流服务器平台与操作系统的兼容性认证，支持客户快速测试导入与规模化部署。在市场端，公司企业级 SSD 已进入头部 OEM 厂商、AI 服务器厂商及头部互联网企业核心供应链体系；未来将持续深化与服务器 OEM 及电信运营商的战略合作，巩固市场份额优势。</p>		<center>
-					</center>
-	<p class="keyp">关键词：
-				<a href="https://www.eepw.com.cn/tech/s/k/%E4%BD%B0%E7%BB%B4">佰维</a>
-			<a href="https://www.eepw.com.cn/tech/s/k/%E4%BC%81%E4%B8%9A%E7%BA%A7">企业级</a>
-			<a href="https://www.eepw.com.cn/tech/s/k/DDR5">DDR5</a>
-			<a href="https://www.eepw.com.cn/tech/s/k/RDIMM">RDIMM</a>
-			<a href="https://www.eepw.com.cn/tech/s/k/AI%E6%9C%8D%E5%8A%A1%E5%99%A8">AI服务器</a>
-			<a href="https://www.eepw.com.cn/tech/s/k/%E6%95%B0%E6%8D%AE%E4%B8%AD%E5%BF%83">数据中心</a>
-		</p>
-
-<div class="content" style="margin-top:20px;">
-	<!--ad start-->
-	<div style="width: 100%;margin-bottom:1em;">
-	<!-- 广告位：M02 -->
-		<script type="text/javascript">&lt;!--//&lt;![CDATA[
-   var m3_u = (location.protocol=='https:'?'https://ad.eepw.com.cn/www/delivery/ajs.php':'http://ad.eepw.com.cn/www/delivery/ajs.php');
-   var m3_r = Math.floor(Math.random()*99999999999);
-   if (!document.MAX_used) document.MAX_used = ',';
-   document.write ("&lt;scr"+"ipt type='text/javascript' src='"+m3_u);
-   document.write ("?zoneid=123");
-   document.write ('&amp;amp;cb=' + m3_r);
-   if (document.MAX_used != ',') document.write ("&amp;amp;exclude=" + document.MAX_used);
-   document.write (document.charset ? '&amp;amp;charset='+document.charset : (document.characterSet ? '&amp;amp;charset='+document.characterSet : ''));
-   document.write ("&amp;amp;loc=" + escape(window.location));
-   if (document.referrer) document.write ("&amp;amp;referer=" + escape(document.referrer));
-   if (document.context) document.write ("&amp;context=" + escape(document.context));
-   if (document.mmm_fo) document.write ("&amp;amp;mmm_fo=1");
-   document.write ("'&gt;&lt;\/scr"+"ipt&gt;");
-//]]&gt;--&gt;</script><noscript><a href="http://ad.eepw.com.cn/www/delivery/ck.php?n=a3ee0761&amp;cb=INSERT_RANDOM_NUMBER_HERE" target="_blank"><img src="http://ad.eepw.com.cn/www/delivery/avw.php?zoneid=123&amp;cb=INSERT_RANDOM_NUMBER_HERE&amp;n=a3ee0761" border="0" alt=""/></a></noscript>
-	</div>
-	<!--ad end-->
-	
-<script>
-var $oBanana=$('#banana');
-$($oBanana).animate({'font-size':'24'},300);
-</script>	
-</div>	
-	
-	<!-- 相关文章-->	
-	<div style="text-align: left; padding-left:10px;max-width:960px;margin: 0 auto;font-size: 1.25em;">
-			<h3>相关文章</h3>							
-	</div>
-	<section class="clear">
-		<div id="new_conwrap">
-			<ul>
-						
-				&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484802.html">佰维企业级 DDR5 RDIMM：以高带宽、</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/network" class="news-lb">网络与存储</a>&#13;
-<span class="news-time">2026-11-20</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-&#13;
-<li class="news2 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484772.html">USCC 2026年度报告：美国对华AI政策</a></div>					&#13;
-<div class="news-info">&#13;
-<span class="news-time">2026-11-19</span></div>																						&#13;
-					</div>	&#13;
-					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202611/484772.html">&#13;
-					<img src="https://editerupload.eepw.com.cn/202611/b6cd74cd1ac4267b305634dfb0b0dfab.jpeg"/>&#13;
-					</a></div>	&#13;
-				</li>&#13;
-&#13;
-&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484745.html">佰维携122.88TB SSD亮相elect</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/network" class="news-lb">网络与存储</a>&#13;
-<span class="news-time">2026-11-18</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-&#13;
-<li class="news2 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484743.html">应对数据中心散热挑战</a></div>					&#13;
-<div class="news-info">&#13;
-<a href="/m/list/special/network" class="news-lb">&#13;
-网络与存储</a>&#13;
-<span class="news-time">2026-11-18</span></div>																						&#13;
-					</div>	&#13;
-					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202611/484743.html">&#13;
-					<img src="https://editerupload.eepw.com.cn/fetch/202611/3a8cc48fc6b4ba8eb951f9b445587072.png"/>&#13;
-					</a></div>	&#13;
-				</li>&#13;
-&#13;
-&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484730.html">佩恩：当下正是重新思考 GPU 与数据中心算</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/smart" class="news-lb">智能计算</a>&#13;
-<span class="news-time">2026-11-18</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484729.html">超大规模数据中心消耗美国 2% 电力</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/network" class="news-lb">网络与存储</a>&#13;
-<span class="news-time">2026-11-18</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484719.html">英特尔携手RadixArk深度优化SGLan</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/smart" class="news-lb">智能计算</a>&#13;
-<span class="news-time">2026-11-17</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-&#13;
-<li class="news2 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484645.html">AMD 推出第六代 AMD EPYC 嵌入式</a></div>					&#13;
-<div class="news-info">&#13;
-<a href="/m/list/special/embedded" class="news-lb">&#13;
-嵌入式系统</a>&#13;
-<span class="news-time">2026-11-13</span></div>																						&#13;
-					</div>	&#13;
-					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202611/484645.html">&#13;
-					<img src="https://editerupload.eepw.com.cn/fetch/202611/609925cf04e96f69658c26ac3cce5c53.png"/>&#13;
-					</a></div>	&#13;
-				</li>&#13;
-&#13;
-&#13;
-	&#13;
-								
-				
-				
-			</ul>												
-		</div>						
-	</section>
-		<div class="computer">
-	<a href="https://www.eepw.com.cn/article/202611/484802.htm" target="_blank">查看电脑版</a>
-	</div>
-	<!-- footer begin -->
-	<footer>		
-		<p class="fontArial">Copyright © 电子产品世界  京ICP备12027778号-2</p>
-	</footer>
-	<!-- footer end -->
-	<!--百度推送-->
-	<script>
-	(function(){
-	    var bp = document.createElement('script');
-	    bp.src = '//push.zhanzhang.baidu.com/push.js';
-	    var s = document.getElementsByTagName("script")[0];
-	    s.parentNode.insertBefore(bp, s);
-	})();
-	</script>
-	<!--百度推送-->
-	<div style="display:none;">
-	<script type="text/javascript">
-	var keywords = document.querySelector('meta[name="keywords"]').getAttribute('content');
-	document.write("&lt;script language='JavaScript' src='http://datasheet.eepw.com.cn/count/index?title="+document.title+"&amp;keyword="+keywords+"&amp;url="+location.href+"&amp;refer="+document.referrer+"'&gt;&lt;\/script&gt;");
-	</script>
-	
-	<script>
-    var _hmt = _hmt || [];
-    (function() {
-      var hm = document.createElement("script");
-      hm.src = "https://hm.baidu.com/hm.js?c6033714cc2a1e329fdce55d9ceb29bd";
-      var s = document.getElementsByTagName("script")[0]; 
-      s.parentNode.insertBefore(hm, s);
-    })();
-    </script>
-	
-</div>
-
- 
-<script src="https://www.eepw.com.cn/event/ad/m_right_box.js"/>
-</div>]]></description></item><item>    <title><![CDATA[思特威推出32MP 0.56μm小像素尺寸智能手机CMOS图像传感器-电子产品世界]]></title>    <link>https://m.eepw.com.cn/article/202611/484808.html</link>    <guid>https://m.eepw.com.cn/article/202611/484808.html</guid>    <pubDate>2026-11-20 15:05:02.114945</pubDate>    <description><![CDATA[<h2>思特威推出32MP 0.56μm小像素尺寸智能手机CMOS图像传感器</h2>		
-		<div class="time_source news-info">
-		
-				<a href="/m/list/special/wireless" class="news-lb">手机与无线通信</a> 
-		 
-				<span> 时间：2026-11-20 14:14</span>
-				</div>
-				<div class="content" id="con1" style="overflow:hidden;">
-		<p>近日，技术先进的CMOS图像传感器供应商思特威（SmartSens，股票代码688213）推出32MP 0.56μm小像素尺寸手机CMOS图像传感器SC303HS。新品采用思特威SmartClarity®-3技术平台，搭载SFCPixel®等优势技术，支持ULP超低功耗模式，具备超低功耗、低噪声及高色彩还原度等特性优势，为智能手机前摄、超广角摄像头提供兼顾高性能表现与成本竞争力的成像方案。</p><p><img src="https://editerupload.eepw.com.cn/fetch/202611/087381a596084301cd6637c913808533.png" alt="图片" width="580" height="251" border="0" title="图片"/></p><p>创新小像素结构 光学性能多重优化</p><p>目前，智能手机前摄和超广角摄像头在暗光下画质极易下降，前摄夜间视频通话时噪点尤为明显。依托思特威SmartClarity®-3平台和SFCPixel®技术的共同赋能，SC303HS专为智能手机前摄、超广角摄像头设计，其感度与噪声性能得到有效改善。</p><p>低噪声</p><p>1/4英寸靶面的SC303HS搭载思特威SFCPixel®自研技术，基于SFC架构的2x2共享像素结构电路设计‌，实现更低的读取噪声及更好的暗场成像效果。SC303HS在0.56μm小像素尺寸框架下，SC303HS的读取噪声最低可达1.1e-*，在户外低照、室内弱光等环境下能够输出低噪点的纯净画面，呈现更丰富、细腻的暗部细节。</p><p>高色彩还原度</p><p>得益于背照式（BSI）像素设计和色彩工艺，SC303HS的色彩串扰实现大幅优化，较前代产品分别降低约22.5%（A光源）和21.3%（D65光源），增强了SC303HS在不同光照条件下的色彩还原能力，能够满足前摄和超广角摄像头的日常拍摄需求，使得暗光自拍不偏色，夜拍暗部色彩更明晰。</p><p>超低功耗表现 实现Always-On低功耗常开运行</p><p>SC303HS支持ULP（Ultra Low Power）超低功耗模式，可维持低功耗常开状态，无需唤醒整机即可实现Always-On运行。搭配后端算法后，SC303HS可在待机状态下完成手势识别、人脸检测等基础视觉任务，在识别到目标事件时切换至高画质成像模式，大幅降低整机待机功耗，保证智能手机前摄、超广角摄像头的全天候视觉功能低功耗运行。</p><p>依托思特威成熟产品方案 助力客户实现规模化落地</p><p>作为思特威面向智能手机市场32MP CIS产品线的重要补充，SC303HS兼顾高性能表现与成本竞争力。其小尺寸有利于降低整机BOM成本、释放模组空间，支持更轻薄模组与整机设计，助力终端厂商、OEM和模组厂加快产品导入和规模化量产。</p><p><br/></p><p><img src="https://editerupload.eepw.com.cn/fetch/202611/c79ea555163da65d9e6d762e5953e88e.png" alt="图片" width="580" height="434" border="0" title="图片"/></p><p>目前，SC303HS已接受送样，将于2027年Q1实现量产。想了解更多有关SC303HS的产品信息，请与思特威销售人员联系。</p><p>*SC303HS读取噪声测试条件：暗场，max AG，66ms曝光下。</p>		<center>
-					</center>
-	<p class="keyp">关键词：
-				<a href="https://www.eepw.com.cn/tech/s/k/%E6%80%9D%E7%89%B9%E5%A8%81">思特威</a>
-			<a href="https://www.eepw.com.cn/tech/s/k/32MP">32MP</a>
-			<a href="https://www.eepw.com.cn/tech/s/k/0.56%CE%BCm">0.56μm</a>
-			<a href="https://www.eepw.com.cn/tech/s/k/%E5%B0%8F%E5%83%8F%E7%B4%A0%E5%B0%BA%E5%AF%B8">小像素尺寸</a>
-			<a href="https://www.eepw.com.cn/tech/s/k/%E6%99%BA%E8%83%BD%E6%89%8B%E6%9C%BA">智能手机</a>
-			<a href="https://www.eepw.com.cn/tech/s/k/CMOS">CMOS</a>
-			<a href="https://www.eepw.com.cn/tech/s/k/%E5%9B%BE%E5%83%8F%E4%BC%A0%E6%84%9F%E5%99%A8">图像传感器</a>
-		</p>
-
-<div class="content" style="margin-top:20px;">
-	<!--ad start-->
-	<div style="width: 100%;margin-bottom:1em;">
-	<!-- 广告位：M02 -->
-		<script type="text/javascript">&lt;!--//&lt;![CDATA[
-   var m3_u = (location.protocol=='https:'?'https://ad.eepw.com.cn/www/delivery/ajs.php':'http://ad.eepw.com.cn/www/delivery/ajs.php');
-   var m3_r = Math.floor(Math.random()*99999999999);
-   if (!document.MAX_used) document.MAX_used = ',';
-   document.write ("&lt;scr"+"ipt type='text/javascript' src='"+m3_u);
-   document.write ("?zoneid=123");
-   document.write ('&amp;amp;cb=' + m3_r);
-   if (document.MAX_used != ',') document.write ("&amp;amp;exclude=" + document.MAX_used);
-   document.write (document.charset ? '&amp;amp;charset='+document.charset : (document.characterSet ? '&amp;amp;charset='+document.characterSet : ''));
-   document.write ("&amp;amp;loc=" + escape(window.location));
-   if (document.referrer) document.write ("&amp;amp;referer=" + escape(document.referrer));
-   if (document.context) document.write ("&amp;context=" + escape(document.context));
-   if (document.mmm_fo) document.write ("&amp;amp;mmm_fo=1");
-   document.write ("'&gt;&lt;\/scr"+"ipt&gt;");
-//]]&gt;--&gt;</script><noscript><a href="http://ad.eepw.com.cn/www/delivery/ck.php?n=a3ee0761&amp;cb=INSERT_RANDOM_NUMBER_HERE" target="_blank"><img src="http://ad.eepw.com.cn/www/delivery/avw.php?zoneid=123&amp;cb=INSERT_RANDOM_NUMBER_HERE&amp;n=a3ee0761" border="0" alt=""/></a></noscript>
-	</div>
-	<!--ad end-->
-	
-<script>
-var $oBanana=$('#banana');
-$($oBanana).animate({'font-size':'24'},300);
-</script>	
-</div>	
-	
-	<!-- 相关文章-->	
-	<div style="text-align: left; padding-left:10px;max-width:960px;margin: 0 auto;font-size: 1.25em;">
-			<h3>相关文章</h3>							
-	</div>
-	<section class="clear">
-		<div id="new_conwrap">
-			<ul>
-						
-				&#13;
-&#13;
-&#13;
-<li class="news2 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484808.html">思特威推出32MP 0.56μm小像素尺寸智</a></div>					&#13;
-<div class="news-info">&#13;
-<a href="/m/list/special/wireless" class="news-lb">&#13;
-手机与无线通信</a>&#13;
-<span class="news-time">2026-11-20</span></div>																						&#13;
-					</div>	&#13;
-					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202611/484808.html">&#13;
-					<img src="https://editerupload.eepw.com.cn/fetch/202611/087381a596084301cd6637c913808533.png"/>&#13;
-					</a></div>	&#13;
-				</li>&#13;
-&#13;
-&#13;
-	&#13;
-&#13;
-&#13;
-<li class="news2 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484727.html">ASICFPGA 中文网站正式上线，介绍相机</a></div>					&#13;
-<div class="news-info">&#13;
-<a href="/m/list/special/embedded" class="news-lb">&#13;
-嵌入式系统</a>&#13;
-<span class="news-time">2026-11-18</span></div>																						&#13;
-					</div>	&#13;
-					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202611/484727.html">&#13;
-					<img src="https://editerupload.eepw.com.cn/fetch/202611/9c8243fbca41a404f596166d367e6936.png"/>&#13;
-					</a></div>	&#13;
-				</li>&#13;
-&#13;
-&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484656.html">思特威推出全新5MP高分辨率智能安防应用CM</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/iot" class="news-lb">物联网与传感器</a>&#13;
-<span class="news-time">2026-11-13</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-&#13;
-<li class="news2 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484528.html">全球智能手机市场最新报告：平均售价创下历年单</a></div>					&#13;
-<div class="news-info">&#13;
-<span class="news-time">2026-11-09</span></div>																						&#13;
-					</div>	&#13;
-					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202611/484528.html">&#13;
-					<img src="https://editerupload.eepw.com.cn/202611/9d51d949f7ce37aefdce758f27632afd.jpeg"/>&#13;
-					</a></div>	&#13;
-				</li>&#13;
-&#13;
-&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484479.html">思特威8.3MP车规级CMOS图像传感器SC</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/auto" class="news-lb">汽车电子</a>&#13;
-<span class="news-time">2026-11-05</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-&#13;
-<li class="news2 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202611/484434.html">索尼IMX742——1毫米方形图像传感器，面</a></div>					&#13;
-<div class="news-info">&#13;
-<a href="/m/list/special/medical" class="news-lb">&#13;
-医疗电子</a>&#13;
-<span class="news-time">2026-11-04</span></div>																						&#13;
-					</div>	&#13;
-					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202611/484434.html">&#13;
-					<img src="https://editerupload.eepw.com.cn/202611/1793756724361369.png"/>&#13;
-					</a></div>	&#13;
-				</li>&#13;
-&#13;
-&#13;
-	&#13;
-&#13;
-&#13;
-<li class="news2 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202610/484322.html">首发Lofic HDR® 4.0技术！思特威</a></div>					&#13;
-<div class="news-info">&#13;
-<a href="/m/list/special/iot" class="news-lb">&#13;
-物联网与传感器</a>&#13;
-<span class="news-time">2026-10-30</span></div>																						&#13;
-					</div>	&#13;
-					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202610/484322.html">&#13;
-					<img src="https://editerupload.eepw.com.cn/fetch/202610/2fb48cffd686dd07c249eb2bba706d7e.png"/>&#13;
-					</a></div>	&#13;
-				</li>&#13;
-&#13;
-&#13;
-	&#13;
-&#13;
-&#13;
-<li class="news2 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202610/484289.html">豪威集团推出业界首款2.2微米全局快门单曝光</a></div>					&#13;
-<div class="news-info">&#13;
-<a href="/m/list/special/iot" class="news-lb">&#13;
-物联网与传感器</a>&#13;
-<span class="news-time">2026-10-28</span></div>																						&#13;
-					</div>	&#13;
-					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202610/484289.html">&#13;
-					<img src="https://editerupload.eepw.com.cn/fetch/202610/cd8d6b60247ba4c94238f6e5ebd4422a.png"/>&#13;
-					</a></div>	&#13;
-				</li>&#13;
-&#13;
-&#13;
-	&#13;
-								
-				
-				
-			</ul>												
-		</div>						
-	</section>
-		<div class="computer">
-	<a href="https://www.eepw.com.cn/article/202611/484808.htm" target="_blank">查看电脑版</a>
-	</div>
-	<!-- footer begin -->
-	<footer>		
-		<p class="fontArial">Copyright © 电子产品世界  京ICP备12027778号-2</p>
-	</footer>
-	<!-- footer end -->
-	<!--百度推送-->
-	<script>
-	(function(){
-	    var bp = document.createElement('script');
-	    bp.src = '//push.zhanzhang.baidu.com/push.js';
-	    var s = document.getElementsByTagName("script")[0];
-	    s.parentNode.insertBefore(bp, s);
-	})();
-	</script>
-	<!--百度推送-->
-	<div style="display:none;">
-	<script type="text/javascript">
-	var keywords = document.querySelector('meta[name="keywords"]').getAttribute('content');
-	document.write("&lt;script language='JavaScript' src='http://datasheet.eepw.com.cn/count/index?title="+document.title+"&amp;keyword="+keywords+"&amp;url="+location.href+"&amp;refer="+document.referrer+"'&gt;&lt;\/script&gt;");
-	</script>
-	
-	<script>
-    var _hmt = _hmt || [];
-    (function() {
-      var hm = document.createElement("script");
-      hm.src = "https://hm.baidu.com/hm.js?c6033714cc2a1e329fdce55d9ceb29bd";
-      var s = document.getElementsByTagName("script")[0]; 
-      s.parentNode.insertBefore(hm, s);
-    })();
-    </script>
-	
-</div>
-
- 
-<script src="https://www.eepw.com.cn/event/ad/m_right_box.js"/>
-</div>]]></description></item>  </channel></rss>
+</div>	&#13;]]></description></item>  </channel></rss>
