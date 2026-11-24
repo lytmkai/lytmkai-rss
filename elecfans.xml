@@ -1,4 +1,54 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[功率模块为什么需要进行局部放电测试]]></title>    <link>https://www.elecfans.com/d/8970805.html</link>    <guid>https://www.elecfans.com/d/8970805.html</guid>    <pubDate>2026-11-24 14:16:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[【经验分享】NXP KE1xZ量产踩坑指南，做BLDC/工业控制的可以看看]]></title>    <link>https://www.elecfans.com/d/8970799.html</link>    <guid>https://www.elecfans.com/d/8970799.html</guid>    <pubDate>2026-11-24 14:15:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8970799" value="https://file.elecfans.com/web2/M00/27/7C/poYBAGHCiPqACqxoABWNJdEsDcw991.pdf"/><h1>【经验分享】<a href="https://bbs.elecfans.com/group_729" target="_blank"><u>NXP</u></a> KE1xZ量产踩坑指南，做<a href="https://www.elecfans.com/tags/bldc/" target="_blank"><u>BLDC</u></a>/<a href="https://m.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>的可以看看</h1>
+<p>最近帮客户做低压BLDC水泵的方案，前几年一直用<a href="https://bbs.elecfans.com/zhuti_stm32_1.html" target="_blank"><u>STM32</u></a>G0，今年以来交期不稳就算了，价格涨了快3倍，实在扛不住，转头试了NXP的KE1xZ系列，前后折腾了2个多月，跑通了量产版本，小批量试产1000台目前零故障，整理下这个芯片的优缺点、设计注意点，给有需要的弟兄们避坑。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8970799" target="_blank">MKE14Z128VLH7.pdf</a></p>
+<hr/>
+<h2>一、先搞清楚定位：这芯片适合啥场景？</h2>
+<p>先给没接触过的弟兄们快速划个重点：</p>
+<ul>
+<li>内核：<a href="https://m.hqchip.com/app/1378" target="_blank"><u>ARM</u></a> Cortex-M0+，最高72MHz，带硬件除法/开方模块（这个是真的香，后面说）</li>
+<li>内存：最高256KB Flash + 32KB <a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>，还有32KB FlexNVM可以<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>EEP<a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a></li>
+<li>工作参数：宽电压2.7~5.5V，工业级-40~105℃，<a href="https://www.hqchip.com/app/1587" target="_blank"><u>ESD</u></a> HBM做到±6kV，抗干扰够硬</li>
+<li>封装：64/100脚LQFP，都是常用的板子好画</li>
+</ul>
+<p><strong>适合的场景我实测下来主要三个：</strong></p>
+<ol>
+<li>BLDC/永磁同步<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机控制</u></a>：双1Msps 12位<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a> + 3路带死区插入的Flex<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>Ti</u></a>mer，硬件触发采样不用软件干预，做方波、FOC都绰绰有余；</li>
+<li>工业类带触摸/按键的小设备：自带25通道TSI触摸模块，抗干扰比普通IO模拟的稳太多，过±8kV接触ESD不带跳的，省了外部触摸芯片的钱；</li>
+<li>低成本宽电压节点：5V直供不用加<a href="https://www.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>，省BOM还少个故障点，做继电器、<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>网关啥的都合适。</li>
+</ol>
+<p><strong>不适合的也直说：</strong> 要跑<a href="https://www.elecfans.com/tags/蓝牙/" target="_blank"><u>蓝牙</u></a>、WiFi协议栈，或者需要大内存跑<a href="https://www.elecfans.com/tags/RTOS/" target="_blank"><u>RTOS</u></a>+复杂逻辑的就别碰了，毕竟是M0+定位，资源上限在这。</p>
+<hr/>
+<h2>二、实际用下来最香的几个特性，真的省成本省时间</h2>
+<h3>1. 宽电压5V直供，省LDO还抗干扰</h3>
+<p>我这个水泵方案是12V输入转5V给<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>和驱动供电，之前用3.3V的MCU还要加个LDO，算下来BOM多2毛多，还要考虑LDO压降、散热的问题，KE1xZ直接5V扔进去就行，我实测5.2V长时间跑也没任何问题，工业场合<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>波动大的场景特别友好。</p>
+<h3>2. <a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>控制外设刚好踩在需求点上</h3>
+<p>做FOC的弟兄们都懂，<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>C采样的同步性太重要了，这个芯片的ADC支持硬件触发，和FlexTimer直接联动，我做双<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>采样，<a href="https://www.elecfans.com/tags/定时器/" target="_blank"><u>定时器</u></a>到点自动触发ADC采样，不用关中断、不用软件干预，采样抖动不到1us，比之前用某国产M0+要软件卡时间采样稳太多。</p>
+<p>还有那个硬件除法器MMDVSQ，之前用普通M0+做<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>D运算、Clark/Park变换，除法要跑几百个周期，72MHz跑20KHz FOC <a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>占用率快到80%，剩下的时间 barely 够跑通讯和触摸，用KE1xZ的硬件除法，几个周期就跑完，现在CPU占用率才40%，还留了不少余量加功能。</p>
+<h3>3. 模拟EEPROM省了外挂芯片</h3>
+<p>自带32KB FlexNVM，配成128:1的映射比例的话，写入寿命最高能到1280万次，我存电机参数、用户设置完全够用，不用外挂24C02之类的EEPROM，又省了几毛钱。</p>
+<hr/>
+<h2>三、重点！硬件设计踩过的坑，别再浪费时间踩了</h2>
+<p>这部分是我折腾了一个多月踩出来的血泪教训，能帮大家省不少调试时间：</p>
+<h3>1. 复位电路别偷工减料</h3>
+<p>这个芯片的RESET脚是伪开漏，内部虽然有上拉，但是抗干扰不够，我刚开始没加外部RC，打±4kV群脉冲的时候频繁复位，后来按手册加了10k上拉+0.1uF到地，就完全稳了。如果要接外部<a href="https://www.elecfans.com/tags/看门狗/" target="_blank"><u>看门狗</u></a>的话，一定要在复位脚和看门狗输出之间串个100Ω~1kΩ的电阻，不然容易烧IO脚，我第一批有3片就是这么烧的。</p>
+<h3>2. ADC采样的坑</h3>
+<p>手册里写了ADC输入源阻抗不能超过5kΩ，我刚开始为了滤波省事，加了10k电阻+100nF<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>，采样值飘了3%，后来换成2k电阻就好了。还有<a href="https://www.elecfans.com/v/tag/3668/" target="_blank"><u>VR</u></a>EFH/VREFL脚一定要加100nF去耦电容，尽量靠近引脚，我最开始没加，用内部和VDDA短接的配置，采样误差有3%，加了电容之后直接降到0.5%以内，符合设计要求。</p>
+<h3>3. 晶振的坑</h3>
+<p>我用的是8MHz外部晶振，一开始选了高增益（HGO=1）模式，忘记加1M的外部反馈电阻，晶振死活起不来，折腾了一天才看到手册里写：低功耗模式（HGO=0）内部带反馈电阻，高增益模式要自己外接。还有32k慢晶振如果用的话，布局一定要尽量短，不要走长线，旁边不要走高频<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>，不然很容易起振失败或者走时不准。</p>
+<h3>4. 调试<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>的坑</h3>
+<p>SWD的CLK脚内部是下拉，DIO是内部上拉，但是建议外部还是各加一个10k的上下拉电阻，我第一批100片里有3片烧录的时候识别不到，加了电阻之后就再也没出现过这个问题。</p>
+<h3>5. 未使用引脚的处理</h3>
+<p>别傻呵呵把所有空脚都接地或者接电源，手册里明确说了：未使用的引脚直接浮空，把对应PIN的MUX配置成0，关闭数字输入路径就行，最省电。我一开始把所有空脚都接地，VLPS低功耗模式下功耗高了20uA，改了之后才降到手册标称的30uA以内。</p>
+<hr/>
+<h2>四、软件方面的小提醒</h2>
+<ol>
+<li>直接用MCUXpresso的<a href="https://www.hqchip.com/app/1522" target="_blank"><u>SD</u></a>K就行，KE1xZ的支持很完善，还有官方的FOC例程，我改改电机参数、引脚映射，一周就把电机部分调通了，不用自己从头写定时器、ADC驱动，省了至少半个月时间；</li>
+<li>低功耗模式实测：VLPS模式下关闭<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>偏置，25℃下功耗实测29uA，还支持触摸、<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>、GPIO中断唤醒，做电池供电的设备也够用；</li>
+<li>Flash擦写寿命：程序Flash是1万次擦写，足够日常固件升级用，模拟EEPROM的话不要直接写程序Flash，用官方的FlexNVM驱动，寿命有保障。</li>
+</ol>
+<hr/>
+<h2>最后总结下</h2>
+<p>总体来说这个芯片的性价比是真的高，我这个方案比之前用STM32G0的版本BOM成本降了3块多，性能还没打折扣，现在NXP的交期也稳，不会动不动砍单，对成本敏感的工业、电机类项目真的可以试试。</p>
+<p>有在用这个芯片的弟兄们欢迎评论区交流踩坑经验，需要我这个BLDC水泵方案参考设计的也可以留个邮箱，我看到就发~</p>]]></description></item><item>    <title><![CDATA[功率模块为什么需要进行局部放电测试]]></title>    <link>https://www.elecfans.com/d/8970805.html</link>    <guid>https://www.elecfans.com/d/8970805.html</guid>    <pubDate>2026-11-24 14:16:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
 	随着<a href="https://m.elecfans.com/v/tag/293/" target="_blank"><u>新能源</u></a>汽车、光伏、储能、轨道交通等应用对功率半导体器件绝缘可靠性提出更高要求，局部放电测试（Partial Discharge，PD）成为识别<a href="https://m.hqchip.com/app/2047" target="_blank"><u>功率模块</u></a>潜在绝缘缺陷的重要测试手段之一。</p>
 <p style="text-indent:2em;">
 	功率半导体局部放电测试主要用于检测器件封装绝缘系统中的气泡、分层、界面脱粘、杂质及局部电场集中等潜在缺陷，并通过局部放电量、局部放电起始电压PDIV等指标，对器件绝缘性能进行评价。</p>
@@ -3362,91 +3412,4 @@ unused的GPIO直接浮空就行，把对应引脚的MUX配置成0，关闭数字
 <li>选型指南：KINETISKMCUSELGD</li>
 <li>勘误表：KINETIS_xN74M1（x替换成你用的芯片版本）</li>
 </ul>
-<p>有没有用这款芯片做过项目的老哥？评论区聊聊你们踩过啥坑，需要我整理的Excel版参数表的可以留个邮箱~</p>]]></description></item><item>    <title><![CDATA[踩坑实录：Kinetis K51做低功耗仪表的硬件设计要点梳理]]></title>    <link>https://www.elecfans.com/d/8970165.html</link>    <guid>https://www.elecfans.com/d/8970165.html</guid>    <pubDate>2026-11-24 12:40:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8970165" value="https://file.elecfans.com/web2/M00/84/92/pYYBAGOcQzGAaxMmACPfVPq3kio697.pdf"/><h1>踩坑实录：Kine<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>ti</u></a>s K51做低功耗仪表的硬件设计要点梳理</h1>
-<p>最近在搞一款带段码LCD、要求2节AA电池续航18个月以上的工业采集终端，对比了一圈选了<a href="https://www.elecfans.com/tags/nxp/" target="_blank"><u>NXP</u></a>（原飞思卡尔）的Kinetis K51系列，翻了3天datasheet+调了2周板子，把核心参数和容易踩的坑整理出来，给有需要的同行参考。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8970165" target="_blank">MK51DX128CMC7.pdf</a></p>
-<p>我们实际用的型号是<code>MK51DX256CLL7</code>，72MHz主频，256KB Flash，100脚LQFP封装，刚好满足需求。</p>
-<hr/>
-<h2>一、为啥选K51？就是冲它的集成度和低功耗</h2>
-<p>做电池供电的工业仪表最头疼的就是外搭芯片多、功耗压不下来，K51刚好戳中了这个痛点：</p>
-<ul>
-<li>宽压1.71~3.6V，完美适配2节AA<a href="https://www.elecfans.com/yuanqijian/dianchi/dianchishengchang/" target="_blank"><u>干电池</u></a>（满电3V，截止2V）</li>
-<li>内置段码LCD<a href="https://m.hqchip.com/app/1847" target="_blank"><u>驱动器</u></a>、低功耗触摸接口（TSI），省了2颗外搭芯片</li>
-<li>双16位<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>+PGA（最高64倍增益）+运放+<a href="https://m.hqchip.com/app/1737" target="_blank"><u>比较器</u></a>，小<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>采集不用外搭运放电路</li>
-<li>低功耗模式足够多，最低功耗模式下<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>不到2μA，RTC走时完全不费电</li>
-</ul>
-<hr/>
-<h2>二、<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>与低功耗设计：这些参数没看对直接导致续航翻车</h2>
-<h3>核心参数先拎清楚</h3>
-<table>
-<thead>
-<tr>
-<th>模式</th>
-<th>典型功耗（3V供电）</th>
-<th>唤醒时间</th>
-<th>适用场景</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>运行模式（外设全开）</td>
-<td>31mA</td>
-<td>-</td>
-<td>正常采集、<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a></td>
-</tr>
-<tr>
-<td>VLPR极低功耗运行</td>
-<td>1.46mA</td>
-<td>-</td>
-<td>低频采集场景</td>
-</tr>
-<tr>
-<td>VLLS1极低泄漏停止</td>
-<td>1.59μA</td>
-<td>112μs</td>
-<td>长时间待机，需要快速唤醒</td>
-</tr>
-<tr>
-<td>VBAT模式（仅RTC运行）</td>
-<td>0.67μA</td>
-<td>-</td>
-<td>掉电时钟保持</td>
-</tr>
-</tbody>
-</table>
-<h3>我踩过的坑</h3>
-<ol>
-<li><strong>LVD阈值一定要提前配</strong>：K51有高低两档低压检测阈值，2节AA电池的话直接设2.48V的<a href="https://m.elecfans.com/v/tag/873/" target="_blank"><u>高压</u></a>档，低于阈值直接触发中断保存数据，别像我之前做的旧项目没配，电池低压的时候<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>跑飞丢了数据。</li>
-<li><strong>数字/<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>电源压差不能超0.1V</strong>：<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>布线的时候VDD和VDDA要走同一段电源路径，数字地和模拟地单点共地，不然<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>C精度直接飘到没眼看。</li>
-<li><strong>低功耗唤醒时间要留余量</strong>：VLLS模式唤醒最快也要70多μs，如果你做的是脉冲采集类应用，要提前算好唤醒时序，别错过采集窗口。</li>
-</ol>
-<hr/>
-<h2>三、模拟外设：真·小信号采集神器，但注意精度限制</h2>
-<p>K51的模拟外设是真的卷，双16位ADC、12位<a href="https://www.elecfans.com/tags/dac/" target="_blank"><u>DAC</u></a>、2个通用运放、1个跨阻<a href="https://www.elecfans.com/tags/放大器/" target="_blank"><u>放大器</u></a>、3个带6位DAC的比较器，我们做微安级电流采集直接省了2颗外搭运放，BOM少了十几块钱。</p>
-<h3>重点注意事项</h3>
-<ol>
-<li><strong>16位精度只有差分通道能用</strong>：只有<code>ADCx_DP0/ADCx_DM0</code>这两个差分通道能达到标称的16位精度，其他单端通道最多12位精度，别搞错了通道白忙活。</li>
-<li><strong>PGA增益越高，对前端阻抗要求越严</strong>：PGA开启的情况下，前端<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>输出阻抗不能超过100Ω，我一开始用了个输出阻抗1k的电流传感器，增益偏差直接到了2%，查了半天才找到原因。</li>
-<li><strong>内置参考源温漂是80ppm/℃</strong>：如果你的应用温度范围超过-20~60℃，对ADC精度要求又高，建议外搭<a href="https://m.hqchip.com/app/1252" target="_blank"><u>低温漂</u></a>参考源，不然温漂带来的误差会超出允许范围。</li>
-<li><strong>比较器带6位DAC太香了</strong>：做过流、过压检测直接用内置CMP就行，不用外搭比较器和分压<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>，省BOM还省PCB空间。</li>
-</ol>
-<hr/>
-<h2>四、HMI外设：LCD+触摸省了两颗芯片</h2>
-<p>我们的产品需要6位段码显示+3个<a href="https://www.elecfans.com/kongzhijishu/gongyeanquan/536865.htm" target="_blank"><u>触摸按键</u></a>，K51刚好自带这俩功能，省了LCD驱动和触摸检测芯片。</p>
-<h3>设计要点</h3>
-<ol>
-<li><strong>LCD玻璃<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>别超8nF</strong>：选段码屏的时候要注意参数，负载电容超过8nF的话会出现显示暗、刷新异常的问题，LADJ参数要根据屏的电容配。</li>
-<li><strong>TSI触摸抗干扰真的强</strong>：最小能检测0.008fF的电容变化，戴薄PE手套也能正常触发，比普通IO加电容检测的方案稳定太多，注意TSI的布线要远离高频信号线，参考电容选100nF的就够。</li>
-</ol>
-<hr/>
-<h2>五、<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>与PCB布线提醒</h2>
-<ol>
-<li><strong>外设接口真的够多</strong>：5个<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>、2个SPI、2个<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>、<a href="https://www.hqchip.com/app/1515" target="_blank"><u>USB</u></a> OTG、I2S，我们接485、SPI Flash、<a href="https://www.elecfans.com/tags/蓝牙/" target="_blank"><u>蓝牙</u></a>模块、扫码枪完全够用，不用外搭扩展芯片。注意SPI全电压范围主模式最高12.5MHz，低于2V供电的时候别超频率，不然通信会出错。</li>
-<li><strong>料号命名别看错</strong>：比如<code>MK51DN512ZVMD10</code>，第一个M是量产级，P是预生产样片，别买错了用在批量产品里；倒数第二位的数字是主频，7就是72MHz，10就是100MHz，别买错了主频不够用。</li>
-<li><strong>JTAG和TSI引脚复用</strong>：JTAG的几个默认引脚同时是TSI通道，布板的时候如果要留JTAG调试口，就别把这几个引脚接触摸按键，不然调试的时候按键用不了，要软件改复用配置才行。</li>
-<li><strong>散热完全不用愁</strong>：100脚LQFP封装4层板下热阻是40℃/W，我们满负载运行功耗才90mW，温升不到0.5℃，完全不用考虑散热设计。</li>
-</ol>
-<hr/>
-<h2>最后唠两句</h2>
-<p>K51真的是为低功耗工业仪表、手持设备量身定做的MCU，集成度高省BOM，低功耗表现够优秀，只要把上面这些注意点避开，开发起来非常顺。</p>
-<p>你们用K51做过什么有意思的应用？有没有其他我没提到的踩坑点？评论区聊聊~</p>
-<p><em>本文是实际项目开发整理的内容，如有错漏欢迎指正</em></p>]]></description></item>  </channel></rss>
+<p>有没有用这款芯片做过项目的老哥？评论区聊聊你们踩过啥坑，需要我整理的Excel版参数表的可以留个邮箱~</p>]]></description></item>  </channel></rss>
