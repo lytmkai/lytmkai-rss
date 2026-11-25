@@ -1,4 +1,144 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[航裕HY-ST系列高压直流电源正式上市]]></title>    <link>https://www.elecfans.com/d/8981003.html</link>    <guid>https://www.elecfans.com/d/8981003.html</guid>    <pubDate>2026-11-25 15:07:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[QorIQ P3041 硬件设计踩坑指南：从datasheet到调通的全流程干货]]></title>    <link>https://www.elecfans.com/d/8980963.html</link>    <guid>https://www.elecfans.com/d/8980963.html</guid>    <pubDate>2026-11-25 15:05:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8980963" value="http://file.elecfans.com/web2/M00/83/D6/poYBAGObkLWAajV9AB67fDs_4XM671.pdf"/><h1>QorIQ P3041 硬件设计踩坑指南：从datasheet到调通的全流程干货</h1>
+<p>最近做<a href="https://www.elecfans.com/v/tag/1225/" target="_blank"><u>5G</u></a>小站网关项目选了<a href="https://bbs.elecfans.com/group_729" target="_blank"><u>NXP</u></a>（原飞思卡尔）的P3041，前后翻了不下十遍datasheet，画板+调试踩了好几个隐蔽的坑，今天整理出来，给后面要碰这个片子的兄弟省点头发。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8980963" target="_blank">P3041NXE7PNC.pdf</a></p>
+<p>先给不熟悉的朋友简单介绍下：这颗是QorIQ系列的4核<a href="https://m.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>，基于Power Archi<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>cture的e500mc内核，最高主频1.5GHz，1295脚FC-PBGA封装，37.5x37.5mm大小，<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>全得离谱：1路10G XAUI、5路千兆<a href="https://m.hqchip.com/app/1720" target="_blank"><u>以太网</u></a>、4路PCIe2.0、2路Serial Ra<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>pi</u></a>dIO、2路<a href="https://www.hqchip.com/app/1686" target="_blank"><u>SATA</u></a>2.0、2路<a href="https://m.hqchip.com/app/1515" target="_blank"><u>USB</u></a>2.0，还支持安全启动，做<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>网关、<a href="https://m.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>、航空航天类设备的兄弟应该不少见过它。典型功耗才13W左右，工业级宽温-40~105℃，性价比相当能打。</p>
+<hr/>
+<h2>一、<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>设计：错一步直接烧片，别赌概率</h2>
+<p>P3041的电源域拆的很细，对时序、精度要求都高，是最容易出问题的环节，我前前后后在这踩了3个坑。</p>
+<h3>1. 电源域梳理（别漏了看似没用的电源脚）</h3>
+<table>
+<thead>
+<tr>
+<th>电源域</th>
+<th>电压</th>
+<th>用途</th>
+<th>踩坑提醒</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>VDD_CA_CB_PL</td>
+<td>1.0V</td>
+<td>4核+平台逻辑</td>
+<td>Rev1.1之后核心和平台电源合并了，别拿老版datasheet给新片子分两路供电，直接炸片；主频&gt;1.33GHz时精度要求±40mV，别用便宜的<a href="https://m.hqchip.com/app/1703" target="_blank"><u>DC</u></a>DC，负载调整率不够容易跑飞</td>
+</tr>
+<tr>
+<td>VDD_LP</td>
+<td>1.0V</td>
+<td>低功耗安全模块</td>
+<td><strong>哪怕不用低功耗/安全功能也必须供</strong>，不然安全模块会报内部错误，卡死在启动流程，我第一版就漏了，卡了2天</td>
+</tr>
+<tr>
+<td>GVDD</td>
+<td>1.5V/1.35V</td>
+<td><a href="https://m.hqchip.com/app/1729" target="_blank"><u>DDR</u></a>3/DDR3L IO</td>
+<td>支持DDR3和DDR3L，和颗粒电压匹配就行</td>
+</tr>
+<tr>
+<td>SVDD</td>
+<td>1.0V</td>
+<td>SerDes核心电源</td>
+<td>所有SerDes链路的核心供电，精度要求±50mV</td>
+</tr>
+<tr>
+<td>XVDD</td>
+<td>1.5V/1.8V</td>
+<td>SerDes IO电源</td>
+<td>看你用的SerDes协议选电压</td>
+</tr>
+<tr>
+<td>OVDD</td>
+<td>3.3V</td>
+<td>普通IO、<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>、<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>、JTAG</td>
+<td>通用IO供电</td>
+</tr>
+<tr>
+<td>POVDD</td>
+<td>1.5V/GND</td>
+<td>安全熔丝<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a></td>
+<td>平时必须接地，只有烧安全熔丝的时候才能接1.5V，<strong>一辈子只能烧2次，烧错片子直接废，别手贱测试</strong></td>
+</tr>
+<tr>
+<td>还有BVDD（本地总线）、CVDD（eSPI/<a href="https://www.hqchip.com/app/1522" target="_blank"><u>SD</u></a>卡）、LVDD（以太网）、USB的3.3V/1.0V</td>
+<td>按接口需求选电压就行</td>
+</tr>
+</tbody>
+</table>
+<h3>2. 电源时序必须严格遵守，差1ms都不行</h3>
+<p>datasheet写的很明确，必须按以下顺序上电，我第一版把DDR电源和核心电源放同一级，直接导致DDR<a href="https://m.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>初始化失败，查了3天才找到问题：</p>
+<ol>
+<li><strong>第一级</strong>：先上所有IO类电源：OVDD、LVDD、BVDD、CVDD、USB_3V3，此时PORESET必须保持拉低，IO_VSEL配置脚要在这个阶段就稳定，电压选错直接烧IO</li>
+<li><strong>第二级</strong>：再上核心类电源：VDD_CA_CB_PL、SVDD、各PLL的AVDD、USB_1V0，核心电源和USB_1V0必须同时上电，不能有先后</li>
+<li><strong>第三级</strong>：最后上高速接口电源：GVDD（DDR）、XVDD（SerDes）</li>
+<li>所有电源稳定后，再拉高PORESET，至少拉低1ms，别图省事拉几十us就起来，容易出现随机启动失败
+<blockquote>
+<p>注意：所有电源必须在75ms内全部稳定，超时也会启动失败。</p>
+</blockquote></li>
+</ol>
+<h3>3. PLL滤波别偷工减料，不然高速链路全是误码</h3>
+<p>每个PLL的AVDD脚必须单独做RC滤波，尽量靠近引脚，少打孔减少电感：</p>
+<ul>
+<li>核心/平台/DDR的PLL：5Ω<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a> + 10μF X5R<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a> + 1μF X5R电容，滤除500kHz~10MHz的噪声</li>
+<li>SerDes的PLL：要求更严，串1Ω电阻 + 0.003μF电容 + 2个2.2μF电容，我第一次没做好滤波，SerDes参考<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>jitter超了3倍，PCIE链路一直报误码，调了一周才搞定。</li>
+</ul>
+<hr/>
+<h2>二、时钟设计：高速链路稳不稳定全看它</h2>
+<p>P3041的时钟要求不低，尤其是SerDes相关的时钟，别用杂牌晶振凑数。</p>
+<h3>1. 系统主时钟SYSCLK</h3>
+<p>范围66~133MHz，推荐用100MHz或者125MHz，占空比40~60%，slew rate 1~4V/ns，峰峰值jitter≤±150ps，普通有源晶振就能满足。</p>
+<h3>2. SerDes参考时钟（最容易出问题的部分）</h3>
+<p>3个SerDes Bank各有1组差分参考时钟，可选100/125/156.25MHz，要求：</p>
+<ul>
+<li>差分摆幅400~1600mV，峰峰值总jitter≤86ps，占空比40~60%</li>
+<li>展频时钟只有Bank1和Bank2支持，<strong>Bank3绝对不能用展频</strong>，我之前把Bank3接的SATA用了展频，硬盘一直识别不到，查了好久才看到datasheet里的小字</li>
+<li>不用的SerDes Bank参考时钟必须接地，对应lane在RCW里配置成掉电模式，省功耗还减少干扰</li>
+</ul>
+<h3>3. 其他时钟</h3>
+<ul>
+<li>RGMII接口要用到的125MHz参考时钟，不用RGMII的话可以直接接地</li>
+<li><a href="https://www.elecfans.com/tags/实时时钟/" target="_blank"><u>实时时钟</u></a>RTC不用的话可以直接接地，不影响启动</li>
+</ul>
+<hr/>
+<h2>三、接口设计：这些细节datasheet写的很小，容易漏</h2>
+<p>挑几个常用的、容易踩坑的接口说：</p>
+<h3>1. DDR3/DDR3L：<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>质量全靠布线</h3>
+<ul>
+<li>64位+8位ECC，最高1333MT/s，MDQS和对应MDQ、MECC的skew要控制在±125ps（1333MT/s速率下），差分对等长误差≤5mil</li>
+<li><a href="https://www.elecfans.com/v/tag/3668/" target="_blank"><u>VR</u></a>EF必须是GVDD的一半，精度±1%，布线要短，远离干扰源</li>
+<li>MDIC0/MDIC1脚必须接20Ω（全强度模式）或者40.2Ω（半强度模式）的1%精度电阻，分别接地和接GVDD，用来校准DDR的IO驱动阻抗，很多人漏接这个电阻，DDR跑不到最高速率，读写全是错</li>
+<li>DQS的互补信号必须接，不能接地，差分接收器不能单端工作</li>
+</ul>
+<h3>2. 高速SerDes接口（PCIE/SRIO/XAUI/SGMII/SATA）</h3>
+<ul>
+<li>差分对阻抗控制100Ω±10%，全程不要跨电源/地分割，过孔越少越好，相邻差分对留3W以上间距减少串扰</li>
+<li><a href="https://www.hqchip.com/app/1703" target="_blank"><u>AC</u></a><a href="https://www.elecfans.com/tags/耦合/" target="_blank"><u>耦合</u></a>电容必须外接，PCIE用75~200nF，SGMII用10~200nF，放在发送端附近</li>
+<li>没用的SerDes接收脚必须接地，发送脚悬空</li>
+<li><strong>别搞反收发对！</strong> SD_TX要接对端的SD_RX，SD_RX接对端的SD_TX，我同事之前画反了，回来的板卡高速链路全不通，飞线都没法飞，直接报废。</li>
+</ul>
+<h3>3. RGMII以太网</h3>
+<ul>
+<li>发送端数据和时钟的skew控制在±500ps，接收端要留1~2.8ns的裕量，现在很多PHY内部已经做了时钟延迟，不用额外在<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>上绕线，别瞎绕反而绕错了</li>
+<li>以太网管理接口EMI2是1.2V开漏，上拉电阻要接1.2V，别接3.3V，直接烧PHY</li>
+</ul>
+<h3>4. USB接口</h3>
+<ul>
+<li>VBUS不能直接接5V，必须加分压网络：2个0.1%精度的分压电阻+5V稳压管，不然静电或者浪涌直接烧PHY</li>
+<li>USBn_VDD_1P8_DECAP脚必须接1~1.5μF的电容到地，别漏接，不然PHY识别不到设备</li>
+</ul>
+<h3>5. JTAG接口</h3>
+<ul>
+<li>TRST必须接PORESET，不然JTAG调试的时候经常连不上，就算不用JTAG也要接，保证复位时边界扫描电路不会干扰正常启动</li>
+</ul>
+<hr/>
+<h2>四、PCB和散热设计</h2>
+<p>1295脚1mm pitch的BGA，至少要6层板才能出完线，推荐8层以上，电源层和地层要完整，别分割太碎。DDR信号走内层，远离高频干扰源，SerDes差分对走表层或者内层，全程阻抗连续。</p>
+<p>散热方面不用太担心，满负载功耗也就不到20W，4层板自然对流的RθJA是11℃/W，加个普通散热片加风扇足够，无风扇设计的话算好热阻，别超过结温105℃就行。片子内部自带温度二极管，可以外接<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>T7461A这类温控芯片，过温的时候降频或者关机。注意散热片的安装压力不能超过45N，不然会压坏BGA焊球。</p>
+<hr/>
+<h2>最后说两句</h2>
+<p>我自己的板卡现在已经调通了所有接口，四核1.33GHz，DDR3 1333MT/s稳定跑压力测试，PCIE、SRIO、SATA、万兆、千兆都没问题。这个片子性能很强，就是datasheet细节太多，容易漏看。</p>
+<p>有碰到问题的兄弟可以评论区留言，大家一起讨论避坑~</p>
+<blockquote>
+<p>本文参考P3041EC Rev.2官方datasheet，所有参数都经过实际板卡验证，放心用。</p>
+</blockquote>]]></description></item><item>    <title><![CDATA[航裕HY-ST系列高压直流电源正式上市]]></title>    <link>https://www.elecfans.com/d/8981003.html</link>    <guid>https://www.elecfans.com/d/8981003.html</guid>    <pubDate>2026-11-25 15:07:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
 	应对大功率<a href="https://m.elecfans.com/v/tag/873/" target="_blank"><u>高压</u></a>工况</p>
 <p style="text-indent:2em;">
 	HY-ST系列高压直流<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>全新推出</p>
@@ -4068,103 +4208,4 @@ SerDes参考时钟必须用低相噪工业级晶振，相噪控制在100ppm以�
 <li>对可靠性要求高、不需要太高算力的<a href="https://bbs.elecfans.com/group_1121" target="_blank"><u>嵌入式</u></a>控制项目</li>
 </ul>
 <p>现在NXP还在正常供货，价格也不贵，比新出的MCU省了不少验证成本。
-兄弟们有没有用过这款MCU的？遇到过什么奇葩坑？评论区聊一聊！</p>]]></description></item><item>    <title><![CDATA[带屏智能家电的帧缓冲怎么选：SDRAM、SRAM 还是 QSPI PSRAM？APS6404L-3SQR-SN 的 8MB 定位]]></title>    <link>https://www.elecfans.com/d/8980417.html</link>    <guid>https://www.elecfans.com/d/8980417.html</guid>    <pubDate>2026-11-25 14:00:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	咖啡机的圆形彩屏、冰箱门上的触控面板、<a href="https://m.elecfans.com/v/tag/663/" target="_blank"><u>智能家居</u></a>中控屏……现在越来越多智能家电已经开始使用彩色 LCD 屏幕了，界面也从简单的图标和文字，升级为动画、图片、状态卡片和触控交互。不少产品使用 <a href="https://www.elecfans.com/v/tag/1073/" target="_blank"><u>LVGL</u></a> 这样的图形界面框架，但界面越丰富，对内存的要求也越高。我们来举个例子说明：一块 480×320 分辨率的 RGB565 屏幕，仅存放一帧完整画面，就需要约 300KiB 内存。如果采用双缓冲，光帧缓冲就需要约 600KiB，还没有计算字体、图片、控件和其他任务占用的空间。而现在很多<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a> 的片内 S<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a> 只有 128KB、256KB，甚至更少。内部RAM不够用时，<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>通常就会考虑要换一颗内存更大的 MCU，或者外挂 <a href="https://m.hqchip.com/app/1522" target="_blank"><u>SD</u></a>RAM。但是有没有一种方案，罗不用大幅增加 <a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a> 引脚和布线复杂度，也能给MCU扩展出几 MB的可读写内存呢？而这就是 QSPI PSRAM 值得关注的原因。本文咱们会以 AP Memory的APS6404L-3SQR-SN为例，来聊聊带屏智能家电的帧缓冲应该怎么选，以及 8MB PSRAM究竟到底能解决哪些问题。<br/>
-	一、先算一笔帧缓冲的账：你的 MCU 内部 SRAM 真的够用吗？<br/>
-	我们做显示产品选型时，很多工程师容易先看 MCU 的主频、Flash 容量和外设<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>，却忽略了一个问题：屏幕显示本身就可能占用大量 RAM。帧缓冲可以简单理解为一块“画面暂存区”。屏幕要显示什么内容，系统就把对应的像素数据放到这块内存里，再通过显示接口送给屏幕。<br/>
-	一帧画面需要多少内存？其计算公式实际上很简单：帧缓冲大小 = 屏幕水平像素 × 屏幕垂直像素 × 每像素位数 ÷ 8<br/>
-	以常见的 RGB565 格式为例，每个像素占用 16 bit，也就是 2 By<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>。不同分辨率下，单帧和双缓冲的内存需求大致如下：</p>
-<p align="center">
-	<img src="https://file1.elecfans.com/web3/M00/7B/D1/wKgzfWsGeS6AaDy9AAAh3TWu5gY222.png" alt="wKgzfWsGeS6AaDy9AAAh3TWu5gY222.png"/></p>
-<p style="text-indent:2em;">
-	这里需要注意的是，我们在这里计算的是完整画面的像素数据，但是还没有把 LVGL 的绘图缓冲区、字体、图片、动画资源、控件数据以及<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>任务的 RAM 算进去。而在实际的项目中，内存需求还会受到 LVGL 缓冲策略、图片解码方式、字体缓存配置和显示驱动实现方式影响。并不是每个项目都必须使用双缓冲，也不是所有字体和图片都会同时放进 RAM。但是有一点是很明确的：当屏幕分辨率达到 480×320，甚至 800×480 时，单靠 128KB 或 256KB 的片内 SRAM，已经很难满足完整帧缓冲的需求了。这个时候，如果继续压缩代码、减少几个全局变量，往往是解决不了根本问题的。因为问题不是代码写得不够省，而是显示系统本身需要更多的内存。<br/>
-	那么这个时候工程师通常就会有两种选择了：<br/>
-	更换片内 SRAM 更大的 MCU，但可能涉及主控重新选型、软件迁移和 PCB 修改。<br/>
-	保留现有 MCU，通过外挂存储器扩展 RAM。<br/>
-	但是第二种方案又会涉及到一个新问题：外挂 SRAM、SDRAM 和 QSPI PSRAM，究竟应该要怎么选？<br/>
-	二、SRAM、SDRAM、QSPI PSRAM：带屏 HMI 的三条内存路线<br/>
-	这三种存储器都可以用于数据暂存，但在容量、接口、控制方式和系统设计成本上，差别是比较明显的。<br/>
-	1. SRAM：速度和使用体验好，但大容量成本较高<br/>
-	SRAM 是 MCU 系统中非常常见的存储器。它的优点是接口和访问方式相对简单，不需要像 SDRAM 那样周期性刷新，访问延迟也比较低。对于实时性要求较高的数据、频繁访问的小块缓存，SRAM 很合适。但主要的问题在于容量和成本。如果说项目只需要几十 KB 或几百 KB 的额外缓存，外挂 SRAM 是可以考虑的。但如果想给一块 480×320 的屏幕准备双帧缓冲，至少需要约 600KiB；如果分辨率继续提高，内存需求还会更大。这个时候，SRAM 的容量、价格和封装引脚数量就可能成为限制。简单点来说：SRAM 适合小容量、高频访问的数据，但不一定适合用来解决 MB 级的显示缓存需求。<br/>
-	2. SDRAM：容量大、带宽高，但硬件设计更复杂<br/>
-	如果项目对显示带宽和内存容量要求比较高，SDRAM 是一条成熟的技术路线。它是可以提供较大的存储容量的，适合高分辨率显示、图形处理和较大的数据缓存。但是SDRAM 不是简单地接几根 SPI 线就能使用。它需要的是主控具备相应的 SDRAM <a href="https://m.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>，负责初始化、读写时序和刷新管理。硬件上还要考虑地址线、数据线、控制<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>、<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>以及 PCB 布线。这就意味着：<br/>
-	MCU 必须具备匹配的外部存储器控制器。<br/>
-	PCB 需要预留更多引脚和布线空间。<br/>
-	需要处理信号完整性、时序和初始化配置。<br/>
-	软件还要完成 SDRAM 初始化、内存映射和相关驱动适配。<br/>
-	如果产品本身就是高性能图形系统，使用带 SDRAM 控制器的 MCU，SDRAM 很有价值。但是对于一台普通咖啡机、一块智能家电控制面板，或者以MCU 为核心的中小型 HMI来说，可能会觉得这套方案有些重。SDRAM 的优势是容量和带宽，代价是控制器、引脚、PCB 和软件设计复杂度。<br/>
-	3. QSPI PSRAM：用较少引脚扩展 MB 级 RAM<br/>
-	还有一种方案就是 QS<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a> PSRAM。PSRAM 全称 Pseudo Static RAM，也就是伪静态 RAM。它在系统使用体验上接近 SRAM，但内部采用动态存储单元，并通过内部机制管理刷新。对于主控来说，通常不需要像 SDRAM 那样自行管理周期性刷新。我们以 APS6404L-3SQR-SN 为例展开来说，它是一颗 64Mbit 的 QSPI PSRAM，换算下来就是 8MB 容量，采用 SOP-8 封装，支持 SPI/QPI 接口。在 QSPI 模式下，数据通过 4 根数据线传输，另外需要时钟线和片选线，合计 6 根主要信号线。<br/>
-	它的设计思路就很直接：不使用 SDRAM 那种宽数据总线，而是通过 QSPI 接口，用相对少的 MCU 引脚换取 MB 级可读写内存。<br/>
-	三种方案可以简单对比如下：</p>
-<p align="center">
-	<img src="https://file1.elecfans.com/web3/M00/7B/DB/wKgzfmsGeTyAe6ktAAAz_qrlRIk834.png" alt="wKgzfmsGeTyAe6ktAAAz_qrlRIk834.png"/></p>
-<p style="text-indent:2em;">
-	这里还需要特别说明下：QSPI PSRAM 和 QSPI Flash 虽然都可以使用类似的四线串行接口，但它们并不是同一种存储器。Flash 主要用于保存掉电后仍需保留的程序和资源；PSRAM 用于运行时读写，断电后数据会丢失。接口形式相似，不代表命令集、驱动程序和软件配置可以直接通用。如果原有 PCB 已经预留 QSPI Flash 接口，确实有机会复用部分信号走线，但仍要检查片选、时序、<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>特性、主控控制器能力，以及两个器件能否在当前硬件架构下正常共存。</p>
-<p style="text-indent:2em;">
-	三、APS6404L-3SQR-SN：8MB QSPI PSRAM 能为 HMI 做什么？<br/>
-	前面介绍了三种内存路线。接下来看看 APS6404L-3SQR-SN 这颗芯片的具体定位。APS6404L系列属于 QSPI PSRAM 产品。APS6404L-3SQR-SN 是其中的 3V 版本，采用 SOP-8 封装，容量为 64Mbit，也就是 8MB。<br/>
-	它的主要规格如下：</p>
-<p align="center">
-	<img src="https://file1.elecfans.com/web3/M00/7B/D1/wKgzfWsGeUiAFgy_AAA2qqWzXKM712.png" alt="wKgzfWsGeUiAFgy_AAA2qqWzXKM712.png"/></p>
-<p style="text-indent:2em;">
-	以上频率是数据手册规定的特定工作模式上限，并不代表实际系统能持续获得相同的数据吞吐量。实际性能大家可能还要考虑命令和地址开销、读写等待周期、主控控制器以及软件访问方式等。<br/>
-	那么，这 8MB 内存放到带屏智能家电中，具体能承担哪些工作呢？<br/>
-	1. 显示帧缓冲：给彩屏准备足够的画面空间，这是最直接的用途。<br/>
-	假设一块智能家电屏幕的分辨率为 480×320，采用 RGB565 格式：<br/>
-	单帧需要约 300KiB。<br/>
-	双缓冲需要约 600KiB。<br/>
-	8MB PSRAM 理论上可以容纳多组这样的画面数据。<br/>
-	如果分辨率是 800×480，双缓冲也只需要约 1.46MiB。从纯容量来看，8MB 对很多中小尺寸 HMI 项目已经比较充裕。但是要注意：容量够，不代表一定能直接作为帧缓冲使用。如果 MCU 的显示控制器或 <a href="https://www.elecfans.com/tags/dma/" target="_blank"><u>DMA</u></a> 无法直接访问外部 QSPI PSRAM，就可能需要先把数据搬运到内部 RAM，或者通过特定的内存映射、缓存和驱动机制实现访问。因此，选型时必须确认主控是否支持外部 QSPI RAM，以及显示接口能否通过 DMA 或其他方式读取这块内存。<br/>
-	2. LVGL 字体、图标和图片缓存：让界面资源有地方放，很多智能家电的界面不只是显示几个数字。<br/>
-	例如：<br/>
-	咖啡机：咖啡种类、制作进度、温度、动画图标。<br/>
-	冰箱：温度设置、食材管理、模式切换、状态提示。<br/>
-	智能家居中控：房间卡片、设备图标、场景图片、动态图表。<br/>
-	空气净化器：风速动画、滤芯状态、空气质量曲线。<br/>
-	这些资源可能保存在外部 Flash 中。但是如果每次显示都从 Flash 读取，再进行解码和绘制，系统就需要安排相应的数据读取和缓存流程。而外挂 PSRAM 后，可以根据软件架构，把部分字体、图标、解码后的图片以及临时绘图数据放在 PSRAM 中，减少内部 SRAM 的占用。例如，图片资源可以保存在 Flash 中，需要显示时再读取、解码到 PSRAM；LVGL 绘图时，则根据驱动架构使用这块外部 RAM 作为绘图缓冲区。<br/>
-	但是这里还要区分两件事：<br/>
-	Flash 是资源仓库：主要保存程序、字体文件和图片文件。<br/>
-	PSRAM 是运行时工作区：用于存放临时数据、像素缓存和绘图缓冲。<br/>
-	PSRAM 并不会自动让界面切换更快。实际效果还取决于 Flash 读取速度、图片解码效率、PSRAM 带宽和 LVGL 驱动配置。<br/>
-	3. 给网络和协议数据留出空间：缓解内部 SRAM 紧张，现在的智能家电经常不只是一个显示设备。<br/>
-	一块控制板可能同时运行：<br/>
-	LVGL 图形界面；<br/>
-	<a href="https://www.elecfans.com/tags/wi-fi/" target="_blank"><u>Wi-Fi</u></a> 或<a href="https://www.elecfans.com/tags/蓝牙/" target="_blank"><u>蓝牙</u></a>连接；<br/>
-	MQTT 等应用通信；<br/>
-	设备状态管理；<br/>
-	OTA 固件升级；<br/>
-	<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>数据采集；<br/>
-	<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>、加热器或其他执行机构控制。<br/>
-	这些功能都会占用到MCU内部SRAM。但是在主控和软件架构支持的前提下，可以把部分大块、非实时的数据缓冲放到外部 PSRAM，例如图片缓存、日志缓存或部分网络数据缓冲。这样就能够把有限的内部 SRAM 留给更需要低延迟访问的任务，例如中断处理、实时控制数据、任务栈和关键变量。不过，这个不能简单理解为“把协议栈整个搬到 PSRAM 就行”。很多协议栈对内存区域、DMA 可访问性、缓存一致性和访问延迟有要求，是否能够放入外部 RAM，需要逐项确认。所以，APS6404L-3SQR-SN 的价值不只是多出 8MB 空间，而是为 MCU 系统增加一层可灵活分配的运行时内存。<br/>
-	四、什么情况下 APS6404L-3SQR-SN 刚好够用？什么情况下应该看其他方案呢？<br/>
-	8MB 并不是说越大越好，也不是所有带屏产品都适合使用 QSPI PSRAM。选型时，最好还要从屏幕分辨率、缓冲数量、主控接口和实际带宽需求等这几个方面来判断。<br/>
-	1. 比较适合的应用场景<br/>
-	如果项目具有以下特点，可以重点评估 APS6404L-3SQR-SN：<br/>
-	使用 320×240、480×320、480×480 等中小尺寸彩屏。<br/>
-	MCU 内部 SRAM 不足以存放完整帧缓冲。<br/>
-	希望使用 LVGL 实现图片、字体、动画和触控交互。<br/>
-	主控支持 SPI/QSPI 外部 RAM 接口。<br/>
-	PCB 引脚和空间比较紧张，不希望引入 SDRAM 的宽总线设计。<br/>
-	系统工作电压与 3V 版本的 2.7V–3.6V 供电范围匹配。<br/>
-	例如，一台带 480×320 触控屏的咖啡机，界面需要显示饮品图片、制作进度和动画效果。如果 MCU 内部 SRAM 不足，但主控具备合适的 QSPI 外部 RAM 接口，那么增加 8MB PSRAM 就是一条值得评估的扩展路线。<br/>
-	2. 哪些情况下 8MB 可能会不够？<br/>
-	如果产品采用更高分辨率的屏幕、多屏显示，或者需要同时保存多路图像数据，8MB 也可能不够。例如，800×480 RGB565 的双缓冲约需要 1.46MiB。如果再叠加多个绘图缓冲区、图片解码缓存、字体缓存和网络数据，内存占用就会继续增加。如果产品涉及复杂视觉处理、摄像头图像缓存或 <a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a> 视觉模型，还需要进一步评估：<br/>
-	模型权重和中间特征数据需要多少内存？<br/>
-	图像分辨率和像素格式是什么？<br/>
-	是否需要多帧图像同时驻留？<br/>
-	外部 RAM 的带宽能否满足处理速度？<br/>
-	主控是否具备相应的 DMA、缓存和外部存储访问能力？<br/>
-	在这种情况下，可能就需要更大容量、更高带宽的 PSRAM，或者直接采用 SDRAM、专用图形<a href="https://www.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>等方案。<br/>
-	3. 1.8V 系统不要直接选 3V 版本<br/>
-	APS6404L-3SQR-SN 的供电范围是 2.7V–3.6V，属于 3V 版本。如果主控的 I/O 电压为 1.8V，不能只看接口名称一样就直接连接。需要确认<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>和 IO 电平是否匹配。APS6404L 系列也有 1.8V 版本，例如 APS6404L-SQH 等具体订购型号，但不同后缀对应的电压、封装、温度等级和性能参数可能不同。选型时大家一定要按完整料号核对数据手册，不能把3V 版本的参数直接就给套用到1.8V 版本上。<br/>
-	五、PSRAM 不是万能 RAM：工程设计时还要注意这几个问题<br/>
-	如果准备把 QSPI PSRAM 用在量产产品中，除了容量，还需要重点检查以下几点。<br/>
-	第一，确认 MCU 是否真正支持外部 PSRAM。有 QSPI Flash 接口，不代表一定能直接支持 QSPI PSRAM。需要查看 MCU 的外部存储器控制器、QSPI 控制器、驱动 SDK 和内存映射能力。<br/>
-	第二，确认实际读写带宽能否满足显示刷新。例如，480×320 RGB565 单帧约 300KiB。如果屏幕以 30fps 刷新，仅按完整帧数据估算，就需要约 9MiB/s 的数据吞吐量；60fps 则约为 18MiB/s。这还没有计算其他读写操作，也没有考虑总线开销。因此，不能只看 PSRAM 标称最高时钟频率，还要测量实际系统中的持续读写性能。<br/>
-	第三，确认 DMA 和缓存访问方式。如果显示控制器需要通过 DMA 读取帧缓冲，要确认 DMA 是否能够访问外部 PSRAM 所在的地址空间。如果外部 RAM 需要经过缓存访问，还要处理缓存一致性问题，避免 <a href="https://m.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a> 修改了画面数据，但 DMA 读取到的仍然是旧数据。<br/>
-	第四，关键实时数据不要全部放到外部 PSRAM。PSRAM 适合扩展大容量缓冲区，但内部 SRAM 或 TCM 通常更适合存放对访问延迟敏感的关键数据，例如中断变量、实时控制数据和关键任务栈。比较合理的做法是：内部 SRAM 负责实时、高频、小容量数据，外部 PSRAM 负责大容量显示缓存和临时数据。<br/>
-	六、总结：带屏智能家电扩展内存，不一定非要上 SDRAM<br/>
-	对于带彩屏的智能家电来说，内存选型不能只看 MCU 自带多少 SRAM，而应该结合屏幕分辨率、色深、缓冲数量、界面资源和主控外部存储接口一起判断。如果只是小尺寸屏幕、简单文字和图标，片内 SRAM 可能已经够用。如果是高分辨率显示、复杂图形处理，并且主控具备 SDRAM 控制器，那么 SDRAM 仍然是值得考虑的成熟方案。但如果项目希望在不大幅增加 PCB 引脚和布线复杂度的情况下，给 MCU 扩展几 MB 可读写内存，那么 QSPI PSRAM 就提供了另一种选择。<br/>
-	我们以 APS6404L-3SQR-SN 为例，它提供 64Mbit（8MB）容量，采用 SOP-8 封装，支持 SPI/QPI 接口和内部自刷新机制，适合评估用于中小型 HMI 的帧缓冲、LVGL 绘图缓存和其他运行时数据缓冲。当然，最终能不能用好这颗芯片，还要看 MCU 是否支持、实际带宽是否够，以及驱动和 DMA 是否适配。<br/>
-	如果你的项目正在做咖啡机、冰箱、空调、空气净化器或智能家居中控屏的话，大家如果有遇到 MCU 内部 SRAM 不够用的问题的话，建议就可以从屏幕分辨率、帧缓冲大小和主控接口入手，评估是否需要增加 QSPI PSRAM。</p>]]></description></item>  </channel></rss>
+兄弟们有没有用过这款MCU的？遇到过什么奇葩坑？评论区聊一聊！</p>]]></description></item>  </channel></rss>
