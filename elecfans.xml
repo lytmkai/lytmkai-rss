@@ -1,4 +1,184 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[老料新说：飞思卡尔P3041 QorIQ通信处理器，存量项目改款的性价比之王]]></title>    <link>https://www.elecfans.com/d/8981000.html</link>    <guid>https://www.elecfans.com/d/8981000.html</guid>    <pubDate>2026-11-25 15:10:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8981000" value="https://file.elecfans.com/web2/M00/84/5F/pYYBAGObkhGACdQIAAUZ_ckqagY278.pdf"/><h1>老料新说：飞思卡尔P3041 QorIQ<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a><a href="https://m.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>，存量项目改款的性价比之王</h1>
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[调了3次板才摸透的P3041 QorIQ处理器设计要点，全是踩坑攒的干货]]></title>    <link>https://www.elecfans.com/d/8980999.html</link>    <guid>https://www.elecfans.com/d/8980999.html</guid>    <pubDate>2026-11-25 15:10:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8980999" value="https://file.elecfans.com/web2/M00/27/A8/pYYBAGHCuyyAAFgNACILwDm4be4035.pdf"/><h1>调了3次板才摸透的P3041 QorIQ<a href="https://m.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>设计要点，全是踩坑攒的干货</h1>
+<p>最近在做<a href="https://www.elecfans.com/v/tag/1225/" target="_blank"><u>5G</u></a>小站的主控板，选了<a href="https://bbs.elecfans.com/group_729" target="_blank"><u>NXP</u></a>（原飞思卡尔）的P3041四核PowerPC，前前后后改了两版原理图、调了三次板才把<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>、高速<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>的坑都踩完。整理了datasheet里硬件设计最核心的要点，省得后面用这个片子的兄弟再走弯路。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8980999" target="_blank">P3041NSE1MMB.pdf</a></p>
+<hr/>
+<h2>先唠下这片子基本盘，适合啥场景</h2>
+<p>P3041是QorIQ P系列的中端型号，4核e500mc Power架构，最高1.5GHz主频，封装是1295脚FC-PBGA，37.5x37.5mm大小，接口资源刚好够<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>、工业网关、航天类的产品用：</p>
+<ul>
+<li>网络：1路10G XAUI + 5路1G网口（支持SGMII/RGMII）</li>
+<li>高速互联：4路PCIe2.0、2路SRIO 1.3/2.1、2路<a href="https://www.hqchip.com/app/1686" target="_blank"><u>SATA</u></a>2.0</li>
+<li>存储：单路64位<a href="https://m.hqchip.com/app/1729" target="_blank"><u>DDR</u></a>3/DDR3L<a href="https://m.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>带ECC，支持eMMC、SPI Flash、本地总线扩展</li>
+<li>外设：4路<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>、最多4路<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>、2路<a href="https://m.hqchip.com/app/1515" target="_blank"><u>USB</u></a>2.0、GPIO、IEEE1588</li>
+</ul>
+<p>我们做小站用它刚好，算力够，常用接口都集成了，不用外挂太多PHY，成本控制得住。</p>
+<hr/>
+<h2>⚠️ 电源设计：这部分错了直接烧片，别瞎来</h2>
+<p>这是我第一版踩坑最多的地方，重点给大家划出来：</p>
+<h3>1. 上电时序必须严格按要求来</h3>
+<p>官方要求的上电顺序错一点都不行，我第一次把GVDD（DDR电源）和核心电源放同一步上，结果DDR初始化卡了3天没找到原因：</p>
+<ol>
+<li>先上IO类电源：OVDD/LVDD/BVDD/CVDD/USB_3.3V，<strong>PORESET必须保持拉低</strong>，IO_VSEL引脚这时候就要稳定，不能中途变</li>
+<li>再上核心、SerDes、PLL电源：VDD_CA_CB_PL/SVDD/AVDD/USB_1.0V，核心电源和USB1.0V必须同步起来</li>
+<li>最后上DDR和SerDes接口电源：GVDD/XVDD</li>
+<li>所有电源稳定后再撤PORESET
+<blockquote>
+<p>掉电的时候顺序反过来，核心电源要等IO电源掉完再掉，不然容易出 latch up 烧片。</p>
+</blockquote></li>
+</ol>
+<h3>2. 电源域参数别搞错</h3>
+<table>
+<thead>
+<tr>
+<th>电源域</th>
+<th>典型电压</th>
+<th>用途</th>
+<th>注意事项</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>VDD_CA_CB_PL</td>
+<td>1.0V</td>
+<td>核心+平台逻辑</td>
+<td>1500MHz主频要求精度±40mV</td>
+</tr>
+<tr>
+<td>SVDD</td>
+<td>1.0V</td>
+<td>SerDes核心逻辑</td>
+<td>要和核心电源同源</td>
+</tr>
+<tr>
+<td>GVDD</td>
+<td>1.5V/1.35V</td>
+<td>DDR IO</td>
+<td>接DDR3用1.5V，DDR3L用1.35V</td>
+</tr>
+<tr>
+<td>XVDD</td>
+<td>1.8V/1.5V</td>
+<td>SerDes接口</td>
+<td>和对接的设备电平匹配</td>
+</tr>
+<tr>
+<td>OVDD</td>
+<td>3.3V</td>
+<td>普通IO（I2C/UART/GPIO）</td>
+<td/>
+</tr>
+<tr>
+<td>LVDD</td>
+<td>3.3V/2.5V</td>
+<td><a href="https://m.hqchip.com/app/1720" target="_blank"><u>以太网</u></a>IO</td>
+<td>用RGMII必须接2.5V</td>
+</tr>
+<tr>
+<td>POVDD</td>
+<td>GND/1.5V</td>
+<td>熔丝<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a></td>
+<td>平时必须接地！只有烧安全熔丝的时候接1.5V，一辈子最多烧2次</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>那个IO_VSEL引脚真的要盯紧，电压设错直接烧接口，不可逆的那种。</p>
+</blockquote>
+<h3>3. PLL和高速电源滤波必须按参考电路来</h3>
+<p>这部分省<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>等于给自己找麻烦：</p>
+<ul>
+<li>核心、平台、DDR的PLL电源（AVDD_CC/AVDD_PLAT/AVDD_DDR）：每路单独接5Ω<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>+10uF+1uF滤波，电容尽量放引脚旁边，别打过孔</li>
+<li>SerDes PLL电源（AVDD_SRDS）：每路接1Ω电阻+0.003uF+2个2.2uF滤波，优先用高自谐振频率的陶瓷电容</li>
+<li>XVDD滤波：如果从GVDD取电，必须加120Ω@100MHz的磁珠+2个2.2uF<a href="https://www.elecfans.com/tags/电容滤波/" target="_blank"><u>电容滤波</u></a>，不然SerDes链路jit<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>r超标训不通</li>
+<li>USB_1.0V电源：从核心电源星型连接，加120Ω磁珠+2.2uF滤波</li>
+</ul>
+<h3>4. 去耦电容别省</h3>
+<ul>
+<li>每个电源引脚配至少1个0.1uF 0402/0603陶瓷电容，尽量放芯片背面对应引脚的位置，过孔越少越好</li>
+<li>每个电源域周围放2~3个100~330uF低ESR<a href="https://www.hqchip.com/app/395" target="_blank"><u>钽电容</u></a>做bulk储能</li>
+<li>SerDes电源额外加10个10nF陶瓷电容靠近引脚，再在芯片四周放4个1uF电容</li>
+</ul>
+<hr/>
+<h2><a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>设计：差几ppm都可能链路训不通</h2>
+<p>P3041对时钟的要求不算特别苛刻，但细节错了也搞死人：</p>
+<h3>1. 主时钟SYSCLK</h3>
+<ul>
+<li>频率范围66~133MHz，我们一般用100MHz，占空比40~60%，摆率1~4V/ns</li>
+<li>峰值周期jitter必须小于±150ps，相位噪声&lt;-56dBc@500KHz</li>
+<li>支持扩频时钟，调制频率&lt;60KHz，扩频范围最大±0.5%，别超了</li>
+</ul>
+<h3>2. SerDes参考时钟</h3>
+<p>三个SerDes bank各需要一组差分参考时钟，只能选100/125/156.25MHz三个频率，别用中间值，官方没测试过：</p>
+<ul>
+<li>总jitter（1e-6 BER）必须小于86ps，确定性jitter小于42ps</li>
+<li>差分摆幅400~1600mVpp，占空比40~60%</li>
+<li>⚠️ 划重点：SerDes bank3不支持扩频时钟！我第一版给bank3接了扩频的156.25M，SATA一直连不上，换了非扩频的时钟直接好。</li>
+</ul>
+<h3>3. 其他时钟</h3>
+<ul>
+<li>RGMII需要的125MHz参考时钟（EC_GTX_CLK125），如果不用RGMII功能可以直接接地，省个晶振</li>
+<li>RTC时钟没有最低频率要求，不用的话直接接地就行</li>
+</ul>
+<hr/>
+<h2>复位和配置：RCW配置错了等于白焊</h2>
+<p>这部分都是细节，投板前对着查：</p>
+<ul>
+<li>PORESET必须至少拉1ms，HRESET至少拉32个SYSCLK周期，建议和板上其他复位芯片级联</li>
+<li>RCW配置引脚（比如LAD[0:31]的复位复用功能），复位前必须保持稳定，建议外接4.7k上下拉设置电平</li>
+<li>测试引脚别乱接：
+<ul>
+<li>TEST_SEL必须下拉1kΩ到GND，不然进工厂测试模式片子不工作</li>
+<li>S<a href="https://www.hqchip.com/app/2004" target="_blank"><u>CAN</u></a>_MODE必须上拉100Ω到OVDD</li>
+</ul></li>
+<li>JTAG的TRST建议接PORESET，上电自动复位JTAG链，不然可能出现调试器连不上的问题</li>
+</ul>
+<hr/>
+<h2>高速接口设计：这部分是重灾区，训不通链路先查这</h2>
+<h3>1. DDR3/DDR3L部分</h3>
+<p>最高支持1333MT/s，按JEDEC标准做就差不多，提几个P3041特有的要求：</p>
+<ul>
+<li>M<a href="https://www.elecfans.com/v/tag/3668/" target="_blank"><u>VR</u></a>EF参考电压必须严格等于GVDD/2，精度±1%，不要用电阻分压，最好用专门的参考电压芯片</li>
+<li>MDIC0接20Ω（全强度模式）/40.2Ω（半强度模式）1%精度电阻到GND，MDIC1接同阻值电阻到GVDD，别省电阻精度</li>
+<li>差分对（CLK/DQS）等长误差控制在5mil以内，单端数据线等长误差控制在10mil以内，单端阻抗50Ω，差分阻抗100Ω</li>
+<li>DDR VTT供电要跟踪MVREF，误差不超过±40mV</li>
+</ul>
+<h3>2. SerDes接口（PCIe/SRIO/XAUI/SGMII/SATA）</h3>
+<p>18路SerDes，差分阻抗控制100Ω±10%，等长误差控制在2mil以内：</p>
+<ul>
+<li><a href="https://www.hqchip.com/app/1703" target="_blank"><u>AC</u></a><a href="https://www.elecfans.com/tags/耦合/" target="_blank"><u>耦合</u></a>电容用0402封装100nF NPO电容，放在发送端靠近芯片的位置</li>
+<li>不用的SerDes引脚：TX悬空，RX必须接地，整个bank不用的话参考时钟也接地，RCW里要把对应lane的电源关了省电</li>
+<li>不同协议的速率支持看RCW配置，别硬配不支持的组合，比如SATA只能用bank3。</li>
+</ul>
+<h3>3. RGMII接口</h3>
+<ul>
+<li>LVDD必须接2.5V，别接3.3V，烧PHY也烧<a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>接口</li>
+<li>接收端时钟和数据的skew要保证在1~2.8ns之间，现在很多PHY内部已经做了2ns延迟，不用额外绕线，layout的时候注意时钟和数据线等长就行</li>
+<li>不用的RGMII接口，125M参考时钟可以直接接地。</li>
+</ul>
+<h3>4. USB接口</h3>
+<ul>
+<li>VBUS必须加分压网络，两个电阻用0.1%精度同温漂的，不然过压欠压检测不准</li>
+<li>USBn_VDD_1P8_DECAP引脚必须接1~1.5uF电容到地，别省，我试过省了之后USB高速设备识别率只有30%</li>
+<li>ID脚不用的话直接接地就行。</li>
+</ul>
+<hr/>
+<h2>热设计：19W的片子别用小散热片</h2>
+<p>P3041满负载功耗不算低，四核1.5GHz主频下最大功耗大概19W左右，结温要控制在105℃以内：</p>
+<ul>
+<li>4层板自然对流下热阻RthJA是11℃/W，200LFM风冷下是7℃/W，散热片按这个算就行</li>
+<li>散热片安装压力不要超过45N，不然压坏封装焊球</li>
+<li>内置温度二极管，可以接<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>T7461A这类<a href="https://www.elecfans.com/tags/温度传感器/" target="_blank"><u>温度传感器</u></a>做过热保护。</li>
+</ul>
+<hr/>
+<h2>最后给个投板前Checklist，对着查少踩坑</h2>
+<p>✅ 上电时序是不是符合官方要求，GVDD是不是在核心电源之后？
+✅ IO_VSEL引脚配置是不是和实际接的IO电源电压一致？
+✅ SerDes bank3有没有用扩频时钟？
+✅ TEST_SEL下拉1k、SCAN_MODE上拉100R有没有接？
+✅ 不用的SerDes RX有没有接地？
+✅ DDR的MDIC校准电阻精度是不是1%？
+✅ USB的VBUS分压有没有加，1.8V DECAP电容有没有接？
+✅ POVDD平时是不是接地，只有烧熔丝的时候接1.5V？
+✅ 复位引脚的上下拉有没有接？</p>
+<p>最近还在调这个片子的SRIO和10G口，有遇到问题的兄弟可以评论区聊，我踩过的坑都能给你提个醒～</p>]]></description></item><item>    <title><![CDATA[老料新说：飞思卡尔P3041 QorIQ通信处理器，存量项目改款的性价比之王]]></title>    <link>https://www.elecfans.com/d/8981000.html</link>    <guid>https://www.elecfans.com/d/8981000.html</guid>    <pubDate>2026-11-25 15:10:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8981000" value="https://file.elecfans.com/web2/M00/84/5F/pYYBAGObkhGACdQIAAUZ_ckqagY278.pdf"/><h1>老料新说：飞思卡尔P3041 QorIQ<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a><a href="https://m.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>，存量项目改款的性价比之王</h1>
 <p>最近做运营商接入网关的改款方案，翻来覆去对比了好几个新平台，最后还是选了这款2011年发布的“老伙计”P3041。别看是<a href="https://bbs.elecfans.com/group_729" target="_blank"><u>NXP</u></a>收购飞思卡尔之前的产品，现在工业、通信、军工领域的存量项目迭代，它依然是首选之一，今天就给大家扒扒这款芯片的实用价值，顺带提两句实际用的时候踩过的坑。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8981000" target="_blank">P3041NSE7MMC.pdf</a></p>
 <hr/>
 <h2>一、先说说最常用的两个落地场景</h2>
@@ -3915,75 +4095,4 @@ SerDes参考时钟必须用低相噪工业级晶振，相噪控制在100ppm以�
 <p style="text-indent:2em;">
 	为进一步扩展产品组合，研华亦同步推出FWA-6084 高阶2U网络平台，专为高规格的网络安全与边缘 AI 工作负载流量而设计。其支持DDR5/MRDIMM内存能力、8张Gen6网络模块卡可支持多组高网速200G工作负载，以及1个PCIe Gen5 x16插槽，可用弹性扩展不同功能。</p>
 <p style="text-indent:2em;">
-	研华将持续深化与 AMD 的合作，透过完整的 AI 与边缘运算服务器平台，协助全球企业建构更高效、更具扩充性且可长期部署的AI 基础架构，为各行业客户提供覆盖数据中心至边缘的一体化 AI 算力方案。</p>]]></description></item><item>    <title><![CDATA[「项目复盘」Vybrid VFxx系列硬件设计核心要点整理]]></title>    <link>https://www.elecfans.com/d/8980454.html</link>    <guid>https://www.elecfans.com/d/8980454.html</guid>    <pubDate>2026-11-25 14:05:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8980454" value="https://file.elecfans.com/web2/M00/21/E3/pYYBAGGlyDOAe-Y-ACRXURlMQQA525.pdf"/><h1>「项目复盘」Vybrid VFxx系列硬件设计核心要点整理</h1>
-<p>最近手头一个工业HMI+边缘网关的项目刚封板，主选的就是<a href="https://bbs.elecfans.com/group_729" target="_blank"><u>NXP</u></a>（原飞思卡尔）这款Vybrid VF6xx，双核Cortex-A5+M4的异构配置，跑<a href="https://bbs.elecfans.com/group_300" target="_blank"><u>Linux</u></a>做UI+协议转换，M4做实时IO控制刚好够用。但中间踩了不少datasheet里容易忽略的坑，熬了好几个大夜才搞定，这周闲下来把核心设计点整理出来，给用这款芯片的兄弟们避避坑，省得走我老路。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8980454" target="_blank">MVF30NN152CKU26.pdf</a></p>
-<p>本文所有内容都是对着VYBRIDFSERIESEC Rev8版本的datasheet抠的，加了不少实际项目验证过的经验，放心参考。</p>
-<hr/>
-<h2>一、先搞清楚选型：别等打样了才发现买错料</h2>
-<p>这款芯片分VF3xx、VF5xx、VF6xx三个子系列，命名规则看着复杂，抓几个核心字段就行：</p>
-<ul>
-<li>第三位数字：3=单Cortex-A5（入门级），5=高配单A5，6=双核A5+M4（要实时控制直接选这个）</li>
-<li>安全选项：带S的是带加密功能，带硬件安全模块、加密启动，不带S的是普通版本，不需要安全功能选普通的能省几块钱</li>
-<li>封装：KU=176脚LQFP，MK=364脚BGA。重点提醒：<strong>LQFP版本不支持外接<a href="https://m.hqchip.com/app/1729" target="_blank"><u>DDR</u></a></strong>，要跑Linux上大内存的直接选364BGA的版本，我同事当初没注意选了LQFP，回来发现只能用内部S<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>，直接返工重画。</li>
-</ul>
-<p>几个常用型号给大家参考：</p>
-<ul>
-<li>入门低功耗：MVF30NN151CKU26（A5 266MHz，176LQFP，无加密）</li>
-<li>双核无加密：MVF60NN151CMK50（A5 500MHz + M4 167MHz，364BGA）</li>
-<li>双核加密：MVF60NS151CMK50（同上，带安全功能）</li>
-</ul>
-<hr/>
-<h2>二、<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>设计是头号大坑：我在这栽了整整3天</h2>
-<p>这款芯片的电源域多，上电顺序要求严格，第一次用的兄弟一定要仔细看：</p>
-<h3>1. 上电顺序记死，错了直接起不来</h3>
-<p>必须严格分两梯队上电：</p>
-<ul>
-<li>第一梯队（同时上）：所有3.3V域电源，包括VDD33_<a href="https://www.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>IN、VDDREG、GPIO 3.3V、<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>/<a href="https://www.elecfans.com/tags/afe/" target="_blank"><u>AFE</u></a>的3.3V、参考电压<a href="https://www.elecfans.com/v/tag/3668/" target="_blank"><u>VR</u></a>EFH</li>
-<li>第二梯队（晚于第一梯队）：1.2V核心电源、AFE的1.2V电源</li>
-</ul>
-<p>我当初就是图省事，把1.2V和3.3V用同一个<a href="https://www.hqchip.com/app/1703" target="_blank"><u>电源芯片</u></a>的两路输出，没做顺序控制，1.2V反而先上来了3.3V晚了10ms，芯片一直处于复位状态，查了好久才看到这个要求。掉电的时候反过来，1.2V要先掉，再掉3.3V，不然容易触发闩锁。</p>
-<h3>2. 外部扩流NPN管别乱选</h3>
-<p>这款芯片的1.2V核心电源是内部PMU驱动外部NPN三极管扩流输出的，选管子有三个硬指标，一个都不能少：</p>
-<ul>
-<li>直流放大倍数β≥42.5：内部BCTRL引脚最大只能输出20mA<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>，要输出0.85A的核心电流，β不够的话驱动能力不足</li>
-<li>耗散功率≥2.04W：最坏情况Vce=2.4V@0.85A，功耗2W以上，选小了会发烫烧管子</li>
-<li>截止频率Ft≥50MHz：太低的话动态响应差，负载跳变的时候核心电压掉得厉害</li>
-</ul>
-<p>我一开始选了个β只有30的管子，跑满负载的时候核心电压掉到1.1V以下，高频直接死机，换了个β100的管子就好了。另外别让管子进入深饱和区，不然β会骤降，基极电流超20mA会烧BCTRL引脚。</p>
-<h3>3. 这些<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>别省</h3>
-<ul>
-<li>内部1.1V、2.5V LDO输出最少接1uF低ESR陶瓷电容，3.0V <a href="https://www.hqchip.com/app/1515" target="_blank"><u>USB</u></a> LDO也一样，我一开始图省事用了0.1uF的，USB插设备经常识别失败</li>
-<li>核心电源1.2V输出接4.7uF低ESR电容，ESR要求≤0.1Ω，电源纹波能压到10mV以内</li>
-</ul>
-<hr/>
-<h2>三、<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>设计：要稳，尤其是USB和<a href="https://m.hqchip.com/app/1720" target="_blank"><u>以太网</u></a>的时钟</h2>
-<ol>
-<li>主24MHz晶振：必须选基频晶振，驱动等级≥250uW，ESR≤80Ω，别用泛音晶振，起振慢还容易不稳。USB和以太网的PLL都是用这个24MHz做参考，要是这个晶振频偏太大，USB识别不了、以太网丢包都是常事。</li>
-<li>32.768K RTC晶振：选ESR≤50KΩ、负载电容12.5pF的，外部匹配电容要算上<a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>寄生电容，我这里用了两个18pF的，刚好谐振在32768Hz。不用RTC的话直接把XTAL32接地，EXTAL32悬空就行，别留着飞线引入干扰。</li>
-<li>内部RC精度：24MHz内部RC校准后精度±1%，温漂±5%，对精度要求不高的场合可以临时用，但要做USB、以太网或者精准定时的，老老实实外接晶振。</li>
-</ol>
-<hr/>
-<h2>四、高速<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>设计：DDR、以太网、USB的注意事项</h2>
-<h3>1. DDR设计：这几个引脚漏接直接返工</h3>
-<p>支持DDR3和LPDDR2两种内存，DDR3 IO电压1.5V，LPDDR2是1.2V，重点记三个容易漏的点：</p>
-<ul>
-<li>DDR_VREF必须是DDR IO电压的1/2，用1%精度的<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>分压之后加0.1uF去耦电容，别直接接电源</li>
-<li>DDR_ZQ引脚必须接240Ω 1%精度的电阻到地，是DDR输出驱动校准用的，我当初忘了接，DDR读写一直报ECC错误</li>
-<li>布线按照普通DDR3规则来就行：控制/地址<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>和时钟等长，误差≤500mil；数据信号和对应DQS等长，误差≤200mil，差分阻抗控制100Ω。</li>
-</ul>
-<h3>2. 以太网、USB设计</h3>
-<ul>
-<li>以太网：支持双百兆加L2<a href="https://www.elecfans.com/v/tag/1392/" target="_blank"><u>交换机</u></a>，做工业网关很香。RMII模式用50MHz时钟，时序余量足够，只要布线别太长就行；MII模式注意RX/TX时钟独立，按照datasheet的建立保持时间要求留余量就行。我这里用了内置PHY的变压器，跑了72小时满带宽传输，丢包率为0，稳定性还不错。</li>
-<li>USB：两个OTG接口PHY都是内置的，省了外接PHY的成本。不用的USB接口别直接接地，VBUS串10K电阻下地，不然有闩锁风险。差分线阻抗控制90Ω±15%，过孔别超过2个，长度尽量短。</li>
-</ul>
-<hr/>
-<h2>五、几个容易忽略的小细节</h2>
-<ol>
-<li><a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>C精度优化：12位1MS/s的ADC，前端信号源内阻大于1K的话，要把采样时间调长，不然采样值不准。参考电压如果接3.3V的话，要和<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>电源共地，加LC滤波，我这里实测有效位数能到10.5位，做工业采集够用。</li>
-<li>调试接口：JTAG默认有内部上下拉，不用额外加电阻，TDO别加外部上拉，内部有保持电路，加了反而会导致数据错误。不用的篡改检测引脚必须接地，不然会触发安全复位。</li>
-<li>不用的模拟接口：不用的ADC、<a href="https://www.elecfans.com/tags/dac/" target="_blank"><u>DAC</u></a>引脚可以悬空，电源引脚要么接对应电压要么悬空，别直接接地。</li>
-</ol>
-<hr/>
-<h2>写在最后</h2>
-<p>这款芯片其实性价比挺高的，双核异构的配置刚好戳中了工业HMI、网关这类既要跑<a href="https://www.elecfans.com/v/tag/527/" target="_blank"><u>操作系统</u></a>又要做实时控制的场景，就是datasheet里很多细节藏得比较深，第一次用很容易踩坑。我整理的这些都是实际项目里验证过的点，要是大家用的时候有其他问题，欢迎评论区交流。</p>
-<p>需要完整版datasheet或者我做的参考设计原理图的，可以私我发你，省得去官网找半天。</p>]]></description></item>  </channel></rss>
+	研华将持续深化与 AMD 的合作，透过完整的 AI 与边缘运算服务器平台，协助全球企业建构更高效、更具扩充性且可长期部署的AI 基础架构，为各行业客户提供覆盖数据中心至边缘的一体化 AI 算力方案。</p>]]></description></item>  </channel></rss>
