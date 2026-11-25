@@ -1,4 +1,184 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[老料新说：飞思卡尔P3041 QorIQ通信处理器，存量项目改款的性价比之王]]></title>    <link>https://www.elecfans.com/d/8981000.html</link>    <guid>https://www.elecfans.com/d/8981000.html</guid>    <pubDate>2026-11-25 15:10:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8981000" value="https://file.elecfans.com/web2/M00/84/5F/pYYBAGObkhGACdQIAAUZ_ckqagY278.pdf"/><h1>老料新说：飞思卡尔P3041 QorIQ<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a><a href="https://m.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>，存量项目改款的性价比之王</h1>
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[调了3次板才摸透的P3041 QorIQ处理器设计要点，全是踩坑攒的干货]]></title>    <link>https://www.elecfans.com/d/8980999.html</link>    <guid>https://www.elecfans.com/d/8980999.html</guid>    <pubDate>2026-11-25 15:10:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8980999" value="https://file.elecfans.com/web2/M00/27/A8/pYYBAGHCuyyAAFgNACILwDm4be4035.pdf"/><h1>调了3次板才摸透的P3041 QorIQ<a href="https://m.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>设计要点，全是踩坑攒的干货</h1>
+<p>最近在做<a href="https://www.elecfans.com/v/tag/1225/" target="_blank"><u>5G</u></a>小站的主控板，选了<a href="https://bbs.elecfans.com/group_729" target="_blank"><u>NXP</u></a>（原飞思卡尔）的P3041四核PowerPC，前前后后改了两版原理图、调了三次板才把<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>、高速<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>的坑都踩完。整理了datasheet里硬件设计最核心的要点，省得后面用这个片子的兄弟再走弯路。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8980999" target="_blank">P3041NSE1MMB.pdf</a></p>
+<hr/>
+<h2>先唠下这片子基本盘，适合啥场景</h2>
+<p>P3041是QorIQ P系列的中端型号，4核e500mc Power架构，最高1.5GHz主频，封装是1295脚FC-PBGA，37.5x37.5mm大小，接口资源刚好够<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>、工业网关、航天类的产品用：</p>
+<ul>
+<li>网络：1路10G XAUI + 5路1G网口（支持SGMII/RGMII）</li>
+<li>高速互联：4路PCIe2.0、2路SRIO 1.3/2.1、2路<a href="https://www.hqchip.com/app/1686" target="_blank"><u>SATA</u></a>2.0</li>
+<li>存储：单路64位<a href="https://m.hqchip.com/app/1729" target="_blank"><u>DDR</u></a>3/DDR3L<a href="https://m.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>带ECC，支持eMMC、SPI Flash、本地总线扩展</li>
+<li>外设：4路<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>、最多4路<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>、2路<a href="https://m.hqchip.com/app/1515" target="_blank"><u>USB</u></a>2.0、GPIO、IEEE1588</li>
+</ul>
+<p>我们做小站用它刚好，算力够，常用接口都集成了，不用外挂太多PHY，成本控制得住。</p>
+<hr/>
+<h2>⚠️ 电源设计：这部分错了直接烧片，别瞎来</h2>
+<p>这是我第一版踩坑最多的地方，重点给大家划出来：</p>
+<h3>1. 上电时序必须严格按要求来</h3>
+<p>官方要求的上电顺序错一点都不行，我第一次把GVDD（DDR电源）和核心电源放同一步上，结果DDR初始化卡了3天没找到原因：</p>
+<ol>
+<li>先上IO类电源：OVDD/LVDD/BVDD/CVDD/USB_3.3V，<strong>PORESET必须保持拉低</strong>，IO_VSEL引脚这时候就要稳定，不能中途变</li>
+<li>再上核心、SerDes、PLL电源：VDD_CA_CB_PL/SVDD/AVDD/USB_1.0V，核心电源和USB1.0V必须同步起来</li>
+<li>最后上DDR和SerDes接口电源：GVDD/XVDD</li>
+<li>所有电源稳定后再撤PORESET
+<blockquote>
+<p>掉电的时候顺序反过来，核心电源要等IO电源掉完再掉，不然容易出 latch up 烧片。</p>
+</blockquote></li>
+</ol>
+<h3>2. 电源域参数别搞错</h3>
+<table>
+<thead>
+<tr>
+<th>电源域</th>
+<th>典型电压</th>
+<th>用途</th>
+<th>注意事项</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>VDD_CA_CB_PL</td>
+<td>1.0V</td>
+<td>核心+平台逻辑</td>
+<td>1500MHz主频要求精度±40mV</td>
+</tr>
+<tr>
+<td>SVDD</td>
+<td>1.0V</td>
+<td>SerDes核心逻辑</td>
+<td>要和核心电源同源</td>
+</tr>
+<tr>
+<td>GVDD</td>
+<td>1.5V/1.35V</td>
+<td>DDR IO</td>
+<td>接DDR3用1.5V，DDR3L用1.35V</td>
+</tr>
+<tr>
+<td>XVDD</td>
+<td>1.8V/1.5V</td>
+<td>SerDes接口</td>
+<td>和对接的设备电平匹配</td>
+</tr>
+<tr>
+<td>OVDD</td>
+<td>3.3V</td>
+<td>普通IO（I2C/UART/GPIO）</td>
+<td/>
+</tr>
+<tr>
+<td>LVDD</td>
+<td>3.3V/2.5V</td>
+<td><a href="https://m.hqchip.com/app/1720" target="_blank"><u>以太网</u></a>IO</td>
+<td>用RGMII必须接2.5V</td>
+</tr>
+<tr>
+<td>POVDD</td>
+<td>GND/1.5V</td>
+<td>熔丝<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a></td>
+<td>平时必须接地！只有烧安全熔丝的时候接1.5V，一辈子最多烧2次</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>那个IO_VSEL引脚真的要盯紧，电压设错直接烧接口，不可逆的那种。</p>
+</blockquote>
+<h3>3. PLL和高速电源滤波必须按参考电路来</h3>
+<p>这部分省<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>等于给自己找麻烦：</p>
+<ul>
+<li>核心、平台、DDR的PLL电源（AVDD_CC/AVDD_PLAT/AVDD_DDR）：每路单独接5Ω<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>+10uF+1uF滤波，电容尽量放引脚旁边，别打过孔</li>
+<li>SerDes PLL电源（AVDD_SRDS）：每路接1Ω电阻+0.003uF+2个2.2uF滤波，优先用高自谐振频率的陶瓷电容</li>
+<li>XVDD滤波：如果从GVDD取电，必须加120Ω@100MHz的磁珠+2个2.2uF<a href="https://www.elecfans.com/tags/电容滤波/" target="_blank"><u>电容滤波</u></a>，不然SerDes链路jit<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>r超标训不通</li>
+<li>USB_1.0V电源：从核心电源星型连接，加120Ω磁珠+2.2uF滤波</li>
+</ul>
+<h3>4. 去耦电容别省</h3>
+<ul>
+<li>每个电源引脚配至少1个0.1uF 0402/0603陶瓷电容，尽量放芯片背面对应引脚的位置，过孔越少越好</li>
+<li>每个电源域周围放2~3个100~330uF低ESR<a href="https://www.hqchip.com/app/395" target="_blank"><u>钽电容</u></a>做bulk储能</li>
+<li>SerDes电源额外加10个10nF陶瓷电容靠近引脚，再在芯片四周放4个1uF电容</li>
+</ul>
+<hr/>
+<h2><a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>设计：差几ppm都可能链路训不通</h2>
+<p>P3041对时钟的要求不算特别苛刻，但细节错了也搞死人：</p>
+<h3>1. 主时钟SYSCLK</h3>
+<ul>
+<li>频率范围66~133MHz，我们一般用100MHz，占空比40~60%，摆率1~4V/ns</li>
+<li>峰值周期jitter必须小于±150ps，相位噪声&lt;-56dBc@500KHz</li>
+<li>支持扩频时钟，调制频率&lt;60KHz，扩频范围最大±0.5%，别超了</li>
+</ul>
+<h3>2. SerDes参考时钟</h3>
+<p>三个SerDes bank各需要一组差分参考时钟，只能选100/125/156.25MHz三个频率，别用中间值，官方没测试过：</p>
+<ul>
+<li>总jitter（1e-6 BER）必须小于86ps，确定性jitter小于42ps</li>
+<li>差分摆幅400~1600mVpp，占空比40~60%</li>
+<li>⚠️ 划重点：SerDes bank3不支持扩频时钟！我第一版给bank3接了扩频的156.25M，SATA一直连不上，换了非扩频的时钟直接好。</li>
+</ul>
+<h3>3. 其他时钟</h3>
+<ul>
+<li>RGMII需要的125MHz参考时钟（EC_GTX_CLK125），如果不用RGMII功能可以直接接地，省个晶振</li>
+<li>RTC时钟没有最低频率要求，不用的话直接接地就行</li>
+</ul>
+<hr/>
+<h2>复位和配置：RCW配置错了等于白焊</h2>
+<p>这部分都是细节，投板前对着查：</p>
+<ul>
+<li>PORESET必须至少拉1ms，HRESET至少拉32个SYSCLK周期，建议和板上其他复位芯片级联</li>
+<li>RCW配置引脚（比如LAD[0:31]的复位复用功能），复位前必须保持稳定，建议外接4.7k上下拉设置电平</li>
+<li>测试引脚别乱接：
+<ul>
+<li>TEST_SEL必须下拉1kΩ到GND，不然进工厂测试模式片子不工作</li>
+<li>S<a href="https://www.hqchip.com/app/2004" target="_blank"><u>CAN</u></a>_MODE必须上拉100Ω到OVDD</li>
+</ul></li>
+<li>JTAG的TRST建议接PORESET，上电自动复位JTAG链，不然可能出现调试器连不上的问题</li>
+</ul>
+<hr/>
+<h2>高速接口设计：这部分是重灾区，训不通链路先查这</h2>
+<h3>1. DDR3/DDR3L部分</h3>
+<p>最高支持1333MT/s，按JEDEC标准做就差不多，提几个P3041特有的要求：</p>
+<ul>
+<li>M<a href="https://www.elecfans.com/v/tag/3668/" target="_blank"><u>VR</u></a>EF参考电压必须严格等于GVDD/2，精度±1%，不要用电阻分压，最好用专门的参考电压芯片</li>
+<li>MDIC0接20Ω（全强度模式）/40.2Ω（半强度模式）1%精度电阻到GND，MDIC1接同阻值电阻到GVDD，别省电阻精度</li>
+<li>差分对（CLK/DQS）等长误差控制在5mil以内，单端数据线等长误差控制在10mil以内，单端阻抗50Ω，差分阻抗100Ω</li>
+<li>DDR VTT供电要跟踪MVREF，误差不超过±40mV</li>
+</ul>
+<h3>2. SerDes接口（PCIe/SRIO/XAUI/SGMII/SATA）</h3>
+<p>18路SerDes，差分阻抗控制100Ω±10%，等长误差控制在2mil以内：</p>
+<ul>
+<li><a href="https://www.hqchip.com/app/1703" target="_blank"><u>AC</u></a><a href="https://www.elecfans.com/tags/耦合/" target="_blank"><u>耦合</u></a>电容用0402封装100nF NPO电容，放在发送端靠近芯片的位置</li>
+<li>不用的SerDes引脚：TX悬空，RX必须接地，整个bank不用的话参考时钟也接地，RCW里要把对应lane的电源关了省电</li>
+<li>不同协议的速率支持看RCW配置，别硬配不支持的组合，比如SATA只能用bank3。</li>
+</ul>
+<h3>3. RGMII接口</h3>
+<ul>
+<li>LVDD必须接2.5V，别接3.3V，烧PHY也烧<a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>接口</li>
+<li>接收端时钟和数据的skew要保证在1~2.8ns之间，现在很多PHY内部已经做了2ns延迟，不用额外绕线，layout的时候注意时钟和数据线等长就行</li>
+<li>不用的RGMII接口，125M参考时钟可以直接接地。</li>
+</ul>
+<h3>4. USB接口</h3>
+<ul>
+<li>VBUS必须加分压网络，两个电阻用0.1%精度同温漂的，不然过压欠压检测不准</li>
+<li>USBn_VDD_1P8_DECAP引脚必须接1~1.5uF电容到地，别省，我试过省了之后USB高速设备识别率只有30%</li>
+<li>ID脚不用的话直接接地就行。</li>
+</ul>
+<hr/>
+<h2>热设计：19W的片子别用小散热片</h2>
+<p>P3041满负载功耗不算低，四核1.5GHz主频下最大功耗大概19W左右，结温要控制在105℃以内：</p>
+<ul>
+<li>4层板自然对流下热阻RthJA是11℃/W，200LFM风冷下是7℃/W，散热片按这个算就行</li>
+<li>散热片安装压力不要超过45N，不然压坏封装焊球</li>
+<li>内置温度二极管，可以接<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>T7461A这类<a href="https://www.elecfans.com/tags/温度传感器/" target="_blank"><u>温度传感器</u></a>做过热保护。</li>
+</ul>
+<hr/>
+<h2>最后给个投板前Checklist，对着查少踩坑</h2>
+<p>✅ 上电时序是不是符合官方要求，GVDD是不是在核心电源之后？
+✅ IO_VSEL引脚配置是不是和实际接的IO电源电压一致？
+✅ SerDes bank3有没有用扩频时钟？
+✅ TEST_SEL下拉1k、SCAN_MODE上拉100R有没有接？
+✅ 不用的SerDes RX有没有接地？
+✅ DDR的MDIC校准电阻精度是不是1%？
+✅ USB的VBUS分压有没有加，1.8V DECAP电容有没有接？
+✅ POVDD平时是不是接地，只有烧熔丝的时候接1.5V？
+✅ 复位引脚的上下拉有没有接？</p>
+<p>最近还在调这个片子的SRIO和10G口，有遇到问题的兄弟可以评论区聊，我踩过的坑都能给你提个醒～</p>]]></description></item><item>    <title><![CDATA[老料新说：飞思卡尔P3041 QorIQ通信处理器，存量项目改款的性价比之王]]></title>    <link>https://www.elecfans.com/d/8981000.html</link>    <guid>https://www.elecfans.com/d/8981000.html</guid>    <pubDate>2026-11-25 15:10:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8981000" value="https://file.elecfans.com/web2/M00/84/5F/pYYBAGObkhGACdQIAAUZ_ckqagY278.pdf"/><h1>老料新说：飞思卡尔P3041 QorIQ<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a><a href="https://m.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>，存量项目改款的性价比之王</h1>
 <p>最近做运营商接入网关的改款方案，翻来覆去对比了好几个新平台，最后还是选了这款2011年发布的“老伙计”P3041。别看是<a href="https://bbs.elecfans.com/group_729" target="_blank"><u>NXP</u></a>收购飞思卡尔之前的产品，现在工业、通信、军工领域的存量项目迭代，它依然是首选之一，今天就给大家扒扒这款芯片的实用价值，顺带提两句实际用的时候踩过的坑。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8981000" target="_blank">P3041NSE7MMC.pdf</a></p>
 <hr/>
 <h2>一、先说说最常用的两个落地场景</h2>
@@ -3950,4 +4130,4 @@ SerDes参考时钟必须用低相噪工业级晶振，相噪控制在100ppm以�
 <p style="text-indent:2em;">
 	易造《EJD-01HA-R接地电阻监测仪》，产品样本</p>
 <p style="text-indent:2em;">
-	易造《储罐接地电阻在线监测系统方案书》，第3.1—3.2节</p>]]></description></item><item>    <title><![CDATA[过流限流保护芯片选型表：保护电流设定与连续承载的区别]]></title>    <link>https://www.elecfans.com/d/8980623.html</link>    <guid>https://www.elecfans.com/d/8980623.html</guid>    <pubDate>2026-11-25 14:08:00</pubDate>    <description><![CDATA[<h2><strong>测试条件与记录规则</strong></h2><p>01 <a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>输入</p><p>可<a href="https://bbs.elecfans.com/group_75" target="_blank"><u>编程</u></a>直流电源；设置正常输入、阶跃、过压及热插拔条件。</p><p>02 电子负载</p><p>恒流模式逐级加载；记录限流点、压降、保护动作与恢复方式。</p><p>03 波形测量</p><p><a href="https://m.elecfans.com/v/tag/577/" target="_blank"><u>示波器</u></a>同步观察VIN、VOUT与保护响应；探头地线尽量短。</p><p>04 温度测量</p><p>热成像记录热点分布；热电偶贴近IC表面并等待热稳定。</p><p>统一记录项</p><p>样品批次 /<a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>版本/环境温度/输入设定/负载模式/保护阈值/恢复方式/热稳定时间</p><p>注意：规格书中的绝对最大额定值不是推荐连续工作点；测试接近极限条件时应设置电源限流并逐级升压。</p><img src="https://file1.elecfans.com/web3/M00/7B/D0/wKgzfWsGdY-AUigrAAHYiSp2jPY281.png" alt="wKgzfWsGdY-AUigrAAHYiSp2jPY281.png"/><img src="https://file1.elecfans.com/web3/M00/7B/D9/wKgzfmsGdZSAJ5jqAATT6xHtRRA739.png" alt="wKgzfmsGdZSAJ5jqAATT6xHtRRA739.png"/><p>PW1515 | OVP +可调恒流</p><p>IC简介</p><p>集成固定6.1V OVP与可调恒流功能的充电前端保护芯片。</p><p>规格书参数</p><p>推荐工作输入：3.5–20V；<a href="https://www.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>特性正常3.2–20V</p><p>绝对最大输入：32V</p><p>OVP：6.1V；范围5.9–6.3V</p><p>OCP/恒流：可调0.2–3A；推荐输出0.2–2A</p><p>导通内阻：120mΩ典型</p><p>封装：SOT23-5L</p><p>重要特点</p><p>• OVP响应不超过1μs</p><p>•过流时进入恒流控制</p><p>•支持低有效EN与软启动</p><p>•集成过温及短路限流</p><img src="https://file1.elecfans.com/web3/M00/7B/D0/wKgzfWsGdaaAeKO3AAyzV71G50A279.png" alt="wKgzfWsGdaaAeKO3AAyzV71G50A279.png"/><img src="https://file1.elecfans.com/web3/M00/7D/77/wKgZPGrHOg2AZ6KmAA254VckK88129.png" alt="wKgZPGrHOg2AZ6KmAA254VckK88129.png"/><img src="https://file1.elecfans.com/web3/M00/7B/D0/wKgzfWsGdbGAN2BoAAeJMKefTj0004.png" alt="wKgzfWsGdbGAN2BoAAeJMKefTj0004.png"/><p>PW2605Z | 可调OVP/OCP锁存</p><p>IC简介</p><p>具备可调OVP、可调OCP及过流锁存功能的复合保护芯片。</p><p>规格书参数</p><p>推荐工作输入：3.5–30V</p><p>绝对最大输入：32V</p><p>OVP：默认6.1V；可调4.5–16V</p><p>OCP：可调0.5–3A；约50μs响应</p><p>导通内阻：50mΩ典型</p><p>封装：DFN2×2-8L</p><p>重要特点</p><p>•过流后锁存关断</p><p>•需重新上电或EN复位</p><p>•集成UVLO、OTP与软启动</p><p>•提供PG状态监测</p><img src="https://file1.elecfans.com/web3/M00/7B/D9/wKgzfmsGdc2Ab-62AA3DSHZqejk926.png" alt="wKgzfmsGdc2Ab-62AA3DSHZqejk926.png"/><img src="https://file1.elecfans.com/web3/M00/7B/D9/wKgzfmsGddOAdq3EAA4_i5-CHrg436.png" alt="wKgzfmsGddOAdq3EAA4_i5-CHrg436.png"/><img src="https://file1.elecfans.com/web3/M00/7D/7F/wKgZO2rHOkCACdWcAAefRr0UAx8918.png" alt="wKgZO2rHOkCACdWcAAefRr0UAx8918.png"/><p>PW2605R | 反接/防倒灌OVP/OCP</p><p>IC简介</p><p>集成输入反接和反向<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>保护的OVP/OCP电源路径芯片。</p><p>规格书参数</p><p>推荐工作输入：3.5–30V</p><p>绝对最大输入：VIN：−20V至32V</p><p>OVP：固定6.1V；范围5.9–6.3V</p><p>OCP：特性页0.5–1.9A；电气表另列至3A</p><p>导通内阻：130mΩ典型</p><p>封装：DFN2×2-8L</p><p>重要特点</p><p>•输入反接保护，不是输入短路保护</p><p>•支持反向电流阻断</p><p>•提供FAULT与低有效EN</p><p>• OVP响应典型100ns</p><img src="https://file1.elecfans.com/web3/M00/7B/D0/wKgzfWsGdf6AXSIaAAusL4x890c082.png" alt="wKgzfWsGdf6AXSIaAAusL4x890c082.png"/><img src="https://file1.elecfans.com/web3/M00/7B/D9/wKgzfmsGdiaAOMFSAA0HaU5261M745.png" alt="wKgzfmsGdiaAOMFSAA0HaU5261M745.png"/><img src="https://file1.elecfans.com/web3/M00/7B/D0/wKgzfWsGdiuANCapAAc7ni_2kik438.png" alt="wKgzfWsGdiuANCapAAc7ni_2kik438.png"/><p>PW2601 | 输入/电池双OVP</p><p>IC简介</p><p>带5.1V <a href="https://www.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>模式、输入OVP和电池OVP的锂电充电前端保护芯片。规格书参数</p><p>正常直通输入：3.5–6.5V；推荐表另列3.5–24V</p><p>绝对最大输入：24V</p><p>OVP：输入6.8V；电池4.35V</p><p>OCP：可编程，最高1.5A；推荐0.5–1A</p><p>导通内阻：400mΩ典型</p><p>封装：DFN2×2-8L</p><p>重要特点</p><p>• LDO模式输出约5.1V</p><p>•输入/电池双重过压保护</p><p>•集成UVLO、OTP及软启动</p><p>• 24V表示前端耐受，不是正常直通电压</p><img src="https://file1.elecfans.com/web3/M00/7B/D0/wKgzfWsGde-AYsA3AAzY8Mop1VI832.png" alt="wKgzfWsGde-AYsA3AAzY8Mop1VI832.png"/><img src="https://file1.elecfans.com/web3/M00/7B/D0/wKgzfWsGdk2AT2m_AAzrqTAtO1c983.png" alt="wKgzfWsGdk2AT2m_AAzrqTAtO1c983.png"/><img src="https://file1.elecfans.com/web3/M00/7B/D0/wKgzfWsGdlKAUpb9AAdaNn5hUvQ435.png" alt="wKgzfWsGdlKAUpb9AAdaNn5hUvQ435.png"/><p><a href="https://www.hqchip.com/app/1515" target="_blank"><u>USB</u></a>过流限流保护<a href="https://bbs.elecfans.com/group_277" target="_blank"><u>芯片测试</u></a></p><p>PW1502A / PW1504 / PW1503 / PW1501 / PW1515 / PW2601</p><p>每颗芯片两页 ·共3组测试·每组含4项电气照片与2项温度照片</p><img src="https://file1.elecfans.com/web3/M00/7C/5E/wKgZO2q6HjiAYw6yAAC5Pe2mTa0780.png" alt="wKgZO2q6HjiAYw6yAAC5Pe2mTa0780.png"/><p>PW1502A | USB可调限流</p><p>IC简介</p><p>适用于3V/5V USB<a href="https://www.hqchip.com/app/1808" target="_blank"><u>端口</u></a>的低功耗可调限流<a href="https://m.hqchip.com/app/1708" target="_blank"><u>负载开关</u></a>。</p><p>规格书参数</p><p>工作输入：2.4–5.5V</p><p>绝对最大输入：7V</p><p>OVP：无</p><p>限流：<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>设定；规格书示例0.6–2A</p><p>导通内阻：80mΩ典型（VIN=5V）</p><p>封装：SOT23-5L</p><p>重要特点</p><p>•短路限流响应约1μs</p><p>•集成过流/短路恒流保护</p><p>•支持过温保护与软启动</p><p>•关断时支持反向电流阻断</p><img src="https://file1.elecfans.com/web3/M00/7D/78/wKgZPGrHOpmAMhxpAAq61vdZfBI088.png" alt="wKgZPGrHOpmAMhxpAAq61vdZfBI088.png"/><p>PW1504 | 2.4A可调限流</p><p>IC简介</p><p>面向USB端口的2.4A级可调限流电源分配开关。</p><p>规格书参数</p><p>工作输入：2.4–6V</p><p>绝对最大输入：7V</p><p>OVP：无</p><p>限流：0.4–2.5A可调</p><p>导通内阻：80mΩ典型</p><p>封装：SOT23-5L</p><p>重要特点</p><p>• 2.4A负载能力</p><p>•过流/短路恒流保护</p><p>•无体<a href="https://www.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>反向阻断结构</p><p>•内置过温保护</p><img src="https://file1.elecfans.com/web3/M00/7B/D0/wKgzfWsGdpCAH7ZJAAy4iImHDf4490.png" alt="wKgzfWsGdpCAH7ZJAAy4iImHDf4490.png"/><img src="https://file1.elecfans.com/web3/M00/7D/78/wKgZPGrHOrCAUo6gAA11QgCRX9Q696.png" alt="wKgZPGrHOrCAUo6gAA11QgCRX9Q696.png"/><p>PW1503 | 3A低内阻限流</p><p>IC简介</p><p>面向USB及低压电源分配的3A低内阻可调限流开关。</p><p>规格书参数</p><p>工作输入：2.4–6V</p><p>绝对最大输入：7V</p><p>OVP：无</p><p>限流：电气表0.4–3.5A；超过3A不推荐</p><p>导通内阻：50mΩ典型</p><p>封装：SOT23-5L</p><p>重要特点</p><p>• 3A级负载能力</p><p>•可编程恒流限制</p><p>•关断时阻止反向电流</p><p>•过温关断并自动恢复</p><img src="https://file1.elecfans.com/web3/M00/7B/D0/wKgzfWsGdrqAZ8zxAA1HAeKsdyE569.png" alt="wKgzfWsGdrqAZ8zxAA1HAeKsdyE569.png"/><img src="https://file1.elecfans.com/web3/M00/7B/D0/wKgzfWsGdsOATZBJAA4Yrt6IQZs771.png" alt="wKgzfWsGdsOATZBJAA4Yrt6IQZs771.png"/><p>PW1501 | 5A级低内阻OCP</p><p>IC简介</p><p>面向较大电流电源路径的低内阻可调过流及防倒灌芯片。</p><p>规格书参数</p><p>工作输入：2.5–16V（官网选型参数）</p><p>绝对最大输入：未取得官方PDF，待确认</p><p>OVP：无</p><p>OCP/输出：可调；官网标示约5A等级</p><p>导通内阻：30mΩ（官网参数）</p><p>封装：QFN12</p><p>重要特点</p><p>• NMOS防倒灌结构</p><p>•适合较大电流电源路径</p><p>•限流范围与精度需以PDF确认</p><p>•其他保护功能不作扩展</p><img src="https://file1.elecfans.com/web3/M00/7B/D9/wKgzfmsGdtWAJlnwAANCiPNIOZI599.png" alt="wKgzfmsGdtWAJlnwAANCiPNIOZI599.png"/><p>PW1555A | OVP +可调恒流</p><p>IC简介</p><p>兼具6.1V输入过压保护与0.2–3A可调恒流的前端保护芯片。</p><p>规格书参数</p><p>推荐工作输入：3.5–20V；电气特性正常3.2–20V</p><p>绝对最大输入：32V</p><p>OVP：6.1V；范围5.9–6.3V</p><p>OCP/恒流：0.2–3A可调；推荐0.2–2A</p><p>导通内阻：120mΩ典型</p><p>封装：SOT23-5L</p><p>重要特点</p><p>•过流进入恒流控制</p><p>•支持短路限流</p><p>•低有效EN与软启动</p><p>•内置过温保护</p><img src="https://file1.elecfans.com/web3/M00/7B/D9/wKgzfmsGduiAN3hzAAzAdEVrzwk885.png" alt="wKgzfmsGduiAN3hzAAzAdEVrzwk885.png"/><img src="https://file1.elecfans.com/web3/M00/7B/DA/wKgzfmsGdu6AdpVwAAjf1XLSX1c205.png" alt="wKgzfmsGdu6AdpVwAAjf1XLSX1c205.png"/>]]></description></item>  </channel></rss>
+	易造《储罐接地电阻在线监测系统方案书》，第3.1—3.2节</p>]]></description></item>  </channel></rss>
