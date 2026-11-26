@@ -1,4 +1,116 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[GD32F130 + W5500 硬件设计：网口部分最容易翻车的四处]]></title>    <link>https://www.elecfans.com/d/8986303.html</link>    <guid>https://www.elecfans.com/d/8986303.html</guid>    <pubDate>2026-11-26 16:04:00</pubDate>    <description><![CDATA[<p>用 <a href="https://bbs.elecfans.com/group_1508" target="_blank"><u>GD32</u></a>F130C8T6 配 W5500 做网口，方案本身很成熟，原理图抄一抄就能通。但板子打回来之后，真正让人返工的不是芯片选型，而是网口这一小块——差分线、地平面、隔离、浪涌，四处里随便哪一处没处理好，现象都是"能 <a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>pi</u></a>ng 通但跑一会儿就断"或者"实验室没问题、现场三天两头重启"。</p><p>这篇把这四处摊开讲，都是我们自己踩过、返过板的。</p><p>一、差分线：不是"等长"就够了</p><p>新手做 <a href="https://m.hqchip.com/app/1523" target="_blank"><u>RJ45</u></a> 到 W5500 的差分对，最常见做法是"两根线拉得一样长就行"。实际上市面上大量翻车案例，等长做到了，还是不通或者误码。</p><p>几个硬要求：</p><p>差分对内等长控制在 5mil 以内，这个大家都知道；但对与对之间的间距要保持 3W 以上（W 是线宽），否则对间串扰会在千兆降百兆时体现出来。<br/>阻抗 100Ω±10%。这需要跟板厂约定叠层，四层板常规做法是顶层走差分、第二层完整地，线宽/间距让板厂按阻抗算。不要自己拍一个 6/6mil 就发出去。<br/>不要跨分割。差分对下面必须有连续的地平面。有些板子为了走线方便，把地平面挖开一块，差分线从上面跨过去，回流路径断了，辐射立刻上去，<a href="https://bbs.elecfans.com/group_40" target="_blank"><u>EMC</u></a> 一测就超。<br/>变压器到 RJ45 之间的线尽量短，这段是"脏"区域（带浪涌、带共模），越长越容易把干扰<a href="https://www.elecfans.com/tags/耦合/" target="_blank"><u>耦合</u></a>进板内。</p><p>另外一个容易忽略的点：差分对不要打过孔。真要打，一对线必须同时打、并且旁边补地过孔。单个过孔带来的阻抗突变，在 100Mbps 下就足以让眼图闭合一部分。</p><p>二、地：数字地、<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>地、屏蔽地怎么分</p><p>W5500 是内置 PHY 的，它的地处理比外挂 PHY 简单，但也不是"全都连一起"就完事。</p><p>我们的做法：</p><p>· W5500 的 AGND 与 DGND 单点连接，连接点放在芯片下方，用 0Ω <a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>或直接铺铜桥接，不要走长线。<br/>· RJ45 的金属外壳（SHIELD）单独走，通过 1nF/2kV <a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a> + 1MΩ 电阻并联到板内地，或者直接接机壳地。不要直接连数字地，否则静电打进来直接灌进芯片。<br/>· 变压器<a href="https://m.hqchip.com/tags" target="_blank"><u>中心</u></a>抽头按参考设计接，PHY 侧的抽头通过 0.1μF 到地，线缆侧的抽头通过 75Ω + 1000pF 到机壳地（这个网络叫 Bob Smith 端接），四个抽头共用一个 75Ω 再下地也行，但每个抽头必须有 1000pF 隔直。<br/>· 晶振区域：25MHz 晶振下面挖空，四周包地并打地过孔，走线尽量短，不要从晶振下面穿任何<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>。</p><p>矿用设备还有个额外要求：本安侧的地与外壳地必须隔离，隔离耐压按 GB 3836.4 的要求做。这块如果和网口共地，等于把本安和非本安连起来了，型式试验直接不过。</p><p>三、SPI：跑得快不等于跑得稳</p><p>W5500 走 SPI，很多人上来就把 SPI <a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>拉到 80MHz（GD32F130 的极限附近），然后开始怀疑芯片。</p><p>实际经验：</p><p>· SPI 时钟 30~40MHz 足够。W5500 内部 SPI 最高支持 80MHz，但整板布线、排线长度、上拉电阻都会影响时序。我们用 36MHz，跑得稳，实测吞吐也够（UDP 512 字节包，一秒几百包没问题）。<br/>· SPI 四根线（SCK/MOSI/MISO/CS）尽量等长、尽量短、不跨分割，SCK 是最脏的一根，它旁边最好有地。<br/>· CS 一定要加上拉，10kΩ 即可。上电瞬间 <a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a> 引脚是高阻，CS 悬空会让 W5500 误判被选中。<br/>· INT 引脚加上拉，并且接到 MCU 的外部中断脚。轮询方式在低功耗场景下不可接受，而且中断响应比轮询快一个数量级。<br/>· 复位引脚（<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>T）加 10kΩ 上拉 + 100nF 到地，并且由 MCU 控制。很多"上电不工作、重新插拔就好了"的问题，本质是 W5500 上电时序比 MCU 慢，MCU 已经开始发 SPI 了，W5500 还没准备好。加一个 MCU 控制的硬复位，上电后延时 50ms 再释放，问题消失。</p><p>`c<br/>/ 上电复位 W5500：拉低至少 500us，释放后等 50ms 再访问 /<br/>void w5500_hw_reset(void)<br/>{<br/>gpio_bit_reset(PORT_RST, PIN_RST);<br/>delay_us(600);<br/>gpio_bit_set(PORT_RST, PIN_RST);<br/>delay_ms(50);<br/>}<br/>`</p><p>四、浪涌与 <a href="https://www.hqchip.com/app/1587" target="_blank"><u>ESD</u></a>：井下的雷不是天上那种</p><p>矿用设备的浪涌来源和<a href="https://www.elecfans.com/soft/data/39-96/" target="_blank"><u>消费电子</u></a>不一样：不是雷击，而是井下电网的操作过电压、大功率设备启停、以及长距离线缆耦合。网口线往往要拉几十米甚至上百米到环网<a href="https://m.elecfans.com/v/tag/1392/" target="_blank"><u>交换机</u></a>，这段线就是个<a href="https://bbs.elecfans.com/group_1219" target="_blank"><u>天线</u></a>。</p><p>必要器件，一个都不能省：</p><p>· 气体放电管（<a href="https://m.hqchip.com/app/1591" target="_blank"><u>GDT</u></a>）：放在 RJ45 入口，做第一级粗保护，响应慢但通流大。<br/>· <a href="https://www.hqchip.com/app/1587" target="_blank"><u>TVS</u></a> <a href="https://www.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>阵列：放在变压器线缆侧，做第二级细保护，响应快、钳位准。选 5V 或 12V 双向的，注意结电容要小（&lt;5pF），否则影响信号。<br/>· <a href="https://m.hqchip.com/app/1119" target="_blank"><u>共模电感</u></a>：变压器本身带共模抑制，但长线场景建议再加一级。<br/>· <a href="https://m.hqchip.com/app/1598" target="_blank"><u>PTC</u></a> 或限流电阻：如果网口走的是本安侧，必须按本安要求限流限压，这时候串阻值和功率都要按故障工况算，不能只按正常工作算。</p><p>顺序很重要：GDT → 共模电感 → TVS → 变压器。反过来装，TVS 先承受大能量，一次浪涌就烧了。</p><p>还有两个细节：</p><p>保护器件的地要单独走，直接到机壳地，不要和数字地混在一起，否则浪涌能量会顺着数字地扩散到整板。<br/>TVS 的引线要短。TVS 靠的是钳位速度，引线长了电感大，钳位电压会抬高几十伏，等于白装。</p><p>最后：一份自查清单</p><p>板子发出去之前，对着这张表过一遍：</p><p>· [ ] 差分对内等长 ≤5mil，对间 ≥3W<br/>· [ ] 差分阻抗 100Ω，与板厂确认过叠层<br/>· [ ] 差分线下方地平面连续，无跨分割<br/>· [ ] 差分对未打过孔，或过孔处补了地过孔<br/>· [ ] W5500 AGND/DGND 单点连接<br/>· [ ] RJ45 外壳经 1nF/2kV + 1MΩ 接机壳地<br/>· [ ] Bob Smith 端接：四抽头各 75Ω + 1000pF<br/>· [ ] SPI 时钟 ≤40MHz，CS/INT/RST 均有上拉<br/>· [ ] RST 由 MCU 控制，上电延时 50ms<br/>· [ ] 浪涌器件顺序：GDT → 共模电感 → TVS → 变压器<br/>· [ ] 本安侧与外壳地隔离，耐压按 GB 3836.4<br/>· [ ] 晶振下方挖空、包地、打过孔</p><p>这十二条里，前六条决定"能不能跑"，后六条决定"能不能过检、能不能在现场活过三个月"。硬件设计最贵的一课，永远是返板。</p>
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[做中高端网络/工控设备的看过来！NXP T2080/T2081 通信处理器实测选型指南]]></title>    <link>https://www.elecfans.com/d/8986311.html</link>    <guid>https://www.elecfans.com/d/8986311.html</guid>    <pubDate>2026-11-26 16:05:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8986311" value="https://file.elecfans.com/web2/M00/27/94/pYYBAGHCj-yATNRcAASKpB68UmQ531.pdf"/><h1>做中高端网络/工控设备的看过来！<a href="https://www.elecfans.com/tags/nxp/" target="_blank"><u>NXP</u></a> T2080/T2081 <a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a><a href="https://m.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>实测选型指南</h1>
+<p>最近手上有个运营商接入设备的项目要升级换代，原来用的是老款QorIQ P2041，性能跟不上新的业务需求了，翻了一圈NXP的产品线，盯上了T系列的T2080和T2081，把整理的资料给大家分享下，省得后来的兄弟再踩坑。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8986311" target="_blank">T2080NSE8MQB.pdf</a></p>
+<hr/>
+<h2>一、先给这俩芯定个位：给谁用？替换谁？</h2>
+<p>这俩都是28nm工艺的中端通信处理器，说白了就是NXP用来接P2041、P3041这一代四核产品的班的，主打控制平面或者控数一体的场景：</p>
+<ul>
+<li>如果你原来用P3041/P2041：直接换T2080，同功耗预算下，核心性能、缓存、SerDes带宽、<a href="https://m.hqchip.com/app/1720" target="_blank"><u>以太网</u></a>连接能力直接翻2倍以上，迁移成本极低</li>
+<li>如果你原来用P4080：换T2080性能差不多，但是价格和功耗砍了一大截，降本首选</li>
+<li>如果是用T1042的项目后期要升性能：直接上T2081，引脚完全兼容，不用改<a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>，直接换料就行，一块板做高低配两个产品，省了至少几万的打板调试费</li>
+</ul>
+<hr/>
+<h2>二、T2080 vs T2081 核心差异对照表（选型直接看这个）</h2>
+<table>
+<thead>
+<tr>
+<th>俩核心参数几乎一样，就是外设和封装砍了点，根据自己需求选就行：</th>
+<th>规格项</th>
+<th>T2080</th>
+<th>T2081</th>
+<th>选型建议</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SerDes lanes</td>
+<td>16条@最高10GHz</td>
+<td>8条@最高10GHz</td>
+<td>需要多高速<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>选T2080</td>
+</tr>
+<tr>
+<td>PCIe</td>
+<td>2x Gen3 + 2x Gen2</td>
+<td>1x Gen3 + 3x Gen2</td>
+<td/>
+</tr>
+<tr>
+<td>SRIO</td>
+<td>2路 + RMan</td>
+<td>无</td>
+<td>做高速板间互联、无线基带板选T2080</td>
+</tr>
+<tr>
+<td><a href="https://m.hqchip.com/app/1686" target="_blank"><u>SATA</u></a></td>
+<td>2路</td>
+<td>无</td>
+<td>带本地存储需求选T2080</td>
+</tr>
+<tr>
+<td>Aurora接口</td>
+<td>有</td>
+<td>无</td>
+<td/>
+</tr>
+<tr>
+<td>10G MAC</td>
+<td>最多4个，支持XFI/XAUI/HiGig</td>
+<td>最多2个，仅支持XFI</td>
+<td/>
+</tr>
+<tr>
+<td>1G MAC</td>
+<td>最多8个</td>
+<td>最多7个</td>
+<td/>
+</tr>
+<tr>
+<td>封装</td>
+<td>25x25mm 896 <a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>pi</u></a>n 0.8mm pitch</td>
+<td>23x23mm 780 pin 0.8mm pitch，和T1042引脚兼容</td>
+<td>要兼容T1042直接选T2081</td>
+</tr>
+</tbody>
+</table>
+<hr/>
+<h2>三、核心技术亮点，为啥比老款香？</h2>
+<h3>1.  e6500内核：同功耗性能拉满</h3>
+<p>4个物理核，每个核是双线程的e6500 Power架构核心，最高1.8GHz，算下来一共8个虚拟核，单核能到6.0 DMIPS/MHz，双线程比单线程性能高70%。
+四个核共享2M低延迟L2缓存，还带AltiVec <a href="https://www.hqchip.com/app/1522" target="_blank"><u>SIM</u></a>D引擎，做媒体、网络<a href="https://m.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>的时候比外挂<a href="https://www.hqchip.com/app/1378" target="_blank"><u>DSP</u></a>省功耗还快，我测过简单的报文解析算法，性能比同频的老P系列高了快1.5倍。</p>
+<h3>2. 硬件虚拟化直接用，不用自己搞隔离</h3>
+<p>做控数一体的兄弟肯定懂，原来要把控制平面和数据平面分开，要么搞两个核，要么上软件虚拟机，性能损耗大。这颗直接带硬件辅助虚拟化：</p>
+<ul>
+<li>内核自带hypervisor特权级，硬件做地址翻译</li>
+<li>平台级支持SR-IOV、IOMMU，不同虚拟机的IO缓冲区完全隔离</li>
+<li>官方支持KVM、<a href="https://bbs.elecfans.com/group_300" target="_blank"><u>Linux</u></a>容器、NXP自研hypervisor，拿来直接用就行，不用自己造轮子</li>
+</ul>
+<h3>3. DPAA数据路径加速，省出来的核跑业务不香吗？</h3>
+<p>做网络转发的都知道，报文解析、队列调度、缓存管理这些活纯靠<a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>跑太浪费资源，这俩集成的DPAA架构直接把这些活硬件扛了：</p>
+<ul>
+<li>FMAN硬件解报文头，分类、流量监管、拥塞管理直接搞定</li>
+<li>QMAN硬件做队列调度，还保报文顺序</li>
+<li>自带加密、深度报文检测、压缩解压加速器，加密性能能到10Gbps，压缩解压能到17.<a href="https://www.elecfans.com/v/tag/1225/" target="_blank"><u>5G</u></a>bps，不用额外加安全芯片。</li>
+</ul>
+<hr/>
+<h2>四、适合什么场景用？</h2>
+<p>我整理了下官方给的场景，实际测下来这几个方向确实合适：</p>
+<ol>
+<li>企业级设备：模块化<a href="https://www.elecfans.com/v/tag/1392/" target="_blank"><u>交换机</u></a>、业务板卡、UTM、企业存储、数据<a href="https://m.hqchip.com/tags" target="_blank"><u>中心</u></a>设备</li>
+<li>运营商设备：核心/边缘路由器、宽带接入、城域以太网、光网络设备</li>
+<li>无线基础设施：L<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>TE</u></a>/5G回传、网卡、信道板、控制板</li>
+<li>ae<a href="https://m.elecfans.com/v/tag/1004/" target="_blank"><u>ros</u></a>pace国防：高可靠路由器、航电网络、军用单板</li>
+<li>工业计算：单板机、工厂自动化、<a href="https://www.elecfans.com/soft/data/50-103/" target="_blank"><u>测试测量</u></a>设备</li>
+</ol>
+<hr/>
+<h2>五、软件支持不用愁，生态够全</h2>
+<p>原来我担心Power架构的软件少，实际看了下NXP的生态完全够用：</p>
+<ul>
+<li>官方有T2080RDB参考设计板，拿到手直接调固件，不用自己从零画</li>
+<li>开发工具支持CodeWarrior，还有官方Linux <a href="https://www.hqchip.com/app/1522" target="_blank"><u>SD</u></a>K</li>
+<li>自带Vor<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>ti</u></a>Qa系列应用软件，比如应用识别、开源交换机软件，拿过来改改就能用</li>
+<li>第三方系统支持也全，Enea、Green Hills、<a href="https://www.elecfans.com/tags/mentor/" target="_blank"><u>Mentor</u></a>、风河的<a href="https://www.elecfans.com/tags/RTOS/" target="_blank"><u>RTOS</u></a>都适配了，做工业、国防项目的不用愁<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>问题</li>
+</ul>
+<hr/>
+<p>最后说下我个人的选型建议：如果你的项目现在用P系列中端或者T1042，要升性能又不想大改硬件，这俩绝对是首选，性价比很高。有没有已经用过这颗料的兄弟？欢迎评论区聊聊踩过的坑~</p>]]></description></item><item>    <title><![CDATA[GD32F130 + W5500 硬件设计：网口部分最容易翻车的四处]]></title>    <link>https://www.elecfans.com/d/8986303.html</link>    <guid>https://www.elecfans.com/d/8986303.html</guid>    <pubDate>2026-11-26 16:04:00</pubDate>    <description><![CDATA[<p>用 <a href="https://bbs.elecfans.com/group_1508" target="_blank"><u>GD32</u></a>F130C8T6 配 W5500 做网口，方案本身很成熟，原理图抄一抄就能通。但板子打回来之后，真正让人返工的不是芯片选型，而是网口这一小块——差分线、地平面、隔离、浪涌，四处里随便哪一处没处理好，现象都是"能 <a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>pi</u></a>ng 通但跑一会儿就断"或者"实验室没问题、现场三天两头重启"。</p><p>这篇把这四处摊开讲，都是我们自己踩过、返过板的。</p><p>一、差分线：不是"等长"就够了</p><p>新手做 <a href="https://m.hqchip.com/app/1523" target="_blank"><u>RJ45</u></a> 到 W5500 的差分对，最常见做法是"两根线拉得一样长就行"。实际上市面上大量翻车案例，等长做到了，还是不通或者误码。</p><p>几个硬要求：</p><p>差分对内等长控制在 5mil 以内，这个大家都知道；但对与对之间的间距要保持 3W 以上（W 是线宽），否则对间串扰会在千兆降百兆时体现出来。<br/>阻抗 100Ω±10%。这需要跟板厂约定叠层，四层板常规做法是顶层走差分、第二层完整地，线宽/间距让板厂按阻抗算。不要自己拍一个 6/6mil 就发出去。<br/>不要跨分割。差分对下面必须有连续的地平面。有些板子为了走线方便，把地平面挖开一块，差分线从上面跨过去，回流路径断了，辐射立刻上去，<a href="https://bbs.elecfans.com/group_40" target="_blank"><u>EMC</u></a> 一测就超。<br/>变压器到 RJ45 之间的线尽量短，这段是"脏"区域（带浪涌、带共模），越长越容易把干扰<a href="https://www.elecfans.com/tags/耦合/" target="_blank"><u>耦合</u></a>进板内。</p><p>另外一个容易忽略的点：差分对不要打过孔。真要打，一对线必须同时打、并且旁边补地过孔。单个过孔带来的阻抗突变，在 100Mbps 下就足以让眼图闭合一部分。</p><p>二、地：数字地、<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>地、屏蔽地怎么分</p><p>W5500 是内置 PHY 的，它的地处理比外挂 PHY 简单，但也不是"全都连一起"就完事。</p><p>我们的做法：</p><p>· W5500 的 AGND 与 DGND 单点连接，连接点放在芯片下方，用 0Ω <a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>或直接铺铜桥接，不要走长线。<br/>· RJ45 的金属外壳（SHIELD）单独走，通过 1nF/2kV <a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a> + 1MΩ 电阻并联到板内地，或者直接接机壳地。不要直接连数字地，否则静电打进来直接灌进芯片。<br/>· 变压器<a href="https://m.hqchip.com/tags" target="_blank"><u>中心</u></a>抽头按参考设计接，PHY 侧的抽头通过 0.1μF 到地，线缆侧的抽头通过 75Ω + 1000pF 到机壳地（这个网络叫 Bob Smith 端接），四个抽头共用一个 75Ω 再下地也行，但每个抽头必须有 1000pF 隔直。<br/>· 晶振区域：25MHz 晶振下面挖空，四周包地并打地过孔，走线尽量短，不要从晶振下面穿任何<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>。</p><p>矿用设备还有个额外要求：本安侧的地与外壳地必须隔离，隔离耐压按 GB 3836.4 的要求做。这块如果和网口共地，等于把本安和非本安连起来了，型式试验直接不过。</p><p>三、SPI：跑得快不等于跑得稳</p><p>W5500 走 SPI，很多人上来就把 SPI <a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>拉到 80MHz（GD32F130 的极限附近），然后开始怀疑芯片。</p><p>实际经验：</p><p>· SPI 时钟 30~40MHz 足够。W5500 内部 SPI 最高支持 80MHz，但整板布线、排线长度、上拉电阻都会影响时序。我们用 36MHz，跑得稳，实测吞吐也够（UDP 512 字节包，一秒几百包没问题）。<br/>· SPI 四根线（SCK/MOSI/MISO/CS）尽量等长、尽量短、不跨分割，SCK 是最脏的一根，它旁边最好有地。<br/>· CS 一定要加上拉，10kΩ 即可。上电瞬间 <a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a> 引脚是高阻，CS 悬空会让 W5500 误判被选中。<br/>· INT 引脚加上拉，并且接到 MCU 的外部中断脚。轮询方式在低功耗场景下不可接受，而且中断响应比轮询快一个数量级。<br/>· 复位引脚（<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>T）加 10kΩ 上拉 + 100nF 到地，并且由 MCU 控制。很多"上电不工作、重新插拔就好了"的问题，本质是 W5500 上电时序比 MCU 慢，MCU 已经开始发 SPI 了，W5500 还没准备好。加一个 MCU 控制的硬复位，上电后延时 50ms 再释放，问题消失。</p><p>`c<br/>/ 上电复位 W5500：拉低至少 500us，释放后等 50ms 再访问 /<br/>void w5500_hw_reset(void)<br/>{<br/>gpio_bit_reset(PORT_RST, PIN_RST);<br/>delay_us(600);<br/>gpio_bit_set(PORT_RST, PIN_RST);<br/>delay_ms(50);<br/>}<br/>`</p><p>四、浪涌与 <a href="https://www.hqchip.com/app/1587" target="_blank"><u>ESD</u></a>：井下的雷不是天上那种</p><p>矿用设备的浪涌来源和<a href="https://www.elecfans.com/soft/data/39-96/" target="_blank"><u>消费电子</u></a>不一样：不是雷击，而是井下电网的操作过电压、大功率设备启停、以及长距离线缆耦合。网口线往往要拉几十米甚至上百米到环网<a href="https://m.elecfans.com/v/tag/1392/" target="_blank"><u>交换机</u></a>，这段线就是个<a href="https://bbs.elecfans.com/group_1219" target="_blank"><u>天线</u></a>。</p><p>必要器件，一个都不能省：</p><p>· 气体放电管（<a href="https://m.hqchip.com/app/1591" target="_blank"><u>GDT</u></a>）：放在 RJ45 入口，做第一级粗保护，响应慢但通流大。<br/>· <a href="https://www.hqchip.com/app/1587" target="_blank"><u>TVS</u></a> <a href="https://www.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>阵列：放在变压器线缆侧，做第二级细保护，响应快、钳位准。选 5V 或 12V 双向的，注意结电容要小（&lt;5pF），否则影响信号。<br/>· <a href="https://m.hqchip.com/app/1119" target="_blank"><u>共模电感</u></a>：变压器本身带共模抑制，但长线场景建议再加一级。<br/>· <a href="https://m.hqchip.com/app/1598" target="_blank"><u>PTC</u></a> 或限流电阻：如果网口走的是本安侧，必须按本安要求限流限压，这时候串阻值和功率都要按故障工况算，不能只按正常工作算。</p><p>顺序很重要：GDT → 共模电感 → TVS → 变压器。反过来装，TVS 先承受大能量，一次浪涌就烧了。</p><p>还有两个细节：</p><p>保护器件的地要单独走，直接到机壳地，不要和数字地混在一起，否则浪涌能量会顺着数字地扩散到整板。<br/>TVS 的引线要短。TVS 靠的是钳位速度，引线长了电感大，钳位电压会抬高几十伏，等于白装。</p><p>最后：一份自查清单</p><p>板子发出去之前，对着这张表过一遍：</p><p>· [ ] 差分对内等长 ≤5mil，对间 ≥3W<br/>· [ ] 差分阻抗 100Ω，与板厂确认过叠层<br/>· [ ] 差分线下方地平面连续，无跨分割<br/>· [ ] 差分对未打过孔，或过孔处补了地过孔<br/>· [ ] W5500 AGND/DGND 单点连接<br/>· [ ] RJ45 外壳经 1nF/2kV + 1MΩ 接机壳地<br/>· [ ] Bob Smith 端接：四抽头各 75Ω + 1000pF<br/>· [ ] SPI 时钟 ≤40MHz，CS/INT/RST 均有上拉<br/>· [ ] RST 由 MCU 控制，上电延时 50ms<br/>· [ ] 浪涌器件顺序：GDT → 共模电感 → TVS → 变压器<br/>· [ ] 本安侧与外壳地隔离，耐压按 GB 3836.4<br/>· [ ] 晶振下方挖空、包地、打过孔</p><p>这十二条里，前六条决定"能不能跑"，后六条决定"能不能过检、能不能在现场活过三个月"。硬件设计最贵的一课，永远是返板。</p>
 <p>审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[做工业网关选型挖到宝！QorIQ T1系列这颗U直接帮我省了一颗交换芯片钱]]></title>    <link>https://www.elecfans.com/d/8986310.html</link>    <guid>https://www.elecfans.com/d/8986310.html</guid>    <pubDate>2026-11-26 16:05:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8986310" value="https://file.elecfans.com/web2/M00/27/95/pYYBAGHCkGGABIvVAARrrJdoHXA418.pdf"/><h1>做工业网关选型挖到宝！QorIQ T1系列这颗U直接帮我省了一颗交换芯片钱</h1>
 <p>最近在迭代一款工业级边缘路由的方案，本来还在纠结板载交换芯片选啥型号，布线怎么摆能省空间，翻<a href="https://www.elecfans.com/tags/nxp/" target="_blank"><u>NXP</u></a>文档的时候刚好看到QorIQ T1系列的参数，算下来直接给BOM减了近30块，<a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>还能少走半层线，今天就给大伙<a href="https://m.elecfans.com/v/tag/899/" target="_blank"><u>拆解</u></a>下这颗<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a><a href="https://m.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>的实际使用价值。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8986310" target="_blank">T1020NSE7MQB.pdf</a></p>
 <hr/>
@@ -2699,108 +2811,4 @@ echo 49 &gt; /sys/class/gpio/unexport</code></pre></li>
 <p>芯片是5x5mm的TQFN封装，底部裸露焊盘一定要多打散热过孔，我第一版只打了4个过孔，满负载跑85℃高温箱的时候过温报警位时不时跳，后来打了9个过孔，周围铺铜拉满，就再也没出现过。如果对功耗要求高，建议VA用外部3.3V/5V供电，把REGEN引脚接GND禁用内部<a href="https://www.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>，能减少芯片本身的发热，我现在的方案用外部供电，芯片温度比用内部LDO低了快10℃。</p>
 <h2>适用场景&amp;最后唠两句</h2>
 <p>这款芯片特别适合做<a href="https://www.elecfans.com/v/tag/323/" target="_blank"><u>PLC</u></a> DI模块、分布式IO站，尤其是需要兼容沉/源型传感器的项目，四合一的集成度能把DI模块的尺寸做的非常小。官方还有配套的MAX14483六通道<a href="https://www.elecfans.com/tags/数字隔离器/" target="_blank"><u>数字隔离器</u></a>，刚好匹配SPI的信号隔离，一套下来非常省心。</p>
-<p>最近有没有兄弟也在用这款芯片做项目？碰到啥奇葩问题可以评论区聊聊，我这边还有实测的<a href="https://bbs.elecfans.com/zhuti_stm32_1.html" target="_blank"><u>STM32</u></a>驱动代码和参考原理图，需要的可以私我~</p>]]></description></item><item>    <title><![CDATA[做工业DI的都来抄作业！MAX22195直接解决我一半的设计痛点]]></title>    <link>https://www.elecfans.com/d/8986401.html</link>    <guid>https://www.elecfans.com/d/8986401.html</guid>    <pubDate>2026-11-26 16:45:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8986401" value="https://file1.elecfans.com/web2/M00/5B/1A/pYYBAGLruSeADnGqAA0GZE63Crk601.pdf"/><h1>做工业DI的都来抄作业！MAX22195直接解决我一半的设计痛点</h1>
-<p>最近做一款小型<a href="https://www.elecfans.com/v/tag/323/" target="_blank"><u>PLC</u></a>的8路高速DI模块，踩了老坑：之前用的“限流<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>+<a href="https://www.elecfans.com/yuanqijian/guangou/" target="_blank"><u>光耦</u></a>”分立方案，8路全通的时候<a href="https://www.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>局部温度直接飙到70℃，而且光耦+后级整形的延迟有3μs多，通道之间偏差都快1μs，客户要的高速脉冲计数功能根本跑不起来。翻了好久 datasheet 找到<a href="https://bbs.elecfans.com/group_264" target="_blank"><u>Maxim</u></a>的MAX22195，用了之后直接爽到，特意整理下实测体验给大家参考。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8986401" target="_blank">MAX22195.pdf</a></p>
-<hr/>
-<h2>为什么我直接弃用分立方案选它？几个核心优势太戳人</h2>
-<h3>1. 速度拉满，做高速采集不用凑活</h3>
-<p>我当时选它第一原因就是快：</p>
-<ul>
-<li>输入到输出的传输延迟最大才300ns，比光耦方案快了10倍不止</li>
-<li>8个通道之间的偏差只有±10ns，同步性直接拉满，做多通道同步脉冲采集、<a href="https://www.elecfans.com/tags/编码器/" target="_blank"><u>编码器</u></a>输入完全够用</li>
-<li>并行输出直接接<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>的GPIO，不用走SPI/<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>读<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>，8个状态一次性读出来，省外设还省代码</li>
-</ul>
-<p>之前找的同类型SPI<a href="https://m.hqchip.com/app/1787" target="_blank"><u>接口</u></a>DI芯片，光是读一次8路状态就要20μs，这个方案的速度真的降维打击。</p>
-<h3>2. 低功耗到离谱，散热直接不用考虑</h3>
-<p>做工业24V DI最头疼的就是发热：之前分立方案单路2mA<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>，8路全开24V下功耗就快0.4W，加上光耦的功耗，不加散热片夏天根本扛不住。
-MAX22195是每路输入都做了精准限流，静态电流最大才1.2mA，而且自带<strong>无功耗<a href="https://bbs.elecfans.com/group_941" target="_blank"><u>LED驱动</u></a></strong>——输入状态指示的<a href="https://www.hqchip.com/app/1721" target="_blank"><u>LED</u></a>直接串在LED引脚到GND就行，不用额外加限流电阻，也不会增加额外功耗，我实测8路全开通电半小时，PCB表面温度才35℃，完全不用考虑散热设计。
-额外还送了个内置<a href="https://www.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>：VDD24接7~65V的现场<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>，直接输出3.3V，除了给自己供电还能对外输出25mA，刚好给后面的<a href="https://www.elecfans.com/tags/数字隔离器/" target="_blank"><u>数字隔离器</u></a>比如Si86xx供电，直接省了一颗LDO的BOM成本和占板面积。</p>
-<h3>3. 自带IEC 61131-2合规性，不用自己调参数</h3>
-<table>
-<thead>
-<tr>
-<th>做工业DI最麻烦的就是过IEC 61131-2的Type1/2/3标准，之前每次都要反复调限流电阻的阻值，做兼容性测试。MAX22195直接把配置给你整明白了：</th>
-<th>输入类型</th>
-<th>R_REFDI电阻</th>
-<th>输入串联电阻</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Type1/3</td>
-<td>8.6kΩ</td>
-<td>1.5kΩ</td>
-</tr>
-<tr>
-<td>Type2</td>
-<td>5.2kΩ</td>
-<td>1kΩ</td>
-</tr>
-</tbody>
-</table>
-<p>直接照着选电阻就行，不用自己算参数，标准符合性直接拉满，省了至少一周的测试时间。</p>
-<h3>4. 诊断功能全，设备可靠性直接升级</h3>
-<p>之前的分立方案根本没法做故障诊断：输入电阻烧了、现场电源掉了、芯片过温了，MCU完全不知道，还以为是输入全是低电平。
-MAX22195自带的RE<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>Y<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>直接把所有故障都覆盖了：VDD24欠压、REFDI电阻开短路、芯片过温，只要有一个故障，READY就会拉低，MCU直接就能判断DI模块是不是正常工作。
-多片级联的时候更爽：前一片的READY接后一片的RDYEN，最后只有1个信号给MCU，做16/32路DI的时候不用多占IO和隔离通道，太省成本了。</p>
-<hr/>
-<h2>设计避坑指南，都是我踩过的坑</h2>
-<h3>电源两种供电方式按需选</h3>
-<ul>
-<li>现场有24V的话直接给VDD24供电，内部LDO出3.3V，还能给外围电路供电，记得VDD24和VDD3都要就近放0.1μF+1μF的去耦电容</li>
-<li>不需要LDO的话直接给VDD3供3.0~5.5V，VDD24悬空，EXTVM接VDD3关掉24V电源检测，功耗更低</li>
-</ul>
-<h3>PCB布局这几点一定要注意</h3>
-<ol>
-<li>底部的裸露焊盘一定要多打几个散热过孔接主地，别省那几个过孔，宽温下可靠性高很多</li>
-<li>REFDI的走线一定要远离IN输入走线，最好走不同层，中间隔地层，不然EFT测试的时候READY信号容易误触发</li>
-<li>IN输入引脚不要加滤波<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>！不要加滤波电容！不要加滤波电容！会严重影响传输速度，<a href="https://www.elecfans.com/tags/emc/" target="_blank"><u>EMC</u></a>靠外部的串联脉冲电阻和<a href="https://www.hqchip.com/app/1587" target="_blank"><u>TVS</u></a>就够了</li>
-</ol>
-<hr/>
-<h2>EMC直接抄作业，不用自己调</h2>
-<table>
-<thead>
-<tr>
-<th>工业场合EMC是老大难，MAX22195的参考电路我实测直接过了所有要求，照着买元件就行：</th>
-<th>元件</th>
-<th>选型要求</th>
-<th>作用</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>输入串联电阻</td>
-<td>1k/1.5kΩ 1W脉冲电阻（比如CMB0207 <a href="https://m.hqchip.com/app/1177" target="_blank"><u>MELF</u></a>电阻）</td>
-<td>限流+抗脉冲</td>
-</tr>
-<tr>
-<td>VDD24 TVS</td>
-<td>SMBJ33A</td>
-<td>防浪涌</td>
-</tr>
-<tr>
-<td>Y电容</td>
-<td>3.3nF 安规Y电容</td>
-<td>提升EMC性能</td>
-</tr>
-</tbody>
-</table>
-<p>实测结果：</p>
-<ul>
-<li><a href="https://www.hqchip.com/app/1587" target="_blank"><u>ESD</u></a>：±8kV接触放电、±15kV空气放电无异常</li>
-<li>EFT：±2kV下所有输出和READY信号完全正常，±4kV下输出正常，仅READY信号暂时受影响</li>
-<li>浪涌：±1kV线对地、±2kV线对线无异常</li>
-</ul>
-<p>完全满足IEC 61131-2的要求，不用自己反复调参数。</p>
-<hr/>
-<h2>适用场景总结</h2>
-<p>这颗芯片我感觉几乎覆盖了所有工业数字输入的场景：</p>
-<ul>
-<li>PLC/<a href="https://www.hqchip.com/app/1703" target="_blank"><u>DC</u></a>S的高速DI模块</li>
-<li><a href="https://m.elecfans.com/v/tag/144/" target="_blank"><u>工业机器人</u></a>、运动控制的高速限位/编码器输入</li>
-<li>楼宇自动化、过程自动化的IO采集卡</li>
-<li>宽温工业场合的信号采集</li>
-</ul>
-<p>5x5mm的32脚TQFN封装，比8个光耦加电阻的方案占板面积小了至少2/3，BOM成本算下来反而比分立方案还低，现在已经是我做DI设计的首选了。</p>
-<hr/>
-<p>你们做工业DI的时候都遇到过什么奇葩坑？欢迎评论区聊，需要EVK资料或者参考设计的可以留个邮箱我发你们~</p>]]></description></item>  </channel></rss>
+<p>最近有没有兄弟也在用这款芯片做项目？碰到啥奇葩问题可以评论区聊聊，我这边还有实测的<a href="https://bbs.elecfans.com/zhuti_stm32_1.html" target="_blank"><u>STM32</u></a>驱动代码和参考原理图，需要的可以私我~</p>]]></description></item>  </channel></rss>
