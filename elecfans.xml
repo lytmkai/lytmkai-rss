@@ -1,4 +1,159 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[翻烂了Kinetis K10 datasheet，整理的硬件设计干货，看完少踩一半坑]]></title>    <link>https://www.elecfans.com/d/8984907.html</link>    <guid>https://www.elecfans.com/d/8984907.html</guid>    <pubDate>2026-11-26 09:05:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8984907" value="https://file1.elecfans.com/web2/M00/F3/7C/wKgaomZ5vtGAHHUoAB3mNygt_j8618.pdf"/><h1>翻烂了Kine<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>ti</u></a>s K10 datasheet，整理的硬件设计干货，看完少踩一半坑</h1>
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[踩坑N次整理：飞思卡尔K10（MK10DN512）硬件设计实用指南]]></title>    <link>https://www.elecfans.com/d/8984906.html</link>    <guid>https://www.elecfans.com/d/8984906.html</guid>    <pubDate>2026-11-26 09:05:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8984906" value="https://file1.elecfans.com/web2/M00/FB/27/wKgaomaM0s2ARQR0ABvy2etlN9o645.pdf"/><h1>踩坑N次整理：飞思卡尔K10（MK10DN512）硬件设计实用指南</h1>
+<p>最近做工业采集终端把K10的datasheet翻得快掉页了，从<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>到外设踩了不少坑，整理点实用的干货，给正在用或者打算用这款<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>的同行避避坑，全是实际设计能用到的点，不是干巴巴的参数搬运。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8984906" target="_blank">PK10N512VLL100.pdf</a></p>
+<hr/>
+<h2>先唠两句这款MCU的定位</h2>
+<p>K10是飞思卡尔（现在算<a href="https://bbs.elecfans.com/group_729" target="_blank"><u>NXP</u></a>了）Cortex-M4内核里性价比很高的一款，主打工业级稳定性，带<a href="https://www.hqchip.com/app/1378" target="_blank"><u>DSP</u></a>指令，100MHz主频跑个轻量<a href="https://m.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>、实时控制完全够用，我用的是MK10DN512ZVLL10，100脚LQFP封装，资源刚好够工业采集、小型伺服、便携式设备这类场景。</p>
+<hr/>
+<h2>一、电源和核心参数：这些点设计前必须捋清楚</h2>
+<h3>1. 宽压和温度特性真的省心</h3>
+<p>官方给的工作电压1.71V~3.6V，Flash擦写电压也是同样范围，环境温度-40℃~105℃，我做的户外采集设备直接用3.7V<a href="https://www.elecfans.com/v/tag/2692/" target="_blank"><u>锂电池</u></a>降压到3.3V供电，电池掉到3.2V甚至2.8V都能正常跑，不用额外做欠压保护的冗余电路，省了不少BOM成本。</p>
+<blockquote>
+<p>踩坑提醒：LVD阈值一定要配置对！我第一次调试的时候没改默认的低电压检测档位，电池掉到2V才触发复位，结果Flash里的数据丢了一半。datasheet里LVD有高低两个档位，高段阈值2.48~2.64V，低段1.54~1.66V，根据自己的供电场景提前配好，比外部加电压检测芯片靠谱多了。</p>
+</blockquote>
+<h3>2. 低功耗模式太适合便携式设备</h3>
+<table>
+<thead>
+<tr>
+<th>我当时选这款就是看中低功耗，给大家列几个实际用到的模式参数：</th>
+<th>模式</th>
+<th>典型<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>（3.0V，25℃）</th>
+<th>唤醒时间</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>运行模式（外设全开）</td>
+<td>~63mA</td>
+<td>-</td>
+<td>正常工作</td>
+</tr>
+<tr>
+<td>STOP模式</td>
+<td>~0.59mA</td>
+<td>5.9μs</td>
+<td>短时间待机</td>
+</tr>
+<tr>
+<td>VLLS1低漏停模式</td>
+<td>~2.1μA</td>
+<td>134μs</td>
+<td>长时间待机，需要快速唤醒</td>
+</tr>
+<tr>
+<td>RTC备份域（32kHz晶振开）</td>
+<td>~0.33μA</td>
+<td>-</td>
+<td>掉电只保留<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>和RTC数据</td>
+</tr>
+</tbody>
+</table>
+<p>我做的手持设备待机时长要求半年，用VLLS1模式加定时唤醒，实测功耗完全达标，不用额外加<a href="https://m.hqchip.com/app/1731" target="_blank"><u>电源管理</u></a>芯片。</p>
+<hr/>
+<h2>二、外设资源：哪些是真的好用，哪些要注意</h2>
+<h3>1. <a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>前端省了我3颗运放</h3>
+<p>K10带两个16位SAR <a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>，每个都集成了最大x64的PGA，还有12位<a href="https://www.elecfans.com/tags/dac/" target="_blank"><u>DAC</u></a>、3个带6-bit DAC的<a href="https://m.hqchip.com/app/1737" target="_blank"><u>比较器</u></a>，内置<a href="https://www.hqchip.com/app/1701" target="_blank"><u>电压基准</u></a>。我做的小<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>电流采集，原本要加2级运放放大，现在直接用内部PGA就能搞定，16位<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>C有效位数实测能到14位左右，完全满足工业级采集精度，省了BOM还减少了模拟布线的麻烦。</p>
+<blockquote>
+<p>注意点：要拿最<a href="https://m.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>只能用ADCx_DP0/DP1这些差分引脚，其他单端引脚最多只有12位精度，别搞错了。PGA用的时候输入阻抗会变，前级<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>输出阻抗最好控制在100Ω以内，不然增益会不准。</p>
+</blockquote>
+<h3>2. <a href="https://www.elecfans.com/v/tag/13179/" target="_blank"><u>通信接口</u></a>全到离谱</h3>
+<ul>
+<li>2路<a href="https://www.hqchip.com/app/2004" target="_blank"><u>CAN</u></a>：工业设备必备，我做的设备要接CAN总线，不用外扩CAN<a href="https://m.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>，直接用就行，波特率1Mbps跑下来很稳</li>
+<li>5路<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>、3路SPI、2路<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>：接外设完全够，我同时接了485、SPI Flash、<a href="https://www.elecfans.com/tags/oled/" target="_blank"><u>OLED</u></a>屏幕、I2C温感，还有富余</li>
+<li><a href="https://www.hqchip.com/app/1522" target="_blank"><u>SD</u></a>HC<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>：接SD卡存数据，最高支持50MHz，高速模式读写速度能到20MB/s，做数据录播很方便</li>
+<li>I2S接口：要做<a href="https://www.hqchip.com/app/1537" target="_blank"><u>音频</u></a>相关的应用也能直接用，不用外扩 codec</li>
+</ul>
+<h3>3. 其他实用外设</h3>
+<ul>
+<li>TSI触摸接口：最多支持16个<a href="https://www.elecfans.com/kongzhijishu/gongyeanquan/536865.htm" target="_blank"><u>触摸按键</u></a>，不用外扩触摸芯片，我做的面板按键直接用，抗干扰还不错，工业场合加个滤波算法就够用</li>
+<li>16通道<a href="https://www.elecfans.com/tags/dma/" target="_blank"><u>DMA</u></a>：ADC采集、UART收发全走DMA，不用占<a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>资源，100MHz主频跑采集+<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>+控制完全不卡</li>
+<li>8路PWM<a href="https://www.elecfans.com/tags/定时器/" target="_blank"><u>定时器</u></a>+2路正交<a href="https://www.elecfans.com/tags/编码器/" target="_blank"><u>编码器</u></a>：做小型<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机控制</u></a>刚好，我用来驱动<a href="https://m.elecfans.com/v/tag/194/" target="_blank"><u>伺服电机</u></a>，位置采集和PWM输出都不用额外加芯片</li>
+</ul>
+<hr/>
+<h2>三、<a href="https://bbs.elecfans.com/zhuti_830_1.html" target="_blank"><u>PCB设计</u></a>避坑：这些点datasheet没写但很重要</h2>
+<h3>1. 热设计别大意</h3>
+<p>100脚LQFP封装的热阻给大家列一下：</p>
+<ul>
+<li>单层板自然对流：47℃/W</li>
+<li>4层板自然对流：35℃/W
+满负载运行的时候MCU功耗大概70mA，3.3V下就是0.23W，单层板温升就是0.23*47≈10.8℃，如果环境温度到85℃，结温就到95.8℃，还没到125℃的上限，但如果是密闭外壳，最好铺点散热铜皮，我之前做的密闭壳子没铺铜，夏天户外运行直接触发过温保护。</li>
+</ul>
+<h3>2. 晶振布线血泪教训</h3>
+<ul>
+<li>主晶振（8MHz或者24MHz）走线尽量短，别过孔，两侧包地，距离其他高速信号至少3mm，我第一次布的时候晶振走线旁边走了SPI时钟，结果主晶振偶尔会停振，查了3天才找到问题</li>
+<li>32kHz RTC晶振更娇气，最好直接放在MCU的XTAL32/EXTAL32引脚旁边，负载<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>要匹配，走线周围别走任何高速信号，我之前把RTC晶振放在板边，旁边走了CAN总线，RTC每天慢20秒，改了布线就好了</li>
+</ul>
+<h3>3. <a href="https://bbs.elecfans.com/group_40" target="_blank"><u>EMC</u></a>设计参考</h3>
+<p>官方给的EMC测试数据是符合IEC K级的，只要布线注意点，不用额外加EMC器件也能过工业级EMC测试：</p>
+<ul>
+<li>电源入口加10μF陶瓷电容+100nF去耦电容，每个电源引脚旁边都放100nF去耦，尽量靠近引脚</li>
+<li>高速信号（SPI、CAN、FMC）走线尽量短，过孔别超过2个，CAN总线加120Ω终端<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a></li>
+<li>模拟地和数字地单点连接，ADC参考电源加滤波电路，别和<a href="https://www.elecfans.com/tags/数字电源/" target="_blank"><u>数字电源</u></a>共路径</li>
+</ul>
+<hr/>
+<h2>四、快速选型参考：看型号一眼懂参数</h2>
+<table>
+<thead>
+<tr>
+<th>很多人不知道K10的型号怎么看，我给大家简化一下，不用每次翻datasheet：
+比如型号<code>MK10DN512ZVLL10</code>，拆分之后：</th>
+<th>段</th>
+<th>含义</th>
+<th>示例值说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>第1位</td>
+<td>资质</td>
+<td>M=量产，P=预量产</td>
+</tr>
+<tr>
+<td>2-3位</td>
+<td>系列</td>
+<td>K10就是Kine<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>ti</u></a>s K10系列</td>
+</tr>
+<tr>
+<td>第4位</td>
+<td>内核</td>
+<td>D=带DSP的Cortex-M4，F=带DSP+FPU</td>
+</tr>
+<tr>
+<td>第5位</td>
+<td>Flash类型</td>
+<td>N=只有程序Flash，X=带FlexMemory</td>
+</tr>
+<tr>
+<td>6-8位</td>
+<td>Flash大小</td>
+<td>512=512KB，256=256KB</td>
+</tr>
+<tr>
+<td>第9位</td>
+<td>版本</td>
+<td>Z=初始版本</td>
+</tr>
+<tr>
+<td>第10位</td>
+<td>温度范围</td>
+<td>V=-40~105℃，C=-40~85℃</td>
+</tr>
+<tr>
+<td>11-12位</td>
+<td>封装</td>
+<td>LL=100脚LQFP，LH=64脚LQFP</td>
+</tr>
+<tr>
+<td>13-14位</td>
+<td>主频</td>
+<td>10=100MHz</td>
+</tr>
+</tbody>
+</table>
+<hr/>
+<h2>最后说两句</h2>
+<p>K10算是一款很成熟的MCU了，资料多，稳定性好，工业场合用了五六年没出过啥大问题，只要把电源、布线这些基础的点做好，基本不会踩啥大坑。
+大家用K10的时候还踩过啥奇怪的坑？评论区聊聊，我补充到避坑指南里~</p>]]></description></item><item>    <title><![CDATA[翻烂了Kinetis K10 datasheet，整理的硬件设计干货，看完少踩一半坑]]></title>    <link>https://www.elecfans.com/d/8984907.html</link>    <guid>https://www.elecfans.com/d/8984907.html</guid>    <pubDate>2026-11-26 09:05:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8984907" value="https://file1.elecfans.com/web2/M00/F3/7C/wKgaomZ5vtGAHHUoAB3mNygt_j8618.pdf"/><h1>翻烂了Kine<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>ti</u></a>s K10 datasheet，整理的硬件设计干货，看完少踩一半坑</h1>
 <p>最近做工业小<a href="https://m.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>的项目，选了<a href="https://bbs.elecfans.com/group_729" target="_blank"><u>NXP</u></a>（当年还叫飞思卡尔）的K10系列MK10DN512，前前后后把Rev6版的datasheet翻了不下十遍，踩了几个不大不小的坑，整理点实实在在的设计要点，给同样用这个片子的兄弟们参考，省得大家再走弯路。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8984907" target="_blank">PK10N512VLQ100.pdf</a></p>
 <hr/>
 <h2>一、先搞懂型号命名，选型不踩坑</h2>
@@ -3143,125 +3298,4 @@ DDR2模式下，MDIC0接18.2Ω 1%精度电阻到地，MDIC1接18.2Ω到GVDD；DD
 <p style="text-indent:2em;">
 	目前，纳雷科技已服务于全球40多个国家和地区的1000余家客户，业务覆盖4大行业与50余个细分场景。凭借扎实的技术积累与市场表现，荣获省级专精特新“小巨人”、<a href="https://www.elecfans.com/v/tag/150/" target="_blank"><u>人工智能</u></a>重点企业及长沙市首批智能汽车“火炬计划”与高质量发展领跑企业等称号。</p>
 <p style="text-indent:2em;">
-	面向未来，纳雷科技将继续拥抱 <a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a> 与行业变革，持续推动雷达技术进步，与全球合作伙伴携手共建智能感知新时代。</p>]]></description></item><item>    <title><![CDATA[踩过N多8051坑后，我翻出了飞利浦这款经典增强型80C51全系列手册 | 附选型+开发必看细节]]></title>    <link>https://www.elecfans.com/d/8981725.html</link>    <guid>https://www.elecfans.com/d/8981725.html</guid>    <pubDate>2026-11-25 16:55:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8981725" value="https://file.elecfans.com/web2/M00/7C/2A/pYYBAGN2PamALhHvAAWhYnME9wU225.pdf"/><h1>踩过N多8051坑后，我翻出了飞利浦这款经典增强型80C51全系列手册 | 附选型+开发必看细节</h1>
-<p>做<a href="https://www.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>、小家电、低功耗项目的老哥们肯定对8051熟到骨子里。之前我做一款电池供电的<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>驱动项目，要找宽电压、高主频、还自带PWM模块的8051，翻来翻去最后选了飞利浦这系列8XC54/58、FA/FB/FC还有RA+系列，刚好手上有原厂2000年的完整版datasheet，整理点干的，省得大家找资料踩坑。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8981725" target="_blank">P87C51FA-4A.pdf</a></p>
-<hr/>
-<h2>先讲最实用的：怎么选型不浪费</h2>
-<table>
-<thead>
-<tr>
-<th>这系列全都是标准8051指令集，老代码直接搬就能用，迁移成本基本为0，不同系列的核心差异就是存储和外设，我给大家整理成表了，照着选就行：</th>
-<th>系列</th>
-<th><a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a>/OTP容量</th>
-<th><a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>容量</th>
-<th>PCA模块</th>
-<th>硬件<a href="https://www.elecfans.com/tags/看门狗/" target="_blank"><u>看门狗</u></a></th>
-<th>适用场景</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>8XC54/58</td>
-<td>8K/16K/32K</td>
-<td>256B</td>
-<td>无</td>
-<td>无</td>
-<td>成本敏感的简单IO控制、传统产品迭代</td>
-</tr>
-<tr>
-<td>8XC51FA/FB/FC</td>
-<td>8K/16K/32K</td>
-<td>256B</td>
-<td>有</td>
-<td>无</td>
-<td>需要PWM、高速IO的小型电机、灯光控制</td>
-</tr>
-<tr>
-<td>8XC51RA+/RB+/RC+</td>
-<td>8K/16K/32K</td>
-<td>512B</td>
-<td>有</td>
-<td>有</td>
-<td>稳定性要求高的工业采集、网关类产品</td>
-</tr>
-<tr>
-<td>8XC51RD+</td>
-<td>64K</td>
-<td>1KB</td>
-<td>有</td>
-<td>有</td>
-<td>复杂协议、大代码量的智能设备</td>
-</tr>
-</tbody>
-</table>
-<p>核心优势直接说：宽压2.7V~5.5V，5V供电最高跑到33MHz，比传统12MHz 51性能翻了快3倍，低功耗模式掉电电流才十几μA，做电池供电项目香到爆。</p>
-<hr/>
-<h2>开发必看的隐藏细节，都是我踩过的坑</h2>
-<h3>1. <a href="https://www.elecfans.com/tags/定时器/" target="_blank"><u>定时器</u></a>2别只当普通定时器用</h3>
-<p>这系列的定时器2是真的良心，比传统51多了N多玩法：</p>
-<ul>
-<li>上下计数自动重装载：做<a href="https://www.elecfans.com/tags/编码器/" target="_blank"><u>编码器</u></a>计数、频率输出不用自己写重载逻辑</li>
-<li>
-<table>
-<thead>
-<tr>
-<th>独立波特率发生器：串口收发波特率可以和定时器1分开，不用凑波特率牺牲定时器资源，12MHz下常用波特率的重载值我直接给你们算好了，省得自己套公式：</th>
-<th>波特率</th>
-<th>RCAP2H</th>
-<th>RCAP2L</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>9600</td>
-<td>0xFF</td>
-<td>0xD9</td>
-</tr>
-<tr>
-<td>2400</td>
-<td>0xFF</td>
-<td>0x64</td>
-</tr>
-<tr>
-<td>1200</td>
-<td>0xFE</td>
-<td>0xFB</td>
-</tr>
-</tbody>
-</table>
-</li>
-<li>可<a href="https://bbs.elecfans.com/group_75" target="_blank"><u>编程</u></a><a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>输出：P1.0可以直接输出50%占空比的方波，范围61Hz~4MHz（16MHz晶振下），做方波发生器、驱动无源蜂鸣器都不用额外搭电路。</li>
-</ul>
-<h3>2. 增强<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>的坑别踩</h3>
-<p>这个UART带自动地址识别和帧错误检测，多机<a href="https://www.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>的时候不用软件一个个比对地址，<a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>资源直接省一半，但有个新手必踩的坑：
-帧错误检测位FE是复用SCON.7的，必须把PCON<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>的SMOD0位置1才能用，我当年调了2小时串口怎么都不对，最后发现漏了这一位。</p>
-<h3>3. 四级中断是真的香，配置要注意</h3>
-<p>传统51只有2级中断，高实时性项目根本不够用，这系列支持4级中断，需要配IP（中断优先级）和IPH（中断优先级高）两个寄存器，比如要把串口设为最高优先级3，只要把IPH的PSH位置1，IP的PS位置1就行，再也不用怕高级中断被打断丢数据。</p>
-<h3>4. PCA模块省了N多外围电路</h3>
-<p>只有FA和RA+系列带的PCA（可编程计数器阵列），绝对是这系列的灵魂：5个独立的捕获比较模块，每个都能单独设为输入捕获、高速输出、8位PWM模式，做三相<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机控制</u></a>刚好够3路互补PWM，不用外接PWM芯片，BOM成本直接降几块钱。</p>
-<blockquote>
-<p>提醒下：RA+系列的硬件看门狗是集成在PCA模块4里的，开启要依次写0x1E和0xE1到WDTRST寄存器，开了就关不掉，调试阶段记得别开，不然动不动复位找原因找到头大。</p>
-</blockquote>
-<hr/>
-<h2>低功耗开发+硬件设计注意点</h2>
-<h3>低功耗模式怎么用</h3>
-<p>三种低功耗模式按需选：</p>
-<ul>
-<li>停止时钟：时钟降到0Hz，RAM寄存器数据保留，适合间歇工作的<a href="https://www.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>节点</li>
-<li>空闲模式：CPU停，外设正常跑，适合等待串口/中断触发的场景，<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>比运行模式降70%</li>
-<li>掉电模式：最低十几μA电流，只有外部中断或者复位能唤醒，做电池供电产品一定要用，注意唤醒后要等晶振起振稳定（一般10ms）再跑代码，不然容易跑飞。
-<blockquote>
-<p>小细节：供电电压低于4V的时候，一定要把AUXR1寄存器的LPEP位置1，OTP版本的芯片不然容易出异常。</p>
-</blockquote></li>
-</ul>
-<h3>硬件设计避坑</h3>
-<ol>
-<li>复位电路：芯片内部自带下拉<a href="https://www.hqchip.com/app/485" target="_blank"><u>电阻</u></a>，只要接个104<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>到VCC就能实现上电复位，要是用硬件看门狗，<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>T引脚必须串1K电阻，不然看门狗的内部复位<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>出不来，这个手册里写的偏，很多人漏看。</li>
-<li>主频限制：33MHz是5V供电的参数，2.7V供电最高只能跑到16MHz，别为了性能硬超，跑不稳定哭都来不及。</li>
-<li><a href="https://bbs.elecfans.com/group_40" target="_blank"><u>EMC</u></a>优化：AUXR寄存器的AO位置1可以关闭ALE输出，做过EMC测试的都知道ALE的高频谐波有多烦，关了之后过辐射测试容易太多。</li>
-<li>烧录注意：OTP版本烧录VPP是12.75V±0.25V，别随便用12V的烧录器，很容易烧废芯片，加密位设置之前一定要确认代码没问题，设了就再也读不出来了。</li>
-</ol>
-<hr/>
-<h2>最后唠两句</h2>
-<p>我之前用8XC51RD+做过一款工业数据采集器，33MHz主频跑Modbus协议比普通12MHz 51快了快3倍，掉电模式下2节AA电池能用2年，稳定性真的没的说。这系列现在还在大量生产，供货稳定价格也不贵，替换传统51真的是首选。</p>
-<p>需要原厂完整datasheet的可以评论区留邮箱，我发你，省得去网上找的都是残缺版。大家有没有用过这系列的<a href="https://m.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>？遇到过什么奇葩坑？评论区聊聊~</p>]]></description></item>  </channel></rss>
+	面向未来，纳雷科技将继续拥抱 <a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a> 与行业变革，持续推动雷达技术进步，与全球合作伙伴携手共建智能感知新时代。</p>]]></description></item>  </channel></rss>
