@@ -1,4 +1,459 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[吹爆这款战术级IMU：ADIS16490用了半年，我把分立IMU的设计全扔了]]></title>    <link>https://www.elecfans.com/d/8989425.html</link>    <guid>https://www.elecfans.com/d/8989425.html</guid>    <pubDate>2026-11-27 17:00:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989425" value="https://file1.elecfans.com/web2/M00/71/11/poYBAGNPQOCAA-vzAA_s0ynfaF8410.pdf"/><h1>吹爆这款战术级IMU：<a href="https://www.elecfans.com/tags/adi/" target="_blank"><u>ADI</u></a>S16490用了半年，我把分立IMU的设计全扔了</h1>
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[拆完41页datasheet：工业级mini IMU ADIS16505开发避坑指南]]></title>    <link>https://www.elecfans.com/d/8989404.html</link>    <guid>https://www.elecfans.com/d/8989404.html</guid>    <pubDate>2026-11-27 16:55:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989404" value="https://file1.elecfans.com/web2/M00/63/51/pYYBAGL-m0SAU1ZSAAxHjBMVzVs957.pdf"/><h1>拆完41页datasheet：工业级mini IMU <a href="https://www.elecfans.com/tags/adi/" target="_blank"><u>ADI</u></a>S16505开发避坑指南</h1>
+<p>最近做小型AGV的组合导航模块选型，翻到<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>I这款ADIS16505，15x15x5mm的BGA封装里塞了6轴IMU，零偏稳定性干到2.3°/hr，比同尺寸的消费级IMU性能强了好几个量级，翻完整个datasheet整理了点干货，给要做IMU选型、开发的兄弟们做参考。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8989404" target="_blank">ADIS16505.pdf</a></p>
+<hr/>
+<h2>先看核心参数：这个性能在mini <a href="https://m.elecfans.com/v/tag/7888/" target="_blank"><u>MEMS</u></a> IMU里算第一梯队了</h2>
+<p>很多人看IMU参数只会看量程，其实下面这几个指标才是决定你能不能用、好不好用的核心：</p>
+<h3><a href="https://www.elecfans.com/tags/陀螺仪/" target="_blank"><u>陀螺仪</u></a>部分</h3>
+<p>三个型号覆盖不同量程需求：</p>
+<ul>
+<li>1型：±125°/s量程，2.3°/hr的运行零偏稳定性，角随机游走0.13°/√hr，适合需要<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>短时间航位推算的场景，比如隧道里没有GPS的AGV、高精度测绘设备</li>
+<li>2型：±500°/s量程，零偏2.7°/hr，均衡之选</li>
+<li>3型：±2000°/s量程，零偏8.1°/hr，适合高速转动的场景，比如<a href="https://www.elecfans.com/v/tag/12732/" target="_blank"><u>无人机</u></a>、<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>关节
+最香的是工厂已经校准了轴间对齐误差，做到了±0.25°以内，不用你自己上台架校准正交性，省了大量产测时间。</li>
+</ul>
+<h3>加速度计部分</h3>
+<p>全系列都是±8g量程，xy轴零偏稳定性做到26.5μg，振动抑制做的很好，我之前用同系列的ADIS16488在高振动的工程车上测试，漂移比普通MEMS IMU小80%。</p>
+<h3>其他硬特性</h3>
+<ul>
+<li>工作温度-40~105℃，校准范围覆盖-40~85℃，户外冬天夏天都不用怕漂移</li>
+<li>抗14700g<a href="https://m.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>冲击，我之前不小心掉地上摔了2米都没坏，工业场合抗造性拉满</li>
+<li>内置delta角度、delta速度输出，做姿态解算的时候不用自己积分，省<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>算力</li>
+</ul>
+<hr/>
+<h2>硬件设计必看踩坑点，我之前踩过一半</h2>
+<h3><a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>部分别想当然</h3>
+<p>datasheet写的正常工作<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>只有44mA，<strong>但上电瞬态电流最高能到300mA</strong>，因为内部有6μF的 decoupling<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>，上电充电的时候电流会冲上去，别用那种限流50mA的小<a href="https://m.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>，我之前图便宜用了某国产LDO，一上电就欠压复位，查了3天才找到问题。
+建议电源走线宽度≥20mil，靠近VDD引脚再加个10μF的陶瓷电容，稳的一批。</p>
+<h3><a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>布局焊接注意</h3>
+<p>这玩意是10x10的BGA封装，焊盘设计按官方推荐来：</p>
+<ul>
+<li>金属焊盘直径0.56mm，阻焊开窗0.73mm，用阻焊定义焊盘就行</li>
+<li>你的PCB板材C<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>TE</u></a>尽量接近14ppm/℃，不然温度变化大的时候焊球容易应力失效</li>
+<li>如果是用在振动很大的场景，比如重型机械、无人机，建议加unde<a href="https://www.elecfans.com/tongxin/rf/" target="_blank"><u>rf</u></a>ill填缝，提高焊点寿命</li>
+<li>顶部的泄压孔千万别堵，回流焊的时候堵了会炸壳，别问我怎么知道的。</li>
+</ul>
+<h3><a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>走线要注意</h3>
+<p>SPI是唯一的<a href="https://www.elecfans.com/v/tag/13179/" target="_blank"><u>通信接口</u></a>：</p>
+<ul>
+<li>SCLK、DIN、DOUT、CS这四根线串33Ω<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>，抑制<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>反射，长度尽量等长</li>
+<li>DR引脚一定要接MCU的外部中断！别用轮询的方式读数据，2kHz的刷新率轮询太费算力，而且中断触发读的时间精度高太多</li>
+<li>SYNC引脚如果不需要同步可以悬空，但如果要跟GPS/PPS或者其他<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>时间对齐，这个引脚直接接PPS信号就行，省了大量时间同步的工作</li>
+</ul>
+<hr/>
+<h2>软件驱动开发要点，看完少熬3夜</h2>
+<h3>SPI基础配置</h3>
+<p>ADI的SPI都是统一的配置，记好：</p>
+<ul>
+<li>SPI模式3（CPOL=1，CPHA=1），MSB优先，16位帧</li>
+<li>普通模式SCLK最高2MHz，bu<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>rs</u></a>t读模式最高只能到1MHz，别超，不然会读错数</li>
+</ul>
+<h3>读数据优先用burst模式</h3>
+<p>一个个读<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>效率太低，burst模式只要发一次0x6800的命令，就能把所有传感器数据、温度、计数器、校验值全读回来，支持16位/32位两种格式，还带校验，传输错误直接能查出来，比单寄存器读效率高3倍以上。
+burst模式分两种：BURST_SEL=0读陀螺仪+加速度计数据，BURST_SEL=1读delta角度+delta速度数据，做姿态解算的话选1，省了自己积分的步骤。</p>
+<h3>校准和配置别忘存Flash</h3>
+<p>用户可以自己修改陀螺仪、加速度计的零偏，调整滤波参数、同步模式这些，改完一定要发<code>GLOB_CMD</code>寄存器的Bit3=1的命令，把配置存到内部Flash里，不然掉电就回到默认值，我测试的时候好几次改完没存，上电就复原，人都麻了。
+如果改乱了直接发<code>GLOB_CMD</code>的Bit1=1，恢复出厂校准值就行，不用担心改坏。</p>
+<h3>同步模式是真的香</h3>
+<p>如果你的系统需要多传感器时间对齐，直接用sca<a href="https://m.hqchip.com/app/1721" target="_blank"><u>led</u></a> sync模式：外部给1~128Hz的同步信号（比如GPS的1Hz PPS），写UP_SCALE寄存器设倍频系数，内部自动倍频到2kHz采样，还带时间戳输出，时间对齐误差能做到微秒级，不用你自己做时间戳插值，太方便了。</p>
+<hr/>
+<h2>选型建议</h2>
+<ul>
+<li>做高精度手持测绘、隧道/地下导航，选ADIS16505-1，零偏最低，航推精度最高</li>
+<li>做普通<a href="https://m.elecfans.com/v/tag/144/" target="_blank"><u>工业机器人</u></a>、AGV、<a href="https://m.elecfans.com/v/tag/3668/" target="_blank"><u>VR</u></a>设备，选ADIS16505-2，性能和成本均衡</li>
+<li>做无人机、高速运动设备，选ADIS16505-3，2000°/s的量程够用到天荒地老</li>
+</ul>
+<p>总的来说这款IMU是真的适合需要小体积、高性能、低开发量的工业场景，出厂全校准，不用自己做复杂的校准和标定，拿到手就能出数据，开发周期比用分立IMU短太多。
+有正在用这款或者要选型的兄弟，评论区可以一起聊踩过的坑~</p>]]></description></item><item>    <title><![CDATA[实测 | 工业级MEMS IMU ADIS16507 选型+设计踩坑全指南]]></title>    <link>https://www.elecfans.com/d/8989405.html</link>    <guid>https://www.elecfans.com/d/8989405.html</guid>    <pubDate>2026-11-27 16:55:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989405" value="https://file1.elecfans.com/web2/M00/77/D6/pYYBAGNjYFGAGSZiAA6ZmTH4YkM763.pdf"/><h1>实测 | 工业级<a href="https://m.elecfans.com/v/tag/7888/" target="_blank"><u>MEMS</u></a> IMU <a href="https://www.elecfans.com/tags/adi/" target="_blank"><u>ADI</u></a>S16507 选型+设计踩坑全指南</h1>
+<p>最近帮朋友改小型植保无人机的飞控导航模块，之前用的消费级IMU温漂离谱，零下10℃飞着偏航直接飘了30度，找了一圈兼顾体积、精度和成本的工业级MEMS IMU，最后敲定了<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>I的ADIS16507，调了两周跑通了实飞，给大家扒一扒这个料的优缺点和设计注意事项，省得大家踩同样的坑。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8989405" target="_blank">ADIS16507.pdf</a></p>
+<hr/>
+<h2>1. 为啥选了ADIS16507？</h2>
+<p>之前也考虑过同级别其他型号，要么体积太大塞不下小<a href="https://www.elecfans.com/v/tag/12732/" target="_blank"><u>无人机</u></a>的飞控壳，要么2.3°/hr偏置稳定性的款贵了20%以上，ADIS16507刚好卡在我要的 sweet spot 上：15mm×15mm×5mm的BGA封装，比硬币还小，出厂全温区校准，不用自己做复杂的标定，集成度拉满，省了我至少两周的开发时间。</p>
+<hr/>
+<h2>2. 核心参数够打，同体积无对手</h2>
+<p>挑几个<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>最关心的参数说，虚的就不列了：</p>
+<h3><a href="https://www.elecfans.com/tags/陀螺仪/" target="_blank"><u>陀螺仪</u></a>部分</h3>
+<p>三个型号可选，覆盖±125°/s、±500°/s、±2000°/s量程，我用的是-2款500°/s，足够无人机用：</p>
+<ul>
+<li>偏置稳定性最高到2.3°/hr（ADIS16507-1），角随机 walk 0.13°/√hr，这个参数做10分钟以内的航位推算，漂移完全在可接受范围内</li>
+<li>轴间对准误差出厂校准到±0.25°，全温区（-40℃~+85℃）保证精度，之前自己搭离散IMU光校对准就花了一周，这个直接拿来用就行</li>
+<li>自带线性加速度补偿，做高机动场景的时候不会因为加速度导致陀螺偏置飘，这个对无人机、<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>这种经常加减速的场景太友好了</li>
+</ul>
+<h3>加速度计部分</h3>
+<ul>
+<li>量程统一±40g，偏置稳定性125μg，温漂小，静态放着加速度计读数基本不跳</li>
+<li>出厂做了敲击点校准，也就是加速度计的测量点统一映射到封装角落的参考点，不用自己算不同<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>安装位置的偏移补偿</li>
+</ul>
+<h3>可靠性</h3>
+<p>抗2000g<a href="https://m.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>冲击，我上次测试炸机从10米掉草地上，飞控壳都裂了，IMU读出来的数一点问题没有，工业级的可靠性确实不是消费级能比的。</p>
+<hr/>
+<h2>3. <a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>配置避坑指南</h2>
+<p>ADIS16507用SPI<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>，这里踩了好几个坑，给大家划重点：</p>
+<ol>
+<li><strong>SPI模式必须是Mode3</strong>，CPOL=1、CPHA=1，MSB先传，16位帧，普通读<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>最高支持2MHz，要是用bu<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>rs</u></a>t读批量取数，最高只能到1MHz，我一开始没注意开2MHz burst读，全是乱码，卡了半天才找到问题</li>
+<li><strong>DR引脚一定要接<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>外部中断</strong>，不要轮询寄存器。DR引脚默认数据更新的时候跳变，2kHz更新率，用中断触发读数，基本不会丢包，比轮询效率高太多，极性可以自己配，默认高电平有效</li>
+<li><strong>burst读功能一定要用</strong>：发一次0x6800命令就能把所有轴的陀螺、加速度计、温度、数据计数器、校验和全读回来，不用一次次敲寄存器地址，效率高还能通过校验和判断传输对不对，避免SPI干扰出错误数</li>
+<li>配置写完记得发<code>GLOB_CMD</code>寄存器的Flash更新命令，不然掉电配置就没了，我一开始忘了这个，每次上电参数都复位，坑了我一晚上</li>
+</ol>
+<hr/>
+<h2>4. 自带校准+滤波，省了半个月开发时间</h2>
+<p>这点我要吹爆ADI，出厂把能做的校准全做了：</p>
+<ul>
+<li>每个传感器的灵敏度、偏置、轴对准、温漂系数全在-40℃~+85℃范围内标定过，存在内部Flash里，自动补偿，我自己测试从-20℃到60℃，陀螺零偏飘了不到0.5°/s，完全不用自己做温度校准</li>
+<li>自带Bartlett窗FIR滤波和抽取滤波，不用在MCU上跑滤波<a href="https://www.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>了：<code>FILT_CTRL</code>寄存器配滤波阶数，<code>DEC_RA<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>TE</u></a></code>配抽取率，比如我要100Hz输出率，直接设<code>DEC_RATE=19</code>，2000/(19+1)=100Hz，硬件自动做平均，噪声直接压下来</li>
+<li>支持用户自己写零偏校准值，存到内部Flash里，开机自动加载，不用自己外挂EEP<a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a>存校准参数</li>
+<li>还有delta angle和delta velocity输出，惯导解算直接用就行，不用自己积分，减少计算误差</li>
+<li>自带自检功能，开机跑一下传感器自检和Flash校验，坏料直接筛出来，做工业产品出厂检测太方便了</li>
+</ul>
+<hr/>
+<h2>5. 布板焊接踩过的血坑</h2>
+<p>好料也要好的布板焊接才能出性能，这部分踩的坑最多：</p>
+<ol>
+<li>100脚BGA，焊球是SAC305，直径0.75mm，<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>焊盘建议做0.56mm直径，阻焊开窗0.73mm，用阻焊定义焊盘就行，不要做铜定义焊盘，容易焊短路</li>
+<li>供电旁边一定要放一个10μF的陶瓷<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>，越近越好，开机的时候给内部电容充电的瞬间<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>能到300mA，<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>带载能力不够会反复复位，我一开始用了个1μF的电容，每次开机都起不来</li>
+<li>这个料是湿敏等级5级，过回流焊之前一定要125℃烘16小时，不然过炉的时候内部水汽膨胀会把封装鼓包，而且只能过一次回流焊，不要返工，返工的坏率超过30%，亲测</li>
+<li>如果是车载、高振动场景，建议加unde<a href="https://www.elecfans.com/tongxin/rf/" target="_blank"><u>rf</u></a>ill（底部填充胶），我之前做的AGV项目，没加underfill跑10g振动测试，200小时就有焊球裂了，加了之后跑1000小时都没问题</li>
+<li>这个IMU对安装应力敏感，布板的时候不要放在PCB边缘，也不要靠近螺丝孔，避免PCB变形产生应力影响精度</li>
+</ol>
+<hr/>
+<h2>6. 适合哪些场景？</h2>
+<p>除了我用的植保无人机，这款IMU的适用场景还挺广的：</p>
+<ul>
+<li>无人车、<a href="https://www.elecfans.com/tags/自动驾驶/" target="_blank"><u>自动驾驶</u></a>的组合导航辅惯导</li>
+<li><a href="https://m.elecfans.com/v/tag/144/" target="_blank"><u>工业机器人</u></a>、协作机器人的姿态控制</li>
+<li><a href="https://m.elecfans.com/v/tag/3668/" target="_blank"><u>VR</u></a>/AR头显的6DoF定位</li>
+<li>移动机器人、AGV的航位推算</li>
+<li>测绘、勘探设备的姿态测量</li>
+</ul>
+<p>三个型号按需选就行，低量程精度更高，高量程适合高机动场景。</p>
+<hr/>
+<h2>最后唠两句</h2>
+<p>总的来说ADIS16507是工业级IMU里性价比很高的选择，不用自己搞复杂的校准，集成度高，性能稳定，适合对体积和精度都有要求的场景。我现在用它做的飞控，低温下悬停10分钟偏航漂移不到5度，比之前的消费级IMU强太多了。</p>
+<p>大家有没有用过这款IMU？或者有什么其他高性价比工业级IMU推荐？评论区聊聊~</p>]]></description></item><item>    <title><![CDATA[【老MCU实战分享】瑞萨H8/3687系列16位MCU硬件设计全解析+踩坑总结]]></title>    <link>https://www.elecfans.com/d/8989406.html</link>    <guid>https://www.elecfans.com/d/8989406.html</guid>    <pubDate>2026-11-27 16:55:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989406" value="https://file.elecfans.com/web2/M00/28/08/pYYBAGHDCsCAVIyCAC8AtVbL0jo417.pdf"/><h1>【老<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>实战分享】<a href="https://www.elecfans.com/tags/瑞萨/" target="_blank"><u>瑞萨</u></a>H8/3687系列16位MCU硬件设计全解析+踩坑总结</h1>
+<h2>头图放一张我早年做的H8/3687核心板，布板糙了点，但是在户外工业现场跑了8年没出过问题，稳得离谱。
+最近翻旧项目资料翻到了这款MCU的手册，当年用它做低功耗工业采集节点踩了不少坑，今天把核心知识点和避坑点整理出来，给还在维护老项目或者找高可靠16位MCU的朋友做个参考。</h2>
+<h2>一、核心参数概览</h2>
+<p>H8/3687是瑞萨H8家族的经典16位MCU，基于H8/300H内核，主打低功耗+外设全，非常适合<a href="https://www.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>、智能仪表、低功耗传感节点这类场景。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8989406" target="_blank">HD64F3687FP.pdf</a></p>
+<h3>核心配置表</h3>
+<table>
+<thead>
+<tr>
+<th>型号</th>
+<th>内置Flash</th>
+<th>内置<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a></th>
+<th>外挂EEP<a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a></th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>H8/3687F（Flash版）</td>
+<td>56KB</td>
+<td>4KB</td>
+<td>无</td>
+<td>需要现场升级固件的场景</td>
+</tr>
+<tr>
+<td>H8/3684F</td>
+<td>32KB</td>
+<td>4KB</td>
+<td>无</td>
+<td>简单逻辑控制</td>
+</tr>
+<tr>
+<td>H8/3687（掩膜版）</td>
+<td>56KB</td>
+<td>3KB</td>
+<td>无</td>
+<td>大批量成熟产品</td>
+</tr>
+<tr>
+<td>H8/3687N（堆叠版）</td>
+<td>56KB</td>
+<td>4KB</td>
+<td>512字节</td>
+<td>需要频繁存参数的采集类产品</td>
+</tr>
+</tbody>
+</table>
+<h2>⚠️ 踩坑提醒：H8/3687N是双芯片堆叠版本，型号带N和不带N的外设地址有差异，批量订货的时候千万别写错型号，不然焊上去所有<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a><a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>都用不了，别问我怎么知道的。
+内核性能：H8/300H是16位<a href="https://bbs.elecfans.com/zhuti_riscvmcu_1.html" target="_blank"><u>RISC</u></a>架构，62条基础指令，常用指令都是1-2个周期，最高20MHz主频，工业级宽温-20~75℃，可靠性拉满。</h2>
+<h2>二、核心外设详解+实操避坑</h2>
+<h3>1. <a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>核心</h3>
+<p>这个内核的<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>是16位通用寄存器，可拆分8位用，也可以拼接成32位做长运算。寻址空间64KB，8种寻址模式。
+⚠️ 实操提醒：</p>
+<ul>
+<li>32位运算属于扩展指令，周期比16位长很多，别在中断服务函数里跑长除法、乘法，容易打断其它外设时序。</li>
+<li>空地址访问会直接导致程序跑飞，代码里一定要加空地址的非法访问保护，尤其是指针操作的时候做好边界判断。
+<h3>2. <a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>系统+低功耗模式</h3>
+<p>时钟分主时钟和子时钟两套：</p></li>
+<li>主时钟：支持2~20MHz晶振/陶瓷<a href="https://m.hqchip.com/app/850" target="_blank"><u>谐振器</u></a>，也可以外接时钟输入。</li>
+<li>
+<table>
+<thead>
+<tr>
+<th>子时钟：32.768kHz晶振，给RTC和低功耗模式提供时钟。
+低功耗一共6种模式，核心场景选择参考：</th>
+<th>模式</th>
+<th>CPU状态</th>
+<th>外设状态</th>
+<th>典型功耗（3V@32kHz子时钟）</th>
+<th>唤醒源</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>正常运行</td>
+<td>运行</td>
+<td>全开启</td>
+<td>~35μA</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Sleep模式</td>
+<td>停止</td>
+<td>外设运行</td>
+<td>~25μA</td>
+<td>任意中断</td>
+</tr>
+<tr>
+<td><a href="https://m.hqchip.com/app/1525" target="_blank"><u>Sub</u></a>Sleep模式</td>
+<td>停止</td>
+<td>仅RTC运行</td>
+<td>~25μA</td>
+<td>RTC/外部中断</td>
+</tr>
+<tr>
+<td>待机模式</td>
+<td>全停止</td>
+<td>IO高阻</td>
+<td>&lt;5μA</td>
+<td>外部中断/复位</td>
+</tr>
+</tbody>
+</table>
+<p>⚠️ 踩坑提醒：</p>
+</li>
+<li>子时钟晶振布线一定要远离<a href="https://www.hqchip.com/app/1703" target="_blank"><u>DC</u></a>-DC、<a href="https://www.hqchip.com/app/1703" target="_blank"><u>开关电源</u></a>这类干扰源，我第一版布板的时候子时钟靠近DC-DC，RTC每天慢2秒，换了布局远离干扰源就正常了。</li>
+<li>进入待机模式的时候所有IO会自动切高阻，如果有驱动继电器、功率管的电路，一定要加固定上下拉，不然待机的时候电平浮空导致误触发，我当年就因为这个问题烧了一个采样板的继电器。
+<h3>3. <a href="https://www.elecfans.com/tags/定时器/" target="_blank"><u>定时器</u></a>资源</h3>
+<table>
+<thead>
+<tr>
+<th>三个定时器完全覆盖工业控制常用场景：</th>
+<th>定时器</th>
+<th>位数</th>
+<th>核心功能</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://bbs.elecfans.com/group_715" target="_blank"><u>Ti</u></a>mer B1</td>
+<td>8位</td>
+<td>定时/外部事件计数</td>
+<td>简单周期定时、按键消抖计数</td>
+</tr>
+<tr>
+<td>Timer V</td>
+<td>8位</td>
+<td>比较匹配输出、触发启动计数</td>
+<td>单路PWM输出、脉冲计数</td>
+</tr>
+<tr>
+<td>Timer Z</td>
+<td>16位</td>
+<td>互补PWM输出、输入捕获、6路PWM</td>
+<td>小型<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>驱动、多通道脉冲输出</td>
+</tr>
+</tbody>
+</table>
+<p>⚠️ 踩坑提醒：</p></li>
+<li>Timer Z做互补PWM输出的时候死区时间一定要手动配置，别用默认值！我第一次做小型<a href="https://bbs.elecfans.com/group_1333" target="_blank"><u>无刷电机</u></a>驱动的时候直接用默认值，死区太小烧了两个半桥。</li>
+<li><a href="https://www.elecfans.com/tags/看门狗/" target="_blank"><u>看门狗</u></a>默认是关闭的，工业场景一定要开，最好选内部独立时钟源，主时钟挂了也能正常复位，避免程序跑飞没人管。
+<h3>4. <a href="https://www.elecfans.com/v/tag/13179/" target="_blank"><u>通信接口</u></a></h3>
+<h4>（1）SCI串口</h4>
+<p>2路独立串口，支持异步/同步模式，异步最高支持115200波特率，有多机通信功能，工业组网非常方便。
+⚠️ 提醒：串口接收超时判断要自己写，硬件没有内置超时寄存器，做Modbus通信的时候要注意加超时判断。</p>
+<h4>（2）I2C<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a></h4>
+<p>硬件I2C支持主从模式，兼容飞利浦I2C标准，最高400kHz速率。
+⚠️ 超级大坑：片上I2C引脚默认是开漏输出，必须外接上拉<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>！我第一版板忘了加，通信一直丢包，查了整整半天才发现问题，浪费了一下午时间。</p>
+<h3>5. 10位<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a></h3>
+<p>8通道10位SAR <a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>C，支持单通道单次/多通道扫描模式，最小转换时间3.5μs@20MHz。
+⚠️ 实操提醒：</p></li>
+<li><a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>输入<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>的源阻抗不能超过5kΩ，如果接高阻<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>一定要在前面加运放跟随，不然采样误差能到5%以上，我当时接温感NTC没加跟随，温度误差飘了2℃。</li>
+<li>AVCC模拟电源和数字VCC要单点共地，模拟走线远离数字高频走线，不然ADC的采样值会跳变。
+<h3>6. 存储操作</h3>
+<h4>（1）片上Flash</h4>
+<p>支持Boot模式和用户模式<a href="https://bbs.elecfans.com/group_75" target="_blank"><u>编程</u></a>，128字节页写，块擦除。
+⚠️ 踩坑提醒：写Flash的时候一定要关总中断！不然写到一半进中断容易把Flash写坏，而且片上Flash擦写次数只有1000次，频繁存参数别用片上Flash，要么用H8/3687N的外挂EEPROM，要么外扩SPI Flash。</p>
+<h4>（2）H8/3687N内置EEPROM</h4>
+<h2>512字节，页写8字节，擦写次数10^4次，I2C接口访问，适合存设备参数、累计量这类需要掉电保存、频繁修改的数据。</h2>
+<h2>三、硬件设计必看注意事项</h2>
+<h3>1. <a href="https://www.elecfans.com/soft/data/4-5/" target="_blank"><u>电源电路</u></a></h3>
+<p>这款MCU内置了<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>降压电路，<strong>VCL引脚必须接0.1μF去耦电容，而且要尽量靠近引脚</strong>，我试过不接这个<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>，MCU跑半小时就莫名死机，接了之后一切正常。
+如果用内置低电压检测功能，电源波动大的工业场景一定要开，电压低于阈值的时候直接复位或者进低功耗，避免电源波动的时候写坏存储数据。</p>
+<h3>2. 复位电路</h3>
+<p>用内置上电复位的话，RES引脚的电容选0.22μF比较稳妥，我最开始用0.1μF，上电复位时间不够，低温环境下偶尔启动失败，换了0.22μF之后没再出过问题。
+如果对复位可靠性要求高，建议外接外置复位芯片，比内置的更稳。</p>
+<h3>3. 引脚配置</h3></li>
+<li>所有NC引脚必须悬空，别乱接东西，不然会导致内部逻辑异常。</li>
+<li>不用的输入引脚一定要接固定上下拉，别浮空！我当年有个没用的中断引脚浮空，工厂里电磁干扰大的时候经常误触发中断，加了10k下拉就好了。</li>
+<li>
+<h2>Port6是大<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a><a href="https://m.hqchip.com/app/1808" target="_blank"><u>端口</u></a>，单引脚灌电流最大支持20mA，可以直接驱动小继电器、<a href="https://m.hqchip.com/app/1721" target="_blank"><u>LED</u></a>，不用额外加驱动管，但是别超电流。</h2>
+<h2>四、开发调试提醒</h2>
+<p>用瑞萨E7/E8<a href="https://www.elecfans.com/tags/仿真器/" target="_blank"><u>仿真器</u></a>调试的话，注意以下资源是<a href="https://bbs.elecfans.com/zhuti_proteus_1.html" target="_blank"><u>仿真</u></a>器占用的，用户代码不能用：</p>
+</li>
+<li>NMI引脚、P85/P86/P87引脚</li>
+<li>
+<h2>地址空间0xD000~0xDFFF
+如果用了这些资源，调试的时候会出现各种莫名其妙的问题，别怀疑是仿真器坏了，先查有没有占用仿真器资源。
+批量烧写的话可以用串口Boot模式，不用拆芯片，产线烧写非常方便。</h2>
+<h2>最后总结</h2>
+<h2>H8/3687是一款非常成熟稳定的工业级MCU，只要避开上面这些坑，做出来的产品可靠性非常高，我做的户外采集节点在东北露天现场跑了8年，夏天最高40℃冬天零下30℃，从来没出过硬件问题。现在瑞萨还在持续供货，维护老项目或者做小批量工业产品的朋友可以放心用。
+有同款MCU开发问题的朋友欢迎评论区交流~</h2>
+<h3>参考资料</h3>
+<p>瑞萨官方H8/3687系列硬件手册 Rev.5.00 本文所有实操经验均来自实际项目验证，转载请注明出处。</p>
+</li>
+</ul>]]></description></item><item>    <title><![CDATA[商汤科技发布具身大脑SenseNova-RoboRSI-27B正式版]]></title>    <link>https://www.elecfans.com/d/8989436.html</link>    <guid>https://www.elecfans.com/d/8989436.html</guid>    <pubDate>2026-11-27 16:57:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	不经过真实机器人数据训练或微调，仅凭在<a href="https://bbs.elecfans.com/zhuti_proteus_1.html" target="_blank"><u>仿真</u></a>环境中学到的经验，一台<a href="https://m.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>臂能否在真实世界中完成抓取、放置和积木堆叠?</p>
+<p style="text-indent:2em;">
+	商汤科技最新发布的具身大脑 SenseNova-Robo<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>I-27B 正式版给出了新的探索成果。使用同一份仿真训练权重，模型在 <a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>Pi</u></a>per X 机械臂上完成积木堆叠，10 次实验成功 9 次;在 Piper 机械臂上完成多类型物体抓取与放置，10 次实验成功 6 次。</p>
+<p style="text-indent:2em;">
+	这一表现背后，是模型自主决策与执行能力的进一步升级。相较于 Preview 版本主要依赖视觉语言动作模型(VLA)执行任务，正式版能够自主判断何时调用 VLA、何时通过代码直接控制机械臂，并根据实际执行反馈调整动作策略。在<a href="https://www.hqchip.com/gongsi.html" target="_blank"><u>知名</u></a>的<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>仿真榜单 RoboDojo 最新版评测中，模型取得 34.7 分的平均成绩，较 Preview 版本的 10.0 分提升至原来的 3.47 倍，以 27B 的模型体量超越 RoboDojo 官方团队测试的 GPT-6-Astra 的成绩。</p>
+<p style="text-indent:2em;">
+	SenseNova-RoboRSI-27B 通过 Code as Policy 协调双臂，观察二阶魔方的六个面后将其还原</p>
+<p style="text-indent:2em;">
+	多轮 RSI 迭代优化</p>
+<p style="text-indent:2em;">
+	让模型逐轮学会新的执行方式</p>
+<p style="text-indent:2em;">
+	此前的 SenseNova-RoboRSI Preview 版本主要依赖预设的 VLA 技能完成机器人操作，而正式版进一步拓展了模型的自主决策与执行能力。面对不同任务，模型能够使用统一的工具体系，自主判断何时调用 VLA 生成动作轨迹，何时通过代码计算目标位置并直接控制机械臂，还能根据实际执行反馈审查、调整动作方案。</p>
+<p style="text-indent:2em;">
+	这一能力建立在 VLA 与 Code as Policy 两种技术路径的协同之上。VLA 能够根据视觉观测生成动作轨迹，适合动态接近、连续倾倒等复杂操作;Code as Policy 则通过程序进行空间计算和目标位置规划，适合积木堆叠、精准放置、数字按键等具有明确空间约束的任务。</p>
+<p align="center">
+	<img src="https://file1.elecfans.com/web3/M00/7C/94/wKgzfWsJRyOANyZbAAYRM7xTuIk821.png" alt="f650d6fc-e8c2-11f1-a3b8-92fbcf53809c.png"/></p>
+<p style="text-indent:2em;">
+	SenseNova-RoboRSI-27B 通过多轮 RSI 学习调用 VLA 技能和编写控制代码，并将仿真中学到的操作迁移到两款真实机械臂上。</p>
+<p style="text-indent:2em;">
+	在实际操作中，模型可以根据任务需求灵活切换两种执行方式。例如，在叠碗任务中，模型先调用 VLA 完成抓取，再根据碗与目标位置的相对关系，通过代码调整夹爪位置，最终完成精准放置。正式版中，VLA 和 Code as Policy 的环境步执行比例分别为 41.9% 和 58.1%，体现了模型对不同执行策略的自主组织能力。</p>
+<p style="text-indent:2em;">
+	叠碗过程中，Agent 根据执行反馈在 VLA 与 Code as Policy 之间切换，调整抓取和放置动作。</p>
+<p style="text-indent:2em;">
+	除了叠碗任务，模型还能够通过 Code as Policy 控制机械臂完成多种具有空间约束的操作，包括根据物体朝向调整抓取方式、侧推 T 形块、双臂对齐衣摆两角，以及对准孔位后分步下探等。</p>
+<p align="center">
+	<img src="https://file1.elecfans.com/web3/M00/7C/9D/wKgzfmsJRyOAM-qQAAfoKnHjZXI141.png" alt="f6b413c0-e8c2-11f1-a3b8-92fbcf53809c.png"/></p>
+<p style="text-indent:2em;">
+	模型通过 Code as Policy 控制局部动作，包括按物体朝向抓取、侧推 T 形块、双臂对准衣摆两角，以及对准孔位后分步下探。</p>
+<p style="text-indent:2em;">
+	为了让模型逐步掌握新的执行方式，SenseNova-RoboRSI-27B 正式版采用多轮 RSI(Recursive Self-Improvement)迭代优化机制。</p>
+<p style="text-indent:2em;">
+	这一机制的核心，是让模型与执行框架 Harness 协同迭代：教师模型负责探索和发现问题，Harness 持续拓展模型可调用的工具与执行能力，27B 模型则通过训练逐步掌握新的工具和执行方式。</p>
+<p style="text-indent:2em;">
+	具体而言，每轮迭代首先由教师模型 GPT-6 Astra 使用当前工具体系执行任务，根据任务结果和执行反馈发现问题、改进 Harness(工具与执行框架);随后，通过拒绝采样筛选高质量交互轨迹，并对 27B 模型进行监督微调，使其掌握更新后的工具和执行方式。经过多轮迭代，模型逐步学会 VLA 轨迹审查、Code as Policy 控制以及空间工具调用等能力。</p>
+<p style="text-indent:2em;">
+	多轮 RSI 迭代训练</p>
+<p style="text-indent:2em;">
+	持续提升模型决策与执行能力</p>
+<p style="text-indent:2em;">
+	为了让模型逐步掌握新的执行方式，SenseNova-RoboRSI-27B 正式版采用多轮 RSI(Recursive Self-Improvement)迭代优化机制。</p>
+<p style="text-indent:2em;">
+	这一机制的核心，是让模型与执行框架 Harness 协同迭代：教师模型负责探索和发现问题，Harness 持续拓展模型可调用的工具与执行能力，27B 模型则通过训练逐步掌握新的工具和执行方式。</p>
+<p style="text-indent:2em;">
+	具体而言，每轮迭代首先由教师模型 GPT-6 Astra 使用当前工具体系执行任务，根据任务结果和执行反馈发现问题、改进 Harness(工具与执行框架);随后，通过拒绝采样筛选高质量交互轨迹，并对 27B 模型进行监督微调，使其掌握更新后的工具和执行方式。经过多轮迭代，模型逐步学会 VLA 轨迹审查、Code as Policy 控制以及空间工具调用等能力。</p>
+<p align="center">
+	<img src="https://file1.elecfans.com/web3/M00/7C/94/wKgzfWsJRySAcpkPAASJTrS51h4080.png" alt="f730977e-e8c2-11f1-a3b8-92fbcf53809c.png"/></p>
+<p style="text-indent:2em;">
+	多轮 RSI 的训练流程：通过任务交互、反馈分析、Harness 改进和模型训练，持续优化模型的执行能力。</p>
+<p style="text-indent:2em;">
+	实验显示，相较于仅更新 Harness 或仅更新模型的方式，模型与 Harness 协同迭代的效果更好。经过三轮协同迭代，RoboDojo 平均得分从 10.0 分提升至 34.7 分。</p>
+<p align="center">
+	<img src="https://file1.elecfans.com/web3/M00/7C/9D/wKgzfmsJRySAWjLRAAE_yswwLcw304.png" alt="f7ba771e-e8c2-11f1-a3b8-92fbcf53809c.png"/></p>
+<p style="text-indent:2em;">
+	左图比较不同模型的 RoboDojo 得分。右图对比三种迭代方式，其中模型与 Harness 协同迭代三轮后，得分从 10.0 升至 34.7。</p>
+<p style="text-indent:2em;">
+	除了提升模型的任务决策能力，团队还针对 27B 模型在精细空间定位方面的不足，引入了从现有开源 VLA 训练数据中构造的单轮动作监督，与长程 Agent 轨迹联合训练。该方法在复用已有机器人操作数据的同时，显著降低了数据构造成本。</p>
+<p style="text-indent:2em;">
+	实验中，模型末端位置预测误差在 5mm 以内的比例从 4.3% 提升至 15.5%，位置误差中位数从 119.7mm 降至 51.6mm，进一步提升了模型的空间控制精度。</p>
+<p align="center">
+	<img src="https://file1.elecfans.com/web3/M00/7C/94/wKgzfWsJRySAS5UEAAGePlmbGjg246.png" alt="f81f2c22-e8c2-11f1-a3b8-92fbcf53809c.png"/></p>
+<p style="text-indent:2em;">
+	加入 VLA2Agent 数据后，末端位置预测误差在 5 mm 以内的比例从 4.3% 升至 15.5%，位置误差中位数从 119.7 mm 降至 51.6 mm。</p>
+<p style="text-indent:2em;">
+	加入 VLA2Agent 数据(左)与未加入该数据(右)的模型，分别执行积木放置、试管插入和手表抓取。</p>
+<p style="text-indent:2em;">
+	同一份模型权重</p>
+<p style="text-indent:2em;">
+	从仿真走向真实机械臂</p>
+<p style="text-indent:2em;">
+	从仿真环境走向真实世界，是检验具身智能模型泛化能力的重要环节。SenseNova-RoboRSI-27B 正式版将仿真评测中使用的同一份模型权重部署到 Piper X 和 Piper 两款真实机械臂上，仅对观测、状态和控制<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>进行适配，未使用真实机器人数据进行训练或微调。</p>
+<p style="text-indent:2em;">
+	在实测任务中，Piper X 结合 VLA 与 Code as Policy 完成积木堆叠，10 次实验成功 9 次，成功率达到 90%;Piper 则通过 Code as Policy 完成多类型物体的抓取与放置，10 次实验成功 6 次，成功率达到 60%。相比之下，SenseNova-RoboRSI-27B Preview 版本在两项任务中分别成功 3 次和 2 次，未经机器人操作训练的对照模型则均未能完成任务。</p>
+<p style="text-indent:2em;">
+	同一份模型权重用于两款真机。Piper X 结合 VLA 与 Code as Policy 叠放积木，Piper仅用 Code as Policy 将玩具放入盘。</p>
+<p style="text-indent:2em;">
+	更值得关注的是，在真实机械臂操作过程中，模型依然能够主动调用空间定位工具，通过多视角观测获取目标位置，并根据任务状态在不同执行策略之间切换。当 VLA 提出的动作轨迹与空间定位结果不一致时，模型还能够主动拒绝不合适的动作方案，重新生成或修正轨迹后再执行。这表明，模型在仿真中学习到的自主定位、策略选择和执行纠偏能力，能够迁移至真实机器人操作场景。</p>
+<p align="center">
+	<img src="https://file1.elecfans.com/web3/M00/7C/9D/wKgzfmsJRyWALmUqAAXqf_8GR0U099.png" alt="f87e9108-e8c2-11f1-a3b8-92fbcf53809c.png"/></p>
+<p style="text-indent:2em;">
+	模型通过多视角观测获取目标位置，并在执行过程中根据反馈重新定位、调整动作，实现自主纠错。</p>
+<p style="text-indent:2em;">
+	从依赖预设技能到自主组合执行策略，再到将仿真中学习的能力迁移至真实机械臂，SenseNova-RoboRSI-27B 正式版进一步探索了通用机器人 Agent 的实现路径。</p>
+<p style="text-indent:2em;">
+	未来，我们将继续探索强化学习与更高效的具身RSI架构，推动 RoboRSI 在三个方向上走得更远。</p>
+<p style="text-indent:2em;">
+	1. 让机器人更独立地完成复杂任务。 从执行单个动作，到围绕一个目标连续完成多个步骤，机器人还需要学会判断事情做到了哪一步，遇到偏差时调整做法，减少对人工接手的依赖。</p>
+<p style="text-indent:2em;">
+	2. 让学到的能力适用于更多真实场景。 我们将把 RoboRSI 带到更多类型的机器人和开放环境中，检验当设备、物体或环境布局发生变化时，机器人能否运用已有经验，依然可靠地完成任务。</p>
+<p style="text-indent:2em;">
+	3. 让机器人以更低成本完成任务。 我们将继续探索更轻量的开源模型，在保留操作能力的同时，降低每次任务的推理成本、缩短响应时间，让机器人能够在真实场景中更经济地长期运行。</p>
+<p style="text-indent:2em;">
+	我们期待与开源社区一起，让越来越多需要人全程照看的工作，逐步交给机器人独立、可靠地完成。</p>
+<p style="text-indent:2em;">
+	</p>]]></description></item><item>    <title><![CDATA[做惯导选IMU绕不开的好东西：ADIS16489七轴IMU实测踩坑指南]]></title>    <link>https://www.elecfans.com/d/8989424.html</link>    <guid>https://www.elecfans.com/d/8989424.html</guid>    <pubDate>2026-11-27 17:00:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989424" value="https://file1.elecfans.com/web2/M00/03/96/pYYBAGDVzieAX6qCAA9kKeW2Hqs854.pdf"/><h1>做惯导选IMU绕不开的好东西：<a href="https://www.elecfans.com/tags/adi/" target="_blank"><u>ADI</u></a>S16489七轴IMU实测踩坑指南</h1>
+<p>最近在做工业AGV的自主导航模块，之前用的消费级<a href="https://m.elecfans.com/v/tag/7888/" target="_blank"><u>MEMS</u></a> IMU温漂大，校准做死了跑半小时定位还是飘1米多，翻了半天<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>I的选型表把ADIS16489拉回来测了两周，今天把参数、调试坑、适用场景捋清楚，给同做导航/稳控的兄弟省点时间。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8989424" target="_blank">ADIS16489.pdf</a></p>
+<hr/>
+<h2>先唠核心亮点：为啥选它不选分立方案</h2>
+<p>ADIS16489是ADI家的工业级七轴IMU，三轴陀螺+三轴加计+内置气压计，最香的点<strong>全出厂校准</strong>——之前我用分立陀螺加计自己拼，光轴对齐、温漂校准，校准台跑一遍就得大半天，这个出厂已经在-40~85℃把灵敏度、零偏、轴对齐全校准完了，拿到手焊上就能出准数：</p>
+<ol>
+<li>轴对齐误差才±0.018°，之前自己拼的分立IMU轴对齐最差能到0.5°，跑起来航向角飘得妈都不认，这个直接省了<a href="https://m.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>校准的所有功夫</li>
+<li>陀螺偏置稳定性5.3°/hr，角随机游走0.25°/√hr，比普通消费级MEMS强了几十倍，短时间纯惯导漂移小很多，丢GNSS的场景下撑个十几分钟定位精度还能看</li>
+<li>加计量程±18g，气压计300~1100mbar，AGV过减速带、<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>掉地上、海拔从负几百到几千米的场景都够用，还有2000g抗冲击，工地现场装机不小心掉地上也不容易坏</li>
+<li>自带delta angle、delta velocity输出，不用自己在<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>里积分做解算，省算力还避免了软件积分的累积误差，做惯导的时候太省心了</li>
+</ol>
+<hr/>
+<h2>调试踩过的那些坑，别再踩了</h2>
+<h3>1. SPI<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>坑，90%的人第一次调都会栽</h3>
+<p><a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>是标准SPI，最高15MHz，默认SPI Mode3、MSB先、16位帧，这里有两个容易忽略的点：</p>
+<ul>
+<li><strong><a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>是分页的！</strong> 所有页的0x00地址都是<code>PAGE_ID</code>寄存器，读写其他页的寄存器之前，必须先往当前页的0x00地址写要切换的页号，我最开始没注意，直接读0x10地址的陀螺数据全是乱码，查了半天才反应过来没切到Page0，纯纯傻缺行为</li>
+<li><strong>特殊寄存器的stall <a href="https://bbs.elecfans.com/group_715" target="_blank"><u>ti</u></a>me要加长</strong> 普通寄存器读写至少留2us的stall，但是写<code>FNCTIO_CTRL</code>、<code>FILTR_BNK</code>、<code>NULL_CNFG</code>这些特殊配置寄存器的时候，stall要拉到10~15us，我最开始按2us写配置，写完死活不生效，抓了两天时序才看到datasheet里的表格有特殊说明</li>
+<li>调不通的时候直接反复读<code>PROD_ID</code>寄存器，固定值是0x4069，读对了就说明通信没问题，不用瞎测其他寄存器</li>
+</ul>
+<h3>2. 内置功能用对了省一半事</h3>
+<ul>
+<li>自带4组可配置FIR<a href="https://www.elecfans.com/tags/滤波器/" target="_blank"><u>滤波器</u></a>，默认给了4组低通：310Hz、55Hz、275Hz、63Hz，普通场景直接选就行，不用自己算系数；有特殊需求比如要滤<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>振动，也可以自定义系数，每组最多120tap，做陷波、带通都够，省了外部<a href="https://www.hqchip.com/app/1378" target="_blank"><u>DSP</u></a>的算力</li>
+<li>连续偏置估计功能太香了，设备上电静止的时候跑一下自动校准，零偏直接压到标称值以内，不用自己做静态校准逻辑</li>
+<li>自带自检、报警功能，上电跑一遍自检直接能读寄存器看哪个<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>坏了，阈值设好之后超量程直接出中断，不用软件轮询，做功能安全的时候省了不少代码</li>
+</ul>
+<hr/>
+<h2>应用注意事项，都是实测踩出来的</h2>
+<h3>1. 安装一定要按规范来！</h3>
+<p>这个是最大的坑：模块是塑封结构，受力不均会直接导致内部MEMS产生应力，引入额外零偏。我最开始拧螺丝两个紧两个松，装上去陀螺零偏直接飘了0.5°/s，以为买到假货了，后来按datasheet要求四个安装孔统一用0.285Nm扭矩、加了垫圈，零偏直接回到标称值。
+另外别压接插件引脚，也会引入应力，安装建议直接看ADI的AN-1295应用笔记，比自己瞎试靠谱。</p>
+<h3>2. <a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>别省</h3>
+<p>上电瞬态<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>最高能到600mA，别用300mA的<a href="https://m.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>供电，我最开始用小电流LDO一上电就拉闸，换了1A的LDO就好了，最好在电源引脚旁边放100uF电解+0.1uF陶瓷<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>，滤瞬态纹波。
+还有<code>V<a href="https://www.hqchip.com/app/1729" target="_blank"><u>DDR</u></a>TC</code>引脚必须接3.3V！哪怕不用RTC功能也不能悬空，我最开始图省事悬空了，芯片直接不工作，查了半天引脚定义才看到这个要求。</p>
+<h3>3. 尽量别过X-Ray</h3>
+<p>工厂做焊点检测的X射线会影响加计零偏，我测过，过一次X-Ray零偏飘了2mg，虽然放几天能恢复，但总归麻烦，最好是过完X-Ray再焊这个模块，或者焊完屏蔽了再照。</p>
+<hr/>
+<h2>最后说下适用场景</h2>
+<h3>适合用的场景</h3>
+<p><a href="https://m.elecfans.com/v/tag/144/" target="_blank"><u>工业机器人</u></a>稳定平台、AGV/AMR导航、<a href="https://www.elecfans.com/v/tag/12732/" target="_blank"><u>无人机</u></a>飞控、便携式导航设备，对精度、可靠性要求高的工业场景，这个模块性价比真的高，比同精度的光纤IMU便宜太多，省的校准工时都值回票价。
+而且它和ADIS16375、ADIS16480这些老型号引脚兼容，老产品升级直接换就行，不用改板。</p>
+<h3>不适合用的场景</h3>
+<p>成本敏感的消费级产品比如玩具无人机、手环啥的，没必要，消费级IMU几块钱就能搞定，用不着这么高的精度。</p>
+<hr/>
+<p>你们最近做惯导项目都用啥IMU？有没有遇到过什么奇葩的坑？评论区聊一聊~</p>]]></description></item><item>    <title><![CDATA[吹爆这款战术级IMU：ADIS16490用了半年，我把分立IMU的设计全扔了]]></title>    <link>https://www.elecfans.com/d/8989425.html</link>    <guid>https://www.elecfans.com/d/8989425.html</guid>    <pubDate>2026-11-27 17:00:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989425" value="https://file1.elecfans.com/web2/M00/71/11/poYBAGNPQOCAA-vzAA_s0ynfaF8410.pdf"/><h1>吹爆这款战术级IMU：<a href="https://www.elecfans.com/tags/adi/" target="_blank"><u>ADI</u></a>S16490用了半年，我把分立IMU的设计全扔了</h1>
 <p>最近手上做个工业AGV的<a href="https://www.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>导航项目，之前试了好几个消费级、普通工业级的IMU，要么零偏飘得离谱，要么要自己做校准、正交补偿，搞的头大。直到翻到<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>I这款ADIS16490战术级六轴IMU，用了俩月直接把之前分立搭的方案全换了，今天就来唠唠这货的真实使用体验。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8989425" target="_blank">ADIS16490.pdf</a></p>
 <hr/>
 <h2>核心参数：精度真的够打，参数不挤水</h2>
@@ -2933,228 +3388,4 @@ npx modern-web-guidance@latestupdate</pre>
 <p style="text-indent:2em;">
 	会见后，在周乃翔省长和历军董事长共同见证下，中科曙光高级副总裁任京暘代表公司，分别与山东钢铁集团有限公司、山东能源集团有限公司、山东铁路投资控股集团有限公司、山东省港口集团有限公司四家省属企业签署战略合作协议，各方拟围绕算力基础设施建设、科技创新和行业应用等方向深化合作，推动技术研发与产业需求对接。山东钢铁集团有限公司党委书记、董事长张宝才，山东能源集团有限公司党委书记、董事长李伟，山东铁路投资控股集团有限公司党委书记、董事长王卫中，山东省港口集团有限公司党委常委、副总经理韩恩泽及有关企业负责人参加签约活动。</p>
 <p style="text-indent:2em;">
-	扎根山东多年，中科曙光持续加快在鲁产业布局。近日，中科曙光济南基地项目二期一标段主体结构封顶。基地规划建设国产核心部件研发创新<a href="https://m.hqchip.com/tags" target="_blank"><u>中心</u></a>、生态适配中心，以及生产研发基地，推动研发制造、算力服务与产业合作相衔接。未来，中科曙光将依托在鲁项目和合作基础，持续深化与省内企业合作，推动先进计算技术在具体产业场景中的应用，为山东数字经济与实体经济深度融合发展提供有力支撑。</p>]]></description></item><item>    <title><![CDATA[翻到2017年Arduino退市老通知：上百款常用物料停售，附老项目补料指南]]></title>    <link>https://www.elecfans.com/d/8989217.html</link>    <guid>https://www.elecfans.com/d/8989217.html</guid>    <pubDate>2026-11-27 16:15:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989217" value="https://file.elecfans.com/web2/M00/AC/7F/poYBAGSLsS-AP9QQAAiNNT9nCrQ638.pdf"/><h1>翻到个老通知：2017年<a href="https://bbs.elecfans.com/group_724" target="_blank"><u>Arduino</u></a>这上百款物料直接退市，当年踩过坑的举手</h1>
-<p>最近整理历史供应商PCN档案，翻到Arduino官方（当年的arduino.org团队，老玩家都知道早年Arduino还有分家的一段历史，这就是其中一方发出的通知）2017年1月发给<a href="https://www.elecfans.com/tags/digi-key/" target="_blank"><u>Digi-Key</u></a>的全量停产通知，整整好几页的退市清单，好多当年入门玩Arduino常用的配件都在里面，今天给大家捋捋，也算给现在考古老项目的朋友提个醒。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8989217" target="_blank">B000004.pdf</a></p>
-<hr/>
-<h2>通知基本信息</h2>
-<p>这份通知发出时间是2017年1月25日，覆盖所有Arduino通过Digi-Key分销的产品线，退市分两个时间节点：</p>
-<ul>
-<li>第一波：2017年2月1日，共计近100款物料直接下架</li>
-<li>第二波：2017年3月25日，剩余近20款物料停止接单
-所有清单内的物料，到期后代理渠道不再接受新订单，也没有后续的官方补货计划。</li>
-</ul>
-<hr/>
-<h2>划重点：这些高频常用件都在退市清单里</h2>
-<p>我整理了下，退市物料基本覆盖了当年Arduino生态的全栈配件，当年做项目的大概率会用到下面这些：</p>
-<h3>1. 基础电子元件类（全是入门刚需款）</h3>
-<ul>
-<li>被动元件：常规1/4W<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>包、100Ω/220Ω/1k/10k/470Ω/680Ω等常用阻值整包电阻，10nF/100nF<a href="https://www.hqchip.com/app/1173" target="_blank"><u>独石电容</u></a>、100uF<a href="https://m.hqchip.com/app/1139" target="_blank"><u>电解电容</u></a>，各色5mm/10mm <a href="https://www.hqchip.com/app/1721" target="_blank"><u>LED</u></a>、RGB LED</li>
-<li><a href="https://m.hqchip.com/gongsi.html" target="_blank"><u>半导体</u></a>器件：BC547/BC557三极管、1N4148/1N4007<a href="https://m.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>、I<a href="https://www.elecfans.com/tongxin/rf/" target="_blank"><u>RF</u></a>520 MOS管、L293D<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>驱动、74HC595移位<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>、4N35<a href="https://www.elecfans.com/yuanqijian/guangou/" target="_blank"><u>光耦</u></a>、940nm IR发射/接收头</li>
-<li>结构/配件：6x6按键、12mm按键、杜邦线全系列（公对公/公对母/母对母，70mm/100mm/150mm/200mm全长度）、面包板、<a href="https://www.hqchip.com/app/1513" target="_blank"><u>排针</u></a><a href="https://www.hqchip.com/app/1514" target="_blank"><u>排母</u></a>、3.5mm耳机座、电池座、9V<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>、鳄鱼夹线、8Ω纸喇叭、压电蜂鸣器、<a href="https://m.hqchip.com/app/1261" target="_blank"><u>电位器</u></a>（旋转/线性款）、Nema17<a href="https://www.elecfans.com/tags/步进电机/" target="_blank"><u>步进电机</u></a>、小直流电机</li>
-</ul>
-<h3>2. 模块/扩展板类（重灾区）</h3>
-<ul>
-<li><a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>Ti</u></a>nkerkit全系列<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>/模块：2轴<a href="https://www.elecfans.com/tags/陀螺仪/" target="_blank"><u>陀螺仪</u></a>、加速度计、LDR光感、热敏电阻、触摸传感器、霍尔传感器、倾角传感器、摇杆模块、IR遥控、继电器模块、<a href="https://www.elecfans.com/tags/mosfet/" target="_blank"><u>MOSFET</u></a>模块、全系列LED模块、伺服舵机（180°<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>款/360°连续旋转款）</li>
-<li>官方扩展板：Xbee扩展板（带/不带<a href="https://m.elecfans.com/v/tag/105/" target="_blank"><u>射频</u></a>模块两款全停）、WiFi Shield（带外置<a href="https://bbs.elecfans.com/zhuti_rf_1.html" target="_blank"><u>天线</u></a>座款A000089）、Tinkerkit Mega传感器扩展板、<a href="https://m.hqchip.com/app/1720" target="_blank"><u>PoE</u></a>模块（5V/12V两款全停）、<a href="https://www.hqchip.com/app/1515" target="_blank"><u>USB</u></a>转串口模块（带/不带排针两款全停）</li>
-<li>配件类：GSM天线、WiFi天线、<a href="https://m.elecfans.com/v/tag/9979/" target="_blank"><u>4G</u></a>B <a href="https://www.hqchip.com/app/1522" target="_blank"><u>SD</u></a>卡、32x8 LED点阵屏、非侵入式<a href="https://www.hqchip.com/app/1703" target="_blank"><u>AC</u></a><a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>传感器、USB线全系列</li>
-</ul>
-<h3>3. 套件/周边类</h3>
-<p>基础Workshop入门套件、<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>K开发套件、扩展配件包，还有两本官方推荐的参考书籍《Open Softwear 2nd Edition》《Pro <a href="https://www.elecfans.com/v/tag/502/" target="_blank"><u>Android</u></a> Open Accessory Prog<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>ram</u></a>ming w/ Arduino》也同步停售。</p>
-<hr/>
-<h2>给维护老项目的朋友提个醒</h2>
-<p>如果你手上还有2017年之前开发的Arduino老项目需要补料，基本找不到全新原装的官方渠道货了，给几个通用替代思路：</p>
-<ol>
-<li>基础元件不用纠结原装：电阻<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>二极管这类标准件，只要参数匹配随便换通用款，价格还比当年的官方配件便宜得多</li>
-<li>模块优先找国产兼容替代：Tinkerkit的模块都是标准的模拟/数字<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>，现在同功能的国产模块几块钱就能买到，最多改改引脚定义就能适配，性能比当年的老款还好；如果不想改代码也可以去二手平台淘囤货，不过性价比不高</li>
-<li>绝版扩展板可以自己打板：比如Xbee扩展板、传感器扩展板这类没有复杂逻辑的板子，网上都能找到开源原理图，打样几块钱就能做，比找囤货划算太多</li>
-</ol>
-<hr/>
-<p>有没有当年玩Arduino的老玩家刚好踩过这个停产的坑？我当年做个<a href="https://www.elecfans.com/soft/data/55-88/" target="_blank"><u>物联网</u></a>项目刚好用到那款带天线座的WiFi Shield，刚好赶上退市，找了三家代理才买到最后5片，印象特别深，评论区聊聊你的经历？</p>]]></description></item><item>    <title><![CDATA[项目踩坑记录：瑞萨H8S/2138/2134 核心外设配置要点整理]]></title>    <link>https://www.elecfans.com/d/8989218.html</link>    <guid>https://www.elecfans.com/d/8989218.html</guid>    <pubDate>2026-11-27 16:15:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989218" value="https://file.elecfans.com/web2/M00/27/A4/poYBAGHCvJCAIPz8AFkRzWXHlY4488.pdf"/><h1>项目踩坑记录：<a href="https://www.elecfans.com/tags/瑞萨/" target="_blank"><u>瑞萨</u></a>H8S/2138/2134 核心外设配置要点整理</h1>
-<p>最近在做老款<a href="https://m.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>器的固件迭代，主控用的是瑞萨上古16位<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a> H8S/2138。这颗MCU虽然老，但是工业级稳定性拉满，外设也够用，就是公开资料太少，对着官方硬件手册啃了一周，踩了无数坑，整理了核心外设的配置要点和避坑指南，给可能用到的朋友做个参考。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8989218" target="_blank">DF2134VTF10.pdf</a></p>
-<hr/>
-<h2>一、SCI（通用串行<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>，就是<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a>）</h2>
-<p>H8S系列带3路SCI，支持异步（常用UART）、同步串行<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>，其中第2路还支持IrDA<a href="https://www.elecfans.com/tags/红外/" target="_blank"><u>红外</u></a>通信，工业场景组网、调试打印基本够用。</p>
-<h3>核心特性&amp;踩坑点</h3>
-<ol>
-<li><strong>异步模式（最常用）</strong>
-支持7/8位数据，1/2停止位，奇偶校验可选，波特率通过BRR<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>配置，官方给出的计算公式实测是准的：
-<pre><code class="language-c">BRR = (主频Hz / (64 * 波特率 * 2^(2n-1))) - 1 // n是CKS位选的<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>分频系数</code></pre>
-<p>✅ 注意：如果用外部时钟做波特率源，输入时钟频率必须是波特率的16倍，不然采样会错位。</p></li>
-<li><strong>配置步骤必看（我在这里卡了一天）</strong>
-改通信格式、波特率之前，必须先把SCR寄存器的<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>TE</u></a>（发送使能）、RE（接收使能）位清0，等配置完成再重新置1，不然会出现连续乱码，我一开始没清直接改配置，串口吐了半小时乱码。
-发送的时候注意区分<code>TDRE（发送数据空）</code>和<code>TEND（发送完成）</code>中断：发连续帧用TDRE就行，发完最后一帧要等TEND置1再关串口，不然最后一帧会发不全。</li>
-<li><strong>接收注意</strong>
-一旦触发帧错误、奇偶错误、溢出错误，必须把所有错误标志都清0才能继续接收，不然串口会直接卡死，我做透传的时候忘了清错误标志，连续丢了几百帧数据才定位到问题。
-2138的SCI0 SCK引脚是NMOS开漏输出，要做同步通信输出时钟的话必须外接上拉<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>，我一开始没接，时钟电平只有1V左右，从机根本识别不到。</li>
-<li><strong>多机通信模式</strong>
-组网用的话可以开多机模式，通过MP位区分ID帧和数据帧，适合工业多设备挂载场景，注意ID帧的MP位要置1，数据帧置0，接收端开MPIE中断只响应匹配ID的数据就行，不用每帧都进中断，省资源。</li>
-</ol>
-<hr/>
-<h2>二、<a href="https://www.elecfans.com/tags/定时器/" target="_blank"><u>定时器</u></a>资源</h2>
-<p>H8S的定时器资源挺丰富，1路16位自由运行定时器（FRT）+3路8位定时器（TMR），2138还支持定时器互联，做脉冲测量、PWM输出、时基都够用。</p>
-<h3>1. 16位FRT</h3>
-<p>带4路输入捕获、2路输出比较，是我用的最多的外设：</p>
-<ul>
-<li>输入捕获可以选上升/下降/双沿触发，适合测脉冲宽度、<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>转速，注意输入脉冲宽度至少要1.5个系统时钟周期，太短会抓不到，我测<a href="https://www.elecfans.com/tags/编码器/" target="_blank"><u>编码器</u></a>脉冲的时候一开始没注意，低速没问题，高速直接丢数。</li>
-<li>输出比较可以做固定占空比PWM，或者配合溢出中断做任意占空比输出。
-✅ 必踩坑：所有中断标志位（输入捕获、输出比较、溢出）必须<strong>先读1再写0</strong>才能清掉，直接写0无效，我一开始直接写0清标志，中断一直进，卡了半天才找到原因。
-<h3>2. 8位TMR</h3>
-<p>3路独立8位定时器，支持级联成16位用，适合做<a href="https://www.hqchip.com/app/1721" target="_blank"><u>LED</u></a>闪烁、按键扫描这种低精度时基，时钟源可以选外部输入，也可以接外部脉冲计数。</p>
-<h3>3. 2138独有：定时器互联</h3>
-<p>可以把FRT和TMR的输入输出串起来用，能实现PWM解码、同步<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>生成，我做<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>控制的时候用来生成同步钳位波形，省了外面搭逻辑电路的成本。</p></li>
-</ul>
-<hr/>
-<h2>三、PWM输出</h2>
-<p>有两类PWM外设，分别适合不同场景：</p>
-<ol>
-<li><strong>8位PWM（2138独有，16通道）</strong>
-分辨率1/256，最高载波1.25MHz@20MHz主频，适合做LED调光、风扇调速，每个通道独立配置占空比，用起来很简单。</li>
-<li><strong>14位PWM（全系列都有，2通道）</strong>
-分辨率很高，外接个RC滤波就能当廉价<a href="https://www.elecfans.com/tags/dac/" target="_blank"><u>DAC</u></a>用，输出<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>电压。
-✅ 巨坑：14位PWM的寄存器是16位的，必须整字读写，不能拆成高低字节操作，我一开始为了省事儿分字节写，输出波形乱跳了好久才反应过来。</li>
-</ol>
-<hr/>
-<h2>四、<a href="https://www.elecfans.com/tags/看门狗/" target="_blank"><u>看门狗</u></a>WDT</h2>
-<p>2路独立看门狗，支持看门狗模式和间隔定时器模式：</p>
-<ul>
-<li>看门狗模式下溢出可以选触发复位或者NMI中断，工业场景建议直接选复位，别搞中断处理，真跑飞了中断也不一定能响应。</li>
-<li>✅ 注意喂狗操作有密码保护：写WDT寄存器的时候高字节必须写特定的密码（0x5A写计数器，0xA5写控制寄存器），不然会直接触发复位，我一开始没注意手册里的写入格式，一喂狗就复位，人都麻了。</li>
-</ul>
-<hr/>
-<h2>通用避坑汇总</h2>
-<p>最后整理几个全系列通用的坑，几乎所有外设都适用：</p>
-<ol>
-<li>所有带保护的寄存器（WDT、部分SCI寄存器）写入必须按照官方要求的格式来，不是直接写值就行，不然要么写不进去，要么直接触发异常。</li>
-<li>16位寄存器必须整字访问，不要拆成字节操作，不然大概率出问题。</li>
-<li>改任何外设配置之前，一定要先把外设的使能位清0，等配置完再重新使能，不然会出现各种玄学问题。</li>
-<li>所有外设的中断标志位，几乎都要求先读1再写0才能清除，直接写0无效，这个</li>
-</ol>]]></description></item><item>    <title><![CDATA[做可穿戴医疗的别找了，这款4通道AFE直接把你的需求焊死了]]></title>    <link>https://www.elecfans.com/d/8989219.html</link>    <guid>https://www.elecfans.com/d/8989219.html</guid>    <pubDate>2026-11-27 16:15:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989219" value="https://file1.elecfans.com/web3/M00/7C/97/wKgzfmsJOX2AX_xTAAWnsu1LwkM944.pdf"/><h1>做可穿戴医疗的别找了，这款4通道<a href="https://www.elecfans.com/tags/afe/" target="_blank"><u>AFE</u></a>直接把你的需求焊死了</h1>
-<p>最近在做一款24小时动态心电贴片的项目，找了快两周的<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>前端，要么功耗压不下来，要么精度够不上临床级，要么生物阻抗还要额外搭电路，直到翻到<a href="https://www.elecfans.com/tags/adi/" target="_blank"><u>ADI</u></a>这款MAX30011的简化datasheet，几乎踩中了我所有的需求点，整理下关键参数给同做生理<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>采集的同行做个参考。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8989219" target="_blank">MAX30011.pdf</a></p>
-<hr/>
-<h2>先看核心：4路生物电位通道，临床级精度够打</h2>
-<p>做ECG/EEG采集的<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>最关心的几个参数，这款几乎给拉满了：</p>
-<ol>
-<li><strong>噪声水平足够低</strong>：低功耗模式下250SPS采样率，0.05-40Hz带宽里输入噪声只有0.5μ<a href="https://www.elecfans.com/v/tag/3668/" target="_blank"><u>Vr</u></a>ms；切低噪声模式2kSPS采样率，0.05-150Hz带宽噪声仅0.31μVrms，输入<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>噪声不到5fA/√Hz，弱信号采集完全够用。</li>
-<li><strong>抗干扰能力拉满</strong>：50/60Hz工频下CMRR典型值114dB，内置EMI滤波，之前老款AFE要在输入加好几颗滤波<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>的问题直接省了，加上1GΩ的典型输入阻抗，干电极、智能服装这种接触阻抗高的场景也能直接用，不用额外加输入缓冲。</li>
-<li><strong>容错性极强</strong>：支持±1000mV的直流偏移容忍，不同材质的电极、贴放位置偏带来的偏置电压基本不会让前端饱和，200mVpp的交流动态范围，运动带来的伪迹也不容易炸采样，对消费级可穿戴太友好了。</li>
-<li><strong>医疗合规直接省事儿</strong>：内置起搏器脉冲检测功能，符合IEC 60601-2-47动态心电、IEC 60601-2-27监护心电的标准要求，后期过医疗<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>的时候，厂商提供的合规资料能省至少一个月的工作量。</li>
-</ol>
-<hr/>
-<h2>额外附赠的BioZ通道，省了至少10颗外围料</h2>
-<p>最惊喜的是它还集成了一路生物阻抗采集通道，不用像之前那样单独加阻抗测量的电路：</p>
-<ul>
-<li>呼吸测量模式下2.5Hz带宽噪声只有50mΩpp，测胸阻抗呼吸完全够用；</li>
-<li>刺激模式支持平衡方波电流、正弦电流/电压输出，频率覆盖10kHz到500kHz，不仅能测呼吸，还能直接做生物<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>抗分析（BIA/BIS），甚至可以实时检测电极-组织接触阻抗（ETI），用户佩戴的时候有没有贴好、接触好不好直接能读出来，不用靠后台<a href="https://m.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>瞎猜。</li>
-<li>而且BioZ通道和ECG通道可以同步工作，做心电+呼吸二合一的设备直接一步到位。</li>
-</ul>
-<hr/>
-<h2>做低功耗可穿戴的痛点，它全考虑到了</h2>
-<p>我们做贴片式监护最愁的就是功耗和体积，这款的系统设计真的是踩中了所有需求：</p>
-<ol>
-<li><strong>功耗够低</strong>：关断电流典型值只有1μA，正常工作时的功耗也比同性能的AFE低30%左右，做24小时动态贴片，用一粒纽扣电池续航能做到7天以上，不用天天充电。</li>
-<li><strong>外围极简</strong>：内置<a href="https://www.hqchip.com/app/850" target="_blank"><u>振荡器</u></a>、PLL，还有交直流导联脱落检测电路，不用额外搭检测电路，加上3.57mm×3.57mm的0.4mm间距WLP封装，<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>面积能省至少一半，手表、超薄贴片这种寸土寸金的场景完全放得下。</li>
-<li><strong>开发省事儿</strong>：内置1024字的FIFO，存ECG、BioZ、起搏器检测数据都够用，不用频繁触发<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>中断，低功耗代码好写太多，做多导联ECG或者多通道EEG的话，还可以多片MAX30011并联扩展通道，同步逻辑也已经做好了。</li>
-</ol>
-<hr/>
-<h2>适合哪些项目直接用？</h2>
-<p>我整理了几个几乎可以直接选型的场景：</p>
-<ul>
-<li>动态心电Hol<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>r、贴片式心电监护、可穿戴遥测设备</li>
-<li>多通道可穿戴EEG设备</li>
-<li>智能服装类的生理信号采集（干电极适配性太好）</li>
-<li>集成心电、呼吸、体脂的多参数健康监测设备</li>
-</ul>
-<p>等后续拿到样片做了实测，再给大家更具体的电路参考和性能测试数据。你们最近做生理信号采集都用哪款AFE？有没有踩过什么离谱的坑？评论区聊一聊。</p>]]></description></item><item>    <title><![CDATA[实战踩坑：我做工业485采集模块踩过的3个低级错误，省你上千块打样费]]></title>    <link>https://www.elecfans.com/d/8989220.html</link>    <guid>https://www.elecfans.com/d/8989220.html</guid>    <pubDate>2026-11-27 16:15:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989220" value="https://file1.elecfans.com/web3/M00/7C/98/wKgzfmsJOdiATsiiAAVSC3gmlFE221.pdf"/><h1>实战踩坑：我做工业485采集模块踩过的3个低级错误，省你上千块打样费</h1>
-<p>大家好，我是干了6年硬件的老周，上周赶完的8路工业模拟量采集小批量刚回板，昨天测3台翻了2台，踩的坑全是我之前觉得「不可能犯」的低级错误，今天整理出来给大家避避坑，省得你们走我老路。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8989220" target="_blank">max86184.pdf</a></p>
-<hr/>
-<h2>项目背景先唠两句</h2>
-<p>客户需求很简单：8路4-20mA/0-10V<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>量采集+4路开关量输入，供电宽压9~36V，工业级-40~85℃工作，485<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>支持Modbus-RTU，整机成本控制在50块以内。
-我当时拍胸脯说2周出样，结果光改板就改了3次，说多了都是泪。</p>
-<hr/>
-<h2>踩坑实录：每个坑都烧了我几百块打样费</h2>
-<h3>坑1：485浪涌保护位置放反，2kV群脉冲直接烧芯片</h3>
-<p>我最开始的485<a href="https://www.elecfans.com/tags/保护电路/" target="_blank"><u>保护电路</u></a>是「<a href="https://m.hqchip.com/app/1587" target="_blank"><u>TVS</u></a>→<a href="https://www.hqchip.com/app/1119" target="_blank"><u>共模电感</u></a>→485芯片」，想着共<a href="https://m.elecfans.com/v/tag/1180/" target="_blank"><u>模电</u></a>感先滤干扰，TVS在后头顶浪涌。结果打群脉冲2kV的时候，连续3台的485芯片直接挂掉，查了半天才反应过来：
-浪涌过来先过共模电感，瞬间大电流直接把共模打饱和，等于直通，TVS根本来不及响应，能量直接怼到485芯片引脚上。
-✅ 解决方法：把TVS挪到共模电感前面，型号从SMBJ6.5CA换成SMBJ7.0CA，留够电压余量，再测4kV群脉冲都没出过问题，现在保护电路顺序固定是「TVS→共模→限流<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>→芯片」，懂的都懂。</p>
-<h3>坑2：贪便宜用<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>内部基准，温漂直接超差3倍</h3>
-<p>一开始为了省3块钱的外置基准芯片，我直接用了<a href="https://bbs.elecfans.com/zhuti_stm32_1.html" target="_blank"><u>STM32</u></a>内部的1.2V参考源，室温下测采集精度0.5%，我还美滋滋觉得赚了。结果放高低温箱-20℃测的时候，采集误差直接飘到3%，客户要求全温区≤1%，当场傻了。
-查 datasheet 才发现这款MCU内部基准温漂最大是100ppm/℃，全温区飘个几十mV很正常，根本达不到工业级要求。
-✅ 解决方法：加了个REF3030外置基准，温漂25ppm/℃，成本加了2.8元，复测全温区误差稳定在0.8%以内，完美达标。奉劝各位：工业级项目别省基准的钱，后期返工的成本够买100颗基准芯片。</p>
-<h3>坑3：<a href="https://m.hqchip.com/app/1558" target="_blank"><u>肖特基</u></a>防反接压降太大，低压供电直接宕机</h3>
-<p>防反接我最开始图省事用了SS34肖特基，满载1A的时候压降0.7V，用户用12V/24V供电都没问题，直到现场有个客户用9V供电，后端<a href="https://m.hqchip.com/app/1703" target="_blank"><u>DC</u></a>DC输入只剩8.3V，刚好卡到DCDC的dropout电压阈值，设备时不时复位，现场<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>打电话骂了我半小时。
-✅ 解决方法：换成PMOS防反接电路，SI2301加个10k电阻，满载压降才0.05V，成本只多了2毛钱，9V低压下测了24小时没出过复位问题。</p>
-<hr/>
-<h2>最终实测参数（给大家做个参考）</h2>
-<table>
-<thead>
-<tr>
-<th>指标项</th>
-<th>实测值</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>全温区采集精度</td>
-<td>≤0.8%</td>
-</tr>
-<tr>
-<td>485通信距离（9600波特率）</td>
-<td>1200米无丢包</td>
-</tr>
-<tr>
-<td>待机电流</td>
-<td>12mA</td>
-</tr>
-<tr>
-<td>浪涌/群脉冲耐受</td>
-<td>4kV通过</td>
-</tr>
-<tr>
-<td>整机成本</td>
-<td>48.2元（刚好卡在客户预算内）</td>
-</tr>
-</tbody>
-</table>
-<p>这次打样前前后后花了1200块板费，交期拖了2天，被项目经理骂了半小时，还好最终客户验收过了，不然这个月绩效直接泡汤。</p>]]></description></item><item>    <title><![CDATA[踩坑N次后挖到的压力传感器调理神器：MAX40109实测+设计避坑指南]]></title>    <link>https://www.elecfans.com/d/8989221.html</link>    <guid>https://www.elecfans.com/d/8989221.html</guid>    <pubDate>2026-11-27 16:15:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989221" value="https://file1.elecfans.com/web3/M00/7C/8E/wKgzfWsJOdiAKwgZABnNxy_a25o689.pdf"/><h1>踩坑N次后挖到的<a href="https://www.elecfans.com/tags/压力传感器/" target="_blank"><u>压力传感器</u></a>调理神器：MAX40109实测+设计避坑指南</h1>
-<p>最近做工业级压力<a href="https://www.elecfans.com/tags/变送器/" target="_blank"><u>变送器</u></a>的项目，前前后后试了3种方案：分立PGA+<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>+<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>校准的方案BOM占了半块板，温漂和非线性校准搞到秃头；国产单芯片<a href="https://www.elecfans.com/tags/afe/" target="_blank"><u>AFE</u></a>精度够但工业级宽压供电搞不定；直到被同行安利了<a href="https://www.elecfans.com/tags/adi/" target="_blank"><u>ADI</u></a>这款MAX40109，调试了两周直接过了可靠性测试，今天给大伙唠唠实装体验和踩过的坑。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8989221" target="_blank">max40109.pdf</a></p>
-<hr/>
-<h2>为啥选它？核心参数够不够打</h2>
-<p>先给没接触过的朋友划重点，这款AFE是真的把压力/应变桥场景的需求摸透了：</p>
-<ol>
-<li><strong>供电直接适配工业场景</strong>：3~36V宽压输入，直接接工业24V<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>不用额外加前级<a href="https://www.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>，省了至少2颗物料；典型工作<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>才2mA，电池供电的低功耗场景也能打，关断模式下电流只有2μA，唤醒时间50μs完全够用。</li>
-<li><strong>校准不用自己写<a href="https://m.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a></strong>：内置三阶多项式校准逻辑，支持温度和非线性补偿，只要把校准系数烧进内置的MTP存储器就行，省了MCU的资源，也不用自己折腾最小二乘拟合的代码，我之前光校准算法就调了一周，用这个半天就搞定了。</li>
-<li><strong><a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>全场景覆盖</strong>：支持<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>/1-Wire/<a href="https://www.elecfans.com/v/tag/323/" target="_blank"><u>PLC</u></a>电力线<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>，不管是做数字输出的<a href="https://www.elecfans.com/soft/data/55-88/" target="_blank"><u>物联网</u></a><a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>，还是4-20mA<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>输出的工业变送器，或者是二线制PLC传输的方案，一套芯片全搞定，不用换物料。</li>
-<li><strong>性能够硬</strong>：12.8位有效分辨率，PGA有20档增益可选，内置EMI抑制，我在<a href="https://m.elecfans.com/v/tag/2471/" target="_blank"><u>变频器</u></a>旁边1米处测试，读数也没跳数，工业现场抗干扰能力过关。</li>
-</ol>
-<p>我之前的分立方案BOM有17颗物料，用这个之后单芯片搞定所有调理、校准、输出功能，BOM砍到只剩7颗，<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>面积省了30%，成本还降了20%，说一句压力传感器方案的「卷王」不为过。</p>
-<hr/>
-<h2>硬件设计踩过的坑，大伙别再踩了</h2>
-<p>我第一次打样的时候翻手册不仔细，踩了好几个低级坑，给大伙列出来避坑：</p>
-<h3>1. 电源旁路<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>别乱加</h3>
-<p>手册里藏得比较深的点：VDDHV的旁路电容，<strong>电压输出模式可以用10~100nF，但是4-20mA电流输出模式最多只能加10nF</strong>。我第一次没注意，按常规加了100nF，电流输出纹波直接飙到200μA，改了10nF之后纹波降到30μA以内，直接达标。
-另外内部生成的VDD5V、VDD2V引脚必须就近放220nF旁路电容，别省，省了之后<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>C采样会有规律的跳码。</p>
-<h3>2. 接地是稳定的核心</h3>
-<p>用TQFN封装的话，裸露焊盘必须接AGND；AGND和DGND不要直接大面积共地，做星形连接，单点汇到主地。我第一次直接共地，ADC采样跳了4个LSB，改成星接地之后读数波动稳定在1个LSB以内。
-还有压力桥输入的INP+和INP-之间可以并10nF的差模滤波电容，对抑制现场工频干扰效果非常明显。</p>
-<h3>3. 温感方案可以省成本</h3>
-<p>两个测温方案按需选：要精度高就外接NTC到INT引脚；要省成本的话直接用压力桥本身的<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>温漂测温，不用额外加NTC，芯片直接读DRV引脚的电压就行，我实测测温误差在±1℃以内，大部分工业场景完全够用，省了一颗NTC的钱。</p>
-<hr/>
-<h2>校准流程我帮你踩完坑了</h2>
-<p>很多朋友第一次用这类带校准的AFE会觉得复杂，我把流程简化了，跟着走就行：</p>
-<ol>
-<li>先校温度：开温度校准旁路，读原始温度值，在两个标准温度点采集数据，算出来k0~k3四个系数烧进MTP就行。</li>
-<li>再校压力：开压力校准旁路，先校准零压偏移，直接写零压偏移<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>就能搞定，不用加外部调零<a href="https://m.hqchip.com/app/1261" target="_blank"><u>电位器</u></a>，然后在3个标准压力点采集数据，算出来补偿系数烧进去。</li>
-<li>注意MTP烧录的时候VDDHV必须给至少12V，我第一次用5V烧，烧了半天没反应，还以为芯片坏了，烧完最好断电重启读一遍寄存器确认，避免烧写失败。
-对了，校准存储器可以重复烧40次，其他寄存器可以烧10次，足够调试用，不用担心烧几次就废了。</li>
-</ol>
-<hr/>
-<h2>几个常用场景直接套电路</h2>
-<p>我测了三个常用场景的电路，都过了可靠性测试，大伙可以直接抄作业：</p>
-<ol>
-<li><strong>工业4-20mA压力变送器</strong>：配置模拟输出为电流模式，外接一个三极管扩流就行，我做的样机实测-40℃~125℃全温域误差&lt;0.1%FS，远高于工业级要求。</li>
-<li><strong>数字压力传感器（物联网节点）</strong>：直接用I2C接口读校准后的压力值，<a href="https://m.hqchip.com/app/1379" target="_blank"><u>单片机</u></a>不用做任何处理，直接拿数据上报就行，非常省资源。</li>
-<li><strong>电池供电低功耗场景</strong>：平时关断，需要采样的时候发I2C指令唤醒，50μs就能完成采样读数，平均功耗可以做到&lt;10μA，适合电池供电的无线传感器。</li>
-</ol>
-<hr/>
-<h2>最后说两句</h2>
-<p>目前用下来唯一的小缺点就是寄存器有点多，第一次用要翻半天手册，但熟了之后是真的香，属于用了就不想换回分立方案的那种。我整理了这套芯片的参考设计和校准代码例程，需要的朋友可以评论区留邮箱，大伙有啥使用问题也可以评论区一起唠~</p>]]></description></item>  </channel></rss>
+	扎根山东多年，中科曙光持续加快在鲁产业布局。近日，中科曙光济南基地项目二期一标段主体结构封顶。基地规划建设国产核心部件研发创新<a href="https://m.hqchip.com/tags" target="_blank"><u>中心</u></a>、生态适配中心，以及生产研发基地，推动研发制造、算力服务与产业合作相衔接。未来，中科曙光将依托在鲁项目和合作基础，持续深化与省内企业合作，推动先进计算技术在具体产业场景中的应用，为山东数字经济与实体经济深度融合发展提供有力支撑。</p>]]></description></item>  </channel></rss>
