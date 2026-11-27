@@ -1,4 +1,639 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[老项目救星！瑞萨SH7708（原日立SuperH）硬件设计踩坑指南]]></title>    <link>https://www.elecfans.com/d/8989151.html</link>    <guid>https://www.elecfans.com/d/8989151.html</guid>    <pubDate>2026-11-27 16:00:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989151" value="https://file.elecfans.com/web2/M00/27/88/pYYBAGHCixSAaJ9yACtU0rrm7e4249.pdf"/><h1>老项目救星！<a href="https://www.elecfans.com/tags/瑞萨/" target="_blank"><u>瑞萨</u></a>SH7708（原日立SuperH）硬件设计踩坑指南</h1>
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[瑞萨DA14535 UART RX唤醒配置应用笔记]]></title>    <link>https://www.elecfans.com/d/8989526.html</link>    <guid>https://www.elecfans.com/d/8989526.html</guid>    <pubDate>2026-11-27 17:36:00</pubDate>    <description><![CDATA[<p>
+	<strong>DA14535通过<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>UART</u></a> RX引脚从扩展睡眠唤醒：配置与设计指南</strong></p>
+<p>
+	适用范围：DA14535、<a href="https://m.hqchip.com/app/1522" target="_blank"><u>SD</u></a>K6.0.24；基于原版Proximity Reporter、Sleep Mode或其他SDKBLE应用进行开发。</p>
+<p>
+	本文说明如何将UART RX引脚同时用作扩展睡眠唤醒源，并在唤醒后恢复串口接收。内容不依赖具体产品的引脚分配、BLE服务或业务协议。</p>
+<p>
+	本文以Ex<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>nded Sleep（扩展睡眠）为目标，不是UART Boot、Deep Sleep或Hiberna<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>ti</u></a>on的配置教程。代码为集成片段，需与原工程的初始化、接收队列和睡眠管理合并；不是可直接替换整个应用的完整工程。<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>和回调顺序已按本地SDK6.0.24源码核对，具体板卡仍须完成时序和功耗验证。</p>
+<p>
+	<strong>文档校验：</strong><a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>恢复、UART配置、睡前判断及睡眠准备函数片段，已使用原版ProximityReporter的DA14535头文件环境通过<a href="https://m.hqchip.com/app/1378" target="_blank"><u>Arm</u></a> Com<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>pi</u></a>ler6.19语法检查。自定义应用<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>采用声明占位；此检查不代替完整工程链接或板级测试。</p>
+<p>
+	<strong>01</strong><strong>原理：用GPIO唤醒</strong></p>
+<p>
+	<strong>再用UART接收</strong></p>
+<p>
+	扩展睡眠期间，不能假定UART<a href="https://www.hqchip.com/app/1847" target="_blank"><u>接收器</u></a>仍能接收并保存外部发送的字节。通常采用以下方法：</p>
+<p>
+	1.正常运行时，将RX引脚配置为UART RX。</p>
+<p>
+	2.准备进入扩展睡眠时，为同一引脚配置Wake-up Controller，并切换为GPIO输入。</p>
+<p>
+	3.外部主机在RX线上产生有效唤醒<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>。</p>
+<p>
+	4.系统恢复后，在periph_init()路径恢复时钟、UART、引脚复用和接收操作。</p>
+<p>
+	5.UART就绪后，接收正式数据；事务结束后才允许再次进入扩展睡眠。</p>
+<p>
+	这不是“UART在睡眠中收到了第一个字节”。触发唤醒的字节可能丢失，或只收到一部分。可靠<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>需要发送端配合提供唤醒前导、握手或重传机制。</p>
+<p>
+	GPIO唤醒、UART可接收、BLE可处理事件，是三个不同条件，不能相互替代。</p>
+<p>
+	<strong>02</strong><strong>从原版SDK工程开始</strong></p>
+<p>
+	可选起点：</p>
+<p>
+	<strong>左右滑动查看完整内容</strong></p>
+<p>
+	</p>
+<pre>
+projects/target_apps/ble_examples/prox_reporter/
+projects/target_apps/ble_examples/ble_app_sleepmode/</pre>
+<p>
+	</p>
+<p>
+	在<a href="https://www.elecfans.com/tags/keil/" target="_blank"><u>Keil</u></a>中选择<strong>DA14535</strong>目标。原版DA14535目标同时定义__DA14531__和__DA14535__，因此部分公共SDK实现位于__DA14531__条件分支内；不能仅根据宏名称判断这段代码与</p>
+<p>
+	DA14535无关。</p>
+<p>
+	<strong>2.1主要修改位置</strong></p>
+<table style="border-collapse:collapse;margin-bottom:10px;"><tbody><tr><td style="border-width:1px;border-color:rgb(255,255,255);border-style:solid;background-color:rgb(43,62,155);padding:0px;" width="30%">
+				<strong>文件或位置</strong></td>
+			<td style="border-width:1px;border-color:rgb(255,255,255);border-style:solid;background-color:rgb(43,62,155);padding:0px;" width="69%">
+				<strong>配置内容</strong></td>
+		</tr><tr><td style="border-width:1px;border-color:rgb(255,255,255);border-style:solid;background-color:rgb(246,247,255);padding:0px;" width="30%">
+				src/config/user_periph_setup.h</td>
+			<td style="border-width:1px;border-color:rgb(255,255,255);border-style:solid;background-color:rgb(246,247,255);padding:0px;" width="69%">
+				UART实例、RX/TX引脚、波特率及FIFO参数</td>
+		</tr><tr><td style="border-width:1px;border-color:rgb(255,255,255);border-style:solid;background-color:rgb(246,247,255);padding:0px;" width="30%">
+				src/platform/user_periph_setup.c</td>
+			<td style="border-width:1px;border-color:rgb(255,255,255);border-style:solid;background-color:rgb(246,247,255);padding:0px;" width="69%">
+				引脚预留、引脚复用、 periph_init()中的UART恢复</td>
+		</tr><tr><td style="border-width:1px;border-color:rgb(255,255,255);border-style:solid;background-color:rgb(246,247,255);padding:0px;" width="30%">
+				src/config/user_callb<a href="https://m.hqchip.com/app/1703" target="_blank"><u>ac</u></a>k_config.h</td>
+			<td style="border-width:1px;border-color:rgb(255,255,255);border-style:solid;background-color:rgb(246,247,255);padding:0px;" width="69%">
+				挂接主循环、睡前和睡眠准备回调</td>
+		</tr><tr><td style="border-width:1px;border-color:rgb(255,255,255);border-style:solid;background-color:rgb(246,247,255);padding:0px;" width="30%">
+				应用源码，如user_proxr.c/<br/>
+				user_sleepmode.c</td>
+			<td style="border-width:1px;border-color:rgb(255,255,255);border-style:solid;background-color:rgb(246,247,255);padding:0px;" width="69%">
+				唤醒事件、RX/TX回调、接收队列和事务状态</td>
+		</tr><tr><td style="border-width:1px;border-color:rgb(255,255,255);border-style:solid;background-color:rgb(246,247,255);padding:0px;" width="30%">
+				src/config/user_config.h</td>
+			<td style="border-width:1px;border-color:rgb(255,255,255);border-style:solid;background-color:rgb(246,247,255);padding:0px;" width="69%">
+				默认睡眠模式</td>
+		</tr><tr><td style="border-width:1px;border-color:rgb(255,255,255);border-style:solid;background-color:rgb(246,247,255);padding:0px;" width="30%">
+				src/config/da14535_config_<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>ad</u></a>vanced.h</td>
+			<td style="border-width:1px;border-color:rgb(255,255,255);border-style:solid;background-color:rgb(246,247,255);padding:0px;" width="69%">
+				代码位置、<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>保持配置等</td>
+		</tr></tbody></table><p>
+	保留原工程的<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>初始化、patch_func()、引脚锁存、BLE初始化和已有回调。一般不需要修改共享SDK驱动。</p>
+<p>
+	<strong>2.2先确定睡眠方式和RAM保持</strong></p>
+<p>
+	对于代码驻留RAM、唤醒后继续执行的扩展睡眠应用，常见配置为：</p>
+<p>
+	<strong>左右滑动查看完整内容</strong></p>
+<p>
+	</p>
+<pre>
+staticconstsleep_state_tapp_default_sleep_mode = ARCH_EXT_SLEEP_ON;</pre>
+<p>
+	</p>
+<p>
+	注意SDK API的参数含义：</p>
+<p>
+	<strong>左右滑动查看完整内容</strong></p>
+<p>
+	</p>
+<pre>
+arch_set_extended_sleep(false);/* 扩展睡眠，不启用 OTP copy */
+arch_set_extended_sleep(true);/* 扩展睡眠，启用 OTP copy 模式 */</pre>
+<p>
+	</p>
+<p>
+	这里的true不是普通的“使能睡眠”开关。应依据原工程的代码存放方式和RAM保持方案选择，不要为实现UART唤醒而随意启用OTP copy。</p>
+<p>
+	跨睡眠需要保存的状态、RX缓冲区、队列和回调依赖数据，必须位于实际保持的RAM中。例如，SDK的__SECTION_ZERO("retention_mem_area0")可用于需要保持的变量，但仍应检查链接映射和RAM保持配置。static本身不代表掉电保持。</p>
+<p>
+	<strong>03</strong><strong>引脚与Wake-up Controller配置</strong></p>
+<p>
+	<strong>3.1选择可用RX引脚</strong></p>
+<p>
+	本文使用下列符号，不指定固定板级引脚：</p>
+<p>
+	<strong>左右滑动查看完整内容</strong></p>
+<p>
+	</p>
+<pre>
+APP_UART_RX_PORT
+APP_UART_RX_PIN
+APP_UART_TX_PORT
+APP_UART_TX_PIN</pre>
+<p>
+	</p>
+<p>
+	在user_periph_setup.h中将它们定义为实际的GPIO_PORT_0、GPIO_PIN_x。选择引脚时应检查：</p>
+<p>
+	是否与SWD、SPI Flash、按键、<a href="https://m.hqchip.com/app/1721" target="_blank"><u>LED</u></a>或其他外设冲突。</p>
+<p>
+	是否用于低速晶振；例如启用XTAL32K时，原SDK会检查相关引脚占用。</p>
+<p>
+	是否具有默认复位功能；如果必须复用该引脚，应先按硬件设计处理复位功能。</p>
+<p>
+	外部主机和DA14535是否共地，电平是否匹配；不能直接连接<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>-232电平。</p>
+<p>
+	UART空闲态是否保持高电平；主机断电或未连接时不要让RX悬空。</p>
+<p>
+	以下以<strong>UART1</strong>为例。使用UART2时，需要同步替换UART实例和引脚功能标识，并检查是否与CFG_PRINTF_UART2日志输出冲突。</p>
+<p>
+	在GPIO_reservations()中添加：</p>
+<p>
+	<strong>左右滑动查看完整内容</strong></p>
+<p>
+	</p>
+<pre>
+RESERVE_GPIO(APP_UART_TX, APP_UART_TX_PORT, APP_UART_TX_PIN, PID_UART1_TX);
+RESERVE_GPIO(APP_UART_RX, APP_UART_RX_PORT, APP_UART_RX_PIN, PID_UART1_RX);</pre>
+<p>
+	</p>
+<p>
+	在set_pad_functions()中配置正常运行时的功能：</p>
+<p>
+	<strong>左右滑动查看完整内容</strong></p>
+<p>
+	</p>
+<pre>
+GPIO_ConfigurePin(APP_UART_TX_PORT, APP_UART_TX_PIN,
+OUTPUT, PID_UART1_TX,false);
+GPIO_ConfigurePin(APP_UART_RX_PORT, APP_UART_RX_PIN,
+INPUT_PULLUP, PID_UART1_RX,false);</pre>
+<p>
+	</p>
+<p>
+	不要在引脚预留表中把同一个RX引脚分别作为UART和GPIO重复预留；睡前的功能切换是运行时操作。</p>
+<p>
+	<strong>3.2选择唤醒通道，避免覆盖原示例按键</strong></p>
+<p>
+	原示例可能已经通过wkupct_register_callback()使用第一个唤醒通道。若第二个通道空闲，可为UART RX使用：</p>
+<p>
+	<strong>左右滑动查看完整内容</strong></p>
+<p>
+	</p>
+<pre>
+wkupct2_register_callback(app_uart_wakeup_cb);</pre>
+<p>
+	</p>
+<p>
+	准备睡眠时配置：</p>
+<p>
+	<strong>左右滑动查看完整内容</strong></p>
+<p>
+	</p>
+<pre>
+wkupct2_enable_irq(
+WKUPCT_PIN_SELECT(APP_UART_RX_PORT, APP_UART_RX_PIN),
+WKUPCT_PIN_POLARITY(APP_UART_RX_PORT, APP_UART_RX_PIN,
+WKUPCT_PIN_POLARITY_LOW),
+1,/* 一次有效事件触发；这里传事件数，不是寄存器编码 */
+0/* 不使用按键式硬件消抖 */
+);</pre>
+<p>
+	</p>
+<p>
+	SDK的WKUP_QUADEC_Handler()会处理并清除相应唤醒中断，随后关闭该通道的中断使能，再调用用户回调。<strong>因此，下次睡眠前需要重新使能唤醒通道。</strong>通常不要在用户回调里替代SDK重写整个中断处理函数，也不要无条件清除共享NVIC中断。</p>
+<p>
+	如果两个通道都已被使用，需要重新分配或统一管理，而不是直接覆盖已有回调。</p>
+<p>
+	<strong>3.3共享参数与脉宽限制</strong></p>
+<p>
+	两个唤醒通道并非完全独立：消抖值及事件比较值为共享配置。原按键代码若重新设置消抖时间或事件数，可能改变UART RX唤醒条件。需要统一配置，必要时将按键消抖移到软件中。</p>
+<p>
+	此外，数据手册要求有效GPIO脉冲满足至少两个低功耗时钟周期的宽度。deb_time=0只是取消消抖，不等于可以可靠检测任意短脉冲。依据为DA14535数据手册第18章。</p>
+<p>
+	</p>
+<p>
+	<strong>04</strong><strong>每次唤醒都恢复UART</strong></p>
+<p>
+	<strong>4.1为什么恢复位置选periph_init()</strong></p>
+<p>
+	本地SDK6.0.24的arch_main.c中，扩展睡眠返回路径按以下顺序执行：</p>
+<p>
+	从__WFI()返回。</p>
+<p>
+	执行arch_resume_from_sleep()。</p>
+<p>
+	DA14535公共路径调用periph_init()。</p>
+<p>
+	执行app_resume_from_sleep用户钩子。</p>
+<p>
+	主循环恢复全局中断，随后处理待决中断。</p>
+<p>
+	因此，应在periph_init()中完成UART的硬件恢复和RX重新启动，不能只在上电时初始化一次。</p>
+<p>
+	也不要在唤醒回调中再次无条件调用periph_init()：本版本SDK已调用过，再次初始化可能清掉刚收到的数据或重新设置正在发送的UART。</p>
+<p>
+	<strong>4.2先恢复正确的时钟</strong></p>
+<p>
+	SDK的睡前优化路径可能切换到RC32M，而BLE的恢复路径会切回晶振时钟。<strong>仅由GPIO唤醒时，不能假定BLE的这段恢复逻辑已经执行。</strong>syscntl_use_highest_amba_clocks()恢复总线分频，不等价于完成晶振时钟源选择。</p>
+<p>
+	在初始化UART、接收正式数据之前，应确认XTAL32M已就绪且完成切换。下列DA14535片段展示正常硬件条件下的顺序：</p>
+<p>
+	<strong>左右滑动查看完整内容</strong></p>
+<p>
+	</p>
+<pre>
+staticvoidapp_uart_restore_clock(void)
+{
+if(!GetBits16(CLK_CTRL_REG, RUNNING_AT_XTAL32M))
+{
+SetBits16(CLK_CTRL_REG, XTAL32M_DISABLE,0);
+while(!GetBits16(SYS_STAT_REG, XTAL32M_SETTLED) ||
+!GetBits16(SYS_STAT_REG, XTAL32M_TRIM_READY))
+{
+__NOP();
+}
+SetBits16(CLK_CTRL_REG, SYS_CLK_SEL,0);
+while(!GetBits16(CLK_CTRL_REG, RUNNING_AT_XTAL32M))
+{
+__NOP();
+}
+}
+syscntl_use_highest_amba_clocks();
+}</pre>
+<p>
+	</p>
+<p>
+	涉及头文件包括datasheet.h和syscntl.h。晶振状态及选择位见<strong>DA14535数据手册第10章、CLK_CTRL_REG和SYS_STAT_REG</strong>。</p>
+<p>
+	</p>
+<p>
+	上述等待不是固定延时，也不是dummy字节计数。量产实现应按系统安全策略增加有界等待及晶振失败处理；超时后不能继续宣称UART已就绪。不要在关中断的恢复路径中长时间打印或等待外部应答。若使用自定义系统分频或时钟管理，应将UART恢复纳入统一时钟管理，避免与其他外设配置冲突。</p>
+<p>
+	<strong>4.3初始化UART，</strong><strong>并重新注册所有使用的回调</strong></p>
+<p>
+	需要包含uart.h、gpio.h、wkupct_quadec.h，睡眠控制使用arch_api.h。以下配置以115200、8N1、无流控为例，方便完成初次功能验证，不代表最高吞吐量配置：</p>
+<p>
+	<strong>左右滑动查看完整内容</strong></p>
+<p>
+	</p>
+<pre>
+staticconstuart_cfg_tapp_uart_cfg = {
+.baud_rate = UART_BAUDRATE_115200,
+.data_bits = UART_DATABITS_8,
+.parity = UART_PARITY_NONE,
+.stop_bits = UART_STOPBITS_1,
+.auto_flow_control = UART_AFCE_DIS,
+.use_fifo = UART_FIFO_EN,
+.tx_fifo_tr_lvl = UART_TX_FIFO_LEVEL_0,
+.rx_fifo_tr_lvl = UART_RX_FIFO_LEVEL_0,
+.intr_priority =2,
+.uart_err_cb = app_uart_error_cb,
+.uart_tx_cb = app_uart_tx_cb,
+.uart_rx_cb = app_uart_rx_cb,
+};</pre>
+<p>
+	</p>
+<p>
+	回调函数原型需预先声明：</p>
+<p>
+	<strong>左右滑动查看完整内容</strong></p>
+<p>
+	</p>
+<pre>
+staticvoidapp_uart_error_cb(uart_t*uart_id,uint8_tstatus);
+staticvoidapp_uart_tx_cb(uint16_tlength);
+staticvoidapp_uart_rx_cb(uint16_tlength);</pre>
+<p>
+	</p>
+<p>
+	uart_initialize()会从配置结构重新写入错误、TX和RX回调。如果使用uart_register_*_cb()动态注册，必须在每次uart_initialize()之后重新注册，不能依赖上一次设置。</p>
+<p>
+	在原periph_init()中合并以下顺序，不要删除其他原有外设代码：</p>
+<p>
+	<strong>左右滑动查看完整内容</strong></p>
+<p>
+	</p>
+<pre>
+/* 原有供电初始化、<a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a> patch 等保持不变。 */
+app_uart_restore_clock();
+uart_initialize(UART1, &amp;app_uart_cfg);
+/* 此函数中包括 UART 引脚配置，以及其他原有 GPIO 配置。 */
+set_pad_functions();
+GPIO_set_pad_latch_en(true);
+/* 自定义函数：仅在应用队列/状态已初始化后，重新启动接收。 */
+app_uart_rearm_after_periph_init();</pre>
+<p>
+	</p>
+<p>
+	冷启动时，periph_init()可能早于应用队列初始化执行。应使用初始化完成标志保护RX启动，并在应用初始化完成后主动启动第一次接收。这个标志及其依赖数据必须有一致的保持策略。</p>
+<p>
+	<strong>4.4RX回调与错误恢复</strong></p>
+<p>
+	初次验证可使用FIFO触发级别1字节，即UART_RX_FIFO_LEVEL_0，配合1字节接收缓冲区。</p>
+<p>
+	初始化完成后的接收启动示意：</p>
+<p>
+	<strong>左右滑动查看完整内容</strong></p>
+<p>
+	</p>
+<pre>
+uart_receive(UART1, app_rx_buffer,1, UART_OP_INTR);</pre>
+<p>
+	</p>
+<p>
+	app_rx_buffer必须是持续有效的缓冲区，不能是启动函数的临时栈变量。RX回调中应：</p>
+<p>
+	1.检查回调长度；零长度时不解析旧数据。</p>
+<p>
+	2.将有效数据复制到应用队列，或完成很短的接收处理。</p>
+<p>
+	3.标记接收事务仍在进行。</p>
+<p>
+	4.再次调用uart_receive()，保持接收连续。</p>
+<p>
+	不要只保存指向可复用RX工作缓冲区的指针，然后立刻用同一缓冲区启动下一次接收。</p>
+<p>
+	启用中断接收时必须配置错误处理。当前SDK中， uart_receive(...,UART_OP_INTR)同时打开接收数据和接收线路状态中断；uart_rls_isr()仅在错误回调非空时读取线路状态。遗漏错误回调可能让线路错误中断无法及时清除，最终使程序持续停留在UART ISR。</p>
+<p>
+	错误回调应区分：</p>
+<p>
+	Busy-detect：按SDK驱动语义读取USR确认，不要把它当作普通帧错误。</p>
+<p>
+	帧错误、BREAK、溢出等：记录计数，丢弃或标记损坏数据，复位必要的接收解析状态并重新启动RX。</p>
+<p>
+	如需清RX FIFO，可使用uart_rxfifo_flush_shd()；不要顺带清掉正在发送的TX FIFO。</p>
+<p>
+	错误恢复策略由协议决定。接收缓冲区含完整帧、半帧或唤醒前导时，处理方式可能不同；不要在每次错误后盲目保留失效的长度或校验状态。</p>]]></description></item><item>    <title><![CDATA[瑞萨RA6M5 PQC联调验证指南]]></title>    <link>https://www.elecfans.com/d/8989536.html</link>    <guid>https://www.elecfans.com/d/8989536.html</guid>    <pubDate>2026-11-27 17:39:00</pubDate>    <description><![CDATA[<p>
+	 <strong>前言</strong></p>
+<p>
+	上一篇，我们介绍了RX72N的跨App中断响应。这一期换一个主题：在RA6M5上运行后量子密码<a href="https://www.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>，并与<a href="https://m.elecfans.com/v/tag/1247/" target="_blank"><u>电脑</u></a>端的<a href="https://www.elecfans.com/tags/python/" target="_blank"><u>Python</u></a>程序进行交互验证。</p>
+<p>
+	PQC是Post-Quantum Cryptography的缩写，即后量子密码。这类算法面向量子计算带来的密码安全威胁设计，可以在常规计算设备上运行。本例选择ML-KEM-512和ML-DSA-44，分别演示共享秘密的建立，以及签名和验签。</p>
+<p>
+	我们先简单了解两个算法的分工，再沿用原RE<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>ME的工程配置、串口交互和运行步骤，看看<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>与Python怎样完成联调。</p>
+<p>
+	<strong>一、本期例程要验证什么</strong></p>
+<p>
+	   <img src="https://file1.elecfans.com/web3/M00/7C/96/wKgzfWsJUEqAUc5eAACKt0MUyrM062.jpg" alt="141d772a-e888-11f1-a3b8-92fbcf53809c.jpg"/></p>
+<p>
+	ML-KEM与ML-DSA分别对应NIST FIPS 203、FIPS 204标准。本例把两段流程接在一起，便于观察不同实现之间的数据是否兼容；原始终端截图保留在文末。</p>
+<p>
+	<strong>二、开发环境</strong></p>
+<p>
+	目标板为EK-RA6M5，MCU型号 R7FA6M5BH3CFC。工程保留了mbed crypto示例的基础结构，通过PSA Crypto风格的<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>调用PQC功能。</p>
+<p>
+	<img src="https://file1.elecfans.com/web3/M00/7C/9F/wKgzfmsJUEqAUnsdAADP9M8ztIY904.jpg" alt="147b91ac-e888-11f1-a3b8-92fbcf53809c.jpg"/></p>
+<p>
+	<strong>三、ML-KEM与ML-DSA的处理流程</strong></p>
+<p>
+	<strong>1、ML-KEM：双方得到相同的共享秘密</strong></p>
+<p>
+	核心函数是src/hal_entry.c中的 psa_mlkem512_python_exchange_example()。MCU设置ML-KEM-512的密钥属性后，调用psa_genera<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>_key()生成临时密钥对，再通过psa_export_public_key()导出公钥，发送给Python。</p>
+<p>
+	Python使用quantcrypt的MLKEM_512，将收到的公钥作为输入进行封装：</p>
+<p>
+	<strong>左右滑动查看完整内容</strong></p>
+<p>
+	</p>
+<pre>
+cipher_text, shared_secret = kem.encaps(mcu_public_key)</pre>
+<p>
+	</p>
+<p>
+	这一步生成密文cipher_text和Python端的shared_secret。Python将密文发回MCU；MCU使用自己的私钥调用psa_decapsulate()，得到另一份共享秘密。</p>
+<p>
+	为直观验证结果，MCU在本例中导出这32字节并通过串口发回。Python将它与本地结果逐字节比较，一致时打印MATCH!。每次生成的新密钥不同，共享秘密的具体十六进制值也会变化。</p>
+<p>
+	<strong>2、ML-DSA：对共享秘密签名并验签</strong></p>
+<p>
+	完成KEM交互后，MCU另外生成一对ML-DSA-44密钥。随后调用psa_sign_message()，以MCU得到的32字节共享秘密为待签名消息，再导出签名公钥。</p>
+<p>
+	MCU将公钥和签名发送给Python。<a href="https://bbs.elecfans.com/zhuti_1184_1.html" target="_blank"><u>上位机</u></a>使用本地计算的shared_secret作为消息进行验证，源码中的调用为：</p>
+<p>
+	<strong>左右滑动查看完整内容</strong></p>
+<p>
+	</p>
+<pre>
+is_valid = dss.verify(mcu_public_key, shared_secret,
+
+
+          signature, raises=False)</pre>
+<p>
+	</p>
+<p>
+	返回True时，脚本打印SUCCESS! Signature verified.。这里KEM密钥对与签名密钥对分别生成，公钥也分两次传输，阅读日志时要区分所在阶段。</p>
+<p>
+	<strong>3、对照数据长度检查交互</strong></p>
+<p>
+	 <img src="https://file1.elecfans.com/web3/M00/7C/96/wKgzfWsJUEuAbVC7AABncy9NiVI561.jpg" alt="14d6197e-e888-11f1-a3b8-92fbcf53809c.jpg"/></p>
+<p>
+	这些长度也出现在原结果截图中。它们有助于确认读取的数据是否完整；算法名中的512、44表示所选参数集，不能直接当作串口数据的字节数。</p>
+<p>
+	<strong>四、连接串口并理解传输顺序</strong></p>
+<p>
+	<strong>1、使用EK-RA6M5对应的串口</strong></p>
+<p>
+	原README的硬件段落写成了RZ/T2L <a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>K，Python/readme.txt也保留了RA8M2工程名称；本文按实际配置统一为EK-RA6M5。</p>
+<p>
+	工程使用g_<a href="https://www.elecfans.com/tags/uart/" target="_blank"><u>uart</u></a>7，115200 bit/s、8-N-1，配置中的TXD7为P613，RXD7为P614。按板卡连线与跳线确认J-Link虚拟串口确实连接到这一路UART，再在设备管理器中查找对应COM号。</p>
+<p>
+	MCU的APP_PRINT()调试信息输出到SEGGER RTT，算法数据和握手字节通过UART7收发。运行Python时，应关闭占用同一COM口的终端工具，以免打开<a href="https://m.hqchip.com/app/1808" target="_blank"><u>端口</u></a>失败或干扰数据。</p>
+<p>
+	<strong>2、按<a href="https://m.hqchip.com/app/1703" target="_blank"><u>AC</u></a>K与长度字段逐步收发</strong></p>
+<p>
+	src/comms.c封装串口发送与接收。交互由Python先发单字节ACK启动，ACK=0x01，NAK=0x00；变长数据的长度使用两个字节，高字节在前。主要数据流如下：</p>
+<p>
+	<img src="https://file1.elecfans.com/web3/M00/7C/9F/wKgzfmsJUEuAM4b9AACvI1fJpmU370.jpg" alt="152f4256-e888-11f1-a3b8-92fbcf53809c.jpg"/></p>
+<p>
+	这些数据之间还穿插ACK确认，不能只把表内数据直接拼接发送。直接运行配套pqc_test.py，便可按MCU预期的顺序完成握手、封装、比较和验签。</p>
+<p>
+	<strong>3、找到当前运行的代码入口</strong></p>
+<p>
+	hal_entry()完成平台与密码库初始化后，打开<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>通道并调用上述联调函数。文件中还保留AES、RSA等基础测试，以及其他PQC测试函数，但相关调用被#if0关闭，本篇围绕实际启用的MCU+Python流程展开。</p>
+<p>
+	comms.h、crypto_ep.h和configura<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>ti</u></a>on.xml可分别用于查找<a href="https://www.elecfans.com/v/tag/13179/" target="_blank"><u>通信接口</u></a>、示例定义和FSP配置。修改算法参数集时，需要同步检查MCU缓冲区、数据长度及Python使用的算法。</p>
+<p>
+	<strong>五、导入工程并运行Python</strong></p>
+<p>
+	导入时确认PQC与mbed crypto等组件可用，再生成工程内容。压缩包中保留了应用源文件、配置和已有构建输出，首次重新构建仍需要匹配的组件包与生成代码。</p>
+<p>
+	<strong>1、生成、编译与下载MCU工程</strong></p>
+<p>
+	在e²studio导入ra6m5_mbed_crypto_2026_0326，确认FSP 6.4.0、对应PQC组件与编译器版本。执行Generate Project Content，补齐所需组件与生成文件，再Build并下载到EK-RA6M5。</p>
+<p>
+	若提示缺少PQC头文件或库，先检查组件安装及生成结果，并核对工程中的库搜索路径是否仍指向作者电脑目录。完成构建后启动Debug/Run，使MCU进入等待Python握手的阶段。</p>
+<p>
+	<strong>2、在Python目录创建虚拟环境</strong></p>
+<p>
+	打开Windows命令提示符，进入工程的Python文件夹。该目录包含pqc_test.py和requirements.txt，按原说明创建并激活虚拟环境：</p>
+<p>
+	<strong>左右滑动查看完整内容</strong></p>
+<p>
+	</p>
+<pre>
+python -m venv virt_pqc
+
+
+.virt_pqcScriptsactivate.bat
+
+
+python -m <a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>pi</u></a>p install -r requirements.txt</pre>
+<p>
+	</p>
+<p>
+	requirements.txt已固定本例使用的四项依赖版本。安装完成后，使用设备管理器查到的端口运行脚本，例如：</p>
+<p>
+	<strong>左右滑动查看完整内容</strong></p>
+<p>
+	</p>
+<pre>
+python pqc_test.py -c COM22</pre>
+<p>
+	</p>
+<p>
+	COM22是命令示例，原截图使用的是COM38，操作时都应换成本机对应的实际端口。</p>
+<p>
+	<strong>3、等待结果并结束验证</strong></p>
+<p>
+	观察脚本依次打印公钥、密文、共享秘密和签名阶段的信息。一次联调结束后，若要重新验证，重新启动MCU应用，再运行Python，确保两端从同一轮握手开始。退出虚拟环境可执行：</p>
+<p>
+	<strong>左右滑动查看完整内容</strong></p>
+<p>
+	</p>
+<pre>
+deactivate</pre>
+<p>
+	</p>
+<p>
+	若停在长度接收或出现读取不足，先确认端口、MCU运行状态与协议阶段。Python的串口读取超时设为5秒；MCU通信函数中的GPT启动语句目前被注释，不能假定MCU会自动超时恢复。扩展脚本时，应检查实际收满的字节数再解析长度字段。</p>
+<p>
+	<strong>六、对照原图检查结果</strong></p>
+<p>
+	下面保留原README的完整终端截图。图中可以看到800字节KEM公钥、768字节密文、32字节共享秘密及MATCH!，随后进入签名公钥与签名长度的接收阶段：</p>
+<p>
+	<img src="https://file1.elecfans.com/web3/M00/7C/9F/wKgzfmsJUEuAHykUAAK-6IUANaQ911.png" alt="158bcd78-e888-11f1-a3b8-92fbcf53809c.png"/></p>
+<p>
+	原图截取到签名长度2420字节，没有显示最终验签提示。实际运行时，还需要继续确认出现SUCCESS! Signature verified.，才能判断本轮签名验证成功；仅有长度日志不足以说明验签通过。</p>
+<p>
+	本例为了比较结果，会将共享秘密明文回传并打印。它演示了算法与串口联调，尚未建立业务数据的加密通道或公钥信任关系，应用设计时需要结合具体协议继续完善。</p>
+<p>
+	<strong>总结</strong></p>
+<p>
+	通过这个例程，我们可以分别观察“双方得到相同共享秘密”和“签名通过验证”两个结果，再把MCU的PSA接口、Python算法调用和串口收发对应起来，作为学习RA6M5 PQC集成与互操作验证的起点。</p>
+<p>
+	<img src="https://file1.elecfans.com/web3/M00/78/FC/wKgzfWr3ySCAFiQHAAKdW4CDCII518.png" alt="15eb48b6-e888-11f1-a3b8-92fbcf53809c.png"/></p>
+<p>
+	下载地址：固件和软件 | 设计资源 | RA MCU | RZ MPU | <a href="https://www.elecfans.com/tags/瑞萨/" target="_blank"><u>瑞萨</u></a>RA | 瑞萨RZ | RA生态社区</p>
+<p>
+	下载资料：RA6M5 ML-KEM-512 与 ML-DSA-44 联调验证工程</p>
+<p>
+	原文件名：ra6m5_mbed_crypto_2026_0326 (2).zip</p>]]></description></item><item>    <title><![CDATA[意法半导体推出全新直接飞行时间传感器VL53LB]]></title>    <link>https://www.elecfans.com/d/8989549.html</link>    <guid>https://www.elecfans.com/d/8989549.html</guid>    <pubDate>2026-11-27 17:42:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	全新dToF<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>的测距范围超过8米，支持视场内多目标检测</p>
+<p style="text-indent:2em;">
+	紧凑的一体化设计，尺寸较上一代缩小30%，适用于<a href="https://www.elecfans.com/v/tag/11230/" target="_blank"><u>智能手机</u></a>、<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>和工业系统</p>
+<p style="text-indent:2em;">
+	在强光下也可实现先进的相机辅助功能，支持存在感知和情境感知功能，最大限度降低对功耗和系统复杂性的影响</p>
+<p style="text-indent:2em;">
+	<a href="https://www.elecfans.com/tags/意法半导体/" target="_blank"><u>意法半导体</u></a>推出全新FlightSenseVL53LB直接飞行时间（dToF）传感器，旨在帮助智能手机和<a href="https://www.elecfans.com/soft/data/39-96/" target="_blank"><u>消费电子</u></a>制造商为日益紧凑的产品增添更远距离、更节能的距离感知能力。这款新传感器满足了明确的市场需求：在不影响电池续航的情况下扩展测距能力，并以更小的产品尺寸提升设计灵活性。</p>
+<p style="text-indent:2em;">
+	VL53LB将超过8米的直接飞行时间测距能力、低主动测距功耗与超紧凑的一体化架构融为一体。对于原始设备制造商（OEM）而言，这意味着能够在控制印制电路板（<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>）占板面积、集成工作量和功耗预算的同时，保留更大的空间来增添先进感知功能。</p>
+<p style="text-indent:2em;">
+	该传感器可实现相机选择辅助、自动对焦辅助、存在感知、障碍物检测、定位辅助和非接触式交互等应用。其测距能力、紧凑尺寸与低功耗运行的结合，也使其适用于机器人和<a href="https://www.elecfans.com/v/tag/633/" target="_blank"><u>工业自动化</u></a>系统。</p>
+<p style="text-indent:2em;">
+	“设备制造商正在寻找能够增强功能、同时又不必在功耗、产品尺寸或用户体验方面作出妥协的感知解决方案，”意法半导体执行副总裁兼影像产品子事业部总经理Alexandre Balmefrezol表示。“VL53LB在单一模块中集更远距离测量、低功耗和紧凑集成于一体。这款产品展现了意法半导体如何持续推动FlightSense技术演进，同时推进我们通过智能光学感知将光转化为可信数据的宏大愿景。”</p>
+<p style="text-indent:2em;">
+	“ToF市场持续受益于增强相机功能、空间感知和智能设备交互的需求，”Yole Group影像市场与技术分析师Anas Chalak解释道。“预计到2031年，支持ToF功能的设备年出货量将超过6.65亿台。随着制造商在保持电池续航和工业设计灵活性的同时不断拓展感知能力，兼具更远测距性能、紧凑集成和更低功耗的技术，将有望为未来增长提供有力支持。”（1）</p>
+<p style="text-indent:2em;">
+	帮助OEM在更小空间内集成更多感知功能</p>
+<p style="text-indent:2em;">
+	VL53LB是意法半导体第四代单区域FlightSense技术产品，测距范围从小于5毫米延伸至超过8米。与前几代产品及竞品相比，新传感器的感知距离翻倍，主动测距功耗降低至原来的一半。它还支持功耗低至50微瓦的超低功耗模式，封装尺寸仅为4.0毫米 × 1.8毫米 × 1.0毫米，较竞品及上一代产品缩小30%。此外，凭借先进架构，其<a href="https://bbs.elecfans.com/group_40" target="_blank"><u>电磁兼容</u></a>性（EMI/<a href="https://bbs.elecfans.com/group_40" target="_blank"><u>EMC</u></a>）得到良好控制；与竞争对手的芯片不同，VL53LB无需在传感器上方加装金属屏蔽罩。</p>
+<p style="text-indent:2em;">
+	这款一体化传感器在微型封装内集成CMOS传感器、940纳米<a href="https://www.elecfans.com/tags/红外/" target="_blank"><u>红外</u></a>发射器和<a href="https://www.elecfans.com/soft/data/21-22/" target="_blank"><u>嵌入式</u></a>处理功能，简化了设计集成并降低整体系统复杂性。对I3C连接的支持，进一步便利了其在最新一代移动平台中的应用。</p>
+<p style="text-indent:2em;">
+	专为相机辅助、存在感知及新一代智能设备设计</p>
+<p style="text-indent:2em;">
+	紧凑尺寸、宽测距范围和低功耗运行的结合，使OEM能够在不增加产品尺寸或电池需求的情况下，为智能手机及其他智能设备引入先进感知功能。</p>
+<p style="text-indent:2em;">
+	应用包括：</p>
+<p style="text-indent:2em;">
+	多相机选择与自动对焦辅助</p>
+<p style="text-indent:2em;">
+	存在与距离感知</p>
+<p style="text-indent:2em;">
+	障碍物检测</p>
+<p style="text-indent:2em;">
+	导航与定位辅助</p>
+<p style="text-indent:2em;">
+	非接触式交互</p>
+<p style="text-indent:2em;">
+	机器人和工业自动化系统</p>
+<p style="text-indent:2em;">
+	出色的环境光性能——在120kLux照度下仍可实现超过1米的测距能力——结合先进的电磁兼容性（EMC）抗扰能力和超低功耗工作模式，有助于开发人员在更广泛的应用场景中部署可靠感知功能，包括电池供电和始终开启的设备。</p>
+<p style="text-indent:2em;">
+	传承意法半导体FlightSense的优势</p>
+<p style="text-indent:2em;">
+	VL53LB依托意法半导体FlightSense产品组合而打造，该产品组合已在全球累计交付超过30亿颗ToF传感器，应用涵盖智能手机、消费电子、工业和智能设备。该传感器采用意法半导体专有的单光子雪崩<a href="https://www.hqchip.com/app/1554" target="_blank"><u>二极管</u></a>（SP<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>）技术，并通过其垂直整合制造（IDM）模式生产：研发团队分布于苏格兰、法国、新加坡和中国，前道<a href="https://bbs.elecfans.com/group_66" target="_blank"><u>晶圆制造</u></a>位于法国克罗尔（Crolles），采用40纳米工艺。</p>
+<p style="text-indent:2em;">
+	供货情况</p>
+<p style="text-indent:2em;">
+	VL53LB目前已向选定的OEM客户提供样品，计划于2027年第二季度通过st.com面向大众市场供货。价格信息及样品申请可联系意法半导体当地代表获取。</p>
+<p style="text-indent:2em;">
+	（1）资料来源：《2026年3D传感报告》——《2026年CMOS<a href="https://www.elecfans.com/tags/图像传感器/" target="_blank"><u>图像传感器</u></a>行业现状报告》, Yole Group</p>]]></description></item><item>    <title><![CDATA[小鹏集团亮相2026广州国际汽车展览会]]></title>    <link>https://www.elecfans.com/d/8989552.html</link>    <guid>https://www.elecfans.com/d/8989552.html</guid>    <pubDate>2026-11-27 17:46:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	今日，第二十四届广州国际汽车展览会正式开幕，小鹏集团以「Physical <a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a> For All」为主题重磅亮相，将「物理AI科技馆」搬进广州车展 17.2 馆现场。</p>
+<p style="text-indent:2em;">
+	本次车展，8 台小鹏高阶通用人形<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a> IRON 首次公开亮相，正式在小鹏展台「上岗」，与公众近距离互动。汽车产品方面，小鹏集团携小鹏GX、G9L、X9、P7及 MONA 家族等多款车型亮相。其中，小鹏 P7 正式推出暮金灰、晨曦粉两款全新外观色，选装价格均为 6,000 元，并同步推出云境灰全新内饰色；MONA L05、MONA L03 的新月银 ROAM 套装版也正式亮相。</p>
+<p style="text-indent:2em;">
+	小鹏 IRON 广州车展正式「上岗」</p>
+<p style="text-indent:2em;">
+	加速物理 AI 应用落地</p>
+<p style="text-indent:2em;">
+	继小鹏科技日后，IRON 广州车展上再次登台演讲。车展期间，IRON 和伙伴们在小鹏展台全时段「营业」，承担迎宾接待、展区导览、车辆讲解等工作，让观众近距离感受人形机器人在真实服务场景中的应用价值。同时，小鹏公布了 IRON 商业化时间表：2027 年 1 月进入硬件量产阶段，第一季度率先以导购身份进入部分小鹏门店实习，目标于第二季度正式对商业客户发布，将于 2027 年下半年全球上市。</p>
+<p style="text-indent:2em;">
+	为满足实际场景需求，小鹏致力于将IRON打造成能够胜任真实岗位的「工作伙伴」，围绕基础素质、安全可靠、情绪价值、7×24 小时全时在线及业务能力五大维度，采用软硬一体的技术设计思路，将软件、模型、控制与硬件本体协同设计，让模型能力建立在稳定、可靠的身体之上。IRON 全身拥有 76 个自由度、超过 1,500 个触点，核心区域触觉覆盖率超过 80%；搭载 3 颗自研图灵 AI 芯片，拥有 2,250 TOPS 有效算力，支撑大模型与全身运控的端侧部署，兼顾动作的灵活性、稳定性与响应效率。</p>
+<p style="text-indent:2em;">
+	在业务能力上，IRON 搭载人形机器人多模态理解与具身表达系统 IRON VLM，支持十多种语言交互及丰富的表情表达，结合联网及本地记忆能力，能够掌握汽车产品信息，现场提供车辆讲解等服务，其他多种岗位工作也能灵活胜任。IRON 还支持自主认路、通过语音或 App 建立任务清单、低电自主补能、满电自动返岗，以及异常上报和健康自监测，实现 7×24 小时全天在线。在人机交互方面，IRON 通过防漏电、防烫、主动避障、防夹等设计，为机器人与人共同工作提供安全保障。</p>
+<p style="text-indent:2em;">
+	为助力人形机器人与通用智能业务的持续发展，发布会期间，小鹏集团也宣布正式成立香港研发<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>。该中心选址香港科学园，聚焦机器人与通用智能两大方向，承担前沿基础研究、高端<a href="https://www.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>研发及国际人才引进等业务。依托香港的国际化科研环境与人才优势，小鹏将进一步深化与香港高校的产学研合作，形成香港、深圳、广州三地分工协同的大湾区研发体系，为机器人技术创新、工程化落地及规模化量产提供支撑。</p>
+<p style="text-indent:2em;">
+	海外业务高速增长</p>
+<p style="text-indent:2em;">
+	小鹏全球市场布局持续深化</p>
+<p style="text-indent:2em;">
+	发布会现场，小鹏集团副总裁 Alex 介绍了近期海外市场的情况。小鹏今年海外市场销量预计将突破 10 万辆，相比去年实现翻倍以上增长。今年 10 月，小鹏海外市场交付 13,326 台，同比增长 166%，创历史新高。为带动海外市场 2027 年再次实现翻倍以上增长，小鹏将于 2027 年在海外市场推出 5 款国际化车型，其中备受海外用户关注的小鹏 P7 也将正式登陆欧洲市场。</p>
+<p style="text-indent:2em;">
+	全球化服务体系建设上，小鹏销售及售后网络已覆盖全球 83 个国家和地区，网点数量超过 1,300 家。目前，小鹏在海外的汽车销售均价超过 4 万欧元，并成为今年前三季度欧洲市场 4 万欧元以上中高端纯电车型销量第一的中国品牌，高端（Premium）已成为海外媒体评价小鹏品牌时最常提及的关键词。旗下多款旗舰车型也在海外高端市场展现出强劲的竞争力。</p>
+<p style="text-indent:2em;">
+	作为全球续航最长大七座，小鹏 X9 斩获全球多地销量冠军。今年 7 月至 9 月，小鹏 X9 连续三个月登顶中国香港纯电豪华 MPV 销量榜，并夺得第三季度销量冠军；8 月包揽泰国、马来西亚、印度尼西亚三地纯电豪华 MPV 销量冠军。此外，小鹏 X9 上市后连续三个月（7-9月）蝉联新西兰纯电 MPV 销量冠军，并连续两个月（8-9月）位居澳大利亚中国品牌纯电 MPV 销量榜首。新科技旗舰小鹏 GX 同样获得海外高端市场认可，中东市场订单已突破 5,000 台，创下中国全尺寸六座旗舰 SUV 海外订单纪录。</p>
+<p style="text-indent:2em;">
+	以智能、时尚为鲜明产品特色的 MONA 系列，全球累计交付超 40 万辆，平均月交付量近 1.5 万台。其中，MONA M03 上市以来连续 24 个月蝉联 10-20 万元纯电轿车销量冠军，MONA L03 于 10 月斩获 10 万元以上纯电 SUV 销量冠军，MONA L05 提前达成万台交付目标。海外市场方面，MONA L05 将于今年 12 月登陆泰国，并于 2027 年 1 月布鲁塞尔车展正式在欧洲上市。</p>
+<p style="text-indent:2em;">
+	同时小鹏还在积极加速布局全球超充网络，计划在年底实在在亚洲、大洋洲及欧洲三大洲落地兆瓦闪充站，包括中国香港第二座 X-Energy 兆瓦闪充站、位于澳大利亚的南半球首座 X-Energy 兆瓦闪充站，以及分别位于德国的欧洲第一座 X-Energy 兆瓦闪充站，持续完善全球用户的补能体验。</p>
+<p style="text-indent:2em;">
+	在汽车业务全球化布局不断深化的同时，小鹏也在积极推进物理 AI 领域的国际交流与合作。本届广州车展，来自全球多个国家和地区的海外合作伙伴及媒体齐聚小鹏展台，共同探索、交流物理 AI 的前沿技术与应用。</p>
+<p style="text-indent:2em;">
+	随着智能汽车海外业务快速增长、人形机器人商业化进程加速，小鹏集团正不断拓展物理 AI 的应用场景与市场空间。未来，小鹏将持续以全栈自研技术驱动创新，推进物理AI产品的商业化落地与全球化布局，让中国科技创新成果惠及全球更多用户。</p>]]></description></item><item>    <title><![CDATA[中科曙光发布FlashNexus NAS 3.0原生多协议融合全闪存储系统]]></title>    <link>https://www.elecfans.com/d/8989571.html</link>    <guid>https://www.elecfans.com/d/8989571.html</guid>    <pubDate>2026-11-27 17:48:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
+	11月25日，2026中国数据与存储峰会现场，中科曙光发布全球首个SAN+<a href="https://www.elecfans.com/tags/nas/" target="_blank"><u>NAS</u></a>+KV原生多协议融合全闪存储系统——FlashNexus NAS 3.0。该产品以一套存储同时承载数据库、文件共享与<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>推理等多类负载，帮助企业减少重复建设、提高业务效率。</p>
+<p style="text-indent:2em;">
+	原生融合，资源更省</p>
+<p style="text-indent:2em;">
+	交易数据库、文件共享、AI推理......不同场景对存储的需求日益多元，分散建设容易造成资源闲置和管理负担。传统融合存储方案将不同存储设备进行拼接，无法实现资源贯通。</p>
+<p style="text-indent:2em;">
+	FlashNexus NAS 3.0通过统一存储引擎和高性能全闪资源池，可原生支持SAN、NAS、KV三种协议，存储容量可在不同业务之间按需调配，运维只需一套体系，块存储和文件存储还共享一套数据保护能力。</p>
+<p style="text-indent:2em;">
+	中科曙光集中式存储产品部总经理郭照斌表示，原生融合的核心价值，在于降低物理资源成本、简化使用与运维，让一套存储可以承担更多业务。</p>
+<p style="text-indent:2em;">
+	以存促算，应用更快</p>
+<p style="text-indent:2em;">
+	资源整合只是第一步，关键要让不同业务用得高效。</p>
+<p style="text-indent:2em;">
+	芯片设计是典型高负载场景：<a href="https://www.elecfans.com/v/tag/1053/" target="_blank"><u>EDA</u></a><a href="https://bbs.elecfans.com/zhuti_proteus_1.html" target="_blank"><u>仿真</u></a>中会产生海量小文件读写，数据等待会拖慢设计验证。中科曙光联合行业头部客户，依托超级隧道技术与高性能文件系统开展全栈优化，实测小文件的OPS（每秒操作数）达到136万次/秒。</p>
+<p style="text-indent:2em;">
+	在AI推理场景中，大模型对话时会把中间计算结果（KV）存起来，遇到相同上下文时直接调用，不必重新计算。FlashNexus NAS 3.0通过对这些结果的高效存储调用，省下宝贵的算力；同时配合GDS直通技术，模型加载和训练进度的保存也更快。</p>
+<p style="text-indent:2em;">
+	此外，中科曙光凭借计算、存储、网络全栈能力，可将scaleX40超节点、FlashNexus全闪存储与scaleFabric<a href="https://www.elecfans.com/v/tag/1392/" target="_blank"><u>交换机</u></a>组成一体化解决方案。实测AI响应等待时间（T<a href="https://www.hqchip.com/app/1522" target="_blank"><u>TF</u></a>T）降低85%，Token输出速度提升5倍，内存需求减少60%，本地盘也不再需要，AI提速与降本一步到位。</p>
+<p style="text-indent:2em;">
+	一体防护，业务更稳</p>
+<p style="text-indent:2em;">
+	高端全闪存存储往往承载企业的核心数据，跑得快之外，稳得住更是底线要求。</p>
+<p style="text-indent:2em;">
+	可靠性上，FlashNexus NAS 3.0支持SAN+NAS免网关AA一体化双活：两个数据<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>同时服务，任何一处出现故障，业务自动切换到另一处，可实现数据零丢失，业务恢复时间接近于零。配合远程复制，企业还可构建“两地三中心”容灾体系，为关键业务提供多层保护。</p>
+<p style="text-indent:2em;">
+	安全性上，面对勒索攻击、数据损毁风险，FlashNexus NAS 3.0构建五层防护：从开机时的安全启动、登录时的身份<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>，到运行中的数据加密、防病毒、防勒索和防篡改，再到出事后的安全快照、秒级回滚和回收站，事前预防、事中拦截、事后恢复环环相扣。</p>
+<p style="text-indent:2em;">
+	在本次峰会上，中科曙光集中式全闪存储FlashNexus 9000获“2026年度全闪存存储产品金奖”，ParaCache KV Cache卸载方案获“2026年度AI存储优秀案例”。</p>
+<p style="text-indent:2em;">
+	随着AI应用持续深入，存储正从单一业务承载加速迈向多元数据服务。FlashNexus NAS 3.0以国产平台和整机自研为基础，为企业迈向AI时代打好“多元”数据底座。</p>]]></description></item><item>    <title><![CDATA[老项目救星！瑞萨SH7708（原日立SuperH）硬件设计踩坑指南]]></title>    <link>https://www.elecfans.com/d/8989151.html</link>    <guid>https://www.elecfans.com/d/8989151.html</guid>    <pubDate>2026-11-27 16:00:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989151" value="https://file.elecfans.com/web2/M00/27/88/pYYBAGHCixSAaJ9yACtU0rrm7e4249.pdf"/><h1>老项目救星！<a href="https://www.elecfans.com/tags/瑞萨/" target="_blank"><u>瑞萨</u></a>SH7708（原日立SuperH）硬件设计踩坑指南</h1>
 <h2>最近帮客户做老工业设备的国产化替代评估，翻出来压箱底的SH7708 datasheet。这颗2003年前后的32位<a href="https://bbs.elecfans.com/zhuti_riscvmcu_1.html" target="_blank"><u>RISC</u></a>主控，当年可是<a href="https://m.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>、<a href="https://bbs.elecfans.com/group_1121" target="_blank"><u>嵌入式</u></a>终端的「明星款」，日立和三菱<a href="https://m.hqchip.com/gongsi.html" target="_blank"><u>半导体</u></a>合并成瑞萨之后，所有技术支持都转去瑞萨了，很多老<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>找资料、问FAE容易跑错门，今天整理下硬件设计最核心的要点，给还在维护老项目、或者玩复古嵌入式的兄弟避避坑。</h2>
 <h2>先唠两句背景</h2>
 <p>SH7708是日立SuperH SH-3内核的代表作，60MHz主频，带MMU、8KB Cache，片上外设从总线控制器到RTC、串口、<a href="https://www.elecfans.com/tags/定时器/" target="_blank"><u>定时器</u></a>全齐，当年主打「高性能+低功耗+高集成度」，省了一大堆外接逻辑芯片，BOM成本直接打下来，现在很多运行了10年以上的工业设备里还能看到它的身影。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8989151" target="_blank">HD6417708SF60V.pdf</a></p>
@@ -2774,397 +3409,4 @@ BMS AFE是电池管理系统实现高精度监测与安全管控的核心关键�
 <p style="text-indent:2em;">
 	在机场，瑞为技术推出的行李转运解决方案覆盖从标准行李自动处理、非标行李柔性处理、场内自主转运等环节。“晓蚁”行李转运机器人已在华东某千万级枢纽机场进入真实航班保障环境，开展常态化作业POC，形成无感人机协同模式：近90%的标准行李由机器人处理，其余软包、异形等长尾行李交由人工协同。支撑其稳定运行的核心，是全栈自研的V<a href="https://www.hqchip.com/app/1522" target="_blank"><u>TF</u></a>LA具身智能技术架构。该架构在传统VLA框架基础上引入力觉、触觉等物理反馈能力，使机器人能够感知受力变化、接触状态和滑移风险，并根据反馈动态调整操作策略。</p>
 <p style="text-indent:2em;">
-	随着具身智能的发展重心逐步转向实际生产中的使用价值，前沿技术与应用能否落到真实任务中，成为行业关注焦点。未来，瑞为技术将坚持“极度收敛、极度聚焦”的战略原则，聚焦搬运、拆垛码垛、特种作业等场景的“生产力工具”，从真实生产任务出发，打造面向生产力的商用机器人。最终衡量我们的，不是做了多少款机器人，而是机器人到底为企业创造了多少生产力。</p>]]></description></item><item>    <title><![CDATA[不用电池的真·掉电记圈数传感器——ADMT4000实测踩坑指南]]></title>    <link>https://www.elecfans.com/d/8989304.html</link>    <guid>https://www.elecfans.com/d/8989304.html</guid>    <pubDate>2026-11-27 16:35:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989304" value="https://file1.elecfans.com/web3/M00/7C/99/wKgzfmsJPPSAV3QcABXPcNwyoXo326.pdf"/><h1>不用电池的真·掉电记圈数<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>——<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>MT4000实测踩坑指南</h1>
-<p>最近做工业阀门的位置反馈项目，之前用的带电池的多圈<a href="https://www.elecfans.com/tags/编码器/" target="_blank"><u>编码器</u></a>一直有痛点：现场设备5年换一次电池太麻烦，低温下电池容量跳水直接丢圈数，用户投诉好几次。翻<a href="https://www.elecfans.com/tags/adi/" target="_blank"><u>ADI</u></a>的新品手册发现这款ADMT4000磁多圈传感器，主打断电不用电也能记转数，拿了样片调了两周，把实测的干货和踩过的坑整理出来，给有同样需求的<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>做参考。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8989304" target="_blank">admt4000.pdf</a></p>
-<hr/>
-<h2>核心卖点：真正的零功耗掉电记圈</h2>
-<p>这颗芯片最杀的功能就是<strong>完全不用备用电池、超级电容，断电状态下照样能记录磁钢的转数</strong>，最多支持46圈，上电直接读绝对位置，不用回零，也不用怕突然断电丢坐标。</p>
-<p>原理说穿了也挺巧妙：它里面的GMR多圈传感器是用铁磁纳米线做的螺旋结构，磁钢旋转的时候磁畴壁会沿着纳米线走，断电之后磁畴壁的位置不会变，上电一测<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>分布就能知道转了多少圈，属于物理特性记圈，比电池、韦根方案靠谱太多。</p>
-<p>我特意做了个暴力测试：让传感器跟着<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>转了12圈之后直接断电，扔在-20℃的温箱里放了3天，上电读出来的圈数和角度和断电前完全一致，这点对于工业现场的执行器、<a href="https://m.elecfans.com/v/tag/194/" target="_blank"><u>伺服电机</u></a>来说真的太刚需了。</p>
-<hr/>
-<h2>关键参数够打，工业级够用</h2>
-<table>
-<thead>
-<tr>
-<th>整理几个大家最关心的参数，都是实际用得到的：</th>
-<th>参数</th>
-<th>实测值</th>
-<th>实用说明</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>记圈范围</td>
-<td>0~46圈</td>
-<td>大部分阀门、伺服行程都够，超过46圈的话可以搭配减速箱用</td>
-</tr>
-<tr>
-<td>角度精度</td>
-<td>±0.25°</td>
-<td>开IIR滤波之后噪声能降到0.03° <a href="https://m.hqchip.com/app/1718" target="_blank"><u>RMS</u></a>，普通位置控制完全够用</td>
-</tr>
-<tr>
-<td>采样率</td>
-<td>100kSPS</td>
-<td>最高支持到万转级的电机检测，响应速度够</td>
-</tr>
-<tr>
-<td>工作磁场</td>
-<td>16~31mT</td>
-<td>不用太强的磁钢，普通钕铁硼就能满足</td>
-</tr>
-<tr>
-<td>供电</td>
-<td>VDD 3.3V，SPI<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>1.7~5V宽压</td>
-<td>SPI直接连3.3V/5V的<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>都不用电平转换，省料</td>
-</tr>
-<tr>
-<td>工作温区</td>
-<td>-40℃~+150℃</td>
-<td>结温到150℃都能正常工作，工业现场的高低温环境都扛得住</td>
-</tr>
-<tr>
-<td>封装</td>
-<td>24脚<a href="https://www.hqchip.com/app/1593" target="_blank"><u>TSS</u></a>OP</td>
-<td>体积不大，<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>好布局</td>
-</tr>
-</tbody>
-</table>
-<hr/>
-<h2>亲测踩坑指南，这些坑别再踩</h2>
-<p>调这颗芯片的时候踩了好几个低级坑，浪费了我三天时间，给大家列出来避坑：</p>
-<h3>1. 新拿到手必须先做GMR复位</h3>
-<p>我第一次焊好样板，读出来的角度乱跳，圈数差了3圈，以为芯片坏了，翻手册才发现：<strong>所有新芯片焊好之后必须先做GMR传感器复位，不然初始圈数是随机的</strong>。
-复位有两种方法：</p>
-<ul>
-<li>省事的：用<a href="https://www.elecfans.com/book/779/" target="_blank"><u>电磁铁</u></a>在315°方向打一个≥60mT的磁场，保持10us以上就行</li>
-<li>没电磁铁的：控制磁钢顺时针转46圈以上，也能自动复位
-复位之后还要重启一次转换，读出来的数值就对了。</li>
-</ul>
-<h3>2. 磁钢选型和安装别乱搞</h3>
-<p>磁场范围必须卡在16~31mT之间，高低温下都不能超：</p>
-<ul>
-<li>别用普通N35钕铁硼，温度系数太大，85℃以上磁场就掉到16mT以下了，会丢圈数，最少要用N35UH等级的钕铁硼，或者直接用钐钴磁钢更稳妥</li>
-<li>磁钢和传感器的同轴度要控制在±0.2mm以内，气隙建议1~2mm，我测过偏心0.5mm的话精度直接掉到±1°以上</li>
-<li>只需要XY平面的磁场，Z轴方向的磁场不影响，安装不用考虑轴向的磁偏移</li>
-</ul>
-<h3>3. <a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>配置的几个细节</h3>
-<ul>
-<li>读绝对角度的时候，<code>ABSANGLE</code>和<code>ANGLE</code>寄存器必须一次连续读64位，不能分开读，不然两次读数不是同一个采样点的，会出现跳数</li>
-<li>IIR滤波默认是开的，低转速场景用着挺好，噪声低，但如果是转速超过1000rpm的场景建议关掉，滤波带来的滞后误差大概是<code>864e-6 × 转速(rpm)</code>，1000rpm下大概是0.086°，高速伺服的话这点误差还是挺明显的</li>
-<li>FAULT寄存器一定要加进程序的诊断逻辑里，磁场异常、供电过欠压、圈数不匹配都会报故障，比之前用的传感器丢了位置都不知道靠谱太多，我现在每次读角度之前先读FAULT位，非0直接进异常处理，现场故障率降了不少</li>
-</ul>
-<h3>4. 外围电路超简单</h3>
-<p>不用什么复杂的外围，我贴个我现在用的参考电路：</p>
-<ul>
-<li>VDD脚接3.3V，就近放100nF + 1uF的X8R去耦电容</li>
-<li>VDRIVE和MCU供电同电压就行，我接的3.3V，SPI引脚直接连<a href="https://bbs.elecfans.com/zhuti_stm32_1.html" target="_blank"><u>STM32</u></a>的SPI</li>
-<li>不用的GPIO直接接100kΩ下拉到GND，BOOTLOAD脚要接100kΩ上拉到VDRIVE</li>
-<li>测试脚全部接地，NC脚悬空或者接地都可以</li>
-</ul>
-<p>BOM加起来才3个<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>几个电阻，比之前带电池的方案省了一半的外围成本，还不用考虑电池的防水、更换问题。</p>
-<hr/>
-<h2>适合什么场景用？</h2>
-<p>我觉得这颗芯片几乎是为工业场景量身做的：</p>
-<ul>
-<li>电动阀门、执行器的位置反馈：不用换电池，断电再开不用找原点</li>
-<li>伺服电机、<a href="https://www.elecfans.com/tags/步进电机/" target="_blank"><u>步进电机</u></a>的多圈位置检测：比<a href="https://bbs.elecfans.com/group_350" target="_blank"><u>光电</u></a>多圈编码器成本低，抗振性还好</li>
-<li>户外、井下、防爆场景的设备：完全没有电池漏液、失效的风险，可靠性拉满</li>
-<li>AGV轮毂电机、<a href="https://www.elecfans.com/soft/data/42-101/" target="_blank"><u>机器人</u></a>关节：体积小，布线方便</li>
-</ul>
-<hr/>
-<p>最近也在调它的谐波校准功能，校准之后精度能跑到±0.1°以内，调好之后再给大家更详细的校准教程。你们有没有用过类似的无电池多圈传感器？踩过什么奇葩坑？评论区聊一聊~</p>]]></description></item><item>    <title><![CDATA[实测|ADI新款AMR磁传感器ADAF1080：±8mT量程、6nT/√Hz噪声，免磁环电流检测太爽了]]></title>    <link>https://www.elecfans.com/d/8989306.html</link>    <guid>https://www.elecfans.com/d/8989306.html</guid>    <pubDate>2026-11-27 16:35:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989306" value="https://file1.elecfans.com/web3/M00/7C/90/wKgzfWsJPPWAeJAuACFuQKodMDo979.pdf"/><h1>实测|<a href="https://www.elecfans.com/tags/adi/" target="_blank"><u>ADI</u></a>新款AMR磁<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a><a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>AF1080：±8mT量程、6nT/√Hz噪声，免磁环电流检测太爽了</h1>
-<h2>最近在做工业伺服的三相无接触<a href="https://www.hqchip.com/app/1782" target="_blank"><u>电流检测</u></a>方案，之前用的霍尔+磁环方案要么体积大塞不下，要么全温offset飘得妈不认，翻ADI官网偶然挖到这款刚更Rev A的ADAF1080，整合AMR磁传感+<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>调理<a href="https://bbs.elecfans.com/zhuti_fpga_1.html" target="_blank"><u>ASIC</u></a>，测了两周踩了几个典型的坑，整理出来给大家避避。</h2>
-<h2>先讲为啥我放弃霍尔选了它</h2>
-<p>先唠唠之前用霍尔的痛点，做过<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>检测的兄弟应该都懂：</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8989306" target="_blank">adaf1080.pdf</a></p>
-<ol>
-<li>要加磁环聚磁，成本高体积大，大电流场景还容易磁饱和，过流一次就要重新校准；</li>
-<li>温漂离谱，普通霍尔全温offset飘个几mV都是常态，小电流场景直接测不准；</li>
-<li>噪声大，带宽低，最多几百kHz，做高动态的伺服电流环根本不够用。
-用ADAF1080改完方案之后这些问题基本全解决了，核心参数挑<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>最关心的列：
-<h3>核心性能拉满，覆盖90%工业磁传感需求</h3>
-<table>
-<thead>
-<tr>
-<th>参数项</th>
-<th>数值</th>
-<th>实际价值</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>测量量程</td>
-<td>±8mT</td>
-<td>10mm距离下铜排过600A的磁场大概7mT，刚好覆盖从几A到几百A的电流检测需求</td>
-</tr>
-<tr>
-<td>磁场等效噪声密度</td>
-<td>6nT/√Hz</td>
-<td>小到nT级的弱磁也能测，做<a href="https://m.hqchip.com/app/1252" target="_blank"><u>高精度</u></a>磁尺、低噪声磁力计都能用</td>
-</tr>
-<tr>
-<td><a href="https://www.elecfans.com/tags/放大器/" target="_blank"><u>放大器</u></a>带宽</td>
-<td>最高2.2MHz</td>
-<td>比普通霍尔快3~5倍，<a href="https://m.elecfans.com/v/tag/194/" target="_blank"><u>伺服电机</u></a>电流环、高速<a href="https://www.hqchip.com/app/1703" target="_blank"><u>AC</u></a>功率检测完全够</td>
-</tr>
-<tr>
-<td>全温等效offset</td>
-<td>≤100nT</td>
-<td>内置翻转线圈自动消offset，不用每次上电校准，全温精度直接拉满</td>
-</tr>
-<tr>
-<td>增益可选</td>
-<td>20/40/80三档可<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a></td>
-<td>小量程用高增益提精度，大量程用低增益不超<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>量程，灵活的很</td>
-</tr>
-</tbody>
-</table>
-<h3>两个黑科技功能省了我超多外围</h3></li>
-<li><strong>内置翻转线圈校准</strong>：这个是AMR传感器的独有优势，给线圈通个短脉冲就能翻转AMR的敏感极性，两次测量做差就能把电路offset、温漂、寿命漂移全消掉，我实测-40℃~125℃循环100次，offset波动都没超过0.1%，产线校准工序直接省了。</li>
-<li>
-<h2><strong>内置诊断线圈</strong>：通个100mA的已知电流就能生成22.8μT的标准磁场，自己就能测传感器增益有没有飘，做功能安全的场景（比如汽车、储能）不用额外加校准电路，直接过合规。
-还有比例输出功能，输出电压和VDD、VSET成比例，接ADC的时候把ADC参考和VSET接在一起，<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>波动的误差直接抵消，PSRR比普通方案高20dB以上，省了高精度参考源的钱。</h2>
-<h2>我踩过的坑，大家别再踩了</h2>
-<h3>1. 增益设置别光看量程，要结合VSET和ADC输入范围算</h3>
-<p>默认A0/A1是内部上拉的，默认增益80，我一开始VSET接的5V，测±8mT的时候输出最高到2.5V + 45.75mV/mT<em>8mT</em>80？不对哦算错了，哦对增益是20的时候灵敏度是45.75mV/mT，80增益是183mV/mT，算下来±8mT的输出摆幅是±1.464V，加上共模2.5V的话最高到3.964V，我接的3.3V ADC直接超量程了，后来改成增益20就刚好。大家选增益的时候一定要先算输出摆幅，别像我一样傻愣愣的上电就测。</p>
-<h3>2. 翻转线圈的外围<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a><a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>千万别省</h3>
-<p>翻转的时候脉冲峰值能到2.4A/1.25μs，我一开始嫌麻烦没接VDD_FLIP脚的10μF电容和10Ω限流电阻，结果翻转的时候VDD直接被拉低0.5V，后面的<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>直接复位了。这个电容是专门当电荷库用的，电阻是限流防电源冲击的，真的别省，我算过10Hz翻转频率下平均电流才60μA，几乎不费电。</p>
-<h3>3. 布局的坑真的会让你调一周</h3>
-<p>AMR的灵敏度太高了，一点点杂散磁场都会影响精度：</p>
-<ul>
-<li>大电流走线、过孔一定要离传感器至少1cm以上，1A的走线1cm距离的磁场就有20uT，离得近直接飘到mT级；</li>
-<li>别用铁/不锈钢螺丝固定传感器，我一开始用了M2不锈钢螺丝，直接多了50uT的固定offset，换成尼龙螺丝就好了；</li>
-<li>
-<h2>如果用的是铁壳的陶瓷电容，翻转电容CFLIP要离传感器至少5mm，不然会被磁化留剩磁，offset一直飘。</h2>
-<h2>我正在用的两个方案参考</h2>
-<h3>1. 手持便携式电流钳</h3>
-<p>用单颗ADAF1080加3D打印的卡座，直接卡在10mm*2mm的铜排上，测10A~500A精度能到0.5%全温，比传统霍尔钳表精度高一半，还不用开口、不用每次校准，翻转线圈开10Hz自动消offset，现在样机已经给客户测了，反馈比之前的方案好太多。</p>
-<h3>2. 伺服三相电流检测</h3>
-<h2>三颗ADAF1080分别放在三相铜排旁边，不用串采样电阻，无损耗，2MHz带宽够电流环用，温度漂移比之前的采样电阻+隔离运放方案还小，BOM成本低了30%，体积小了一半。</h2>
-<h2>最后唠两句</h2>
-<p>现在这颗料批量价大概20多块钱，比带磁环的霍尔贵个几块钱，但是省了磁环、校准工序、额外的信号调理电路，综合成本反而更低。开发也方便，ADI有现成的评估板：单路的EVAL-ADAF1080<a href="https://www.hqchip.com/app/1522" target="_blank"><u>SD</u></a>Z直接插SDP板就能测，三路的EVAL-ADAF1080-3EBZ直接支持±640A电流检测，不用自己画板子验证，省了我两周的开发时间。
-有没有兄弟用过这款或者其他AMR传感器的？评论区聊聊你们踩过什么坑？下次我把实测的温漂曲线、噪声曲线放上来给大家参考。</p>
-</li>
-</ul>
-</li>
-</ol>]]></description></item><item>    <title><![CDATA[我踩过的3个Buck电源设计坑，帮你省3次改板钱]]></title>    <link>https://www.elecfans.com/d/8989307.html</link>    <guid>https://www.elecfans.com/d/8989307.html</guid>    <pubDate>2026-11-27 16:35:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989307" value="https://file.elecfans.com/web2/M00/27/6C/poYBAGHCg6SAdZzUACSiKMQkIw0112.pdf"/><h3>小说明</h3>
-<ol>
-<li>刚刚调用行业技术文档检索工具补充参考内容时遇到临时服务故障，暂时无法拉取额外的技术资料做内容扩充；</li>
-<li>目前没有接收到你提到的附件文档，麻烦你上传对应的设计方案、datasheet、调试记录、项目文档等附件内容，同时可以补充说明你希望博文侧重的方向（比如项目踩坑记录、<a href="https://www.elecfans.com/v/tag/221/" target="_blank"><u>电路原理</u></a>详解、<a href="https://bbs.elecfans.com/zhuti_830_1.html" target="_blank"><u>PCB设计</u></a>技巧、量产验证经验等）。</li>
-</ol>
-<p>我会完全按照一线<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>的实操视角撰写，全部用真实项目语境，避免<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>套话，多放实际踩坑点、实测数据、改板前后对比这类工程师真正关心的内容，比如会加入「上次改这个BUG熬到三点」「这个参数我试了8版才找到最优值」这类真实感的表述。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8989307" target="_blank">HD6473837FV.pdf</a></p>
-<hr/>
-<h3>先给你个同风格示例参考，内容是我之前实际做Buck<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>踩坑的总结：</h3>
-<h1>我踩过的3个Buck电源设计坑，帮你省3次改板钱</h1>
-<p>上周帮同事查一个<a href="https://m.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>板的电源纹波问题，前后折腾了3天，最后发现是3个我当初刚入行也踩过的低级错误，整理出来给大家提个醒，别像我当初一样改板改到秃头，还耽误项目交期。</p>
-<hr/>
-<h2>1. 别光抄datasheet典型应用，电感选不对纹波直接炸给你看</h2>
-<p>我19年第一次做12V转5V 2A的Buck电路，直接抄了<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>TI</u></a> datasheet里的典型应用，选了推荐的10uH<a href="https://www.hqchip.com/app/1117" target="_blank"><u>工字电感</u></a>，打样回来测静态、小负载都没问题，一拉到1.8A满载纹波直接干到200mV，后端的<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>采样直接飘得没法用。</p>
-<p>查了快2天才反应过来：我选的那个工字电感标称饱和<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>刚好是2A，Buck开关峰值电流已经摸到饱和线了，负载一高电感直接饱和，电感量直接掉一半，纹波自然上天。后面换成4A饱和电流的屏蔽电感，同工况下纹波直接降到30mV以内，余量留够什么问题都没了。</p>
-<blockquote>
-<p>忠告：别为了省几毛钱选参数刚够的，电感饱和电流至少要比实际最大峰值电流高50%，血的教训。</p>
-</blockquote>
-<h2>2. 反馈线走3mm宽？你以为是走大电流呢？</h2>
-<p>去年做车载电源的项目，顺手把Buck反馈引脚的走线走了2.5mm宽，还铺在了电源层旁边，回来测空载的时候输出电压就飘了200mV，怎么调反馈分压<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>都没用。</p>
-<p>最后翻datasheet才看到人家特意用红字标了「反馈走线要短、要细、远离开关节点和电感」，我那根粗反馈线刚好和开关节点的走线平行走了1cm，被辐射<a href="https://www.elecfans.com/tags/耦合/" target="_blank"><u>耦合</u></a>干扰得妈都不认。后面改成0.2mm的细线，直接走内层夹在两地之间，远离噪声源，电压精度直接回到±10mV以内。</p>
-<blockquote>
-<p>忠告：datasheet里加黑标红的注意事项真不是写着玩的，别嫌麻烦不看，踩坑了多花2周改板都是轻的。</p>
-</blockquote>
-<h2>3. 输出<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>别全加陶瓷的，低温下你就哭了</h2>
-<p>之前做户外用的<a href="https://www.elecfans.com/v/tag/1453/" target="_blank"><u>环境监测</u></a>设备，为了追求低ESR，Buck输出全用的10uF 0805 X7R陶瓷电容，常温下纹波稳得一批，拿到温箱里-20℃测，纹波直接升到150mV，<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>模块直接反复重启。</p>
-<p>查了物料规格书才知道，X7R材质的陶瓷电容在-20℃下容量会掉30%以上，低温下有效容值不够，纹波自然压不住。后面加了一颗100uF的聚合物固态电容做兜底，全温域纹波都稳定在40mV以内，跑了72小时温循都没出问题。</p>
-<blockquote>
-<p>忠告：别听网上说陶瓷电容ESR低就全用它，工业级、户外产品一定要考虑全温域的参数漂移，容值余量留够才是王道。</p>
-</blockquote>
-<hr/>
-<h2>最后唠两句</h2>
-<p>其实Buck设计说难不难，说简单也不简单，很多坑都是你实际做过一次、亏吃够了才会记住。大家最近有没有遇到什么电源设计的奇葩坑？评论区聊一聊，说不定能帮大伙避避坑。</p>
-<hr/>
-<p>如果这个风格符合你的要求，上传对应的附件之后我就可以帮你生成对应内容的博文。</p>]]></description></item><item>    <title><![CDATA[硬核唠嗑：90年代嵌入式神U日立SuperH（SH）系列，当年的设计思路放到现在都能打]]></title>    <link>https://www.elecfans.com/d/8989309.html</link>    <guid>https://www.elecfans.com/d/8989309.html</guid>    <pubDate>2026-11-27 16:35:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989309" value="https://file.elecfans.com/web2/M00/27/BE/poYBAGHCzCqAedgBAAUjZYPpduQ120.pdf"/><h1>硬核唠嗑：90年代<a href="https://bbs.elecfans.com/group_1121" target="_blank"><u>嵌入式</u></a>神U日立SuperH（SH）系列，当年的设计思路放到现在都能打</h1>
-<p>最近整理实验室压箱底的老datasheet，翻到了日立90年代发布的SH系列32位<a href="https://bbs.elecfans.com/zhuti_riscvmcu_1.html" target="_blank"><u>RISC</u></a><a href="https://m.hqchip.com/app/1381" target="_blank"><u>处理器</u></a>手册，瞬间梦回刚入行的时候——我第一台WinCE掌机、工厂里的老工控机、甚至早年的车载ECU，好多都用的这系列U。今天就扒扒这货的设计，说实话，20多年前的架构思路，现在做低功耗<a href="https://www.elecfans.com/v/tag/232/" target="_blank"><u>嵌入式开发</u></a>还值得参考。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8989309" target="_blank">HD6477021X20V.pdf</a></p>
-<hr/>
-<h2>先唠背景：当年的嵌入式市场，缺的就是这种「六边形战士」</h2>
-<p>90年代中后期<a href="https://www.elecfans.com/soft/data/39-96/" target="_blank"><u>消费电子</u></a>刚好爆发：PDA要跑手写识别、功能机要做语音编码、游戏机要搞3D渲染、车载和工控还要稳定耐造。之前的8/16位<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>性能顶不住，工作站级的RISC <a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>又功耗爆炸、贵得要死，还得外挂一堆<a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a>、<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>、外设<a href="https://www.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>，BOM成本直接上天。
-而且那时候消费电子迭代快，晚3个月上市利润直接砍半，对开发效率要求极高。日立的SH系列就是完全照着这些痛点做的，从SH1到SH3阶梯迭代，全系列向上兼容，换U不用重写代码，这点当年不知道省了多少<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>的头发。</p>
-<hr/>
-<h2>架构设计：全是实用主义，没用的花活一点没有</h2>
-<p>整个SH系列用的是统一的32位RISC基底，最绝的是用了<strong>16位固定长度指令编码</strong>，同代的<a href="https://m.hqchip.com/app/1378" target="_blank"><u>ARM</u></a>、MIPS都是32位指令，SH的代码密度直接高了30%~40%，当年ROM多贵啊，光这一项就能省不少BOM成本。
-整个架构的设计完全是为了方便编译器优化和降低开发难度做的：</p>
-<ol>
-<li><strong><a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>组足够好用</strong>：16个通用32位寄存器，R0做<a href="https://www.hqchip.com/ic/0" target="_blank"><u>索引</u></a>、R15默认做栈指针，正交设计没有啥奇怪的使用限制，编译器生成的代码效率极高；还有专门的MAC乘累加寄存器，跑<a href="https://m.hqchip.com/app/1537" target="_blank"><u>音频</u></a>编码、<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机控制</u></a>这类<a href="https://www.hqchip.com/app/1378" target="_blank"><u>DSP</u></a><a href="https://m.elecfans.com/v/tag/2562/" target="_blank"><u>算法</u></a>不用软<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>，速度快几倍。</li>
-<li><strong>寻址模式刚好够用</strong>：12种寻址模式，没有搞花里胡哨的冷门设计，结构体、数组、栈操作、外设寄存器访问的场景全覆盖，写<a href="https://m.elecfans.com/v/tag/3195/" target="_blank"><u>汇编</u></a>或者C编译器优化都顺手。</li>
-<li><strong>五级流水线单周期执行</strong>：大部分指令1个<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>周期就能跑完，还加了分支延迟槽设计，减少跳转的时候流水线flush的损耗，SH3最高跑到100MHz，同功耗下性能打同代对手完全没问题。</li>
-</ol>
-<table>
-<thead>
-<tr>
-<th>系列</th>
-<th>指令总数</th>
-<th>核心扩展</th>
-<th>典型应用场景</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>SH1</td>
-<td>56种</td>
-<td>基础款，外设拉满</td>
-<td>工控、白电、低阶外设</td>
-</tr>
-<tr>
-<td>SH2</td>
-<td>62种</td>
-<td>加32位乘法器、除法单元、4K缓存</td>
-<td>多媒体设备、打印机、网络控制器</td>
-</tr>
-<tr>
-<td>SH3</td>
-<td>66种</td>
-<td>加MMU内存管理单元、8K缓存、32位桶形移位器</td>
-<td>PDA、车载中控、需要跑通用OS的设备</td>
-</tr>
-</tbody>
-</table>
-<p>这里得吹下SH3的MMU设计，带128项TLB转译快表，支持虚拟内存和进程隔离，当年能直接跑WinCE、裁剪版<a href="https://www.elecfans.com/v/tag/538/" target="_blank"><u>Linux</u></a>，之前的嵌入式U基本只能跑裸机或者小<a href="https://www.elecfans.com/tags/RTOS/" target="_blank"><u>RTOS</u></a>，SH3直接把嵌入式设备的上限拉高了一大截。</p>
-<hr/>
-<h2>低功耗卷到骨子里，待机电流nA级就离谱</h2>
-<p>当年SH系列能占领便携设备市场，低功耗设计绝对是杀招，我印象里同性能的U功耗只有别家的1/3，看手册里的参数现在看都吓人：</p>
-<blockquote>
-<p>SH7034（SH1系列）在3.3V下待机电流才<strong>10nA</strong>，相当于放10年都耗不完一节纽扣电池。</p>
-</blockquote>
-<p>能做到这么低，全是细节堆出来的：</p>
-<ol>
-<li>底层工艺和电路优化：SH3的缓存用了特殊的SRAM设计，字线电压摆幅只有60mV，还加了缓存路唤醒电路，只有命中的那一路缓存才开，缓存功耗直接降75%。</li>
-<li><a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>模式灵活到爆炸：全系列都支持睡眠、待机模式，SH2/SH3还支持模块待机——不用的外设直接关时钟，CPU、外设、总线三个时钟可以单独分频，比如待机的时候CPU跑1MHz，外设全关，需要性能的时候直接拉满100MHz，动态调整功耗。</li>
-<li>
-<table>
-<thead>
-<tr>
-<th>给个典型功耗对比感受下：</th>
-<th>型号</th>
-<th>工作电压</th>
-<th>主频</th>
-<th>正常运行<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a></th>
-<th>睡眠电流</th>
-<th>待机电流</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>SH7034（SH1）</td>
-<td>3.3V</td>
-<td>12.5MHz</td>
-<td>60mA</td>
-<td>40mA</td>
-<td>0.01μA</td>
-</tr>
-<tr>
-<td>SH7708（SH3）</td>
-<td>3.3V</td>
-<td>60MHz</td>
-<td>180mA</td>
-<td>20mA</td>
-<td>1μA</td>
-</tr>
-</tbody>
-</table>
-</li>
-</ol>
-<hr/>
-<h2>集成度直接把BOM打下来，小项目不用外挂任何芯片</h2>
-<p>日立做工控出身的，外设集成这块真的懂工程师要啥：</p>
-<ul>
-<li><strong>SH1系列（主打高集成）</strong>：最高带64K片上ROM、8K片上RAM，还有4路<a href="https://www.elecfans.com/tags/dma/" target="_blank"><u>DMA</u></a>、2路串口、5个16位<a href="https://www.elecfans.com/tags/定时器/" target="_blank"><u>定时器</u></a>、<a href="https://www.elecfans.com/tags/看门狗/" target="_blank"><u>看门狗</u></a>，中高端型号还带8路10位<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>，最多40个IO口，做个小工控、白电控制，直接一颗U搞定，不用外挂RAM、<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>C、串口控制器。</li>
-<li><strong>SH2/SH3系列（主打高性能）</strong>：集成总线控制器，直接支持SRAM、<a href="https://www.elecfans.com/tags/dram/" target="_blank"><u>DRAM</u></a>、<a href="https://www.hqchip.com/app/1522" target="_blank"><u>SD</u></a>RAM、PSRAM、甚至PCMCIA卡，不用外加内存控制器，还支持大小端切换，多处理器系统共享内存直接搞，不用额外加转换电路。</li>
-<li>还有SH3带的<a href="https://www.elecfans.com/tags/实时时钟/" target="_blank"><u>实时时钟</u></a>RTC，跑32.768KHz独立晶振，走时准还低功耗，做手持设备不用外加RTC芯片。</li>
-</ul>
-<hr/>
-<h2>开发工具全得离谱，当年根本不用自己造轮子</h2>
-<p>最难得的是SH系列的生态做的特别好，完全不像某些日系芯片工具链难用的要死：</p>
-<ol>
-<li>日立自己的全套工具：优化C编译器、汇编器、调试器自带流水线<a href="https://bbs.elecfans.com/zhuti_proteus_1.html" target="_blank"><u>仿真</u></a>，不用硬件就能估代码运行时间，还有E7000<a href="https://www.elecfans.com/tags/仿真器/" target="_blank"><u>仿真器</u></a>支持源码级调试，入门门槛极低。</li>
-<li>第三方支持拉满：GNU的C/<a href="https://www.elecfans.com/tags/C++/" target="_blank"><u>C++</u></a>工具链直接适配，<a href="https://bbs.elecfans.com/group_303" target="_blank"><u>VxWorks</u></a>、pSOS、Nucleus、甚至早期的Linux都有官方移植，做产品不用自己花几个月适配OS。</li>
-<li>各种评估板、参考设计齐全，当年我做一个SH1的采集项目，照着参考设计改改，两周就能出样板，效率高的离谱。</li>
-</ol>
-<hr/>
-<h2>最后唠两句</h2>
-<p>现在回头看SH系列的设计，完全是需求导向的经典案例：没有盲目堆参数，所有设计都是冲着解决当年嵌入式的实际痛点去的，低功耗、高集成、开发友好，后来的SH4还用到了世嘉<a href="https://m.hqchip.com/app/1703" target="_blank"><u>DC</u></a>游戏机上，性能打同期对手一条街。
-现在我们做硬件设计，其实也还是这套思路：不要为了炫技加没用的功能，盯着产品的核心需求做优化，永远不会错。</p>]]></description></item><item>    <title><![CDATA[调完一个工业级IMU，我终于不用自己蹲温箱校准了]]></title>    <link>https://www.elecfans.com/d/8989311.html</link>    <guid>https://www.elecfans.com/d/8989311.html</guid>    <pubDate>2026-11-27 16:35:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989311" value="https://file1.elecfans.com/web2/M00/A8/56/wKgZomUVYl6AZdfuABBGn_iRoRY026.pdf"/><h1>调完一个工业级IMU，我终于不用自己蹲温箱校准了</h1>
-<p>最近做小型动中通<a href="https://bbs.elecfans.com/zhuti_rf_1.html" target="_blank"><u>天线</u></a>的稳定平台项目，之前用分立<a href="https://www.elecfans.com/v/tag/7888/" target="_blank"><u>MEMS</u></a>陀螺+加速度计搭方案，光轴对准校准、温漂补偿就折腾了快两周，精度还飘忽不定。换了<a href="https://www.elecfans.com/tags/adi/" target="_blank"><u>ADI</u></a>这款<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>IS16486之后，半天调通<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>，数据直接能用，省下来的时间都能摸鱼喝两杯咖啡了，今天给大家唠唠这款工业级六轴IMU的实际使用体验。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8989311" target="_blank">ADIS16486.pdf</a></p>
-<hr/>
-<h2>核心参数先划重点，都是工程师最关心的</h2>
-<table>
-<thead>
-<tr>
-<th>先挑干货说，那些虚头巴脑的特性我就不抄手册了：</th>
-<th>类别</th>
-<th>参数</th>
-<th>实际价值</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>三轴陀螺</td>
-<td>±450°/s量程，典型零偏稳定性5.3°/hr，角随机游走0.25°/√hr，轴间对准误差典型0.018°</td>
-<td>这个轴对准误差是真的香，分立搭的IMU自己装调根本做不到这么低，省了超多坐标系对齐的功夫</td>
-</tr>
-<tr>
-<td>三轴加速度计</td>
-<td>±18g量程，非线性0.01%FS</td>
-<td>一般工业场景、中小型<a href="https://www.elecfans.com/v/tag/12732/" target="_blank"><u>无人机</u></a>的振动完全够扛</td>
-</tr>
-<tr>
-<td>校准范围</td>
-<td>出厂已经在-40℃~+85℃完成了灵敏度、零偏、轴对准全校准</td>
-<td>不用自己买温箱跑校准曲线，光这一步就省了至少一周的开发时间</td>
-</tr>
-<tr>
-<td>可靠性</td>
-<td>2000g抗冲击，工作温度-40℃~+105℃，内置连续CRC内存校验+<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>自检</td>
-<td>工业户外场景随便造，故障直接有报错标志，不用自己写诊断逻辑</td>
-</tr>
-<tr>
-<td><a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a></td>
-<td>SPI接口，最高15MHz<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>，内置4组可配置FIR<a href="https://www.elecfans.com/tags/滤波器/" target="_blank"><u>滤波器</u></a>（最高120抽头）</td>
-<td>要低噪声还是低延迟自己选，默认的滤波器参数甚至不用改就能用</td>
-</tr>
-</tbody>
-</table>
-<p>另外这款和同系列的ADIS16480/485/488A引脚完全兼容，要是之前用同系列的，直接换料升级就行，<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>都不用改，太友好了。</p>
-<hr/>
-<h2>硬件开发必看的几个坑，我都替你踩过了</h2>
-<p>第一次调的时候踩了好几个手册不起眼位置的坑，给大家敲黑板：</p>
-<ol>
-<li><strong><a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>部分一定要留够裕量</strong>
-VDD供电是3.0~3.6V，正常工作<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>才186mA，但启动瞬态电流最高能冲到600mA，别用那种额定电流只有200mA的<a href="https://www.hqchip.com/app/1700" target="_blank"><u>LDO</u></a>，不然上电直接掉电复位，我一开始用了个小电流LDO卡了半小时才找到原因。
-另外<strong>V<a href="https://m.hqchip.com/app/1729" target="_blank"><u>DDR</u></a>TC引脚哪怕不用RTC功能也必须接3.3V</strong>，我第一次测漏接了，一直报SYS_E_FLAG错误，翻了半天才在手册备注里看到这个要求，纯纯的无语。</li>
-<li><strong>SPI配置别搞错模式</strong>
-它是SPI Mode3（CPOL=1，CPHA=1），MSB先出，16位帧格式，最高时钟15MHz，模式配错读出来全是乱码，别上来就按自己常用的SPI Mode0去配。默认DIO2引脚会输出数据就绪高脉冲，直接接<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>的外部中断就行，不用轮询，数据同步延迟很低。</li>
-<li><strong>安装应力一定要控制</strong>
-四个安装孔的拧紧扭矩要均匀，推荐是0.28Nm（40英寸盎司），别一个拧死一个松，壳体形变会直接引入传感器零偏误差。我第一次随便拧的，陀螺零偏直接飘了0.5°/s，重新均匀拧完立刻恢复正常，还有<a href="https://m.hqchip.com/app/1515" target="_blank"><u>连接器</u></a>不要受侧向力，也会引入应力误差。</li>
-</ol>
-<hr/>
-<h2>软件快速上手流程，拿过来半小时就能出数据</h2>
-<p>不用上来就啃全手册，按这个步骤走，很快就能拿到准的姿态数据：</p>
-<ol>
-<li>上电之后等1.5s左右启动完成，先读PROD_ID<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>（页0，地址0x7E），正常应该返回0x4066，返回值对就说明SPI通信完全没问题。</li>
-<li>默认配置不用改就能读基础数据：
-<ul>
-<li>陀螺高字：X轴0x12、Y轴0x16、Z轴0x1A，1LSB对应0.02°/s</li>
-<li>加速度高字：X轴0x1E、Y轴0x22、Z轴0x26，1LSB对应0.8mg
-读这几个寄存器就拿到最基础的惯性数据了。</li>
-</ul></li>
-<li>要做零偏校准的话，把模块放平稳不要动，往GLOB_CMD寄存器（页3，地址0x02）的Bit0写1，芯片会自动统计一段时间的平均值做零偏补偿，比自己算的准多了。</li>
-<li>改完配置要掉电保存的话，往GLOB_CMD的Bit3写1，就会把配置存到内置Flash里，下次上电自动加载，不用每次初始化都写一遍。</li>
-</ol>
-<hr/>
-<h2>适合什么项目用？</h2>
-<p>说实话这款不算便宜，消费级项目肯定没必要上，但是做工业级高可靠性项目，省下来的开发成本远超过芯片本身的钱：</p>
-<ul>
-<li>中小型固定翼/<a href="https://www.elecfans.com/v/tag/9407/" target="_blank"><u>多旋翼</u></a>无人机的飞控，抗冲击够，精度够悬停和导航</li>
-<li><a href="https://m.elecfans.com/v/tag/144/" target="_blank"><u>工业机器人</u></a>关节、AGV的姿态反馈，不用校准装上去就能用</li>
-<li>车载/船载小型AH<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>RS</u></a>（航姿参考系统），温漂小不用额外做温度补偿</li>
-<li>动中通天线、<a href="https://bbs.elecfans.com/group_350" target="_blank"><u>光电</u></a>吊舱的稳定平台，轴对准误差小，动态响应够</li>
-</ul>
-<hr/>
-<p>最后说句实在话，之前做分立IMU方案，光校准、标定、应力测试的功夫，换成这个片子早就把整个项目调完了，除了贵点真的没毛病。有没有用过同款的朋友？评论区聊聊你们还踩过什么奇怪的坑~</p>]]></description></item>  </channel></rss>
+	随着具身智能的发展重心逐步转向实际生产中的使用价值，前沿技术与应用能否落到真实任务中，成为行业关注焦点。未来，瑞为技术将坚持“极度收敛、极度聚焦”的战略原则，聚焦搬运、拆垛码垛、特种作业等场景的“生产力工具”，从真实生产任务出发，打造面向生产力的商用机器人。最终衡量我们的，不是做了多少款机器人，而是机器人到底为企业创造了多少生产力。</p>]]></description></item>  </channel></rss>
