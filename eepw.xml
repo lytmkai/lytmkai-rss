@@ -1,4 +1,482 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子产品世界</title>      <link>https://m.eepw.com.cn/</link>      <description>电子产品世界</description>      <generator>python eepw.py @Pi20</generator>      <item>    <title><![CDATA[开源固件能让开发板动嘴就能写应用？-电子产品世界论坛]]></title>    <link>https://forum.eepw.com.cn/thread/402549/1</link>    <guid>https://forum.eepw.com.cn/thread/402549/1</guid>    <pubDate>2026-11-27 12:03:45.090070</pubDate>    <description><![CDATA[<!-- 帖子分类 && 页码 -->&#13;
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子产品世界</title>      <link>https://m.eepw.com.cn/</link>      <description>电子产品世界</description>      <generator>python eepw.py @Pi20</generator>      <item>    <title><![CDATA[RK3588出6个千兆网，参考米尔的设计做网关-电子产品世界]]></title>    <link>http://m.eepw.com.cn/article/202611/484934.html</link>    <guid>http://m.eepw.com.cn/article/202611/484934.html</guid>    <pubDate>2026-11-27 13:03:25.239172</pubDate>    <description><![CDATA[<h2>RK3588出6个千兆网，参考米尔的设计做网关</h2>		
+		<div class="time_source news-info">
+		
+				<a href="/m/list/special/control" class="news-lb">工控自动化</a> 
+		 
+				<span> 时间：2026-11-27 12:03</span>
+				</div>
+				<div class="content" id="con1" style="overflow:hidden;">
+		<p><strong>技术移植实战 · RK3588 × YT9215</strong></p><p>工业网关、机器人控制器、边缘视觉终端，现场设备越接越多，可 RK3588 只有两路千兆 MAC——4 台相机加 1 台上位机就排满了。本文以米尔 MYD-YR3588 开发板为样本，介绍裕太微 YT9215 交换芯片的移植链路——引脚对位、GMAC1 设备树、MDIO 交换节点、DSA 驱动与内核配置、编译烧写、br0 验证与测试方法。</p><p style="text-align: center;"><img width="554" height="478" src="https://editerupload.eepw.com.cn/fetch/202611/74f06152b0d68ea8ad844c2d47074baf.png"/> </p><p style="text-align: center;">图：米尔MYD-YR3588开发板</p><p><strong>一句话结论</strong></p><p>RK3588把第二路千兆MAC（GMAC1）以RGMII固定链路直连 YT9215交换芯片，再由 Linux DSA 框架为5个用户口（port@0~port@4）创建lan1~lan5五个可独立管理的千兆网口；加上RK3588自带GMAC0直出的一路千兆网，一共6个千兆网口，正好够搭一台多口网关。CPU口（port@8）关联已有的GMAC1 网络设备，不额外创建普通网络接口。MDIO地址 0x1d，设备树改动集中在板 dtsi，内核需启用 DSA、交换驱动及标签协议，网桥方案还需启用BRIDGE。</p><h2>方案：1 路 GMAC 变 5 个千兆网口</h2><p>现场要的不是「三路网口」，而是「多路现场网络能像交换机一样自由互通」——设备既是算力节点，又是网络汇聚点。RK3588 自带两路千兆 MAC，用第二路 GMAC 挂一颗嵌入式交换芯片是最省硬件的一条路：只需一颗芯片，且完全由主控统一管理。</p><p>YT9215 是裕太微（Motorcomm）的 5+2 端口千兆交换芯片，集成 5 个 10/100/1000M PHY，另有一路 RGMII/MII/RMII 与一路 SerDes 作为上行，内部为非阻塞交换架构，并内置 RISC-V 处理器用于轻量级远端管理（裕太微官方产品说明）。在 MYD-YR3588 上，它挂在 GMAC1 上，由 Linux DSA（Distributed Switch Architecture） 框架统一管理。</p><p>表 1. MYD-YR3588 网口与系统节点对应关系（来源：MYD-YR3588 Buildroot 软件评估指南 表 6-1）</p><table width="554"><tbody><tr class="firstRow"><td width="107" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>网口位置</p></td><td width="67" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>系统节点</p></td><td width="93" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>上行通道</p></td><td width="287" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>说明</p></td></tr><tr><td width="107" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>ETH1（J2 下）</p></td><td width="67" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>eth1</p></td><td width="93" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>GMAC0 + YT8531</p></td><td width="287" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>独立千兆网口，不经过 YT9215</p></td></tr><tr><td width="107" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>ETH2（J2 上）</p></td><td width="67" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>lan1</p></td><td width="93" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>GMAC1 + YT9215</p></td><td width="287" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>交换口，port@0</p></td></tr><tr><td width="107" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>ETH3（J3 左下）</p></td><td width="67" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>lan2</p></td><td width="93" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>GMAC1 + YT9215</p></td><td width="287" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>交换口，port@1</p></td></tr><tr><td width="107" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>ETH4（J3 左上）</p></td><td width="67" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>lan3</p></td><td width="93" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>GMAC1 + YT9215</p></td><td width="287" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>交换口，port@2</p></td></tr><tr><td width="107" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>ETH5（J3 右下）</p></td><td width="67" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>lan4</p></td><td width="93" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>GMAC1 + YT9215</p></td><td width="287" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>交换口，port@3</p></td></tr><tr><td width="107" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>ETH6（J3 右上）</p></td><td width="67" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>lan5</p></td><td width="93" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>GMAC1 + YT9215</p></td><td width="287" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>交换口，port@4</p></td></tr></tbody></table><p>带宽模型需要说清楚：实际完成硬件卸载的二层流量可以在交换芯片内转发；当前 BSP 驱动启用 YT921X_UNKNOWN_PKT_TO_CPU，将未知单播、未知组播及广播送往 CPU，并关闭用户口硬件 FDB 学习。驱动虽提供 FDB 添加接口，也不能据此认定全部流量均已硬件卸载。送 CPU 处理的流量仍受 CPU 性能及 GMAC1 与交换芯片之间 1 Gbps RGMII 固定链路的限制，不能保证多口并发时互不影响。</p><h2>硬件准备：引脚与三个关键点</h2><p>YT9215 与核心板之间的主要接口信号包括 RGMII 数据总线、MDIO 管理总线和一根复位脚。引脚对错了，后面设备树写得再对也起不来。按原理图与核心板 Pin List 核对后的对应关系如下（除复位脚为 MUX0，其余所列信号为 MUX1）。</p><p>表 2. YT9215 与 MYC-YR3588 引脚对应关系（来源：MYD-YR3588 Linux BSP 移植指南 表 3-2）</p><table width="554"><tbody><tr class="firstRow"><td width="147" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>原理图引脚</p></td><td width="133" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>PinList 管脚号</p></td><td width="274" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>功能码</p></td></tr><tr><td width="147" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>GMAC1_MDC</p></td><td width="133" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>170</p></td><td width="274" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>MUX1</p></td></tr><tr><td width="147" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>GMAC1_MDIO</p></td><td width="133" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>169</p></td><td width="274" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>MUX1</p></td></tr><tr><td width="147" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>GMAC1_TXCLK</p></td><td width="133" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>180</p></td><td width="274" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>MUX1</p></td></tr><tr><td width="147" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>GMAC1_TXEN</p></td><td width="133" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>182</p></td><td width="274" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>MUX1</p></td></tr><tr><td width="147" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>GMAC1_TXD0</p></td><td width="133" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>186</p></td><td width="274" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>MUX1</p></td></tr><tr><td width="147" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>GMAC1_TXD1</p></td><td width="133" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>185</p></td><td width="274" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>MUX1</p></td></tr><tr><td width="147" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>GMAC1_TXD2</p></td><td width="133" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>184</p></td><td width="274" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>MUX1</p></td></tr><tr><td width="147" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>GMAC1_TXD3</p></td><td width="133" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>183</p></td><td width="274" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>MUX1</p></td></tr><tr><td width="147" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>GMAC1_RXCLK</p></td><td width="133" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>178</p></td><td width="274" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>MUX1</p></td></tr><tr><td width="147" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>GMAC1_RXDV_CRS</p></td><td width="133" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>172</p></td><td width="274" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>MUX1</p></td></tr><tr><td width="147" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>GMAC1_RXD0</p></td><td width="133" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>176</p></td><td width="274" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>MUX1</p></td></tr><tr><td width="147" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>GMAC1_RXD1</p></td><td width="133" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>175</p></td><td width="274" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>MUX1</p></td></tr><tr><td width="147" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>GMAC1_RXD2</p></td><td width="133" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>174</p></td><td width="274" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>MUX1</p></td></tr><tr><td width="147" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>GMAC1_RXD3</p></td><td width="133" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>173</p></td><td width="274" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>MUX1</p></td></tr><tr><td width="147" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>GPIO0_D3_u</p></td><td width="133" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>C14</p></td><td width="274" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>MUX0</p></td></tr></tbody></table><p>三个容易踩坑的细节：</p><p>① 复位脚要独占。GPIO0_D3（指南标为 PinList C14）低电平有效，当前 由交换节点的 reset-gpios 持有，交换驱动 motorcomm_mdio.c 将复位保持和释放后等待分别设为 20 ms、100 ms，不读取 GMAC 的 snps,reset-delays-us。</p><p>② RGMII 延时随走线变。phy-mode = "rgmii-rxid" 关闭 SoC 内部 RX 延时、由对端提供；TX 方向用 tx_delay 补偿时钟与数据之间的偏斜。MYD-YR3588 取 0x43，它不是通用常量，换板必须按丢包率与 CRC 错误计数重新标定。</p><p>③ 这里使用固定链路。GMAC1 与交换芯片 CPU 口之间没有外部 PHY，不使用 phy-handle，而是在 GMAC1 和交换芯片 CPU 口两侧以 fixed-link 声明 1000M 全双工，按固定参数建立链路。</p><h2>设备树配置：GMAC1 与交换节点</h2><p>GMAC1 的芯片级资源（ethernet@fe1c0000、时钟、复位、mdio1 子节点）定义在原厂的 rk3588s.dtsi 中，引脚复用也已在 rk3588s-pinctrl.dtsi 里配好——这两处都不用改，移植只需在板级文件 myd-yr3588-base.dtsi 中引用并补充参数。</p><pre name="code" class="c">&amp;gmac1 {&#13;
+    /* Use rgmii-rxid mode to disable rx delay inside Soc */&#13;
+    phy-mode = "rgmii-rxid";&#13;
+    clock_in_out = "output";&#13;
+    pinctrl-names = "default";&#13;
+    pinctrl-0 = &lt;&amp;gmac1_miim&#13;
+                 &amp;gmac1_tx_bus2&#13;
+                 &amp;gmac1_rx_bus2&#13;
+                 &amp;gmac1_rgmii_clk&#13;
+                 &amp;gmac1_rgmii_bus&gt;;&#13;
+    tx_delay = &lt;0x43&gt;;&#13;
+    /* rx_delay = &lt;0x3f&gt;; */&#13;
+    status = "okay";&#13;
+    /* DSA master: connect to switch CPU port without external PHY */&#13;
+    fixed-link {&#13;
+        speed = &lt;1000&gt;;&#13;
+        full-duplex;&#13;
+    };&#13;
+};</pre><p>交换芯片挂在与 GMAC1 配套的 mdio1 总线上，通过 ports 声明端口划分：port@0~port@4 是 5 个用户口（lan1~lan5），port@8 是 CPU 口，用 ethernet = &lt;&amp;gmac1&gt; 与 GMAC1 绑定。MDIO 地址 0x1d 由硬件决定，必须与原理图一致。</p><pre name="code" class="c">&amp;mdio1 {&#13;
+    status = "okay";&#13;
+    /* Motorcomm YT9215 on gmac1 (DSA)&#13;
+     * MDIO address 0x1d, RESET# = GPIO0_D3, CPU port 8&#13;
+     */&#13;
+    yt9215: switch@1d {&#13;
+        compatible = "motorcomm,yt921x";&#13;
+        reg = &lt;0x1d&gt;;&#13;
+        status = "okay";&#13;
+        reset-gpios = &lt;&amp;gpio0 RK_PD3 GPIO_ACTIVE_LOW&gt;;&#13;
+        ports {&#13;
+            #address-cells = &lt;1&gt;;&#13;
+            #size-cells = &lt;0&gt;;&#13;
+            port@0 { reg = &lt;0&gt;; label = "lan1"; };&#13;
+            port@1 { reg = &lt;1&gt;; label = "lan2"; };&#13;
+            port@2 { reg = &lt;2&gt;; label = "lan3"; };&#13;
+            port@3 { reg = &lt;3&gt;; label = "lan4"; };&#13;
+            port@4 { reg = &lt;4&gt;; label = "lan5"; };&#13;
+            port@8 {&#13;
+                reg = &lt;8&gt;;&#13;
+                label = "cpu";&#13;
+                ethernet = &lt;&amp;gmac1&gt;;&#13;
+                phy-mode = "rgmii";&#13;
+                fixed-link {&#13;
+                    speed = &lt;1000&gt;;&#13;
+                    full-duplex;&#13;
+                };&#13;
+            };&#13;
+        };&#13;
+    };&#13;
+};</pre><h2>驱动集成与内核配置</h2><p>当前 SDK 已集成 YT9215 的 DSA 驱动；移植到其他内核时需核对三类改动：驱动本体 drivers/net/dsa/motorcomm/（yt921x.c、yt921x.h、motorcomm_mdio.c、motorcomm_mdio.h 及对应 Kconfig / Makefile）、DSA 框架文件（include/net/dsa.h、net/dsa/Kconfig、net/dsa/Makefile）以及标签协议模块 net/dsa/tag_motorcomm.c，同时核对 drivers/net/dsa/ 下 Kconfig 与 Makefile 的包含关系。</p><pre name="code" class="c"># DSA 框架与网桥&#13;
+CONFIG_NET_DSA=y&#13;
+CONFIG_BRIDGE=y&#13;
+# YT9215 交换芯片 DSA 驱动&#13;
+CONFIG_NET_DSA_MOTORCOMM_YT921X=y</pre><p>打开上述驱动后重新编译内核即可。若后续把 BSP 内核升级到更新版本，注意核对两处命名：米尔 BSP 内核 6.1 用的匹配串是 compatible = "motorcomm,yt921x"、标签模块是 tag_motorcomm；上游主线的绑定为 motorcomm,yt9215、模块名为 tag_yt921x。配错时端口链路看起来正常但数据不通。</p><p>05 编译烧写与功能验证</p><p>内核编译沿用米尔 SDK 的 build.sh 流程，产物为 output/firmware/boot.img。烧写后启动，系统里就能看到 lan1~lan5 五个网络设备节点。</p><pre name="code" class="c">PC:~/myd-yr3588-bsp$ ./build.sh lunch&#13;
+# 在实际菜单中选择 myd_yr3588_defconfig，序号以当前 SDK 为准&#13;
+PC:~/myd-yr3588-bsp$ ./build.sh kernel&#13;
+PC:~/myd-yr3588-bsp$ ls output/firmware/boot.img&#13;
+output/firmware/boot.img</pre><p>镜像里已集成开启交换功能的脚本，它把交换口聚合成网桥节点 br0，用来快速验证:</p><pre name="code" class="c">root@myd-yr3588-buildroot:/# /etc/myir_test/yt9215_switch.sh&#13;
+sending commands to dhcpcd process&#13;
+root@myd-yr3588-buildroot:/# ifconfig br0&#13;
+br0: flags=4163&lt;UP,BROADCAST,RUNNING,MULTICAST&gt;  mtu 1500&#13;
+        inet 192.168.40.254  netmask 255.255.255.0  broadcast 192.168.40.255&#13;
+        inet6 fe80::18af:21ff:fe6a:986e  prefixlen 64  scopeid 0x20&lt;link&gt;&#13;
+        inet6 fe80::9c90:3c51:fc4b:5556  prefixlen 64  scopeid 0x20&lt;link&gt;&#13;
+        ether 5a:9b:16:a6:4c:c8  txqueuelen 1000  (Ethernet)</pre><p>先用 ip link show master br0 确认成员包含 lan1~lan5，再逐口接线，用 ethtool lanX 核对链路及速率，并验证 ping 与 ip -s link show dev lanX 的收发计数：</p><p><strong>交换通路测试结果</strong></p><p>交换机主板：192.168.1.101；开发板 A：192.168.1.114；开发板 B：192.168.1.122。A、B 接入不同 LAN 口。</p><p>表 3. iperf3 测试结果（每项 10 秒，吞吐取接收端统计；UDP 发送目标为 1000 Mbits/sec）</p><table width="554"><tbody><tr class="firstRow"><td width="147" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>测试项</p></td><td width="133" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>数据方向</p></td><td width="274" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>接收吞吐（Mbits/sec）</p></td></tr><tr><td width="147" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>主控收发 TCP</p></td><td width="133" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>主板 → A</p></td><td width="274" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>896</p></td></tr><tr><td width="147" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>主控收发 TCP</p></td><td width="133" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>A → 主板</p></td><td width="274" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>926</p></td></tr><tr><td width="147" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>端口间 UDP</p></td><td width="133" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>B → A</p></td><td width="274" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>949</p></td></tr><tr><td width="147" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>端口间 UDP</p></td><td width="133" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>A → B</p></td><td width="274" style="padding: 3px 5px; border-width: medium medium 1px; border-style: none none solid; border-color: currentcolor currentcolor rgb(0, 0, 0);"><p>949</p></td></tr></tbody></table><h2> 排查清单</h2><p>按「从硬件往软件」的顺序确认，比在软件层反复试参数快得多。</p><p>表 4. YT9215 移植常见问题与处理动作</p><p><strong>系统里没有 lan1~lan5，br0 起不来</strong></p><p><strong>可能原因：</strong>内核未启用 DSA、交换驱动、标签协议或网桥；设备树节点未生效</p><p><strong>处理动作：</strong>确认最终 .config 中 CONFIG_NET_DSA、CONFIG_NET_DSA_MOTORCOMM_YT921X、CONFIG_NET_DSA_TAG_MOTORCOMM 与 CONFIG_BRIDGE 均为 y，核对 &amp;gmac1 与 &amp;mdio1 的 status 均为 "okay"，并确认实际启动用的是你改过的那份 dtb</p><p><strong>MDIO 总线上读不到地址 0x1d 的设备</strong></p><p><strong>可能原因：</strong>复位时序不足、复位脚被占用、时钟或供电异常</p><p><strong>处理动作：</strong>核对交换节点的 reset-gpios 指向 GPIO0_D3 且低有效，确认 GMAC1 未重复申请；当前复位保持 20 ms、释放后等待 100 ms 写在 motorcomm_mdio.c 中，调整 GMAC 的 snps,reset-delays-us 不会改变该时序；用示波器核对参考时钟与复位波形</p><p><strong>交换口能 link、灯正常，但 ping 不通、无数据</strong></p><p><strong>可能原因：</strong>DSA 标签协议模块与驱动不匹配；端口未加入网桥</p><p><strong>处理动作：</strong>确认 BSP 标签协议 tag_motorcomm 已编入内核；若配置为模块则确认已加载。网桥方案下核对 5 个用户口均为 br0 成员、IP 配在 br0 且成员口无残留地址；独立口方案则按需求给各口配置 IP，并核对路由及隔离配置</p><p><strong>大流量下丢包、CRC 错误计数上升</strong></p><p><strong>可能原因：</strong>RGMII 时序或信号质量异常；拥塞也可能造成丢包</p><p><strong>处理动作：</strong>在 &amp;gmac1 中微调 tx_delay（rx_delay 在 rgmii-rxid 模式下不生效，如需启用需同时调整 phy-mode）；每次调整后用 iperf3 长时压测并观察错误计数</p><p><strong>上电偶发识别失败，重启后正常</strong></p><p><strong>可能原因：</strong>复位时序与供电时序不匹配</p><p><strong>处理动作：</strong>结合波形检查交换芯片供电与复位释放顺序，必要时调整 motorcomm_mdio.c 中的复位保持及释放后等待时间</p><p><strong>升级内核后交换口整体失效</strong></p><p><strong>可能原因：</strong>compatible 字符串、驱动路径或 tag 模块名发生变化</p><p><strong>处理动作：</strong>对照新内核的 DSA 驱动与设备树绑定文档，更新 compatible、defconfig 配置项与 tag 模块引用，再重新编译验证</p>		<center>
+					</center>
+	<p class="keyp">关键词：
+				<a href="https://www.eepw.com.cn/tech/s/k/%E7%B1%B3%E5%B0%94">米尔</a>
+			<a href="https://www.eepw.com.cn/tech/s/k/RK3588">RK3588</a>
+			<a href="https://www.eepw.com.cn/tech/s/k/%E5%B7%A5%E4%B8%9A%E7%BD%91%E5%85%B3">工业网关</a>
+			<a href="https://www.eepw.com.cn/tech/s/k/%E5%BC%95%E8%84%9A%E5%AF%B9%E4%BD%8D">引脚对位</a>
+			<a href="https://www.eepw.com.cn/tech/s/k/GMAC1%E8%AE%BE%E5%A4%87%E6%A0%91">GMAC1设备树</a>
+			<a href="https://www.eepw.com.cn/tech/s/k/MDIO%E4%BA%A4%E6%8D%A2%E8%8A%82%E7%82%B9">MDIO交换节点</a>
+			<a href="https://www.eepw.com.cn/tech/s/k/DSA%E9%A9%B1%E5%8A%A8%E4%B8%8E%E5%86%85%E6%A0%B8%E9%85%8D%E7%BD%AE">DSA驱动与内核配置</a>
+			<a href="https://www.eepw.com.cn/tech/s/k/%E7%BC%96%E8%AF%91%E7%83%A7%E5%86%99">编译烧写</a>
+			<a href="https://www.eepw.com.cn/tech/s/k/br0%E9%AA%8C%E8%AF%81%E4%B8%8E%E6%B5%8B%E8%AF%95%E6%96%B9%E6%B3%95">br0验证与测试方法</a>
+		</p>
+<!--阅读全文-->
+	<div class="login-read" style="display: block;" id="con2">
+		<div class="linear-block"/>
+	    <div class="read-all-btn-box">
+	    	<a href="https://passport.eepw.com.cn/auth/login?url=https://m.eepw.com.cn/article/202611/484934.html" target="_blank" class="read-all-btn">阅读全文</a>
+	    </div>
+	</div>
+<script type="text/javascript" src="//webstorage.eepw.com.cn/js/2014/m/check_login.js"/>  
+<!--阅读全文end-->
+</div>
+
+<div class="content" style="margin-top:20px;">
+	<!--ad start-->
+	<div style="width: 100%;margin-bottom:1em;">
+	<!-- 广告位：M02 -->
+		<script type="text/javascript">&lt;!--//&lt;![CDATA[
+   var m3_u = (location.protocol=='https:'?'https://ad.eepw.com.cn/www/delivery/ajs.php':'http://ad.eepw.com.cn/www/delivery/ajs.php');
+   var m3_r = Math.floor(Math.random()*99999999999);
+   if (!document.MAX_used) document.MAX_used = ',';
+   document.write ("&lt;scr"+"ipt type='text/javascript' src='"+m3_u);
+   document.write ("?zoneid=123");
+   document.write ('&amp;amp;cb=' + m3_r);
+   if (document.MAX_used != ',') document.write ("&amp;amp;exclude=" + document.MAX_used);
+   document.write (document.charset ? '&amp;amp;charset='+document.charset : (document.characterSet ? '&amp;amp;charset='+document.characterSet : ''));
+   document.write ("&amp;amp;loc=" + escape(window.location));
+   if (document.referrer) document.write ("&amp;amp;referer=" + escape(document.referrer));
+   if (document.context) document.write ("&amp;context=" + escape(document.context));
+   if (document.mmm_fo) document.write ("&amp;amp;mmm_fo=1");
+   document.write ("'&gt;&lt;\/scr"+"ipt&gt;");
+//]]&gt;--&gt;</script><noscript><a href="http://ad.eepw.com.cn/www/delivery/ck.php?n=a3ee0761&amp;cb=INSERT_RANDOM_NUMBER_HERE" target="_blank"><img src="http://ad.eepw.com.cn/www/delivery/avw.php?zoneid=123&amp;cb=INSERT_RANDOM_NUMBER_HERE&amp;n=a3ee0761" border="0" alt=""/></a></noscript>
+	</div>
+	<!--ad end-->
+	
+<script>
+var $oBanana=$('#banana');
+$($oBanana).animate({'font-size':'24'},300);
+</script>	
+</div>]]></description></item><item>    <title><![CDATA[海外算力管制再升级，东方算芯以全国产供应链构筑算力安全底座-电子产品世界]]></title>    <link>http://m.eepw.com.cn/article/202611/484935.html</link>    <guid>http://m.eepw.com.cn/article/202611/484935.html</guid>    <pubDate>2026-11-27 13:03:17.971148</pubDate>    <description><![CDATA[<h2>海外算力管制再升级，东方算芯以全国产供应链构筑算力安全底座</h2>		
+		<div class="time_source news-info">
+		
+		 
+				<span> 时间：2026-11-27 12:35</span>
+				<span>来源：EEPW</span>		
+				</div>
+				<div class="editor">
+			<p><em>编者按：</em>随着美国先进算力出口管制进一步延伸至远程算力访问领域，全球AI产业面临新的供应链不确定性。东方算芯通过“软件定义近存计算”的原创技术路线，立足国产成熟制程，构建覆盖芯片设计、晶圆制造、先进封装、整机系统及软件生态的全国产供应链体系，为国内高端算力的稳定供给和持续迭代探索新的发展路径。</p>
+		</div>
+				<div class="content" id="con1" style="overflow:hidden;">
+		<p style="text-indent: 2em;">全球人工智能产业正在迎来新一轮算力供应链挑战。</p><p style="text-indent: 2em;">2026年11月19日，美国商务部工业与安全局（BIS）针对先进半导体远程访问的出口管制新规正式生效。新规进一步将监管范围延伸至特定海外数据中心提供的远程算力访问场景，并通过累计总处理性能（Aggregate TPP）设置监管门槛。</p><p style="text-indent: 2em;">从限制先进AI芯片出口，到对特定跨境算力访问实施监管，外部政策的持续变化，正在增加国内人工智能企业获取海外高端算力的不确定性。</p><p style="text-indent: 2em;">过去几年，国内部分人工智能企业通过采购海外高性能GPU、使用符合出口要求的定制芯片以及租用海外数据中心算力等方式，满足不断增长的模型训练和推理需求。然而，随着出口管制范围不断调整，这些算力获取方式的长期稳定性面临新的挑战。</p><p style="text-indent: 2em;">尤其是当人工智能开始从技术验证迈向规模化商业应用，算力供给的连续性变得尤为重要。大型智算中心的建设涉及服务器采购、数据中心基础设施、软件平台开发及长期运营等多个环节，其投资回报周期往往以年为单位。一旦关键芯片或配套器件的供应受到影响，企业的技术研发、业务扩张和基础设施投资都可能面临额外成本。与此同时，传统高端AI芯片对先进制程、高带宽存储器（HBM）以及先进封装技术的依赖，也使算力供应链面临多个潜在风险点。即使芯片设计实现自主化，制造、存储、封装及软件生态等环节仍需要同步建立自主能力。</p><p style="text-indent: 2em;">近日，在2026集成电路发展论坛（北京）上，中国半导体行业协会集成电路设计分会主任、东方算芯董事长兼首席执行官魏少军提出，集成电路产业需要从芯片思维转向系统思维，通过成熟工艺、先进封装以及软硬件协同创新，提升计算效率和互联带宽。在外部环境急剧变化的背景下，国产算力产业需要重新审视技术先进性、供应链安全与产业化能力之间的关系。东方算芯正在推进的全国产算力供应链建设，为这一问题提供了新的实践案例。</p><p style="text-align: center;"><img src="https://editerupload.eepw.com.cn/202611/1795754134603466.jpg" title="1795754134603466.jpg" alt="1795754134603466.jpg" width="600" height="400" border="0"/></p><p style="text-indent: 2em;"><strong>从架构源头降低供应链依赖，成熟制程如何支撑高端算力？</strong></p><p style="text-indent: 2em;">长期以来，高性能计算芯片的技术演进主要围绕先进制程、计算架构和高带宽存储展开。先进工艺能够在有限的芯片面积内集成更多晶体管，并改善计算能效；HBM通过高密度堆叠和宽接口设计，为大规模并行计算提供数据传输能力。然而，这条技术路线对先进制造资源及高端存储器件提出了较高要求。</p><p style="text-indent: 2em;">对于国产算力芯片企业而言，如何充分利用国内现有产业基础，实现具有竞争力的高端算力产品，是需要解决的重要问题。</p><p style="text-indent: 2em;">东方算芯选择通过底层计算架构和存储架构的协同创新，建立一条与国产产业链能力相匹配的技术路线。</p><p style="text-indent: 2em;">2026年7月13日，东方算芯正式发布首颗旗舰AI芯片DF1000。该芯片采用国产14nm工艺，以“软件定义近存计算”为核心技术路线，在计算资源利用率和存储访问效率两个方面进行创新。软件定义计算通过软硬件解耦及硬件资源动态重构，使计算资源能够根据不同任务进行灵活组织，并利用空间并行、时分复用等方式，提高硬件资源利用率，在成熟制程条件下释放更多计算潜力。</p><p style="text-indent: 2em;">在存储架构方面，DF1000采用DRAM-Logic混合键合3D垂直封装技术，将计算和存储进行垂直集成，缩短数据传输距离，提高互连密度及访存带宽。</p><p style="text-indent: 2em;">随着大模型规模持续扩大，数据访问效率已经成为影响AI芯片实际性能的重要因素。特别是在大模型推理过程中，模型权重读取、KV Cache访问等操作，对存储带宽和数据搬运效率提出了更高要求。通过将计算与存储进行更紧密的集成，3D近存计算能够减少长距离数据传输带来的开销，为缓解存储墙、带宽墙和功耗墙等问题提供新的技术手段。</p><p style="text-indent: 2em;">根据东方算芯公布的数据，DF1000的BF16峰值算力达到520 TFLOPS，访存带宽达到6.4 TB/s。</p><p style="text-indent: 2em;">这一技术路线的战略价值，在于将供应链安全纳入芯片架构设计的源头。东方算芯通过计算架构、存储架构与先进封装的协同创新，降低对海外尖端制程和高端HBM的依赖，使高端算力芯片能够建立在国内成熟工艺及本土产业链基础之上。对于国产集成电路产业而言，这种技术创新也为充分利用国内现有制造资源、提升产业链整体技术能力提供了新的方向。</p><p style="text-indent: 2em;"><strong>从芯片制造到集群交付，东方算芯打通全国产供应链</strong></p><p style="text-indent: 2em;">一颗国产AI芯片实现流片，并不意味着其已经具备大规模产业化能力。从晶圆制造到先进封装，从加速卡设计到服务器整机，再到集群互联、散热和软件部署，任何一个环节都可能影响算力产品的最终性能与交付进度。东方算芯围绕原创计算架构，正在持续推进全国产供应链建设。</p><p style="text-indent: 2em;">目前，公司已经建立覆盖芯片设计、晶圆制造、3D混合键合封装及测试的国产供应链体系，并进一步将国产化延伸至板卡、整机及智算集群。基于DF1000，东方算芯已形成包括巅峯DF1000加速卡、擎元QY100服务器、拓域TY64超节点以及慧算HS系列智算集群在内的完整系统级解决方案。其中，DF1000加速卡面向国内主流服务器平台；QY100服务器采用单机8卡配置，并提供风冷和液冷方案；TY64超节点面向更高密度的算力部署需求；慧算系列智算集群则进一步支持大模型分布式训练和推理等应用场景。</p><p style="text-indent: 2em;">从产品形态来看，东方算芯的布局已经从单颗芯片扩展至完整算力基础设施。这也意味着，其全国产供应链建设需要同时满足芯片量产、系统集成、集群部署和实际业务运行等多层次要求。</p><p style="text-indent: 2em;">目前，东方算芯已经完成DF1000流片验证及128卡集群稳定运行验证。据公司披露，自2024年5月成立以来，东方算芯仅用24个月打通了从芯片研发、软件适配到集群部署的完整链路，并完成多个主流大模型的长周期稳定运行验证。</p><p style="text-indent: 2em;">2026年11月，DF1000荣获第二十一届“中国芯”年度重大创新突破产品奖项。东方算芯目前已实现规模化训练集群交付，并计划于2026年底实现千卡交付。</p><p style="text-indent: 2em;">11月24日，人民网报道了东方算芯在原创算力架构及全国产供应链方面的实践。东方算芯副总裁郭炜表示，公司将继续完善国产供应链建设，深化芯模协同，面向政务、工业、科研等国产化应用场景推进稳定交付。在外部环境不确定性持续增强的情况下，全国产供应链的优势也在进一步显现。依托国内产业链伙伴，企业能够更加主动地进行产能规划、工艺优化、良率提升及交付管理，减少海外出口许可、关键器件供给和跨境物流等因素对产品交付的影响。</p><p style="text-indent: 2em;">对于需要长期稳定运行的人工智能基础设施而言，可持续供货能力与产品性能同样重要。</p><p style="text-indent: 2em;"><strong>从硬件自主走向生态自主，构建可持续演进的国产算力体系</strong></p><p style="text-indent: 2em;">全国产供应链建设还需要解决软件生态方面的问题。在传统GPU产业中，头部企业经过长期积累，已经建立涵盖编译器、算子库、运行时、开发工具、通信组件以及应用框架的完整软件体系。对于人工智能企业而言，算力平台的迁移不仅涉及硬件更换，还需要对模型、训练框架及相关软件进行适配。底层软件能力的自主程度，将直接影响国产算力平台的应用范围和后续发展空间。</p><p style="text-indent: 2em;">因此，东方算芯在推进硬件国产化的同时，也在建设自主底层软件栈，覆盖编译器、算子库、驱动框架、分布式通信及开发工具链，并适配主流深度学习框架。结合软件定义计算架构，东方算芯可以通过编译器对不同计算任务进行资源映射和调度，并通过低精度量化、关键算子优化及分布式通信优化，提高芯片在实际模型负载中的计算效率。</p><p style="text-indent: 2em;">与此同时，东方算芯正在与国内大模型企业深化芯模协同，推动芯片与模型的联合定义和同步迭代。通过将真实模型负载引入芯片架构设计及软件优化过程，芯片企业可以更准确地理解模型演进带来的计算需求，大模型企业也能够根据国产硬件特征进行针对性优化，从而形成软硬件共同演进的技术体系。东方算芯把软件栈纳入国产供应链协同范围，实现软硬件同根同源、同步迭代。</p><p style="text-indent: 2em;">当然，全国产供应链建设仍然是一项需要长期投入的系统工程。成熟工艺的能效优化、先进封装良率提升、集群长期运行稳定性及软件生态的丰富程度，都需要在规模化部署过程中不断完善。这一过程也将带动国内材料、设备、存储、封装测试、基础软件及高速互联等产业环节共同成长，进一步发挥国产集成电路产业集群的协同优势。</p><p style="text-indent: 2em;">随着人工智能产业进入规模化发展阶段，全球算力竞争正在由单一芯片性能竞争，扩展至技术架构、产业链协同、软件生态与规模化交付能力的综合竞争。笔者认为，东方算芯通过原创计算架构与全国产供应链建设，将高端算力产品的技术创新与国内产业基础紧密结合，为国产算力的长期发展探索了一条差异化路径。面对不断变化的外部环境，以自主创新提升技术竞争力，以全国产供应链增强算力供给的确定性，将成为中国人工智能产业实现长期发展的重要基础。</p>		<center>
+					</center>
+
+<div class="content" style="margin-top:20px;">
+	<!--ad start-->
+	<div style="width: 100%;margin-bottom:1em;">
+	<!-- 广告位：M02 -->
+		<script type="text/javascript">&lt;!--//&lt;![CDATA[
+   var m3_u = (location.protocol=='https:'?'https://ad.eepw.com.cn/www/delivery/ajs.php':'http://ad.eepw.com.cn/www/delivery/ajs.php');
+   var m3_r = Math.floor(Math.random()*99999999999);
+   if (!document.MAX_used) document.MAX_used = ',';
+   document.write ("&lt;scr"+"ipt type='text/javascript' src='"+m3_u);
+   document.write ("?zoneid=123");
+   document.write ('&amp;amp;cb=' + m3_r);
+   if (document.MAX_used != ',') document.write ("&amp;amp;exclude=" + document.MAX_used);
+   document.write (document.charset ? '&amp;amp;charset='+document.charset : (document.characterSet ? '&amp;amp;charset='+document.characterSet : ''));
+   document.write ("&amp;amp;loc=" + escape(window.location));
+   if (document.referrer) document.write ("&amp;amp;referer=" + escape(document.referrer));
+   if (document.context) document.write ("&amp;context=" + escape(document.context));
+   if (document.mmm_fo) document.write ("&amp;amp;mmm_fo=1");
+   document.write ("'&gt;&lt;\/scr"+"ipt&gt;");
+//]]&gt;--&gt;</script><noscript><a href="http://ad.eepw.com.cn/www/delivery/ck.php?n=a3ee0761&amp;cb=INSERT_RANDOM_NUMBER_HERE" target="_blank"><img src="http://ad.eepw.com.cn/www/delivery/avw.php?zoneid=123&amp;cb=INSERT_RANDOM_NUMBER_HERE&amp;n=a3ee0761" border="0" alt=""/></a></noscript>
+	</div>
+	<!--ad end-->
+	
+<script>
+var $oBanana=$('#banana');
+$($oBanana).animate({'font-size':'24'},300);
+</script>	
+</div>	
+	
+	<!-- 相关文章-->	
+	<div style="text-align: left; padding-left:10px;max-width:960px;margin: 0 auto;font-size: 1.25em;">
+			<h3>相关文章</h3>							
+	</div>
+	<section class="clear">
+		<div id="new_conwrap">
+			<ul>
+						
+				&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202509/474059.html">Nvidia和Wayve谈论5亿美元投资</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/auto" class="news-lb">汽车电子</a>&#13;
+<span class="news-time">2025-09-23</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202509/474060.html">尼得科OKK将发售卧式5轴加工中心“HX50</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/intl" class="news-lb">国际视野</a>&#13;
+<span class="news-time">2025-09-23</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202509/474058.html">减轻多小芯片系统中的翘曲</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/eda" class="news-lb">EDA/PCB</a>&#13;
+<span class="news-time">2025-09-23</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202509/474057.html">晶体管放大器</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/component" class="news-lb">元件/连接器</a>&#13;
+<span class="news-time">2025-09-23</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202509/474056.html">第一家非美公司考虑在美生产芯片：联发科</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/wireless" class="news-lb">手机与无线通信</a>&#13;
+<span class="news-time">2025-09-23</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202509/474055.html">异构集成:半导体硅光子学焦点</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/eda" class="news-lb">EDA/PCB</a>&#13;
+<span class="news-time">2025-09-23</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202509/474054.html">三星、SK海力士股价飙升的原因:全球科技热潮</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/network" class="news-lb">网络与存储</a>&#13;
+<span class="news-time">2025-09-23</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202509/474053.html">台积电为其15nm技术获得了两家客户</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/eda" class="news-lb">EDA/PCB</a>&#13;
+<span class="news-time">2025-09-23</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+								
+				
+				
+			</ul>												
+		</div>						
+	</section>
+		<div class="computer">
+	<a href="https://www.eepw.com.cn/article/202611/484935.htm" target="_blank">查看电脑版</a>
+	</div>
+	<!-- footer begin -->
+	<footer>		
+		<p class="fontArial">Copyright © 电子产品世界  京ICP备12027778号-2</p>
+	</footer>
+	<!-- footer end -->
+	<!--百度推送-->
+	<script>
+	(function(){
+	    var bp = document.createElement('script');
+	    bp.src = '//push.zhanzhang.baidu.com/push.js';
+	    var s = document.getElementsByTagName("script")[0];
+	    s.parentNode.insertBefore(bp, s);
+	})();
+	</script>
+	<!--百度推送-->
+	<div style="display:none;">
+	<script type="text/javascript">
+	var keywords = document.querySelector('meta[name="keywords"]').getAttribute('content');
+	document.write("&lt;script language='JavaScript' src='http://datasheet.eepw.com.cn/count/index?title="+document.title+"&amp;keyword="+keywords+"&amp;url="+location.href+"&amp;refer="+document.referrer+"'&gt;&lt;\/script&gt;");
+	</script>
+	
+	<script>
+    var _hmt = _hmt || [];
+    (function() {
+      var hm = document.createElement("script");
+      hm.src = "https://hm.baidu.com/hm.js?c6033714cc2a1e329fdce55d9ceb29bd";
+      var s = document.getElementsByTagName("script")[0]; 
+      s.parentNode.insertBefore(hm, s);
+    })();
+    </script>
+	
+</div>
+
+ 
+<script src="https://www.eepw.com.cn/event/ad/m_right_box.js"/>
+</div>]]></description></item><item>    <title><![CDATA[2027年中国家庭清洁机器人十大洞察——跳出参数内卷，驶向全场景智能-电子产品世界]]></title>    <link>http://m.eepw.com.cn/article/202611/484936.html</link>    <guid>http://m.eepw.com.cn/article/202611/484936.html</guid>    <pubDate>2026-11-27 13:03:02.715647</pubDate>    <description><![CDATA[<h2>2027年中国家庭清洁机器人十大洞察——跳出参数内卷，驶向全场景智能</h2>		
+		<div class="time_source news-info">
+		
+		 
+				<span> 时间：2026-11-27 12:37</span>
+				<span>来源：IDC</span>		
+				</div>
+				<div class="content" id="con1" style="overflow:hidden;">
+		<p style="text-indent: 2em;">2026年，市场正迎来技术、格局与场景的多重变量——IDC预计，2026年全球家庭清洁机器人市场预计出货3966万台，同比增长预计达16.2%。其中扫地机器人预计出货2904.6万台，同比增长13.8%，中国品牌预计包揽全球出货前五。泳池、割草机器人等户外品类成为增长新引擎，擦窗机器人以接近60%的出货增速领跑细分赛道。</p><p/><p style="text-indent: 2em;">基于上述判断，国际数据公司（IDC）梳理出2027年中国家庭清洁机器人市场的十大洞察，涵盖扫地、割草、擦窗、泳池机器人四个品类。2027年，AI与具身智能从营销概念走向真机落地，无边界导航、基站自清洁等技术范式加速更迭。家用清洁机器人正从“室内单品竞争”全面走向“全场景、智能化、全球化”的新阶段。</p><p style="text-indent: 2em;"><strong>洞察一</strong><br/></p><p style="text-indent: 2em;">2027年中国家庭清洁机器人市场出货预计小幅增长，全年出货预计达739万台，整体同比增长2.8%，其中扫地机器人市场预计出货550万台，增速基本持平。</p><p style="text-indent: 2em;">IDC 最新预测显示，2026 年中国家庭清洁机器人市场出货量预计同比下滑 2.3%。受国内补贴退坡影响，行业进入加速洗牌阶段，市场份额持续向头部品牌集中，产品均价也迎来快速下行；其中扫地机器人在2026年双十一期间的平均单价已跌破 3000 元。</p><p style="text-indent: 2em;">IDC预计，2027 年，国内家庭清洁机器人出货有望迎来小幅修复，同比增长 2.8%。分品类来看，擦窗机器人增速领跑，扫地机器人市场出货预计基本持平。行业竞争重心正从单机智能化，转向多机协同方案；全屋清洁的核心价值在于任务联动而非简单品类堆砌。预计厂商将依托产品功能升级带动均价回升，驱动国内市场产品结构持续优化。</p><p style="text-indent: 2em;"><strong>洞察二</strong><br/></p><p style="text-indent: 2em;">AI与具身智能从营销卖点走向真机落地，2027年进入技术分水岭，真机体验成为竞争焦点。</p><p style="text-indent: 2em;">清洁机器人正从封闭式单机迈向具身操作，行业核心差异化竞争，将落脚于复杂家居环境的处理能力：识别障碍物、理解空间布局，并自主完成精细化作业。行业具身能力正从以机械臂拾取、局部环境适应为代表的初级物体操作阶段，向具备环境认知、主动统筹清洁任务的高阶自主能力演进。</p><p style="text-indent: 2em;">IDC预计，2027年中国市场 18% 以上的扫地机器人产品将具备复杂家庭环境理解与自主任务规划能力：识别区域属性，识别污渍类型、动态调整拖地模式，自主判断清扫顺序、自主复扫脏区。各品类发展节奏呈现分化态势：扫地机器人旗舰机型主攻复杂地面工况与跨场景感知能力；擦窗、泳池机器人等品类则重点补齐环境适配与自主决策短板。旗舰产品的核心竞争力集中体现为 “看得懂、走得稳、扫得净”。</p><p style="text-indent: 2em;"><strong>洞察三</strong><br/></p><p style="text-indent: 2em;">楼梯将成为下一代扫地机器人的关键突破口，多楼层自主清洁有望重构产品定义与竞争格局。</p><p style="text-indent: 2em;">2027年，随着轮足式移动机构、独立爬楼载运系统以及复杂地形感知与运动控制技术持续演进，扫地机器人有望突破传统单层清洁的物理边界，从平面清洁设备向多楼层自主清洁机器人演进。行业竞争的核心将不再只是实现机器人的自主爬楼，而是进一步打通楼梯清洁、跨层移动、地图接续、能源管理与安全控制等关键环节，实现从单层自动化到整栋住宅连续自主清洁的能力升级。</p><p style="text-indent: 2em;">IDC预计，2027年海外市场将占全球整体家用扫地机器人市场出货的84%，在多层独栋住宅占比较高的海外市场，这一技术突破有望创造更明确的用户价值，并成为中国清洁机器人品牌差异化竞争的新方向。2027 年，头部厂商有望小批量量产具备爬楼梯能力的高端旗舰产品。</p><p style="text-indent: 2em;"><strong>洞察四</strong><br/></p><p style="text-indent: 2em;">扫地机器人竞争从参数内卷走向全生命周期体验，维护与迭代能力成为新的溢价来源。</p><p style="text-indent: 2em;">2027年，随着家用清洁机器人产品价格和功能复杂度持续提升，行业竞争将从购买阶段的性能参数，进一步延伸至整个使用周期的综合体验。耗材体系逐步向耐用化、可清洗和低维护成本方向优化，用户对全生命周期持有成本的关注度提升；与此同时，高端产品的维修便利性、配件供应和售后响应能力，将成为品牌建立用户信任和差异化竞争的重要因素。IDC调研显示，67%的扫地机器人采购用户将“耗材成本”列为采购决策的重要考虑因素。AI算法与OTA升级则让产品具备持续优化的可能，地图规划、障碍物识别和清洁策略可以在上市后不断迭代，产品竞争力不再完全由出厂时的硬件配置决定。未来，厂商之间的竞争将从“卖出一台性能更强的机器”，转向“在更长的使用周期内持续为用户创造价值”。</p><p style="text-indent: 2em;"><strong>洞察五</strong><br/></p><p style="text-indent: 2em;">地下无缆泳池机器人从单一清洁设备向智能泳池管理系统延伸，清洁与水质管理融合推动产品价值升级。</p><p style="text-indent: 2em;">IDC预计，2027年，泳池机器人将逐步突破单一清洁功能的产品边界，向集清洁、水质监测与智能维护于一体的综合管理设备演进，整体家用泳池机器人出货预计超400万台。地下无缆泳池机器人预计首次突破全球整体家用泳池机器人出货的50%，头部厂商开始将多区域清洁、水质净化、智能监测及自动化维护等功能融入产品，并进一步探索与泳池过滤、消毒及家庭智能庭院系统的联动。与此同时，市场竞争呈现价格带双向延伸：入门级产品通过供应链成熟与技术普及加速价格下沉，高端产品则依靠多功能集成、自动化和生态协同持续提升产品溢价。</p><p style="text-indent: 2em;"><strong>洞察六</strong><br/></p><p style="text-indent: 2em;">清洁机器人市场加速标准化，擦窗机器人进入规范化发展新阶段，渗透率有望持续爬坡，中国擦窗机器人从产品输出向标准输出发展。</p><p style="text-indent: 2em;">2027年，随着首部擦窗机器人专项行业标准QB/T 8242-2026正式实施，行业将从缺乏统一评价体系的快速扩张阶段，迈向有标可依的规范化发展阶段。IDC预计，2027年全球家用擦窗机器人出货405万台，同比增长8.8%。标准通过统一产品安全、基础性能和质量评价方法，推动行业建立共同的品质底线，压缩低质量产品的竞争空间，并增强消费者对高空清洁设备的信任。与此同时，标准化也将推动行业竞争从基础功能和价格竞争，进一步转向清洁效果、产品可靠性及自动化体验的深度竞争。随着基站化、自动洗布等技术持续成熟，以及消费者认知逐步提升，擦窗机器人有望从早期尝鲜型消费向更广泛的家庭应用场景渗透。未来中国品牌的竞争力有望从产品和成本优势，进一步延伸至测试评价体系和行业规则制定能力。</p><p style="text-indent: 2em;"><strong>洞察七</strong><br/></p><p style="text-indent: 2em;">中国清洁机器人厂商出海进入2.0阶段，从产品输出走向运营与供应链双本地化，重塑全球竞争格局。</p><p style="text-indent: 2em;">IDC预计，2027年海外市场将占到整体全球家用清洁机器人出货市场的85%。出海竞争的核心正在从产品与成本优势转向全球化运营能力。渠道端，企业逐步告别单一跨境电商模式，加速建设海外前置仓、本地销售团队、线下零售网络及售后服务体系，提升本地交付与用户服务能力；供应链端，头部厂商根据区域市场规模、贸易政策及供应链条件，探索海外生产基地与区域化产能布局，降低单一生产基地依赖，增强供应链韧性。与此同时，库存管理从传统的渠道备货向需求预测、动态补货和区域库存协同升级，本地团队也开始更深度地参与产品定义与市场运营。出海竞争由单纯的产品输出，转向渠道、供应链、产品和品牌的系统性本地化，成为中国清洁机器人厂商建立长期海外竞争优势的关键。</p><p style="text-indent: 2em;"><strong>洞察八</strong><br/></p><p style="text-indent: 2em;">B端商用与专业家政场景加速机器人化，清洁服务包与设备租赁推动商业模式从卖设备向卖服务转变。</p><p style="text-indent: 2em;">IDC预计，2027年中国商用清洁机器人出货预计接近5万台，未来五年复合增长率达36.7%。随着商用清洁机器人技术成熟和设备租赁模式逐步普及，物业、大型酒店、商业综合体及专业家政服务等B端场景有望从单点设备采购走向规模化部署。擦窗、地面清洁等标准化程度较高的任务将率先实现机器人替代与人机协同，尤其在高空外窗清洁领域，机器人作业与人工辅助、质检相结合，有望降低高风险作业的人力依赖。与此同时，行业商业模式从一次性设备销售向设备租赁、清洁服务包及按任务量付费等方式延伸，降低客户初始投入，推动厂商从硬件销售商向清洁解决方案与持续服务提供商转型。未来商业化能否真正形成规模，取决于设备利用率、单机运营成本、人工替代效率及客户复购率能否形成可持续的经济模型。</p><p style="text-indent: 2em;"><strong>洞察九</strong><br/></p><p style="text-indent: 2em;">家庭清洁机器人从成熟品类功能升级走向细分场景创新，专用型清洁设备不断拓展市场边界。</p><p style="text-indent: 2em;">2027年，随着核心导航、运动控制、环境感知及小型化清洁技术不断成熟，清洁机器人创新将逐步从成熟品类的功能迭代，向更多细分家务与特殊环境延伸。欧美市场单次清洁费用普遍超100美金，扫床、马桶、鱼缸、烧烤炉及扫雪等专用清洁产品开始获得厂商关注，分别针对床铺除尘、卫浴卫生、水下维护、户外清洁和季节性积雪等特定痛点提供自动化解决方案。</p><p style="text-indent: 2em;">相比传统通用型清洁机器人，新品类更强调对特定场景的深度适配，能够解决高频、费力或人工处理成本较高的清洁任务的产品，有望率先实现商业化，并在成熟品类之外开辟新的增长空间。</p><p style="text-indent: 2em;"><strong>洞察十</strong><br/></p><p style="text-indent: 2em;">家庭空间地图从清洁专用走向多场景复用，清洁机器人成为全屋智能的空间感知基础设施。</p><p style="text-indent: 2em;">IDC预计，2027年全球家用扫地机器人出货中，采用激光雷达 + 视觉融合导航的机型出货占比预计超60%。随着激光雷达、视觉识别和AI空间理解技术的发展，清洁机器人积累的家庭空间地图正逐步从清洁任务专用，向全屋智能的空间数据资源延伸。房间布局、区域划分、障碍物信息和设备位置等数据，有望为智能照明、家庭安防、移动巡检及其他智能设备提供空间信息基础，推动家庭智能从单设备控制向空间级感知与协同发展。与此同时，清洁机器人所具备的自主移动、环境感知和任务执行能力，也为通用家庭移动机器人提供了技术基础。</p><p style="text-indent: 2em;"><strong>分析师观点</strong><br/></p><p style="text-indent: 2em;">IDC中国研究经理赵思泉认为，清洁机器人或许是家庭机器人产业最先成熟的商业化入口，但它的长期价值不一定止于清洁，而在于通过移动能力、空间感知和环境理解，成为未来家庭智能服务的重要载体。未来，随着空间数据标准化、跨设备互联和具身智能技术成熟，家庭机器人有望从单一清洁任务执行者，逐步发展为能够感知家庭环境、理解用户需求并执行多种任务的移动智能终端，行业竞争也将从单一清洁能力向空间感知、智能决策和多场景服务能力延伸。</p><p style="text-indent: 2em;"><strong>进一步交流</strong></p><p style="text-indent: 2em;">如您希望就2027年中国家庭清洁机器人市场的出货预测、技术演进路径、出海本地化策略或B端商用场景落地等议题做更深入的探讨，欢迎与IDC中国研究团队联系。我们可基于细分品类数据、厂商竞争格局及用户调研，提供定制化研究与交流支持。</p><p style="text-indent: 2em;"><strong>免责声明</strong></p><p style="text-indent: 2em;">本文中的内容和数据均来源于IDC所发布的报告，所有内容及数据均为我公司所有。未经IDC书面许可，任何机构和个人不得以任何形式翻版、复制、刊登、发表或引用。</p>		<center>
+					</center>
+
+<div class="content" style="margin-top:20px;">
+	<!--ad start-->
+	<div style="width: 100%;margin-bottom:1em;">
+	<!-- 广告位：M02 -->
+		<script type="text/javascript">&lt;!--//&lt;![CDATA[
+   var m3_u = (location.protocol=='https:'?'https://ad.eepw.com.cn/www/delivery/ajs.php':'http://ad.eepw.com.cn/www/delivery/ajs.php');
+   var m3_r = Math.floor(Math.random()*99999999999);
+   if (!document.MAX_used) document.MAX_used = ',';
+   document.write ("&lt;scr"+"ipt type='text/javascript' src='"+m3_u);
+   document.write ("?zoneid=123");
+   document.write ('&amp;amp;cb=' + m3_r);
+   if (document.MAX_used != ',') document.write ("&amp;amp;exclude=" + document.MAX_used);
+   document.write (document.charset ? '&amp;amp;charset='+document.charset : (document.characterSet ? '&amp;amp;charset='+document.characterSet : ''));
+   document.write ("&amp;amp;loc=" + escape(window.location));
+   if (document.referrer) document.write ("&amp;amp;referer=" + escape(document.referrer));
+   if (document.context) document.write ("&amp;context=" + escape(document.context));
+   if (document.mmm_fo) document.write ("&amp;amp;mmm_fo=1");
+   document.write ("'&gt;&lt;\/scr"+"ipt&gt;");
+//]]&gt;--&gt;</script><noscript><a href="http://ad.eepw.com.cn/www/delivery/ck.php?n=a3ee0761&amp;cb=INSERT_RANDOM_NUMBER_HERE" target="_blank"><img src="http://ad.eepw.com.cn/www/delivery/avw.php?zoneid=123&amp;cb=INSERT_RANDOM_NUMBER_HERE&amp;n=a3ee0761" border="0" alt=""/></a></noscript>
+	</div>
+	<!--ad end-->
+	
+<script>
+var $oBanana=$('#banana');
+$($oBanana).animate({'font-size':'24'},300);
+</script>	
+</div>	
+	
+	<!-- 相关文章-->	
+	<div style="text-align: left; padding-left:10px;max-width:960px;margin: 0 auto;font-size: 1.25em;">
+			<h3>相关文章</h3>							
+	</div>
+	<section class="clear">
+		<div id="new_conwrap">
+			<ul>
+						
+				&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202601/477533.html">贸泽电子与Telit Cinterion签订</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/iot" class="news-lb">物联网与传感器</a>&#13;
+<span class="news-time">2026-01-14</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202601/477532.html">Bourns推出全新浪涌保护器系列 高浪涌电</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/component" class="news-lb">元件/连接器</a>&#13;
+<span class="news-time">2026-01-14</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202601/477531.html">2025年空气净化器除甲醛怎么选？核心除醛技</a></div>					&#13;
+<div class="news-info">&#13;
+<span class="news-time">2026-01-14</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202601/477530.html">卡萨帝冰箱被认证为开创者并非偶然</a></div>					&#13;
+<div class="news-info">&#13;
+<span class="news-time">2026-01-14</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202601/477529.html">Bourns 推出全新浪涌保护器系列 高浪涌</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/power" class="news-lb">电源与新能源</a>&#13;
+<span class="news-time">2026-01-14</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202601/477528.html">贸泽电子与Telit Cinterion签订</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/wireless" class="news-lb">手机与无线通信</a>&#13;
+<span class="news-time">2026-01-14</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202601/477527.html">2026新房急住净化器选购攻略：十品牌0臭氧</a></div>					&#13;
+<div class="news-info">&#13;
+<span class="news-time">2026-01-14</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+&#13;
+	<li class="news3 clear">													&#13;
+					<div class="news-txt f-l">&#13;
+						<div class="news-title"><a href="http://m.eepw.com.cn/article/202601/477526.html">BOE（京东方）位列2025 IFI美国专利</a></div>					&#13;
+<div class="news-info">&#13;
+&#13;
+<a href="/m/list/special/led" class="news-lb">光电显示</a>&#13;
+<span class="news-time">2026-01-14</span></div>																						&#13;
+					</div>&#13;
+				</li>&#13;
+	&#13;
+								
+				
+				
+			</ul>												
+		</div>						
+	</section>
+		<div class="computer">
+	<a href="https://www.eepw.com.cn/article/202611/484936.htm" target="_blank">查看电脑版</a>
+	</div>
+	<!-- footer begin -->
+	<footer>		
+		<p class="fontArial">Copyright © 电子产品世界  京ICP备12027778号-2</p>
+	</footer>
+	<!-- footer end -->
+	<!--百度推送-->
+	<script>
+	(function(){
+	    var bp = document.createElement('script');
+	    bp.src = '//push.zhanzhang.baidu.com/push.js';
+	    var s = document.getElementsByTagName("script")[0];
+	    s.parentNode.insertBefore(bp, s);
+	})();
+	</script>
+	<!--百度推送-->
+	<div style="display:none;">
+	<script type="text/javascript">
+	var keywords = document.querySelector('meta[name="keywords"]').getAttribute('content');
+	document.write("&lt;script language='JavaScript' src='http://datasheet.eepw.com.cn/count/index?title="+document.title+"&amp;keyword="+keywords+"&amp;url="+location.href+"&amp;refer="+document.referrer+"'&gt;&lt;\/script&gt;");
+	</script>
+	
+	<script>
+    var _hmt = _hmt || [];
+    (function() {
+      var hm = document.createElement("script");
+      hm.src = "https://hm.baidu.com/hm.js?c6033714cc2a1e329fdce55d9ceb29bd";
+      var s = document.getElementsByTagName("script")[0]; 
+      s.parentNode.insertBefore(hm, s);
+    })();
+    </script>
+	
+</div>
+
+ 
+<script src="https://www.eepw.com.cn/event/ad/m_right_box.js"/>
+</div>]]></description></item><item>    <title><![CDATA[开源固件能让开发板动嘴就能写应用？-电子产品世界论坛]]></title>    <link>https://forum.eepw.com.cn/thread/402549/1</link>    <guid>https://forum.eepw.com.cn/thread/402549/1</guid>    <pubDate>2026-11-27 12:03:45.090070</pubDate>    <description><![CDATA[<!-- 帖子分类 && 页码 -->&#13;
 	<div class="postPage clear" style="margin-top:0px;">&#13;
 		<div class="page">&#13;
 			<div class="page">共1条&#13;
@@ -8500,1222 +8978,4 @@ $($oBanana).animate({'font-size':'24'},300);
 
  
 <script src="https://www.eepw.com.cn/event/ad/m_right_box.js"/>
-</div>]]></description></item><item>    <title><![CDATA[BOE（京东方）2026年终媒体智享会落地南京-电子产品世界]]></title>    <link>http://m.eepw.com.cn/article/202611/484901.html</link>    <guid>http://m.eepw.com.cn/article/202611/484901.html</guid>    <pubDate>2026-11-25 20:03:03.242813</pubDate>    <description><![CDATA[<h2>BOE（京东方）2026年终媒体智享会落地南京</h2>		
-		<div class="time_source news-info">
-		
-		 
-				<span> 时间：2026-11-25 19:21</span>
-				<span>来源：EEPW</span>		
-				</div>
-				<div class="content" id="con1" style="overflow:hidden;">
-		<p style="text-indent: 2em;">11月25日，以“光启·氧望万象”为主题的BOE（京东方）2026年终媒体智享会在南京圆满举行。本次活动依托京东方位于南京的行业首条全氧化物8.5代LCD生产线，集中展示Super Oxide氧化物技术的创新成果与产业化应用。BOE（京东方）高级副总裁、集团首席技术官刘志强，BOE（京东方）高级副总裁、首席品牌官司达，南京京东方显示技术有限公司常务副总经理廖伟经等出席活动，与媒体嘉宾共同探讨氧化物技术创新与产业发展新趋势，展现京东方以长期技术深耕推动显示产业高质量发展的创新实力。作为全球氧化物显示技术的重要引领者，BOE（京东方）自2010年率先布局氧化物技术以来，持续深耕技术创新与产业化应用，构建起覆盖多尺寸、多品类的领先优势，并依托氧化物高迁移率技术推出原生FHD 1000Hz显示技术，实现FHD分辨率下1000Hz物理硬件级原生驱动，成为氧化物技术赋能高性能显示的标杆成果。</p><p style="text-align: center;"><img src="https://editerupload.eepw.com.cn/202611/1795605770806140.png" title="1795605770806140.png" alt="1795605770806140.png" width="600" height="400" border="0"/></p><p style="text-indent: 2em;"><strong>氧化物技术深耕 厚植底层技术创新</strong></p><p style="text-indent: 2em;">面对AI时代的产业变革与智能终端的快速迭代，底层技术创新已成为企业构筑长期竞争优势的重要支撑。活动中，BOE（京东方）高级副总裁、集团首席技术官刘志强表示，长期坚持底层技术创新是支撑企业战略进取与持续发展的重要基础。依托深厚的显示技术积累，BOE（京东方）在氧化物领域历经十五年、十一代技术迭代，已形成从材料、器件结构到驱动架构的系统性技术积累，持续拓展技术创新与产业发展空间。</p><p style="text-align: center;"><br/></p><p style="text-indent: 2em;">BOE（京东方）Super Oxide氧化物技术围绕“SUPER”形成五大核心优势：S（Sharp &amp; Vivid）至臻画质、U（Ultra-smooth）疾速刷新、P（Power-efficient）卓越能效、E（Enhanced-performance）场景化性能强化、R（Reliable）稳定可靠，全面赋能显示产品性能升级与多元场景应用。</p><p style="text-align: center;"><img src="https://editerupload.eepw.com.cn/202611/1795605848920575.png" title="1795605848920575.png" alt="1795605848920575.png" width="600" height="400" border="0"/></p><p style="text-indent: 2em;">南京京东方显示技术有限公司常务副总经理廖伟经进一步介绍了BOE（京东方）在氧化物技术领域的长期探索与产业布局。他表示，作为赋能全品类显示创新的重要底层技术，京东方领先的Super Oxide氧化物技术已逐步实现多元场景应用，并通过与产业链伙伴的协同创新，将技术优势转化为终端产品竞争力，持续推动高性能、低功耗显示产品创新，为消费者带来更加丰富的显示体验。</p><p style="text-align: center;"><img src="https://editerupload.eepw.com.cn/202611/1795605911848313.png" title="1795605911848313.png" alt="1795605911848313.png" width="600" height="400" border="0"/></p><p style="text-indent: 2em;"><strong>持续深耕氧化物技术 赋能全品类应用落地</strong></p><p style="text-indent: 2em;">作为本次活动的核心内容，氧化物技术展示专区集中呈现了BOE（京东方）Super Oxide在高刷新、高画质与低功耗等方面的创新成果。凭借高电子迁移率与低漏电流的双重优势，该技术能够兼顾显示性能与能耗表现，为高性能显示和绿色低碳应用提供新的技术支撑。</p><p style="text-indent: 2em;">在高画质与高刷新领域，BOE（京东方）带来了多款代表性产品。其中，27英寸5K Hyper Mini LED电竞显示器LG UltraGear 27GM950B采用BOE（京东方）氧化物技术，结合Hyper Mini LED显示方案，实现高分辨率与高刷新率的协同表现；爱攻AGON AGP257FT臻彩千帧3.0护眼电竞显示器基于ADS Pro显示技术与Oxide高迁移率技术，实现FHD分辨率下的物理硬件级原生千帧驱动。此外BOE（京东方）还展示了31.5”5K 165Hz BLMB笔记本、16"WQU 120Hz 裸眼3D笔记本等多款由Super Oxide氧化物技术赋能的创新产品，实现全品类应用覆盖。</p><p style="text-indent: 2em;">在低功耗应用方面，Super Oxide的低漏电流特性能够有效降低屏幕待机及低刷新状态下的功耗，相较行业同类技术功耗降低25%以上，24Hz低刷场景功耗降幅可达50%，为办公、阅读、娱乐等多元场景下的终端续航与绿色节能提供技术支持。</p><p style="text-align: center;"><img src="https://editerupload.eepw.com.cn/202611/1795605899544650.png" title="1795605899544650.png" alt="1795605899544650.png" width="600" height="400" border="0"/></p><p style="text-indent: 2em;"><strong>加速推进产业化落地 彰显技术创新硬实力</strong></p><p style="text-indent: 2em;">从技术突破到产业应用，京东方持续推动氧化物技术规模化落地。目前，BOE（京东方）已在合肥、重庆、南京、成都等地布局多条氧化物产线，实现了从中小尺寸到中大尺寸的全品类产品交付，推动氧化物技术在办公显示、高端电竞及创新显示等领域的应用拓展。通过持续完善技术研发、产品创新与规模化制造体系，京东方不断推动氧化物技术从底层创新走向多元终端应用。</p><p style="text-indent: 2em;">此外，京东方牵头完成的“面向智能显示的先进氧化物技术研究及产业化应用”项目荣获2025年度国家科学技术进步奖二等奖。该奖项不仅是对京东方在氧化物技术领域十余年持续创新的高度认可，也充分彰显了京东方以创新推动关键技术突破、以产业化应用引领显示技术升级的创新实力。</p><p style="text-indent: 2em;">面向未来，BOE（京东方）将继续坚定推进“屏之物联”发展战略，持续深耕底层技术创新，加速前沿技术成果向产业应用转化，以高性能、低功耗的创新显示技术赋能多元应用场景，携手全球生态伙伴推动产业协同创新，为显示产业高质量发展与万物智联时代的加速到来注入创新动能。</p>		<center>
-					</center>
-
-<div class="content" style="margin-top:20px;">
-	<!--ad start-->
-	<div style="width: 100%;margin-bottom:1em;">
-	<!-- 广告位：M02 -->
-		<script type="text/javascript">&lt;!--//&lt;![CDATA[
-   var m3_u = (location.protocol=='https:'?'https://ad.eepw.com.cn/www/delivery/ajs.php':'http://ad.eepw.com.cn/www/delivery/ajs.php');
-   var m3_r = Math.floor(Math.random()*99999999999);
-   if (!document.MAX_used) document.MAX_used = ',';
-   document.write ("&lt;scr"+"ipt type='text/javascript' src='"+m3_u);
-   document.write ("?zoneid=123");
-   document.write ('&amp;amp;cb=' + m3_r);
-   if (document.MAX_used != ',') document.write ("&amp;amp;exclude=" + document.MAX_used);
-   document.write (document.charset ? '&amp;amp;charset='+document.charset : (document.characterSet ? '&amp;amp;charset='+document.characterSet : ''));
-   document.write ("&amp;amp;loc=" + escape(window.location));
-   if (document.referrer) document.write ("&amp;amp;referer=" + escape(document.referrer));
-   if (document.context) document.write ("&amp;context=" + escape(document.context));
-   if (document.mmm_fo) document.write ("&amp;amp;mmm_fo=1");
-   document.write ("'&gt;&lt;\/scr"+"ipt&gt;");
-//]]&gt;--&gt;</script><noscript><a href="http://ad.eepw.com.cn/www/delivery/ck.php?n=a3ee0761&amp;cb=INSERT_RANDOM_NUMBER_HERE" target="_blank"><img src="http://ad.eepw.com.cn/www/delivery/avw.php?zoneid=123&amp;cb=INSERT_RANDOM_NUMBER_HERE&amp;n=a3ee0761" border="0" alt=""/></a></noscript>
-	</div>
-	<!--ad end-->
-	
-<script>
-var $oBanana=$('#banana');
-$($oBanana).animate({'font-size':'24'},300);
-</script>	
-</div>	
-	
-	<!-- 相关文章-->	
-	<div style="text-align: left; padding-left:10px;max-width:960px;margin: 0 auto;font-size: 1.25em;">
-			<h3>相关文章</h3>							
-	</div>
-	<section class="clear">
-		<div id="new_conwrap">
-			<ul>
-						
-				&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202512/476063.html">基于神经网络的更智能DPD引擎方法</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/smart" class="news-lb">智能计算</a>&#13;
-<span class="news-time">2025-12-02</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202512/476061.html">声学超表面，IDT以吉赫兹速率调制光线</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/led" class="news-lb">光电显示</a>&#13;
-<span class="news-time">2025-12-02</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202512/476060.html">全球数据中心冷却市场升温</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/network" class="news-lb">网络与存储</a>&#13;
-<span class="news-time">2025-12-02</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202512/476062.html">达索的实时空间计算会是下一个重大汽车飞跃吗？</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/auto" class="news-lb">汽车电子</a>&#13;
-<span class="news-time">2025-12-02</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202512/476058.html">英伟达在Synopsys上投资20亿美元，作</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/eda" class="news-lb">EDA/PCB</a>&#13;
-<span class="news-time">2025-12-02</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202512/476059.html">从物理层角度来看，超高可靠性意味着什么？</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/wireless" class="news-lb">手机与无线通信</a>&#13;
-<span class="news-time">2025-12-02</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-&#13;
-&#13;
-<li class="news2 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202512/476057.html">20亿美元！英伟达宣布入股EDA巨头新思科技</a></div>					&#13;
-<div class="news-info">&#13;
-<span class="news-time">2025-12-02</span></div>																						&#13;
-					</div>	&#13;
-					<div class="news-pic f-l"><a href="http://m.eepw.com.cn/article/202512/476057.html">&#13;
-					<img src="https://editerupload.eepw.com.cn/202512/b6e7b9538ccfb4a9001908d4f2ff6bd5.png"/>&#13;
-					</a></div>	&#13;
-				</li>&#13;
-&#13;
-&#13;
-	&#13;
-&#13;
-	<li class="news3 clear">													&#13;
-					<div class="news-txt f-l">&#13;
-						<div class="news-title"><a href="http://m.eepw.com.cn/article/202512/476056.html">现实正在破坏类人机器人的热潮</a></div>					&#13;
-<div class="news-info">&#13;
-&#13;
-<a href="/m/list/special/robot" class="news-lb">机器人</a>&#13;
-<span class="news-time">2025-12-02</span></div>																						&#13;
-					</div>&#13;
-				</li>&#13;
-	&#13;
-								
-				
-				
-			</ul>												
-		</div>						
-	</section>
-		<div class="computer">
-	<a href="https://www.eepw.com.cn/article/202611/484901.htm" target="_blank">查看电脑版</a>
-	</div>
-	<!-- footer begin -->
-	<footer>		
-		<p class="fontArial">Copyright © 电子产品世界  京ICP备12027778号-2</p>
-	</footer>
-	<!-- footer end -->
-	<!--百度推送-->
-	<script>
-	(function(){
-	    var bp = document.createElement('script');
-	    bp.src = '//push.zhanzhang.baidu.com/push.js';
-	    var s = document.getElementsByTagName("script")[0];
-	    s.parentNode.insertBefore(bp, s);
-	})();
-	</script>
-	<!--百度推送-->
-	<div style="display:none;">
-	<script type="text/javascript">
-	var keywords = document.querySelector('meta[name="keywords"]').getAttribute('content');
-	document.write("&lt;script language='JavaScript' src='http://datasheet.eepw.com.cn/count/index?title="+document.title+"&amp;keyword="+keywords+"&amp;url="+location.href+"&amp;refer="+document.referrer+"'&gt;&lt;\/script&gt;");
-	</script>
-	
-	<script>
-    var _hmt = _hmt || [];
-    (function() {
-      var hm = document.createElement("script");
-      hm.src = "https://hm.baidu.com/hm.js?c6033714cc2a1e329fdce55d9ceb29bd";
-      var s = document.getElementsByTagName("script")[0]; 
-      s.parentNode.insertBefore(hm, s);
-    })();
-    </script>
-	
-</div>
-
- 
-<script src="https://www.eepw.com.cn/event/ad/m_right_box.js"/>
-</div>]]></description></item><item>    <title><![CDATA[PCB抄板如何恢复BOM？从元件识别到全球采购的工程方法-电子产品世界论坛]]></title>    <link>https://forum.eepw.com.cn/thread/402490/1</link>    <guid>https://forum.eepw.com.cn/thread/402490/1</guid>    <pubDate>2026-11-25 19:04:04.016699</pubDate>    <description><![CDATA[<!-- 帖子分类 && 页码 -->&#13;
-	<div class="postPage clear" style="margin-top:0px;">&#13;
-		<div class="page">&#13;
-			<div class="page">共3条&#13;
-1/1															<span class="current">1</span>							<span class="goto">跳转至</span><input id="pa" style="width:30px;height:16px;" type="text" name="custompage" onkeydown="if(event.keyCode==13) {window.location='/thread/402490/'+this.value; return false;}"/>页&#13;
-<!-- <input class="search_input" onclick="if(document.getElementById('pa').value!=''){window.location='/thread/402490/'+getElementById('pa').value;}" value="Go" /> -->&#13;
-</div>&#13;
-		</div>&#13;
-	</div>	&#13;
-				<!-- 楼梯 -->&#13;
-	<a name="1"/>&#13;
-	<div id="reppostids_1" style="display:none;">1523868</div>&#13;
-		<div class="show round roundBorder rightAngle" id="reppostid_1">&#13;
-					<div class="titleAbout">&#13;
-				<div class="title clear">&#13;
-					<h1>PCB抄板如何恢复BOM？从元件识别到全球采购的工程方法										</h1>&#13;
-				</div>&#13;
-			</div>&#13;
-			&#13;
-	&#13;
-			<div class="postRel clear">&#13;
-				<div class="pho" id="873188">&#13;
-					<img src="http://uphotos.eepw.com.cn/1764237220/thumb/avatar.jpg" class="round mPho" width="100" height="100"/>					&#13;
-				</div>&#13;
-								<div class="rel">&#13;
-					<div class="clear">&#13;
-						<div class="nameGradeTime" style="position:relative">&#13;
-							<div class="name"><a href="https://passport.eepw.com.cn/profile/post/u/873188" target="_blank">黄特电子</a></div>&#13;
-							<div class="grade round">菜鸟</div>&#13;
-							<div class="time fontArial">2026-11-22 15:02:38														    <a style="background: #fff;line-height: 25px;text-align: center;color: #f57f59;border-radius: 3px;margin-top: 12px;padding: 2px 5px;border: #f57f59 solid 1px;" href="/forumact/grade/postid/1523868" rel="nofollow">打赏</a></div>&#13;
-						    						</div>&#13;
-&#13;
-						<div class="numFloor">&#13;
-														<div class="num clear">&#13;
-							</div>&#13;
-								&#13;
-							<div class="floor">&#13;
-							                               <div><a href="https://forum.eepw.com.cn/forum/thread/threadid/402490/flag/1" rel="nofollow">只看楼主</a> 1楼</div>&#13;
-                               							</div>&#13;
-						</div>&#13;
-					</div>&#13;
-										&#13;
-&#13;
-&#13;
-<script type="text/javascript">&#13;
-layui.use(['layer'], function(layer){&#13;
-  layer.photos({&#13;
-    photos: '#photos', &#13;
-  });&#13;
-});&#13;
-</script>&#13;
-&#13;
-<!-- <link href="/pub/videojs/video-js.css" rel="stylesheet">  
-<script src="/pub/videojs/video.min.js"></script> -->&#13;
-&#13;
-&#13;
-					<div class="content" id="photos">&#13;
-															<!--方案帖未登录状态 阅读全文-->&#13;
-	<p>PCB抄板项目中的BOM恢复，需要把实物上的元件转化为能够采购、装配和验证的物料记录。完整的器件型号、封装、关键参数及确认依据，会直接影响复刻板的生产与后续维护。</p><p>PCB抄板属于PCB逆向工程（PCB Reverse Engineering）的应用，通常涉及电路连接、布局和相关设计资料的重建。BOM是Bill of Materials的缩写，中文称为物料清单。对于面向全球供应链的项目，BOM应让不同地区的设计人员、采购团队和制造商准确理解同一个物料需求。</p><p>电子产品世界网的BOM介绍涉及规格、数量、制造商和采购信息等字段，并讨论了物料清单在采购、制造和维修中的作用。将这些信息落实到逆向工程项目，需要逐项建立实物与物料记录的对应关系。<a href="https://www.eepw.com.cn/zhuanlan/202507/367101.html">电子产品世界《电子行业中常说的BOM单是什么意思？》</a></p><p>恢复工作可以从板卡版本和元件位号开始。工程师先记录样板标识、正反面照片、器件方向及维修痕迹，再逐项登记顶部标记、封装尺寸和引脚数量。若板上位号不清晰，可以建立临时编号，并在照片、原理图和BOM中保持一致。</p><p><strong>芯片顶部标记需要结合制造商资料核实。</strong> 器件表面可能同时包含型号缩写、批次追踪码及其他标识。TI提供了按封装顶部标记查询产品的工具，可帮助缩小候选范围。获得查询结果后，还应核对封装、引脚定义和实际电路连接。<a href="https://www.ti.com/packaging/docs/partlookup.tsp">TI器件标记查询工具</a>、<a href="https://www.ti.com/content/dam/videos/external-videos/en-us/7/3816841626001/6208635235001.mp4/subassets/ti_product_markings_and_labels_11.01.2020_0.pdf">TI产品标记说明</a></p><p>同一顶部标记也可能对应多个订购料号。例如，TI查询结果中的“OABI”对应多个OPA354订购型号。因此，恢复BOM时还需要查看订购信息，明确采用哪个具体料号，并记录选择依据。<a href="https://www.ti.com/packaging/en/docs/partlookup.tsp?partmarking=ABI">TI“OABI”标记查询结果</a></p><p>对于电阻、电容、电感等器件，记录标称值之后，还需要补全影响应用的参数。下表可作为BOM恢复时的核对框架。</p><table><tr class="firstRow">器件类别建议核对的内容</tr><tr><td>电阻</td><td>阻值、精度、封装、功率及必要的温度系数要求</td></tr><tr><td>电容</td><td>容量、额定电压、介质类型、封装及应用所需特性</td></tr><tr><td>电感</td><td>电感量、直流电阻、额定电流、饱和电流及尺寸</td></tr><tr><td>集成电路</td><td>制造商、完整料号、封装、温度等级及引脚定义</td></tr><tr><td>连接器</td><td>间距、针数、方向、配对型号及机械尺寸</td></tr><tr><td>可编程器件</td><td>硬件料号、程序版本、配置与烧录要求</td></tr></table><p>这些字段应结合具体电路和器件资料确认。实物测量能够提供部分参数线索，但测量值与原始额定规格之间仍需进一步核对。</p><p>面向跨国采购时，建议同时保留制造商名称、制造商料号（MPN）和企业内部物料编号。供应商自己的商品编码可以作为采购辅助信息。这样即使更换采购渠道，各团队仍能依据制造商料号定位目标器件。</p><p>封装名称也需要明确尺寸体系。例如，“0402”在不同尺寸命名体系下可能产生理解差异，BOM中可以同时标注实际长宽尺寸及制造商封装代号。数量则应对应单板，并注明不装配位置，便于工厂处理不同产品配置。</p><p><strong>无法确认的物料，应有明确的工程状态。</strong> 可以在工作版BOM中标记“已确认”“待核实”或“替代验证中”，同时附上照片、数据手册及测量记录。待确认项目完成评估后，再更新到批准的生产版本。</p><p>以一个假设的工业传感器板项目为例，原板电容缺少可读标记，测量获得了容量线索。工程师还需结合所在电源网络、安装空间和应用要求确认选型条件，再通过样板测试验证候选器件。记录中应保留原板观察结果、候选料号和验证结论，方便海外团队复核。</p><p>交付前，可以把BOM与原理图、PCB及贴片坐标进行对应检查，核对位号、数量、封装和装配状态。采用替代器件时，还应记录适用的板卡版本及验证结果，避免采购阶段随意扩大替代范围。</p><p>最终交付包包含批准的BOM、可编辑设计、元件识别依据和样板测试记录。后续更换供应商或维护停产设备时，接手团队可以追溯每项物料的来源与确认过程，并在变更后完成相应验证。</p><p><br/></p>										</div>&#13;
-<script> &#13;
-// 引入video.js和插件的JS文件&#13;
-/*var video = document.querySelectorAll('video');&#13;
-for(var i = 0; i &lt; video.length; i++){&#13;
-	//videojs(video[i]);&#13;
-}*/&#13;
-</script>&#13;
-&#13;
-					&#13;
-					<div id="4024901523868"/>&#13;
-							&#13;
-					<!-- 回复 -->&#13;
-<style>&#13;
-.bbsdetailnew{width:100%; clear:both;; padding:20px 0px;}&#13;
-.bbsdetailnewbnt{margin:0 auto; width:380px; position:relative}&#13;
-.bbsdetailnewbnt_reply a{float:left; width:110px; margin-right:20px; background:#c00; height:35px; line-height:35px; font-family:'Microsoft YaHei UI'; font-size:16px; text-align:center; color:#fff; text-decoration:none; border-radius:3px;}&#13;
-.bbsdetailnewbnt_reply a:hover{color:#ccc; background:#C03;}&#13;
-.bbsdetailnewbnt_like {float:left; width:110px; background:#ccc; height:35px; line-height:35px; font-family:'Microsoft YaHei UI'; font-size:16px; text-align:center; color:#000; text-decoration:none; border-radius:3px;}&#13;
-.bbsdetailnewbnt_share a{float:left; width:110px; background:#ccc; height:30px; line-height:35px; font-family:'Microsoft YaHei UI'; font-size:16px; text-align:center; color:#000; text-decoration:none; border-radius:3px;}&#13;
-.bbsdetailnewbnt_share a:hover{color:#000; background:#c2c2c2;}&#13;
-.bbsdetailnewbnt_collect a{float:left; width:110px; margin-right:20px; background:#ccc; height:35px; line-height:35px; font-family:'Microsoft YaHei UI'; font-size:16px; text-align:center; color:#000; text-decoration:none; border-radius:3px;}&#13;
-.bbsdetailnewbnt_collect a:hover{color:#000; background:#c2c2c2;}&#13;
-</style>&#13;
-<div class="bbsdetailnew">&#13;
-	<div class="bbsdetailnewbnt">&#13;
-    	<div class="bbsdetailnewbnt_reply"><a href="https://passport.eepw.com.cn" onclick="window.parent.myFunc(); return false;" target="_blank" rel="nofollow">回复</a></div>&#13;
-        <div class="bbsdetailnewbnt_collect"><a href="https://passport.eepw.com.cn/Myprofile/addstore/typeid/1/subid/402490/cid/1" rel="nofollow">收藏</a></div>&#13;
-        <div class="bbsdetailnewbnt_like">&#13;
-        	<div class="bdsharebuttonbox">&#13;
-        	<div class="bds_more" data-cmd="more" style="text-decoration:none;color: #333; height:35px; line-height:38px; margin:0px; font-size:14px; ">&#13;
-        	<span style="cursor: pointer;"><img src="https://www.eepw.com.cn/event/action/images/zan_red.png" width="20" style="margin-top:-5px;margin-right: 5px;" onclick="addclick(402490,'');"/></span>&#13;
-        	<span id="good">0</span>&#13;
-        	</div>&#13;
-        	</div>&#13;
-        	<script type="text/javascript" src="/pub/js/bbs/likes.js"/>&#13;
-&#13;
-        <div style="clear:both;"/>&#13;
-		</div>&#13;
-		&#13;
-        <div style="clear:both;"/>&#13;
-  </div>&#13;
-</div>&#13;
-<!-- 回复-->&#13;
-										&#13;
-					<br/>&#13;
-					<!--d02-->&#13;
-										<script type="text/javascript">&lt;!--//&lt;![CDATA[&#13;
-   var m3_u = (location.protocol=='https:'?'https://ad.eepw.com.cn/www/delivery/ajs.php':'https://ad.eepw.com.cn/www/delivery/ajs.php');&#13;
-   var m3_r = Math.floor(Math.random()*99999999999);&#13;
-   if (!document.MAX_used) document.MAX_used = ',';&#13;
-   document.write ("&lt;scr"+"ipt type='text/javascript' src='"+m3_u);&#13;
-   document.write ("?zoneid=188");&#13;
-   document.write ('&amp;amp;cb=' + m3_r);&#13;
-   if (document.MAX_used != ',') document.write ("&amp;amp;exclude=" + document.MAX_used);&#13;
-   document.write (document.charset ? '&amp;amp;charset='+document.charset : (document.characterSet ? '&amp;amp;charset='+document.characterSet : ''));&#13;
-   document.write ("&amp;amp;loc=" + escape(window.location));&#13;
-   if (document.referrer) document.write ("&amp;amp;referer=" + escape(document.referrer));&#13;
-   if (document.context) document.write ("&amp;context=" + escape(document.context));&#13;
-   if (document.mmm_fo) document.write ("&amp;amp;mmm_fo=1");&#13;
-   document.write ("'&gt;&lt;\/scr"+"ipt&gt;");&#13;
-//]]&gt;--&gt;</script>&#13;
-					&#13;
-					<div class="colRepSha">	&#13;
-																				</div>&#13;
-					&#13;
-				</div>	&#13;
-			</div>&#13;
-			&#13;
-				&#13;
-			&#13;
-			<div class="postRel clear innerComment round" id="innerComment_1523868" style="display:none;">&#13;
-			<img src="https://webstorage.eepw.com.cn/css/2013/bbs/images/arrow_comment.jpg" class="arrowComment"/>&#13;
-			&#13;
-			<div id="showreply_1523868"/>&#13;
-			<div id="showreplys_1523868"/>&#13;
-						<form class="commentForm">&#13;
-			 	<input id="replycontent_1523868" type="text" name="content" value="" class="commBtn round commentInput" style="width:100%;"/>&#13;
-				<span id="test_tips_1523868" class="tips"/>&#13;
-				<div class="cBtn cBtn_1523868">&#13;
-					<input disabled="disabled" type="button" value="评论" class="round" onclick="get_reply(402490,1523868);"/>&#13;
-					<input type="reset" value="取消" class="cancel round" id="cancel_1523868"/>&#13;
-				</div>&#13;
-			</form>&#13;
-			</div>&#13;
-&#13;
-		</div>	&#13;
-				    	<!-- 楼梯 -->&#13;
-	<a name="2"/>&#13;
-	<div id="reppostids_2" style="display:none;">1523884</div>&#13;
-		<div class="show roundBorder allRightAngle" id="reppostid_2">&#13;
-			&#13;
-	&#13;
-			<div class="postRel clear">&#13;
-				<div class="pho" id="197156">&#13;
-					<img src="http://uphotos.eepw.com.cn/xqh518/thumb/avatar.jpg" class="round mPho" width="100" height="100"/>					&#13;
-				</div>&#13;
-								<div class="rel">&#13;
-					<div class="clear">&#13;
-						<div class="nameGradeTime" style="position:relative">&#13;
-							<div class="name"><a href="https://passport.eepw.com.cn/profile/post/u/197156" target="_blank">xqh518</a></div>&#13;
-							<div class="grade round">院士</div>&#13;
-							<div class="time fontArial">2026-11-22 17:39:57														    <a style="background: #fff;line-height: 25px;text-align: center;color: #f57f59;border-radius: 3px;margin-top: 12px;padding: 2px 5px;border: #f57f59 solid 1px;" href="/forumact/grade/postid/1523884" rel="nofollow">打赏</a></div>&#13;
-						    						</div>&#13;
-&#13;
-						<div class="numFloor">&#13;
-								&#13;
-							<div class="floor">&#13;
-							                              <div>2楼</div>&#13;
-														</div>&#13;
-						</div>&#13;
-					</div>&#13;
-&#13;
-&#13;
-&#13;
-<script type="text/javascript">&#13;
-layui.use(['layer'], function(layer){&#13;
-  layer.photos({&#13;
-    photos: '#photos', &#13;
-  });&#13;
-});&#13;
-</script>&#13;
-&#13;
-<!-- <link href="/pub/videojs/video-js.css" rel="stylesheet">  
-<script src="/pub/videojs/video.min.js"></script> -->&#13;
-&#13;
-&#13;
-					<div class="content" id="photos">&#13;
-															<!--方案帖未登录状态 阅读全文-->&#13;
-	<p><span style="color: rgb(0, 176, 80); font-family: 宋体, SimSun; font-size: 18px; text-wrap-mode: wrap;">谢谢分享。</span></p>										</div>&#13;
-&#13;
-					&#13;
-					<div id="4024901523884"/>&#13;
-							&#13;
-					&#13;
-					<br/>&#13;
-					<!--d02-->&#13;
-										<script type="text/javascript">&lt;!--//&lt;![CDATA[&#13;
-   var m3_u = (location.protocol=='https:'?'https://ad.eepw.com.cn/www/delivery/ajs.php':'https://ad.eepw.com.cn/www/delivery/ajs.php');&#13;
-   var m3_r = Math.floor(Math.random()*99999999999);&#13;
-   if (!document.MAX_used) document.MAX_used = ',';&#13;
-   document.write ("&lt;scr"+"ipt type='text/javascript' src='"+m3_u);&#13;
-   document.write ("?zoneid=188");&#13;
-   document.write ('&amp;amp;cb=' + m3_r);&#13;
-   if (document.MAX_used != ',') document.write ("&amp;amp;exclude=" + document.MAX_used);&#13;
-   document.write (document.charset ? '&amp;amp;charset='+document.charset : (document.characterSet ? '&amp;amp;charset='+document.characterSet : ''));&#13;
-   document.write ("&amp;amp;loc=" + escape(window.location));&#13;
-   if (document.referrer) document.write ("&amp;amp;referer=" + escape(document.referrer));&#13;
-   if (document.context) document.write ("&amp;context=" + escape(document.context));&#13;
-   if (document.mmm_fo) document.write ("&amp;amp;mmm_fo=1");&#13;
-   document.write ("'&gt;&lt;\/scr"+"ipt&gt;");&#13;
-//]]&gt;--&gt;</script>&#13;
-					&#13;
-					<div class="colRepSha">	&#13;
-											<span><a href="https://passport.eepw.com.cn" onclick="window.parent.myFunc(); return false;" target="_blank" rel="nofollow">评论</a></span>&#13;
-															</div>&#13;
-					&#13;
-				</div>	&#13;
-			</div>&#13;
-			&#13;
-				&#13;
-			&#13;
-			<div class="postRel clear innerComment round" id="innerComment_1523884" style="display:none;">&#13;
-			<img src="https://webstorage.eepw.com.cn/css/2013/bbs/images/arrow_comment.jpg" class="arrowComment"/>&#13;
-			&#13;
-			<div id="showreply_1523884"/>&#13;
-			<div id="showreplys_1523884"/>&#13;
-						<form class="commentForm">&#13;
-			 	<input id="replycontent_1523884" type="text" name="content" value="" class="commBtn round commentInput" style="width:100%;"/>&#13;
-				<span id="test_tips_1523884" class="tips"/>&#13;
-				<div class="cBtn cBtn_1523884">&#13;
-					<input disabled="disabled" type="button" value="评论" class="round" onclick="get_reply(402490,1523884);"/>&#13;
-					<input type="reset" value="取消" class="cancel round" id="cancel_1523884"/>&#13;
-				</div>&#13;
-			</form>&#13;
-			</div>&#13;
-&#13;
-		</div>	&#13;
-				    	<!-- 楼梯 -->&#13;
-	<a name="3"/>&#13;
-	<div id="reppostids_3" style="display:none;">1523898</div>&#13;
-		<div class="show roundBorder allRightAngle" id="reppostid_3">&#13;
-			&#13;
-	&#13;
-			<div class="postRel clear">&#13;
-				<div class="pho" id="539308">&#13;
-					<img src="http://uphotos.eepw.com.cn/1443509023/thumb/avatar.jpg" class="round mPho" width="100" height="100"/>					&#13;
-				</div>&#13;
-								<div class="rel">&#13;
-					<div class="clear">&#13;
-						<div class="nameGradeTime" style="position:relative">&#13;
-							<div class="name"><a href="https://passport.eepw.com.cn/profile/post/u/539308" target="_blank">hymyfzgs</a></div>&#13;
-							<div class="grade round">专家</div>&#13;
-							<div class="time fontArial">2026-11-23 08:29:44														    <a style="background: #fff;line-height: 25px;text-align: center;color: #f57f59;border-radius: 3px;margin-top: 12px;padding: 2px 5px;border: #f57f59 solid 1px;" href="/forumact/grade/postid/1523898" rel="nofollow">打赏</a></div>&#13;
-						    						</div>&#13;
-&#13;
-						<div class="numFloor">&#13;
-								&#13;
-							<div class="floor">&#13;
-							                              <div>3楼</div>&#13;
-														</div>&#13;
-						</div>&#13;
-					</div>&#13;
-&#13;
-&#13;
-&#13;
-<script type="text/javascript">&#13;
-layui.use(['layer'], function(layer){&#13;
-  layer.photos({&#13;
-    photos: '#photos', &#13;
-  });&#13;
-});&#13;
-</script>&#13;
-&#13;
-<!-- <link href="/pub/videojs/video-js.css" rel="stylesheet">  
-<script src="/pub/videojs/video.min.js"></script> -->&#13;
-&#13;
-&#13;
-					<div class="content" id="photos">&#13;
-															<!--方案帖未登录状态 阅读全文-->&#13;
-	<p>谢谢楼主分享</p>										</div>&#13;
-&#13;
-					&#13;
-					<div id="4024901523898"/>&#13;
-							&#13;
-					&#13;
-					<br/>&#13;
-					<!--d02-->&#13;
-										<script type="text/javascript">&lt;!--//&lt;![CDATA[&#13;
-   var m3_u = (location.protocol=='https:'?'https://ad.eepw.com.cn/www/delivery/ajs.php':'https://ad.eepw.com.cn/www/delivery/ajs.php');&#13;
-   var m3_r = Math.floor(Math.random()*99999999999);&#13;
-   if (!document.MAX_used) document.MAX_used = ',';&#13;
-   document.write ("&lt;scr"+"ipt type='text/javascript' src='"+m3_u);&#13;
-   document.write ("?zoneid=188");&#13;
-   document.write ('&amp;amp;cb=' + m3_r);&#13;
-   if (document.MAX_used != ',') document.write ("&amp;amp;exclude=" + document.MAX_used);&#13;
-   document.write (document.charset ? '&amp;amp;charset='+document.charset : (document.characterSet ? '&amp;amp;charset='+document.characterSet : ''));&#13;
-   document.write ("&amp;amp;loc=" + escape(window.location));&#13;
-   if (document.referrer) document.write ("&amp;amp;referer=" + escape(document.referrer));&#13;
-   if (document.context) document.write ("&amp;context=" + escape(document.context));&#13;
-   if (document.mmm_fo) document.write ("&amp;amp;mmm_fo=1");&#13;
-   document.write ("'&gt;&lt;\/scr"+"ipt&gt;");&#13;
-//]]&gt;--&gt;</script>&#13;
-					&#13;
-					<div class="colRepSha">	&#13;
-											<span><a href="https://passport.eepw.com.cn" onclick="window.parent.myFunc(); return false;" target="_blank" rel="nofollow">评论</a></span>&#13;
-															</div>&#13;
-					&#13;
-				</div>	&#13;
-			</div>&#13;
-			&#13;
-				&#13;
-			&#13;
-			<div class="postRel clear innerComment round" id="innerComment_1523898" style="display:none;">&#13;
-			<img src="https://webstorage.eepw.com.cn/css/2013/bbs/images/arrow_comment.jpg" class="arrowComment"/>&#13;
-			&#13;
-			<div id="showreply_1523898"/>&#13;
-			<div id="showreplys_1523898"/>&#13;
-						<form class="commentForm">&#13;
-			 	<input id="replycontent_1523898" type="text" name="content" value="" class="commBtn round commentInput" style="width:100%;"/>&#13;
-				<span id="test_tips_1523898" class="tips"/>&#13;
-				<div class="cBtn cBtn_1523898">&#13;
-					<input disabled="disabled" type="button" value="评论" class="round" onclick="get_reply(402490,1523898);"/>&#13;
-					<input type="reset" value="取消" class="cancel round" id="cancel_1523898"/>&#13;
-				</div>&#13;
-			</form>&#13;
-			</div>&#13;
-&#13;
-		</div>	&#13;
-				    		&#13;
-		&#13;
-	<!-- 帖子分类 && 页码 -->&#13;
-	<div class="postPage clear">&#13;
-		<div class="page">&#13;
-			<div class="page">共3条&#13;
-1/1															<span class="current">1</span>							<span class="goto">跳转至</span><input id="pa" style="width:30px;height:16px;" type="text" name="custompage" onkeydown="if(event.keyCode==13) {window.location='/thread/402490/'+this.value; return false;}"/>页&#13;
-<!-- <input class="search_input" onclick="if(document.getElementById('pa').value!=''){window.location='/thread/402490/'+getElementById('pa').value;}" value="Go" /> -->&#13;
-</div>&#13;
-		</div>&#13;
-	</div>&#13;
-		&#13;
-    <!-- 回复表单 begin-->&#13;
-				&#13;
-	<div class="replyDiv" id="replycontent">&#13;
-		<div class="title">&#13;
-			<h2>回复</h2>&#13;
-		</div>&#13;
-&#13;
-		<form id="formpost" method="POST" action="/forumact/newreply/p/1" onsubmit="return formchecknocode(this);">&#13;
-&#13;
-		&#13;
-				匿名不能发帖！请先 [ <a href="https://passport.eepw.com.cn?url=http%3A%2F%2Fforum.eepw.com.cn%2Fthread%2F402490%2F1" rel="nofollow"><font color="Red">登陆</font></a> <a href="https://passport.eepw.com.cn/auth/login?url=http%3A%2F%2Fforum.eepw.com.cn%2Fthread%2F402490%2F1" rel="nofollow"><font color="Red">注册</font></a> ]&#13;
-		<input id="txtqqqq" type="hidden" name="title" disabled="disabled" value="RE: PCB抄板如何恢复BOM？从元件识别到全球采购的工程方法"/>&#13;
-		<textarea class="round" cols="50" rows="10" style="width:100%;" disabled="disabled"/>&#13;
-		<input type="hidden" name="threadid" value="402490"/>&#13;
-		<input type="submit" class="wRep round rBtn" style="width:120px;  border:none;" value="回复 Ctrl+Enter"/>&#13;
-&#13;
-			</form>&#13;
-	</div>&#13;
-&#13;
-	<!-- 回复表单 end-->&#13;]]></description></item><item>    <title><![CDATA[【PSOCEdgeE84AIkit测评】9、MQTT上传温湿度和气压数据到HomeAssistant-电子产品世界论坛]]></title>    <link>https://forum.eepw.com.cn/thread/402492/1</link>    <guid>https://forum.eepw.com.cn/thread/402492/1</guid>    <pubDate>2026-11-25 19:03:55.563359</pubDate>    <description><![CDATA[<!-- 帖子分类 && 页码 -->&#13;
-	<div class="postPage clear" style="margin-top:0px;">&#13;
-		<div class="page">&#13;
-			<div class="page">共1条&#13;
-1/1															<span class="current">1</span>							<span class="goto">跳转至</span><input id="pa" style="width:30px;height:16px;" type="text" name="custompage" onkeydown="if(event.keyCode==13) {window.location='/thread/402492/'+this.value; return false;}"/>页&#13;
-<!-- <input class="search_input" onclick="if(document.getElementById('pa').value!=''){window.location='/thread/402492/'+getElementById('pa').value;}" value="Go" /> -->&#13;
-</div>&#13;
-		</div>&#13;
-	</div>	&#13;
-				<!-- 楼梯 -->&#13;
-	<a name="1"/>&#13;
-	<div id="reppostids_1" style="display:none;">1523882</div>&#13;
-		<div class="show round roundBorder rightAngle" id="reppostid_1">&#13;
-					<div class="titleAbout">&#13;
-				<div class="title clear">&#13;
-					<h1>【PSOCEdgeE84AIkit测评】9、MQTT上传温湿度和气压数据到HomeAssistant										</h1>&#13;
-				</div>&#13;
-			</div>&#13;
-			&#13;
-	&#13;
-			<div class="postRel clear">&#13;
-				<div class="pho" id="829973">&#13;
-					<img src="http://uphotos.eepw.com.cn/1675389435/thumb/avatar.jpg" class="round mPho" width="100" height="100"/>					&#13;
-				</div>&#13;
-								<div class="rel">&#13;
-					<div class="clear">&#13;
-						<div class="nameGradeTime" style="position:relative">&#13;
-							<div class="name"><a href="https://passport.eepw.com.cn/profile/post/u/829973" target="_blank">EPtmachine</a></div>&#13;
-							<div class="grade round">高工</div>&#13;
-							<div class="time fontArial">2026-11-22 17:31:12														    <a style="background: #fff;line-height: 25px;text-align: center;color: #f57f59;border-radius: 3px;margin-top: 12px;padding: 2px 5px;border: #f57f59 solid 1px;" href="/forumact/grade/postid/1523882" rel="nofollow">打赏</a></div>&#13;
-						    						</div>&#13;
-&#13;
-						<div class="numFloor">&#13;
-														<div class="num clear">&#13;
-							</div>&#13;
-								&#13;
-							<div class="floor">&#13;
-							                               <div><a href="https://forum.eepw.com.cn/forum/thread/threadid/402492/flag/1" rel="nofollow">只看楼主</a> 1楼</div>&#13;
-                               							</div>&#13;
-						</div>&#13;
-					</div>&#13;
-					<!--板卡信息-->&#13;
-					<div style="font-size:16px;background: #f5f5f5;padding: 10px;border-radius: 5px;border: #c00 solid 1px;box-shadow: 0px 0px 10px #ccc;margin-top: 20px;margin-bottom: 10px;text-align: center;">&#13;
-					<a href="/board/show/id/77" target="_blank">&#13;
-						本帖评测板卡：PSOC EDGE E84 AI KIT						<span style="color:#c00;">   我要申请</span>&#13;
-					</a>&#13;
-					</div>&#13;
-<!--板卡信息end-->&#13;
-					&#13;
-&#13;
-&#13;
-<script type="text/javascript">&#13;
-layui.use(['layer'], function(layer){&#13;
-  layer.photos({&#13;
-    photos: '#photos', &#13;
-  });&#13;
-});&#13;
-</script>&#13;
-&#13;
-<!-- <link href="/pub/videojs/video-js.css" rel="stylesheet">  
-<script src="/pub/videojs/video.min.js"></script> -->&#13;
-&#13;
-&#13;
-					<div class="content" id="photos">&#13;
-															<!--方案帖未登录状态 阅读全文-->&#13;
-<link href="https://webstorage.eepw.com.cn/css/2024/bbs/newlogin_20231228.css" type="text/css" rel="stylesheet"/>&#13;
-<div class="article-content-box" style="height:700px; overflow: hidden;">&#13;
-	<div class="article-content">&#13;
-		<p>之前的帖子中实现板载温湿度传感器STT40和DPS368XTSA1传感器数据的读取</p><p><a href="https://forum.eepw.com.cn/thread/402491/1">【PSOCEdgeE84AIkit测评】8、采集板载温湿度传感器和气压传感器数据-电子产品世界论坛</a></p><p>通过使用板载的Wifi模块，连接到网络，通过MQTT协议将采集到传感器信息发送到HomeAssistant显示。</p>1、添加Wifi和MQTT支持<p>在传感器工程中使用Library Manager添加lwifi-core-freertos-lwip-mbedtls和mqtt驱动库。</p><p><img src="https://uphotos.eepw.com.cn/1675389435/pics/1795339795436357.png" title="1795339795436357.png" alt="add_wifi_mqtt_lib.png"/></p>2、代码实现<p>wifi和mqtt功能涉及代码主要为以下</p><ul><li><p>mqtt_client.c / mqtt_client.h — 三个 FreeRTOS 任务：</p><blockquote><p>MQTTClient：通过 WCM 连接 Wi-Fi，负责 MQTT 连接与断线重连生命周期<br/>MQTTPub：从 sensor 任务的队列接收 sensor_data_t，转成 JSON 后发布到 pse84/e84ai/sensors<br/>MQTTSub：订阅 pse84/e84ai/commands，事件回调收到的消息经内部队列交给订阅任务处理（打印/命令处理入口）</p></blockquote></li><li><p>mqtt_config.h — 配置 Wi-Fi SSID/密码、Broker 地址端口、Client ID、主题、TLS 开关</p></li><li><p>lwipopts.h、mbedtls_user_config.h、core_mqtt_config.h 配置lwip、mbedtls以及mqtt协议</p></li></ul><p>添加wifi、lwip、mqtt组件，增加FreeRTOSConfig.h中的堆栈大小</p><pre name="code" class="c">#define configTOTAL_HEAP_SIZE                   ((size_t )(128*1024))</pre><p>工程的Makefile文件中添加组件定义、额外的宏定义、mbedtls配置文件等信息。</p><pre name="code" class="c">COMPONENTS+=FREERTOS LWIP MBEDTLS SECURE_SOCKETS RTOS_AWARE&#13;
-&#13;
-# Exclude HTTP client (not used); only MQTT is needed.&#13;
-CY_IGNORE+=$(SEARCH_aws-iot-device-sdk-embedded-C)/libraries/standard/coreHTTP&#13;
-&#13;
-# Like COMPONENTS, but disable optional code that was enabled by default.&#13;
-DISABLE_COMPONENTS=&#13;
-&#13;
-CORE=CM33&#13;
-CORE_NAME=CM33_0&#13;
-&#13;
-# By default the build system automatically looks in the Makefile's directory&#13;
-# tree for source code and builds it. The SOURCES variable can be used to&#13;
-# manually add source code to the build process from a location not searched&#13;
-# by default, or otherwise not found by the build system.&#13;
-SOURCES+=&#13;
-&#13;
-# Like SOURCES, but for include directories. Value should be paths to&#13;
-# directories (without a leading -I).&#13;
-INCLUDES+=&#13;
-&#13;
-# Custom configuration of mbedtls library.&#13;
-MBEDTLSFLAGS = MBEDTLS_USER_CONFIG_FILE='"configs/mbedtls_user_config.h"'&#13;
-&#13;
-# Add additional defines to the build process (without a leading -D).&#13;
-DEFINES+=$(MBEDTLSFLAGS) CYBSP_WIFI_CAPABLE CY_RETARGET_IO_CONVERT_LF_TO_CRLF CY_RTOS_AWARE &#13;
-&#13;
-# Default configuration of mbedtls library.&#13;
-DEFINES+=MBEDTLS_CONFIG_FILE='"mbedtls/mbedtls_config.h"'&#13;
-&#13;
-DEFINES+=CY_MQTT_EVENT_THREAD_STACK_SIZE=10*1024</pre><h2>2.1 获取传感器数据</h2><p>在Sensor Task中添加队列，将采集到的传感器发送到队列，用于MQTT Publish任务中获取传感器数据</p><pre name="code" class="c">/* Queue handle used to publish sensor readings */&#13;
-static QueueHandle_t sensor_data_queue = NULL;&#13;
-&#13;
-QueueHandle_t sensor_task_get_queue(void)&#13;
-{&#13;
-    return sensor_data_queue;&#13;
-}&#13;
-&#13;
-static void sensor_task(void *arg)&#13;
-{&#13;
-    ...&#13;
-    /* --------------------------------------------------------------&#13;
-     * Create the data queue and the reader task&#13;
-     * -------------------------------------------------------------- */&#13;
-    if (NULL == sensor_data_queue)&#13;
-    {&#13;
-        sensor_data_queue = xQueueCreate(SENSOR_DATA_QUEUE_LENGTH,&#13;
-                                         sizeof(sensor_data_t));&#13;
-        if (NULL == sensor_data_queue)&#13;
-        {&#13;
-            return CY_RSLT_TYPE_ERROR;&#13;
-        }&#13;
-    }&#13;
-    ...&#13;
-}&#13;
-&#13;
-static void sensor_task(void *arg)&#13;
-{&#13;
-        /* Assemble message and send it through the queue.&#13;
-         * SHT40 returns milli units - convert to degC / %RH. */&#13;
-        msg.timestamp_ms = xTaskGetTickCount();&#13;
-        msg.humidity_rh   = (float)sht4x_humidity / 1000.0f;&#13;
-        msg.temp_sht4x_deg = (float)sht4x_temperature / 1000.0f;&#13;
-        msg.pressure_pa    = pressure;&#13;
-        msg.temp_dps3xx_deg = dps_temp;&#13;
-&#13;
-        if (pdTRUE != xQueueSend(sensor_data_queue, &amp;msg, pdMS_TO_TICKS(100)))&#13;
-        {&#13;
-            printf("Queue full - sensor data dropped\r\n");&#13;
-        }&#13;
-        else&#13;
-        {&#13;
-            printf("T=%lu ms | SHT40: %.2f degC, %.2f %%RH | "&#13;
-                   "DPS368: %.2f Pa, %.2f degC\r\n",&#13;
-                   (unsigned long)msg.timestamp_ms,&#13;
-                   (double)msg.temp_sht4x_deg,&#13;
-                   (double)msg.humidity_rh,&#13;
-                   (double)msg.pressure_pa,&#13;
-                   (double)msg.temp_dps3xx_deg);&#13;
-        }&#13;
-}</pre><h2>2.2 Wifi连接</h2><p>设置Wifi连接的信息的宏定义</p><pre name="code" class="c">/* ----------------------------- Wi-Fi settings ------------------------------ */&#13;
-#define MQTT_WIFI_SSID           "YOUR_WIFI_SSID"&#13;
-#define MQTT_WIFI_PASSWORD       "YOUR_WIFI_PASSWORD"&#13;
-#define MQTT_WIFI_SECURITY       CY_WCM_SECURITY_WPA2_AES_PSK&#13;
-#define MQTT_WIFI_BAND           CY_WCM_WIFI_BAND_ANY</pre><p>Wifi模块初始化控制Wifi通讯的SDIO接口，设置WCM配置参数，连接开发板到Wifi网络。</p><pre name="code" class="c">void mqtt_init_task(void *pvParameters)&#13;
-{&#13;
-    cy_rslt_t result;&#13;
-&#13;
-    app_sdio_init();&#13;
-&#13;
-    /* Configure the Wi-Fi interface as a Wi-Fi STA (i.e. Client). */&#13;
-    wcm_config.interface = CY_WCM_INTERFACE_TYPE_STA;&#13;
-    wcm_config.wifi_interface_instance = &amp;sdio_instance;&#13;
-&#13;
-    result = wifi_connect();&#13;
-    ...&#13;
-}</pre><p>MCU通过SDIO接口与Wifi模块通讯，SDIO接口的初始化、中断以及Wifi模块控制引脚的初始化如下</p><pre name="code" class="c">static mtb_hal_sdio_t sdio_instance;&#13;
-cy_stc_sd_host_context_t sdhc_host_context;&#13;
-&#13;
-#if (CY_CFG_PWR_SYS_IDLE_MODE == CY_CFG_PWR_MODE_DEEPSLEEP)&#13;
-&#13;
-/* SysPm callback parameter structure for SDHC */&#13;
-static cy_stc_syspm_callback_params_t sdcardDSParams =&#13;
-{&#13;
-    .context   = &amp;sdhc_host_context,&#13;
-    .base      = CYBSP_WIFI_SDIO_HW&#13;
-};&#13;
-&#13;
-/* SysPm callback structure for SDHC*/&#13;
-static cy_stc_syspm_callback_t sdhcDeepSleepCallbackHandler =&#13;
-{&#13;
-    .callback           = Cy_SD_Host_DeepSleepCallback,&#13;
-    .skipMode           = SYSPM_SKIP_MODE,&#13;
-    .type               = CY_SYSPM_DEEPSLEEP,&#13;
-    .callbackParams     = &amp;sdcardDSParams,&#13;
-    .prevItm            = NULL,&#13;
-    .nextItm            = NULL,&#13;
-    .order              = SYSPM_CALLBACK_ORDER&#13;
-};&#13;
-#endif&#13;
-&#13;
-static void sdio_interrupt_handler(void)&#13;
-{&#13;
-    mtb_hal_sdio_process_interrupt(&amp;sdio_instance);&#13;
-}&#13;
-&#13;
-static void host_wake_interrupt_handler(void)&#13;
-{&#13;
-    mtb_hal_gpio_process_interrupt(&amp;wcm_config.wifi_host_wake_pin);&#13;
-}&#13;
-&#13;
-static void app_sdio_init(void)&#13;
-{&#13;
-    cy_rslt_t result;&#13;
-    mtb_hal_sdio_cfg_t sdio_hal_cfg;&#13;
-    cy_stc_sysint_t sdio_intr_cfg =&#13;
-    {&#13;
-        .intrSrc = CYBSP_WIFI_SDIO_IRQ,&#13;
-        .intrPriority = APP_SDIO_INTERRUPT_PRIORITY&#13;
-    };&#13;
-&#13;
-    cy_stc_sysint_t host_wake_intr_cfg =&#13;
-    {&#13;
-            .intrSrc = CYBSP_WIFI_HOST_WAKE_IRQ,&#13;
-            .intrPriority = APP_HOST_WAKE_INTERRUPT_PRIORITY&#13;
-    };&#13;
-&#13;
-    /* Initialize the SDIO interrupt and specify the interrupt handler. */&#13;
-    cy_en_sysint_status_t interrupt_init_status = Cy_SysInt_Init(&amp;sdio_intr_cfg, sdio_interrupt_handler);&#13;
-&#13;
-    /* SDIO interrupt initialization failed. Stop program execution. */&#13;
-    if(CY_SYSINT_SUCCESS != interrupt_init_status)&#13;
-    {&#13;
-        handle_app_error();&#13;
-    }&#13;
-&#13;
-    /* Enable NVIC interrupt. */&#13;
-    NVIC_EnableIRQ(CYBSP_WIFI_SDIO_IRQ);&#13;
-&#13;
-    /* Setup SDIO using the HAL object and desired configuration */&#13;
-    result = mtb_hal_sdio_setup(&amp;sdio_instance, &amp;CYBSP_WIFI_SDIO_sdio_hal_config, NULL, &amp;sdhc_host_context);&#13;
-&#13;
-    /* SDIO setup failed. Stop program execution. */&#13;
-    if(CY_RSLT_SUCCESS != result)&#13;
-    {&#13;
-        handle_app_error();&#13;
-    }&#13;
-&#13;
-    /* Initialize and Enable SD HOST */&#13;
-    Cy_SD_Host_Enable(CYBSP_WIFI_SDIO_HW);&#13;
-    Cy_SD_Host_Init(CYBSP_WIFI_SDIO_HW, CYBSP_WIFI_SDIO_sdio_hal_config.host_config, &amp;sdhc_host_context);&#13;
-    Cy_SD_Host_SetHostBusWidth(CYBSP_WIFI_SDIO_HW, CY_SD_HOST_BUS_WIDTH_4_BIT);&#13;
-&#13;
-    sdio_hal_cfg.frequencyhal_hz = APP_SDIO_FREQUENCY_HZ;&#13;
-    sdio_hal_cfg.block_size = SDHC_SDIO_64BYTES_BLOCK;&#13;
-&#13;
-    /* Configure SDIO */&#13;
-    mtb_hal_sdio_configure(&amp;sdio_instance, &amp;sdio_hal_cfg);&#13;
-&#13;
-#if (CY_CFG_PWR_SYS_IDLE_MODE == CY_CFG_PWR_MODE_DEEPSLEEP)&#13;
-    /* SDHC SysPm callback registration */&#13;
-    Cy_SysPm_RegisterCallback(&amp;sdhcDeepSleepCallbackHandler);&#13;
-#endif /* (CY_CFG_PWR_SYS_IDLE_MODE == CY_CFG_PWR_MODE_DEEPSLEEP) */&#13;
-&#13;
-    /* Setup GPIO using the HAL object for WIFI WL REG ON  */&#13;
-    mtb_hal_gpio_setup(&amp;wcm_config.wifi_wl_pin, CYBSP_WIFI_WL_REG_ON_PORT_NUM, CYBSP_WIFI_WL_REG_ON_PIN);&#13;
-&#13;
-    /* Setup GPIO using the HAL object for WIFI HOST WAKE PIN  */&#13;
-    mtb_hal_gpio_setup(&amp;wcm_config.wifi_host_wake_pin, CYBSP_WIFI_HOST_WAKE_PORT_NUM, CYBSP_WIFI_HOST_WAKE_PIN);&#13;
-&#13;
-    /* Initialize the Host wakeup interrupt and specify the interrupt handler. */&#13;
-    cy_en_sysint_status_t interrupt_init_status_host_wake =  Cy_SysInt_Init(&amp;host_wake_intr_cfg, host_wake_interrupt_handler);&#13;
-&#13;
-    /* Host wake up interrupt initialization failed. Stop program execution. */&#13;
-    if(CY_SYSINT_SUCCESS != interrupt_init_status_host_wake)&#13;
-    {&#13;
-        handle_app_error();&#13;
-    }&#13;
-&#13;
-    /* Enable NVIC interrupt. */&#13;
-    NVIC_EnableIRQ(CYBSP_WIFI_HOST_WAKE_IRQ);&#13;
-}</pre><p>通过调用WCM库函数的接口，初始化Wifi模块，并根据Wifi连接信息，连接到Wifi热点。</p><pre name="code" class="c">static cy_wcm_config_t wcm_config;&#13;
-&#13;
-/* Connect to Wi-Fi AP via WCM. */&#13;
-static cy_rslt_t wifi_connect(void)&#13;
-{&#13;
-    cy_rslt_t result;&#13;
-    cy_wcm_connect_params_t connect_params;&#13;
-    cy_wcm_ip_address_t ip_addr;&#13;
-&#13;
-    memset(&amp;connect_params, 0, sizeof(connect_params));&#13;
-    strncpy((char *)connect_params.ap_credentials.SSID, MQTT_WIFI_SSID,&#13;
-            CY_WCM_MAX_SSID_LEN);&#13;
-    connect_params.ap_credentials.SSID[CY_WCM_MAX_SSID_LEN] = '\0';&#13;
-    strncpy((char *)connect_params.ap_credentials.password, MQTT_WIFI_PASSWORD,&#13;
-            sizeof(connect_params.ap_credentials.password) - 1U);&#13;
-    connect_params.ap_credentials.password[sizeof(connect_params.ap_credentials.password) - 1U] = '\0';&#13;
-    connect_params.ap_credentials.security = MQTT_WIFI_SECURITY;&#13;
-    connect_params.band = MQTT_WIFI_BAND;&#13;
-&#13;
-    result = cy_wcm_init(&amp;wcm_config);&#13;
-    if (CY_RSLT_SUCCESS != result)&#13;
-    {&#13;
-        printf("WCM init failed: 0x%08lx\r\n", (unsigned long)result);&#13;
-        return result;&#13;
-    }&#13;
-&#13;
-    result = cy_wcm_connect_ap(&amp;connect_params, &amp;ip_addr);&#13;
-    if (CY_RSLT_SUCCESS != result)&#13;
-    {&#13;
-        printf("Wi-Fi connection failed: 0x%08lx\r\n", (unsigned long)result);&#13;
-        return result;&#13;
-    }&#13;
-&#13;
-    if (ip_addr.version == CY_WCM_IP_VER_V4)&#13;
-    {&#13;
-        uint8_t *ip = (uint8_t *)&amp;ip_addr.ip.v4;&#13;
-        printf("Wi-Fi connected, IP: %u.%u.%u.%u\r\n",&#13;
-               ip[0], ip[1], ip[2], ip[3]);&#13;
-    }&#13;
-&#13;
-    return CY_RSLT_SUCCESS;&#13;
-}</pre><h2>2.2 MQTT连接和消息发布</h2><p>通过宏定义管理MQTT连接的Broker的IP和端口、发布主题信息、TLS配置、发布任务的栈大小和任务优先级。</p><pre name="code" class="c">/* --------------------------- MQTT broker settings -------------------------- */&#13;
-/* Public test broker by default (plain TCP). For production use TLS and your&#13;
- * own broker. */&#13;
-#define MQTT_BROKER_HOST         "192.168.10.6"&#13;
-#define MQTT_BROKER_PORT         (1883U)&#13;
-#define MQTT_CLIENT_ID           "pse84_e84_ai_kit_001"&#13;
-#define MQTT_KEEP_ALIVE_SEC      (60U)&#13;
-&#13;
-/* Set to 1 to enable TLS (port is normally 8883). Root CA must be set below. */&#13;
-#define MQTT_USE_TLS             (0)&#13;
-&#13;
-/* MQTT topics */&#13;
-#define MQTT_TOPIC_PUBLISH       "pse84/e84ai/sensors"&#13;
-&#13;
-/* QoS for publish / subscribe */&#13;
-#define MQTT_PUBLISH_QOS         CY_MQTT_QOS0&#13;
-#define MQTT_SUBSCRIBE_QOS       CY_MQTT_QOS0&#13;
-&#13;
-/* Network buffer size for MQTT packets (&gt;= CY_MQTT_MIN_NETWORK_BUFFER_SIZE) */&#13;
-#define MQTT_NETWORK_BUFFER_SIZE (1024U)&#13;
-&#13;
-/* Root CA certificate (PEM string, NUL-terminated), required only if&#13;
- * MQTT_USE_TLS is 1. Example: "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n" */&#13;
-#define MQTT_ROOT_CA             NULL&#13;
-&#13;
-/* Task configuration */&#13;
-#define MQTT_CLIENT_TASK_STACK   (2048U)&#13;
-#define MQTT_PUBLISH_TASK_STACK  (2048U)&#13;
-#define MQTT_TASK_PRIORITY       (tskIDLE_PRIORITY + 2U)&#13;
-&#13;
-/* Reconnect interval when the broker is unreachable */&#13;
-#define MQTT_RECONNECT_DELAY_MS  (5000U)</pre><p>调用MQTT库中的函数初始化MQTT连接，注册MQTT通讯的回调函数，创建用于管理MQTT连接和发布传感器信息的任务。</p><pre name="code" class="c">static cy_mqtt_t mqtt_handle = NULL;&#13;
-static uint8_t mqtt_network_buffer[MQTT_NETWORK_BUFFER_SIZE];&#13;
-&#13;
-static char mqtt_descriptor[] = "pse84_sensor_client";&#13;
-&#13;
-static QueueHandle_t mqtt_rx_queue = NULL;&#13;
-static TaskHandle_t mqtt_client_task_handle = NULL;&#13;
-static TaskHandle_t mqtt_subscribe_task_handle = NULL;&#13;
-static TaskHandle_t mqtt_publish_task_handle = NULL;&#13;
-&#13;
-/* Set/cleared by the MQTT event callback. Guarded by volatile for simple&#13;
- * single-writer/single-reader signaling; actual MQTT calls are thread safe. */&#13;
-static volatile uint8_t mqtt_connected = 0U;&#13;
-&#13;
-static cy_mqtt_broker_info_t mqtt_broker =&#13;
-{&#13;
-    .hostname = MQTT_BROKER_HOST,&#13;
-    .hostname_len = sizeof(MQTT_BROKER_HOST) - 1U,&#13;
-    .port = MQTT_BROKER_PORT&#13;
-};&#13;
-&#13;
-static cy_mqtt_connect_info_t mqtt_connect_info =&#13;
-{&#13;
-    .client_id = MQTT_CLIENT_ID,&#13;
-    .client_id_len = sizeof(MQTT_CLIENT_ID) - 1U,&#13;
-    .username = NULL,&#13;
-    .username_len = 0U,&#13;
-    .password = NULL,&#13;
-    .password_len = 0U,&#13;
-    .clean_session = true,&#13;
-    .keep_alive_sec = MQTT_KEEP_ALIVE_SEC,&#13;
-    .will_info = NULL&#13;
-};&#13;
-&#13;
-void mqtt_init_task(void *pvParameters)&#13;
-{&#13;
-    ......&#13;
-    result = cy_mqtt_init();&#13;
-    if (CY_RSLT_SUCCESS != result)&#13;
-    {&#13;
-        printf("MQTT init failed: 0x%08lx\r\n", (unsigned long)result);&#13;
-&#13;
-    }&#13;
-&#13;
-    result = cy_mqtt_create(mqtt_network_buffer, sizeof(mqtt_network_buffer),&#13;
-#if (MQTT_USE_TLS == 1)&#13;
-                            &amp;mqtt_security,&#13;
-#else&#13;
-                            NULL,&#13;
-#endif&#13;
-                            &amp;mqtt_broker, mqtt_descriptor, &amp;mqtt_handle);&#13;
-    if (CY_RSLT_SUCCESS != result)&#13;
-    {&#13;
-        printf("MQTT create failed: 0x%08lx\r\n", (unsigned long)result);&#13;
-&#13;
-    }&#13;
-&#13;
-    result = cy_mqtt_register_event_callback(mqtt_handle, mqtt_event_callback, NULL);&#13;
-    if (CY_RSLT_SUCCESS != result)&#13;
-    {&#13;
-        printf("MQTT callback registration failed: 0x%08lx\r\n", (unsigned long)result);&#13;
-&#13;
-    }&#13;
-&#13;
-    xTaskCreate(mqtt_client_task, "MQTTClient",&#13;
-                              MQTT_CLIENT_TASK_STACK, NULL,&#13;
-                              MQTT_TASK_PRIORITY, &amp;mqtt_client_task_handle);&#13;
-&#13;
-    xTaskCreate(mqtt_publish_task, "MQTTPub",&#13;
-                              MQTT_PUBLISH_TASK_STACK, NULL,&#13;
-                              MQTT_TASK_PRIORITY, &amp;mqtt_publish_task_handle);&#13;
-&#13;
-    ......&#13;
-}</pre><p>MQTT 回调函数监控MQTT的连接状态，在连接中断后通知MQTT管理任务进行重连。</p><pre name="code" class="c">/* MQTT event callback - runs in the MQTT library's event thread. */&#13;
-static void mqtt_event_callback(cy_mqtt_t handle, cy_mqtt_event_t event, void *user_data)&#13;
-{&#13;
-    (void)handle;&#13;
-    (void)user_data;&#13;
-&#13;
-    if (event.type == CY_MQTT_EVENT_TYPE_DISCONNECT)&#13;
-    {&#13;
-        printf("MQTT disconnected (reason: %d)\r\n", (int)event.data.reason);&#13;
-        mqtt_connected = 0U;&#13;
-&#13;
-        /* Wake the client task up to reconnect immediately. */&#13;
-        if (mqtt_client_task_handle != NULL)&#13;
-        {&#13;
-            xTaskNotifyGive(mqtt_client_task_handle);&#13;
-        }&#13;
-    }&#13;
-}</pre><p>MQTT连接管理任务中监控MQTT任务的连接，并在断连后进行重连。</p><pre name="code" class="c">/* Client task: establishes and maintains the MQTT broker connection. */&#13;
-static void mqtt_client_task(void *arg)&#13;
-{&#13;
-    (void)arg;&#13;
-    cy_rslt_t result;&#13;
-&#13;
-    for (;;)&#13;
-    {&#13;
-        if (mqtt_connected == 0U)&#13;
-        {&#13;
-            /* Release resources left over from a previous connection. */&#13;
-            if (mqtt_handle != NULL)&#13;
-            {&#13;
-                cy_mqtt_disconnect(mqtt_handle);&#13;
-            }&#13;
-&#13;
-            result = cy_mqtt_connect(mqtt_handle, &amp;mqtt_connect_info);&#13;
-            if (CY_RSLT_SUCCESS == result)&#13;
-            {&#13;
-                printf("MQTT connected to %s:%u\r\n", MQTT_BROKER_HOST,&#13;
-                       (unsigned)MQTT_BROKER_PORT);&#13;
-                mqtt_connected = 1U;&#13;
-            }&#13;
-            else&#13;
-            {&#13;
-                printf("MQTT connect failed: 0x%08lx, retrying...\r\n",&#13;
-                       (unsigned long)result);&#13;
-                ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MQTT_RECONNECT_DELAY_MS));&#13;
-                continue;&#13;
-            }&#13;
-        }&#13;
-&#13;
-        vTaskDelay(pdMS_TO_TICKS(1000U));&#13;
-    }&#13;
-}</pre><p>MQTT消息发布任务通过队列获取到传感器信息，将传感器数据组合成JSON文本的格式，将消息发布到MQTT网络中。</p><pre name="code" class="c">/* Publish task: takes sensor readings from the sensor task queue and&#13;
- * publishes them to the configured MQTT topic as JSON. */&#13;
-static void mqtt_publish_task(void *arg)&#13;
-{&#13;
-    (void)arg;&#13;
-    sensor_data_t data;&#13;
-    char payload[192];&#13;
-&#13;
-    for (;;)&#13;
-    {&#13;
-        if (pdTRUE == xQueueReceive(sensor_task_get_queue(), &amp;data, portMAX_DELAY))&#13;
-        {&#13;
-            if (mqtt_connected == 0U || mqtt_handle == NULL)&#13;
-            {&#13;
-                continue;&#13;
-            }&#13;
-&#13;
-            int len = snprintf(payload, sizeof(payload),&#13;
-                    "{\"ts\":%lu,\"sht40_temp_c\":%.2f,\"sht40_humidity_rh\":%.2f,"&#13;
-                    "\"dps368_pressure_pa\":%.2f,\"dps368_temp_c\":%.2f}",&#13;
-                    (unsigned long)data.timestamp_ms,&#13;
-                    (double)data.temp_sht4x_deg,&#13;
-                    (double)data.humidity_rh,&#13;
-                    (double)data.pressure_pa,&#13;
-                    (double)data.temp_dps3xx_deg);&#13;
-&#13;
-            if ((len &gt; 0) &amp;&amp; ((size_t)len &lt; sizeof(payload)))&#13;
-            {&#13;
-                cy_mqtt_publish_info_t pub_info =&#13;
-                {&#13;
-                    .qos = MQTT_PUBLISH_QOS,&#13;
-                    .retain = false,&#13;
-                    .dup = false,&#13;
-                    .topic = MQTT_TOPIC_PUBLISH,&#13;
-                    .topic_len = sizeof(MQTT_TOPIC_PUBLISH) - 1U,&#13;
-                    .payload = payload,&#13;
-                    .payload_len = (size_t)len&#13;
-                };&#13;
-&#13;
-                cy_rslt_t result = cy_mqtt_publish(mqtt_handle, &amp;pub_info);&#13;
-                if (CY_RSLT_SUCCESS == result)&#13;
-                {&#13;
-                    printf("MQTT published: %s\r\n", payload);&#13;
-                }&#13;
-                else&#13;
-                {&#13;
-                    printf("MQTT publish failed: 0x%08lx\r\n", (unsigned long)result);&#13;
-                }&#13;
-            }&#13;
-        }&#13;
-    }&#13;
-}</pre><p>编译和烧录代码到开发板，在HomeAssistant的配置文件configuration.yaml添加以下字段并重启</p><pre name="code" class="c">mqtt:&#13;
-  sensor:&#13;
-    # SHT40 温度&#13;
-    - name: "PSE84 SHT40 Temperature"&#13;
-      unique_id: "pse84_sht40_temp_c"&#13;
-      state_topic: "pse84/e84ai/sensors"&#13;
-      value_template: "{{ value_json.sht40_temp_c }}"&#13;
-      device_class: temperature&#13;
-      unit_of_measurement: "°C"&#13;
-      state_class: measurement&#13;
-&#13;
-    # SHT40 湿度&#13;
-    - name: "PSE84 SHT40 Humidity"&#13;
-      unique_id: "pse84_sht40_humidity_rh"&#13;
-      state_topic: "pse84/e84ai/sensors"&#13;
-      value_template: "{{ value_json.sht40_humidity_rh }}"&#13;
-      device_class: humidity&#13;
-      unit_of_measurement: "%"&#13;
-      state_class: measurement</pre><p>在HomeAssistant中可以查看通过MQTT获取的开发板的SHT40传感器的温湿度信息。<img src="https://uphotos.eepw.com.cn/1675389435/pics/1795339838376564.png" title="1795339838376564.png" alt="MQTT_info.png"/></p><p><br/></p>	</div>&#13;
-    <div class="login-read" style="display: block;">&#13;
-          <div class="linear-block"/>&#13;
-          <div class="read-all-btn-box">&#13;
-            <div class="read-all-btn">&#13;
-              <a href="https://passport.eepw.com.cn/auth/login?url=https://forum.eepw.com.cn/thread/402492/1" target="_blank" style="color:#fff;">阅读全文</a>&#13;
-              <i class="iconfont icon-arrow-down-s-line"/>&#13;
-            </div>&#13;
-          </div>&#13;
-    </div>&#13;
-</div>&#13;
-&#13;
-										</div>&#13;
-<script> &#13;
-// 引入video.js和插件的JS文件&#13;
-/*var video = document.querySelectorAll('video');&#13;
-for(var i = 0; i &lt; video.length; i++){&#13;
-	//videojs(video[i]);&#13;
-}*/&#13;
-</script>&#13;
-&#13;
-					&#13;
-					<div id="4024921523882"/>&#13;
-							&#13;
-					<!-- 回复 -->&#13;
-<style>&#13;
-.bbsdetailnew{width:100%; clear:both;; padding:20px 0px;}&#13;
-.bbsdetailnewbnt{margin:0 auto; width:380px; position:relative}&#13;
-.bbsdetailnewbnt_reply a{float:left; width:110px; margin-right:20px; background:#c00; height:35px; line-height:35px; font-family:'Microsoft YaHei UI'; font-size:16px; text-align:center; color:#fff; text-decoration:none; border-radius:3px;}&#13;
-.bbsdetailnewbnt_reply a:hover{color:#ccc; background:#C03;}&#13;
-.bbsdetailnewbnt_like {float:left; width:110px; background:#ccc; height:35px; line-height:35px; font-family:'Microsoft YaHei UI'; font-size:16px; text-align:center; color:#000; text-decoration:none; border-radius:3px;}&#13;
-.bbsdetailnewbnt_share a{float:left; width:110px; background:#ccc; height:30px; line-height:35px; font-family:'Microsoft YaHei UI'; font-size:16px; text-align:center; color:#000; text-decoration:none; border-radius:3px;}&#13;
-.bbsdetailnewbnt_share a:hover{color:#000; background:#c2c2c2;}&#13;
-.bbsdetailnewbnt_collect a{float:left; width:110px; margin-right:20px; background:#ccc; height:35px; line-height:35px; font-family:'Microsoft YaHei UI'; font-size:16px; text-align:center; color:#000; text-decoration:none; border-radius:3px;}&#13;
-.bbsdetailnewbnt_collect a:hover{color:#000; background:#c2c2c2;}&#13;
-</style>&#13;
-<div class="bbsdetailnew">&#13;
-	<div class="bbsdetailnewbnt">&#13;
-    	<div class="bbsdetailnewbnt_reply"><a href="https://passport.eepw.com.cn" onclick="window.parent.myFunc(); return false;" target="_blank" rel="nofollow">回复</a></div>&#13;
-        <div class="bbsdetailnewbnt_collect"><a href="https://passport.eepw.com.cn/Myprofile/addstore/typeid/1/subid/402492/cid/1" rel="nofollow">收藏</a></div>&#13;
-        <div class="bbsdetailnewbnt_like">&#13;
-        	<div class="bdsharebuttonbox">&#13;
-        	<div class="bds_more" data-cmd="more" style="text-decoration:none;color: #333; height:35px; line-height:38px; margin:0px; font-size:14px; ">&#13;
-        	<span style="cursor: pointer;"><img src="https://www.eepw.com.cn/event/action/images/zan_red.png" width="20" style="margin-top:-5px;margin-right: 5px;" onclick="addclick(402492,'');"/></span>&#13;
-        	<span id="good">0</span>&#13;
-        	</div>&#13;
-        	</div>&#13;
-        	<script type="text/javascript" src="/pub/js/bbs/likes.js"/>&#13;
-&#13;
-        <div style="clear:both;"/>&#13;
-		</div>&#13;
-		&#13;
-        <div style="clear:both;"/>&#13;
-  </div>&#13;
-</div>&#13;
-<!-- 回复-->&#13;
-										&#13;
-					&#13;
-										<br/>&#13;
-&#13;
-					<br/><br/>关键词：&#13;
-										<a href="/forum/forumsearch/tx/ModusToolBox/forumid/3/op/0" target="_blank">&#13;
-					ModusToolBox</a>    &#13;
-										<a href="/forum/forumsearch/tx/Library Mana/forumid/3/op/0" target="_blank">&#13;
-					Library Mana</a>    &#13;
-						&#13;
-                    &#13;
-                    <br/>&#13;
-										&#13;
-					<br/>&#13;
-					<!--d02-->&#13;
-										<script type="text/javascript">&lt;!--//&lt;![CDATA[&#13;
-   var m3_u = (location.protocol=='https:'?'https://ad.eepw.com.cn/www/delivery/ajs.php':'https://ad.eepw.com.cn/www/delivery/ajs.php');&#13;
-   var m3_r = Math.floor(Math.random()*99999999999);&#13;
-   if (!document.MAX_used) document.MAX_used = ',';&#13;
-   document.write ("&lt;scr"+"ipt type='text/javascript' src='"+m3_u);&#13;
-   document.write ("?zoneid=188");&#13;
-   document.write ('&amp;amp;cb=' + m3_r);&#13;
-   if (document.MAX_used != ',') document.write ("&amp;amp;exclude=" + document.MAX_used);&#13;
-   document.write (document.charset ? '&amp;amp;charset='+document.charset : (document.characterSet ? '&amp;amp;charset='+document.characterSet : ''));&#13;
-   document.write ("&amp;amp;loc=" + escape(window.location));&#13;
-   if (document.referrer) document.write ("&amp;amp;referer=" + escape(document.referrer));&#13;
-   if (document.context) document.write ("&amp;context=" + escape(document.context));&#13;
-   if (document.mmm_fo) document.write ("&amp;amp;mmm_fo=1");&#13;
-   document.write ("'&gt;&lt;\/scr"+"ipt&gt;");&#13;
-//]]&gt;--&gt;</script>&#13;
-					&#13;
-					<div class="colRepSha">	&#13;
-																				</div>&#13;
-					&#13;
-				</div>	&#13;
-			</div>&#13;
-			&#13;
-				&#13;
-			&#13;
-			<div class="postRel clear innerComment round" id="innerComment_1523882" style="display:none;">&#13;
-			<img src="https://webstorage.eepw.com.cn/css/2013/bbs/images/arrow_comment.jpg" class="arrowComment"/>&#13;
-			&#13;
-			<div id="showreply_1523882"/>&#13;
-			<div id="showreplys_1523882"/>&#13;
-						<form class="commentForm">&#13;
-			 	<input id="replycontent_1523882" type="text" name="content" value="" class="commBtn round commentInput" style="width:100%;"/>&#13;
-				<span id="test_tips_1523882" class="tips"/>&#13;
-				<div class="cBtn cBtn_1523882">&#13;
-					<input disabled="disabled" type="button" value="评论" class="round" onclick="get_reply(402492,1523882);"/>&#13;
-					<input type="reset" value="取消" class="cancel round" id="cancel_1523882"/>&#13;
-				</div>&#13;
-			</form>&#13;
-			</div>&#13;
-&#13;
-		</div>	&#13;
-				    		&#13;
-		&#13;
-	<!-- 帖子分类 && 页码 -->&#13;
-	<div class="postPage clear">&#13;
-		<div class="page">&#13;
-			<div class="page">共1条&#13;
-1/1															<span class="current">1</span>							<span class="goto">跳转至</span><input id="pa" style="width:30px;height:16px;" type="text" name="custompage" onkeydown="if(event.keyCode==13) {window.location='/thread/402492/'+this.value; return false;}"/>页&#13;
-<!-- <input class="search_input" onclick="if(document.getElementById('pa').value!=''){window.location='/thread/402492/'+getElementById('pa').value;}" value="Go" /> -->&#13;
-</div>&#13;
-		</div>&#13;
-	</div>&#13;
-		&#13;
-    <!-- 回复表单 begin-->&#13;
-				&#13;
-	<div class="replyDiv" id="replycontent">&#13;
-		<div class="title">&#13;
-			<h2>回复</h2>&#13;
-		</div>&#13;
-&#13;
-		<form id="formpost" method="POST" action="/forumact/newreply/p/1" onsubmit="return formchecknocode(this);">&#13;
-&#13;
-		&#13;
-				匿名不能发帖！请先 [ <a href="https://passport.eepw.com.cn?url=http%3A%2F%2Fforum.eepw.com.cn%2Fthread%2F402492%2F1" rel="nofollow"><font color="Red">登陆</font></a> <a href="https://passport.eepw.com.cn/auth/login?url=http%3A%2F%2Fforum.eepw.com.cn%2Fthread%2F402492%2F1" rel="nofollow"><font color="Red">注册</font></a> ]&#13;
-		<input id="txtqqqq" type="hidden" name="title" disabled="disabled" value="RE: 【PSOCEdgeE84AIkit测评】9、MQTT上传温湿度和气压数据到HomeAssistant"/>&#13;
-		<textarea class="round" cols="50" rows="10" style="width:100%;" disabled="disabled"/>&#13;
-		<input type="hidden" name="threadid" value="402492"/>&#13;
-		<input type="submit" class="wRep round rBtn" style="width:120px;  border:none;" value="回复 Ctrl+Enter"/>&#13;
-&#13;
-			</form>&#13;
-	</div>&#13;
-&#13;
-	<!-- 回复表单 end-->&#13;]]></description></item>  </channel></rss>
+</div>]]></description></item>  </channel></rss>
