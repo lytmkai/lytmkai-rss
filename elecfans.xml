@@ -1,4 +1,410 @@
-<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[老片子也能打：瑞萨H8/36077硬件设计实装踩坑全指南]]></title>    <link>https://www.elecfans.com/d/8989359.html</link>    <guid>https://www.elecfans.com/d/8989359.html</guid>    <pubDate>2026-11-27 16:45:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989359" value="https://file1.elecfans.com/web2/M00/EB/03/wKgZomZcVoeAXAGfADNCh1hppSw968.pdf"/><h1>老片子也能打：<a href="https://www.elecfans.com/tags/瑞萨/" target="_blank"><u>瑞萨</u></a>H8/36077硬件设计实装踩坑全指南</h1>
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">  <channel>      <title>电子发烧友 - 最近文章</title>      <link>https://www.elecfans.com/article/special/</link>      <description>电子发烧友</description>      <generator>python elecfans.py @Pi20</generator>      <item>    <title><![CDATA[瑞萨SH7124/SH7125核心外设硬件设计指南：从寄存器到电机控制落地]]></title>    <link>https://www.elecfans.com/d/8989354.html</link>    <guid>https://www.elecfans.com/d/8989354.html</guid>    <pubDate>2026-11-27 16:45:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989354" value="https://file.elecfans.com/web2/M00/A0/1E/pYYBAGQ9CLiAS0RRAEdVxFDLd3A821.pdf"/><h1><a href="https://www.elecfans.com/tags/瑞萨/" target="_blank"><u>瑞萨</u></a>SH7124/SH7125核心外设硬件设计指南：从<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>到<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机控制</u></a>落地</h1>
+<p>最近做低压伺服<a href="https://www.hqchip.com/app/1847" target="_blank"><u>驱动器</u></a>的项目，选了瑞萨的SH7125这款32位SuperH <a href="https://bbs.elecfans.com/zhuti_riscvmcu_1.html" target="_blank"><u>RISC</u></a>内核的工业级<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>，主打就是<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>控制场景的外设集成度，翻了快700页的官方硬件手册，踩了不少配置的坑，整理下核心外设的关键信息和避坑点，给同用这款MCU的朋友省点查手册的时间。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8989354" target="_blank">DF71242N50FPV.pdf</a></p>
+<p>先提前说明：本文聚焦电机控制刚需的核心外设，通用<a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>架构、中断<a href="https://www.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>这类通用内容就不展开了，所有经验都是基于Rev.5.0版本的官方手册，核心适用于SH7124/SH7125全系列型号。</p>
+<hr/>
+<h2>先简单唠两句这款MCU的定位</h2>
+<p>SH7124/SH7125是瑞萨专为<a href="https://m.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>、电机驱动打造的高性价比32位MCU，CPU最高跑50MHz，片上Flash最大128KB，<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>最大16KB，外设基本是为伺服、<a href="https://www.elecfans.com/tags/bldc/" target="_blank"><u>BLDC</u></a>、<a href="https://m.elecfans.com/v/tag/2471/" target="_blank"><u>变频器</u></a>这类场景量身定做的：6通道16位高级<a href="https://www.elecfans.com/tags/定时器/" target="_blank"><u>定时器</u></a>、10位8通道<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>、3路串口，还有硬件PWM输出保护功能，中小功率场景用完全足够，BOM成本也压得下来。</p>
+<ul>
+<li>提个小细节：手册里开头提了2010年NEC电子和瑞萨科技合并成瑞萨电子，所以手册里出现的旧公司名不用在意，都是官方正规资料。</li>
+</ul>
+<hr/>
+<h2>一、最核心的电机控制外设：MTU2多功能定时器</h2>
+<p>做电机控制全靠这个模块，6个独立的16位定时器通道，功能全到离谱，基本不用软件<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>任何时序。</p>
+<h3>核心特性（只讲电机控制能用得上的）</h3>
+<ol>
+<li><strong>3相互补PWM硬件输出</strong>
+通道3和4绑定使用可以直接输出3路互补对称PWM，死区时间直接写入TDDR寄存器就可以自动插入，不用软件计算偏移量，还支持0%~100%全范围占空比输出，边界情况硬件自动处理，不用自己写判断逻辑。
+<ul>
+<li>✅ 踩坑血泪教训：配置互补PWM模式的时候，一定要先把TOER寄存器的输出使能位清0，所有参数配完再开输出！我一开始图快没关输出，上电瞬间出了直通波形，直接烧了一个<a href="https://m.hqchip.com/app/2048" target="_blank"><u>IGBT</u></a>模块，血的教训。</li>
+<li>⚠️ 注意点：死区时间的单位是MTU2的<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>周期，MTU2最高时钟是40MHz，算的时候别和CPU时钟搞混了，不然死区要么太长要么不够。</li>
+</ul></li>
+<li><strong>硬件正交<a href="https://www.elecfans.com/tags/编码器/" target="_blank"><u>编码器</u></a>解码</strong>
+通道1、2支持4种相位计数模式，直接接增量式编码器的AB相，自动做4倍频计数，不用外接正交解码芯片，省了BOM成本还省IO。
+<ul>
+<li>⚠️ 注意点：编码器输入引脚一定要加RC滤波，电机跑起来的开关干扰很容易让计数飘，相位计数的边沿选择别错，不然电机正转的时候计数会反向。</li>
+</ul></li>
+<li><strong>硬件同步触发<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>C采样</strong>
+可以配置定时器计数到谷点、比较匹配的时候自动触发ADC采样，做FOC<a href="https://m.hqchip.com/app/1179" target="_blank"><u>电流采样</u></a>的时候刚好对齐PWM的中点，不用软件触发，采样精度高还省CPU资源。
+<ul>
+<li>
+</li>
+</ul></li>
+</ol>]]></description></item><item>    <title><![CDATA[考古向：当年寻呼机里的「顶配MCU」——H8/3937系列硬件设计指南]]></title>    <link>https://www.elecfans.com/d/8989355.html</link>    <guid>https://www.elecfans.com/d/8989355.html</guid>    <pubDate>2026-11-27 16:45:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989355" value="https://file.elecfans.com/web2/M00/27/D4/pYYBAGHC05CALCNGAB9vAFsxTfU579.pdf"/><h1>考古向：当年寻呼机里的「顶配<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>」——H8/3937系列硬件设计指南</h1>
+<p>最近翻公司压箱底的老项目资料，翻到了当年做FLEX寻呼机时用的日立H8/3937的手册，现在<a href="https://www.elecfans.com/tags/瑞萨/" target="_blank"><u>瑞萨</u></a>官网都快搜不到这货了。整理下当年踩过的坑和核心设计要点，给搞<a href="https://bbs.elecfans.com/group_1121" target="_blank"><u>嵌入式</u></a>考古/低功耗<a href="https://www.elecfans.com/tags/iot/" target="_blank"><u>IoT</u></a>节点设计的朋友做个参考——毕竟这货的硬件FLEX解码+极致低功耗的思路，放到现在也完全不过时。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8989355" target="_blank">HD6473937RXV.pdf</a></p>
+<p>先提一句背景：2003年日立和三菱的<a href="https://m.hqchip.com/gongsi.html" target="_blank"><u>半导体</u></a>业务合并成了瑞萨，所以手册里一会儿标Hit<a href="https://www.hqchip.com/app/1703" target="_blank"><u>ac</u></a>hi一会儿标Rene<a href="https://m.hqchip.com/app/1686" target="_blank"><u>sas</u></a>，老玩家都懂。这颗MCU是专门为FLEX寻呼机量身定做的，集成了硬件FLEX解码，不用外挂解码芯片，当年高端寻呼机基本全是用它做的，BOM能省好大一块。</p>
+<hr/>
+<h2>一、核心架构与适用场景</h2>
+<p>H8/3937是基于H8/300L 8位内核的MCU，最高主频5MHz，寻址空间64KB，标配40/48/60KB Mask <a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a>/OTP ROM，2KB <a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>，分两个版本：非漫游版H8/3937和漫游版H8/3937R，区别就是后者支持跨基站漫游，不用软件跑漫游协议，省了超多算力。</p>
+<ul>
+<li>核心优势：片上集成FLEX™ Roaming Decoder II，硬件支持1600/3200/6400bps FLEX协议解码，任意相位/单相位兼容，还自带SPI和主机<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>，完全不用软件跑解码协议，ROM占用直接少了十几KB，解码响应也比软件方案快太多。</li>
+<li>典型场景：当年主要做高端数字寻呼机，现在用来做低功耗无线传感节点、远程寻呼类的IoT设备也完全合适，毕竟低功耗是真的能打。</li>
+</ul>
+<hr/>
+<h2>二、低功耗设计：这货当年就是靠这个打天下的</h2>
+<p>寻呼机产品对续航的要求是变态级的，7号电池要撑至少3个月，这颗MCU的低功耗模式玩明白就能达标，亲测调得好的话3V供电休眠<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>能压到15μA以内。</p>
+<h3>7种低功耗模式按需选</h3>
+<table>
+<thead>
+<tr>
+<th>模式</th>
+<th>工作模块</th>
+<th>典型电流</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Active（高速/中速）</td>
+<td>全模块工作</td>
+<td>0.8mA/0.25mA</td>
+<td>正常解码/数据处理</td>
+</tr>
+<tr>
+<td>Sleep（高速/中速）</td>
+<td><a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>停，外设运行</td>
+<td>0.45mA</td>
+<td>短时等待数据，响应快</td>
+</tr>
+<tr>
+<td><a href="https://www.hqchip.com/app/1525" target="_blank"><u>Sub</u></a>active</td>
+<td>CPU跑子<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>，外设可选运行</td>
+<td>56μA</td>
+<td>轻量级数据处理，功耗比Active低一个数量级</td>
+</tr>
+<tr>
+<td>Subsleep</td>
+<td>CPU停，<a href="https://www.elecfans.com/tags/定时器/" target="_blank"><u>定时器</u></a>/FLEX解码可选运行</td>
+<td>30μA</td>
+<td>等待寻呼<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>，响应速度还可以</td>
+</tr>
+<tr>
+<td>Watch模式</td>
+<td>仅<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>Ti</u></a>merA+FLEX解码运行</td>
+<td>18μA</td>
+<td>★最常用的低功耗模式，续航基本靠它</td>
+</tr>
+<tr>
+<td>Standby</td>
+<td>全模块停，仅RAM保持</td>
+<td>&lt;1μA</td>
+<td>长时间无信号时用，唤醒需要等晶振起振</td>
+</tr>
+<tr>
+<td>Module Standby</td>
+<td>单独关指定外设</td>
+<td>按需降低电流</td>
+<td>不用的外设直接关，别傻傻全开会浪费电</td>
+</tr>
+</tbody>
+</table>
+<p>★ 踩坑警告：切低功耗模式前一定要把<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>、没用的串口、定时器全关了！当年调试的时候休眠电流一直飘到100μA以上，查了3天最后发现是AD模块没关，谁踩谁知道。另外切Standby模式唤醒后要留够晶振起振时间，用4MHz晶振的话至少等8ms，不然主频不稳程序直接跑飞。</p>
+<h3>双时钟设计是低功耗核心</h3>
+<p>片上集成两个<a href="https://www.elecfans.com/tags/时钟发生器/" target="_blank"><u>时钟发生器</u></a>：</p>
+<ul>
+<li>主时钟：2~10MHz，给CPU、高速外设用，不用就切了</li>
+<li>子时钟：76.8k/160kHz，专门给FLEX解码和低功耗定时器用，精度要选±20ppm以内的，不然FLEX解码会丢包。子时钟在所有低功耗模式下都能跑，是低功耗唤醒的核心。</li>
+</ul>
+<hr/>
+<h2>三、核心外设设计要点</h2>
+<p>外设基本都是为寻呼机场景优化的，不需要自己瞎改，照着需求配就行，重点说几个容易踩坑的：</p>
+<h3>1. FLEX硬件解码：这才是核心竞争力</h3>
+<p>这部分是这颗MCU的灵魂，完全不用软件跑FLEX协议，硬件全搞定，支持16个用户地址+16个临时地址+16个运营商地址，组呼、临时地址功能直接用硬件，不用软件判地址，效率高太多。</p>
+<ul>
+<li>主机通信走内置SPI，是32位定长包，别按常规8位SPI读！当年好多新手上来按8位读，出来的数据全是乱的，卡好几天都找不到问题。</li>
+<li>漫游版要开MCM（手动折叠模式）自己处理系统折叠，非漫游版直接开自动就行，省好多事。</li>
+<li>解码自带接收机控制逻辑，配好上下电时序<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>后会自动控制接收芯片的<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>，不用软件干预，调好的话接收电流直接省一半，当年为了调这个时序<a href="https://www.elecfans.com/v/tag/577/" target="_blank"><u>示波器</u></a>抓波形抓了好几天，亲测有效。</li>
+</ul>
+<h3>2. 定时器：5个定时器完全够用</h3>
+<p>5个定时器A/C/F/G+独立<a href="https://www.elecfans.com/tags/看门狗/" target="_blank"><u>看门狗</u></a>，各种场景都能覆盖：</p>
+<ul>
+<li>TimerA：专门做时间基准，支持子时钟驱动，Watch模式下也能跑，1分钟唤醒、计时全靠它。</li>
+<li>TimerG：带输入捕获和噪声消除，测接收信号的脉冲宽度、做外部唤醒都很好用，开了噪声消除的话要留够5个采样周期的脉冲宽度，不然触发不了。</li>
+<li>看门狗：可选主/子时钟驱动，建议选子时钟，主时钟掉了也能复位，可靠性拉满。</li>
+</ul>
+<h3>3. SCI串口：3个串口足够用</h3>
+<ul>
+<li>SCI1是内部连FLEX解码的，别乱动，配置错了解码直接废。</li>
+<li>SCI31/SCI32是用户可用的，支持同步/异步模式，带多机通信，接显示屏、外接Flash、连调试口都够用，注意异步模式最高波特率也就38400，别硬往上拉，波特率误差会爆。</li>
+</ul>
+<h3>4. AD<a href="https://www.hqchip.com/app/1718" target="_blank"><u>转换器</u></a>：8通道10位够用</h3>
+<p>逐次逼近型AD，最快12.4μs转换，测电池电压、按键<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>量完全够：</p>
+<ul>
+<li>模拟电源AVCC和<a href="https://www.elecfans.com/tags/数字电源/" target="_blank"><u>数字电源</u></a>VCC要单点共地，布线的时候分开走，不然转换误差飘到5个LSB都有可能，当年我们在AVCC和VCC之间串了个0Ω<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>，模拟地数字地分开铺，误差直接压到1个LSB以内。</li>
+<li>不用AD的时候一定要关模块，不然平白无故多耗几十μA电流。</li>
+</ul>
+<h3>5. IO口：67个IO，注意复用坑</h3>
+<p>大部分IO都是功能复用的，配置前一定要先看手册：</p>
+<ul>
+<li>P1口复用中断、定时器输入，开中断前一定要把IO切到对应功能，不然中断触发不了。</li>
+<li>位操作坑！H8的位操作是「读改写」逻辑：先读整个<a href="https://m.hqchip.com/app/1808" target="_blank"><u>端口</u></a>的电平，改指定的位，再写回去。如果端口一半是输入一半是输出，位操作会把输入引脚的实际电平读进来，把输出位给意外改掉！解决方案是在RAM里存个端口镜像变量，操作镜像变量再统一写回端口，这个坑当年几乎所有用H8的<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>都踩过。</li>
+<li>不用的IO要么设成输出固定电平，要么开内置上拉，别浮空，不然休眠电流会飘。</li>
+</ul>
+<hr/>
+<h2>四、最后唠两句设计经验</h2>
+<ol>
+<li>初始化顺序别乱：上电复位后一定要先写堆栈指针，再开中断！手册里明确写了复位后SP是未初始化的，直接开中断的话，中断一进来PC和CCR压栈直接压到未知地址，程序直接跑飞，新手最容易犯这个错。</li>
+<li>烧录注意：OTP版本烧写的时候要注意<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a>电压是12.5V，别超了，烧错了直接废片，当年废了好几十片才摸清楚烧录器的参数。</li>
+<li>现在寻呼机早就淘汰了，但这种「硬件加速核心协议+极致低功耗优化」的思路真的永不过时，现在做低功耗无线节点、RKE遥控钥匙之类的产品，完全可以参考当年的设计逻辑。</li>
+</ol>
+<p>有玩嵌入式考古的朋友可以找块开发板玩玩，H8的指令集还是挺有意思的，比51规整，比AVR低功耗，玩起来别有一番风味~</p>]]></description></item><item>    <title><![CDATA[工业级六轴IMU ADIS16446调试笔记：省掉3个月校准时间的真香选择]]></title>    <link>https://www.elecfans.com/d/8989356.html</link>    <guid>https://www.elecfans.com/d/8989356.html</guid>    <pubDate>2026-11-27 16:45:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989356" value="https://file1.elecfans.com/web2/M00/A6/90/wKgaomUVYJyAZpPMAAkfe2zQEI0930.pdf"/><h1>工业级六轴IMU <a href="https://www.elecfans.com/tags/adi/" target="_blank"><u>ADI</u></a>S16446调试笔记：省掉3个月校准时间的真香选择</h1>
+<p>最近在做重载AGV的姿态稳定模块选型，对比了七八款六轴IMU，最后选了<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>I家的ADIS16446，前前后后调了两周把Datasheet翻得卷边，踩了好几个硬件软件的坑，今天整理下核心参数和实际使用的注意点，给要选型或者正在调这款芯片的同行避避坑。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8989356" target="_blank">ADIS16446.pdf</a></p>
+<hr/>
+<h2>一、为啥选它？几个戳中刚需的核心亮点</h2>
+<p>当初选它最核心的原因就是<strong>省掉了自己校准的大麻烦</strong>，做过工业惯导的都知道，分立<a href="https://www.elecfans.com/v/tag/7888/" target="_blank"><u>MEMS</u></a>的轴间对准、温漂校准、偏置校准这一套下来，没有两三个月根本出不了稳定的性能，这款IMU出厂就把这些活全干了：</p>
+<ol>
+<li><strong><a href="https://www.elecfans.com/v/tag/1472/" target="_blank"><u>机械</u></a>精度拉满</strong>：三轴<a href="https://www.elecfans.com/tags/陀螺仪/" target="_blank"><u>陀螺仪</u></a>三档量程可选±250/500/1000°/s，轴间对准误差只有±0.05°，三轴加速度计量程±18g，同样有出厂对准校准，不用自己画校准工装转台测误差。</li>
+<li><strong>环境适应性够强</strong>：出厂校准温度范围覆盖-40℃~+85℃，全温段偏置漂移典型值只有0.005°/s/℃，我们拿到样片在高低温箱里跑了72小时，漂移量比标称值还小15%，不用自己做温漂补偿。抗2000g机械冲击，工业现场设备掉个一米高根本不会坏。</li>
+<li><strong>启动快、<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>简单</strong>：上电启动典型时间205ms，比同级别IMU快一倍，适合需要快速启动的场景。标准SPI接口，支持bu<a href="https://www.elecfans.com/tags/rs/" target="_blank"><u>rs</u></a>t读模式，一次性就能把所有<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>数据读出来，不用反复发指令轮询。</li>
+</ol>
+<hr/>
+<h2>二、硬件设计必看的几个坑，都是我们花钱买的教训</h2>
+<h3>1. <a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>设计别偷工减料</h3>
+<p>Datasheet标称电源范围3.15V~3.45V，典型3.3V，<strong>一定要在靠近芯片电源引脚的位置放10μF的陶瓷<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a></strong>，我一开始图省事只放了1μF，-20℃低温测试的时候陀螺漂移比标称值大了30%，换了10μF电容之后直接回归标称值。另外注意电源上电斜率不要太慢，2.35V到2.7V的上升时间不能超过128ms，否则会出现初始化失败的问题。</p>
+<h3>2. SPI布线注意</h3>
+<p>SPI<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>最高支持2MHz（burst读模式不要超过1MHz），如果布线长度超过5cm，一定要在SCLK、DIN、DOUT、CS这几根线上串33Ω的匹配<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>，我们第一版<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>没加，SPI读错数据的概率大概是1/1000，加了电阻之后再也没出现过<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>错误。</p>
+<h3>3. 引脚和安装注意</h3>
+<ul>
+<li>标注DNC的引脚千万不要接任何<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a>，我同事第一版PCB把DNC接了GND，直接烧了两片样片，血的教训。</li>
+<li>安装扭矩严格按照Datasheet要求的28英寸盎司（约0.2N·m），我们一开始拧到0.5N·m，基板变形导致陀螺零偏直接飘了0.5°/s，松到标准扭矩之后立刻恢复正常。</li>
+</ul>
+<hr/>
+<h2>三、软件调试的实用技巧，帮你少翻几十页Datasheet</h2>
+<h3>1. SPI基础配置</h3>
+<p>直接抄这个参数就行，省得自己试：</p>
+<blockquote>
+<p>SPI模式3（CPOL=1，CPHA=1），16位帧，MSB先出，普通读时钟≤2MHz，burst读时钟≤1MHz。</p>
+</blockquote>
+<p>burst读模式真的强烈推荐，只需要发一次指令<code>0x3E00</code>，就能连续读出8个16位数据，顺序是：<code>DIAG_STAT状态<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a></code>→X陀螺→Y陀螺→Z陀螺→X加计→Y加计→Z加计→温度，比单次读寄存器效率高了3倍，非常适合高频率采集的场景。</p>
+<h3>2. 数据转换别算错</h3>
+<p>默认配置下的转换系数直接记：</p>
+<ul>
+<li>陀螺（±1000°/s量程）：25 LSB/(°/s)，直接把读出来的二进制补码除以25就是实际角速度</li>
+<li>加计：1200 LSB/g，除以1200就是实际加速度</li>
+<li>温度：0.07386℃/LSB，31℃对应0值，读出来的数值乘0.07386加31就是芯片内部温度</li>
+</ul>
+<h3>3. 一键偏置校准太好用</h3>
+<p>不用自己采集数据算偏置，芯片自带一键校准功能，步骤超简单：</p>
+<ol>
+<li>把设备放在水平静止的平台上，不要有任何振动</li>
+<li>配置抽值率为最低，平均时间设为80秒，等数据稳定</li>
+<li>给<code>GLOB_CMD</code>寄存器的Bit0写1，指令是<code>0xBE01</code></li>
+<li>等数据就绪引脚重新开始跳变，校准就完成了，偏置值会自动存在内部寄存器里，还能存到Flash掉电不丢。</li>
+</ol>
+<h3>4. 上电自检必加</h3>
+<p>每次上电的时候给<code>MSC_CTRL</code>寄存器写<code>0xB504</code>启动内置自检，然后读<code>DIAG_STAT</code>寄存器的Bit5，如果是0就说明所有传感器功能正常，省得硬件坏了还在傻调软件。</p>
+<hr/>
+<h2>四、容易忽略的细节提醒</h2>
+<ol>
+<li>Flash擦写次数只有10000次，调试阶段配置参数先存在S<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>里，等功能定型了再写一次Flash，别频繁刷写容易坏。</li>
+<li>推荐用数据就绪引脚做中断触发读数据，不要轮询，轮询容易碰到寄存器正在更新的情况，读出来的数据是错的，默认DIO1就是数据就绪输出，高电平有效，直接接<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>外部中断就行。</li>
+<li>SMT之后尽量不要过X射线检测，会导致加计偏置漂移，如果一定要过，过了之后重新做一次偏置校准。</li>
+<li>外部同步时钟最高只能到1.1kHz，不要超，否则会丢数据。</li>
+</ol>
+<hr/>
+<h2>最后说下实际使用体验</h2>
+<p>我们现在把这款IMU用在重载AGV的姿态控制上，导航偏差比之前用的分立MEMS方案小了40%，省了至少2个月的校准调试时间，唯一的缺点就是单颗成本有点高，但是算上校准工装、测试时间的成本，其实反而更划算，毕竟工业场景下稳定性才是第一位的。</p>
+<p>有没有正在用这款IMU的同行？欢迎评论区交流你踩过的坑~</p>]]></description></item><item>    <title><![CDATA[瑞萨H8/3048系列硬核拆解：工控老项目续命必看的核心硬件设计要点]]></title>    <link>https://www.elecfans.com/d/8989357.html</link>    <guid>https://www.elecfans.com/d/8989357.html</guid>    <pubDate>2026-11-27 16:45:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989357" value="https://file1.elecfans.com/web2/M00/E5/93/wKgZomZDtjaAfeIxAILz0Nd5k4I278.pdf"/><h1><a href="https://www.elecfans.com/tags/瑞萨/" target="_blank"><u>瑞萨</u></a>H8/3048系列硬核<a href="https://m.elecfans.com/v/tag/899/" target="_blank"><u>拆解</u></a>：工控老项目续命必看的核心硬件设计要点</h1>
+<h2>最近接了个90年代进口工控设备的升级活，核心<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>用的还是瑞萨早年的H8/3048系列16位机。翻了下官方800多页的手册，网上能搜到的<a href="https://www.elecfans.com/soft/" target="_blank"><u>中文资料</u></a>少得可怜，不少同行维护老项目踩坑的吐槽倒是不少。干脆把实际调试用到的核心要点整理出来，省得大家抱着厚手册啃，都是跑过代码的干货，避坑够用。</h2>
+<h2>先唠两句这个MCU的定位</h2>
+<p>H8/3048是瑞萨H8/300H系列的经典款，放到现在性能肯定不能跟32位比，但胜在稳定、工业级耐造，存量老设备里存量极大。我手里这个项目原来的程序是20年前写的，要加个<a href="https://m.elecfans.com/v/tag/9979/" target="_blank"><u>4G</u></a>上传功能，换32位的话所有驱动、逻辑都要重写，直接换同型号的Flash版本，加个<a href="https://m.elecfans.com/v/tag/1301/" target="_blank"><u>通信</u></a>模块就搞定，成本只有重新开发的1/10，老项目续命是真的香。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8989357" target="_blank">HD64F3048F16V.pdf</a></p>
+<h3>核心架构先搞懂</h3>
+<p>内核是H8/300H，32位内部架构配16个16位通用<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>，16M线性寻址空间，指令和老的H8/300向上兼容，老代码移植基本不用改。18MHz主频下加减运算只要111ns，乘除也就778ns，做个普通的<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机控制</u></a>、<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>数据采集、逻辑控制完全够用。</p>
+<h3>选型直接看这张表就行</h3>
+<table>
+<thead>
+<tr>
+<th>不用翻手册找型号，常用的款我整理好了，小批量维护直接选F-ZTAT的Flash版本，不用等掩膜周期，烧录也方便：</th>
+<th>型号</th>
+<th><a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a>类型</th>
+<th>ROM容量</th>
+<th><a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>RAM</u></a>容量</th>
+<th>特点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HD6433044</td>
+<td>掩膜ROM</td>
+<td>32K</td>
+<td>2K</td>
+<td>大批量老设备用</td>
+</tr>
+<tr>
+<td>HD6433045</td>
+<td>掩膜ROM</td>
+<td>64K</td>
+<td>2K</td>
+<td>同上</td>
+</tr>
+<tr>
+<td>HD6433047</td>
+<td>掩膜ROM</td>
+<td>96K</td>
+<td>4K</td>
+<td>同上</td>
+</tr>
+<tr>
+<td>HD6433048</td>
+<td>掩膜ROM</td>
+<td>128K</td>
+<td>4K</td>
+<td>同上</td>
+</tr>
+<tr>
+<td>HD6473048</td>
+<td>ZTAT(PROM)</td>
+<td>128K</td>
+<td>4K</td>
+<td>一次可<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a>，小批量试产用</td>
+</tr>
+<tr>
+<td>HD64F3048</td>
+<td>F-ZTAT</td>
+<td>128K</td>
+<td>4K</td>
+<td>双<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>Flash，可反复烧录</td>
+</tr>
+<tr>
+<td>HD64F3048B</td>
+<td>F-ZTAT</td>
+<td>128K</td>
+<td>4K</td>
+<td>单电源版本，带E10T<a href="https://bbs.elecfans.com/zhuti_proteus_1.html" target="_blank"><u>仿真</u></a></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<h2>踩坑提醒：单电源的F-ONE版本引脚和双电源版本有差异，1脚是VCL要接0.1uF<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>接地，别直接接VCC，我第一次换的时候没注意，烧了一片才发现。</h2>
+<h2>核心外设设计要点，都是踩过坑的经验</h2>
+<p>H8/3048的外设放到现在都不算拉胯，尤其是定时器和总线控制器，比很多入门32位还好用，就是寄存器配置有点绕，重点讲几个常用的：</p>
+<h3>1. <a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>与低功耗</h3>
+<p>主频支持1~18MHz（Flash版本最高16MHz），3V/5V都能跑，低功耗模式有三个：睡眠、软件待机、硬件待机，所有外设都可以单独关时钟降功耗。
+必看坑点：进入软件待机模式前一定要清总线释放控制寄存器BRCR的BRLE位，禁止外部总线请求，不然可能出现总线死锁，我之前查了三天异常复位，最后发现是没关外部总线请求导致的。
+另外栈指针SP必须设置成偶地址，不然一进中断就跑飞，手册里提的特别隐晦，第一次用的大概率踩坑。</p>
+<h3>2. 中断<a href="https://www.hqchip.com/app/1716" target="_blank"><u>控制器</u></a></h3>
+<p>7个外部中断（NMI+IRQ0~5）+30个内部中断，支持3级优先级配置，NMI是最高优先级不可屏蔽。外部中断可以配电平/边沿触发，IRQ0~2还能直接唤醒软件待机，做低功耗产品刚好够用。
+中断响应时间最快19个周期，做普通控制足够，要注意的是串口、<a href="https://www.elecfans.com/tags/定时器/" target="_blank"><u>定时器</u></a>的中断优先级尽量配高一点，不然波特率容易飘、定时器计数不准。</p>
+<h3>3. 总线控制器+刷新控制器</h3>
+<p>这个是真的好用，把16M地址空间切成了8个区域，每个区域可以单独配8/16位访问位宽、2/3个访问周期，还自带7路片选输出，接外部SRAM、Flash的时候连74HC138译码器都省了。
+如果接<a href="https://www.elecfans.com/tags/dram/" target="_blank"><u>DRAM</u></a>或者伪静态RAM，直接用片上的刷新控制器就行，支持CAS before RAS刷新，不用外加刷新电路。不用刷新的时候还能当8位间隔定时器用，省一个外部定时器。</p>
+<h3>4. <a href="https://www.elecfans.com/tags/dma/" target="_blank"><u>DMA</u></a>控制器</h3>
+<p>最多支持4通道传输，有短地址/全地址两种模式，可以用ITU、SCI的中断、外部请求触发，搬<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>、串口的数据不用进<a href="https://www.elecfans.com/v/tag/132/" target="_blank"><u>CPU</u></a>中断，省很多资源。
+注意：DMA优先级比CPU高，尽量别让DMA访问和CPU频繁读写的寄存器/存储区域，不然容易出现数据冲突，我一般只用来搬串口接收缓存、<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>C采样结果。</p>
+<h3>5. 16位定时器ITU+TPC</h3>
+<p>5个独立的16位定时器通道，功能是真的全：支持普通PWM输出、3路互补非重叠PWM（做<a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机</u></a>驱动刚好）、相位计数（接增量<a href="https://www.elecfans.com/tags/编码器/" target="_blank"><u>编码器</u></a>不用外加解码电路）。
+搭配TPC可编程脉冲输出模块，最多可以同时输出16路脉冲，做段码屏驱动、<a href="https://www.hqchip.com/app/1721" target="_blank"><u>LED</u></a>矩阵、多阀控制的时候不用CPU反复刷IO，省很多资源。
+吐槽：定时器的模式选择表特别绕，配置的时候一定要对照手册的寄存器组合表，配错一个位就不出波形，我第一次配互补PWM的时候卡了整整一天，最后发现是缓冲区模式的位没设对。</p>
+<h3>6. 串口SCI</h3>
+<p>2个独立通道，异步/同步都支持，通道0还带ISO7816智能卡<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>，异步模式最高波特率能到500K+，普通串口通信完全够用。
+踩坑提醒：串口接收出现奇偶校验错误、帧错误、溢出错误之后，必须手动写0清错误标志，不然串口会一直卡着收不到数据，这个手册里藏的特别深，很多人第一次用都踩。</p>
+<h3>7. AD/DA</h3>
+<p>10位精度8通道ADC，采样速度够普通工控用，2路8位DA，做<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>输出、基准调节够用。
+设计提醒：AD的参考电压<a href="https://www.elecfans.com/v/tag/3668/" target="_blank"><u>VR</u></a>EF和模拟地AVSS一定要单独走线，VREF脚接104陶瓷电容到地，不然漂移会很严重，我一开始没加电容，温漂到了50mV，加了之后就稳了。</p>
+<h3>8. IO口</h3>
+<h2>一共70个通用IO+8个输入口，大部分都是复用功能，扩展模式下部分IO会变成地址/数据总线，用之前一定要查引脚复用表，别配错功能。普通IO支持推挽输出，部分引脚可以直接驱动LED，不用外加限流<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>（别长时间亮就行）。</h2>
+<h2>实际改造的一点经验</h2>
+<p>这次我用的是HD64F3048B，内部128K Flash存程序，4K RAM跑个小型任务调度器完全没问题，外扩了一片128K的SRAM存历史采集数据，串口0接<a href="https://www.elecfans.com/v/tag/12018/" target="_blank"><u>4G模块</u></a>上传数据，3路ITU输出PWM控调节阀，8路AD采传感器数据，性能完全够用，比换32位MCU省了至少两周的移植时间。
+老MCU虽然老，但只要摸透了特性，维护老项目是真的省心，稳定又不用重新搞<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>。大家如果有H8/3048相关的坑，欢迎评论区交流，我踩过的尽量帮大家避。</p>
+</blockquote>]]></description></item><item>    <title><![CDATA[硬核拆解 | 瑞萨H8/3337/3397系列32位MCU Flash编程&底层设计避坑指南]]></title>    <link>https://www.elecfans.com/d/8989358.html</link>    <guid>https://www.elecfans.com/d/8989358.html</guid>    <pubDate>2026-11-27 16:45:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989358" value="https://file1.elecfans.com/web2/M00/E3/0C/wKgZomY79MqAWHuhAC_5pKEtsf8712.pdf"/><h1>硬核<a href="https://m.elecfans.com/v/tag/899/" target="_blank"><u>拆解</u></a> | <a href="https://www.elecfans.com/tags/瑞萨/" target="_blank"><u>瑞萨</u></a>H8/3337/3397系列32位<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a> Flash<a href="https://www.elecfans.com/v/tag/1315/" target="_blank"><u>编程</u></a>&amp;底层设计避坑指南</h1>
+<p>最近在迭代一款08年的老工控板固件，用的还是瑞萨当年的经典工业级H8/3337YF系列，H8/300核心抗干扰是真的顶，烧写和底层配置的坑也是真的多。翻了3天原厂数据手册+踩了N次坑，把整理的实操指南发出来，给还在维护老设备的同行避避坑。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8989358" target="_blank">HD64F3334YF16V.pdf</a></p>
+<blockquote>
+<h2>本文对应<strong>双<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>版60KB Flash型号</strong>，单电源S-Mask版的配置差异后面单独更，内容全是实测踩出来的，放心抄作业。</h2>
+<h2>一、先唠两句这个系列的定位</h2>
+<h2>H8/33xx是瑞萨2000年前后主推的工业级MCU，32位H8/300内核，最高16MHz主频，片上集成了<a href="https://www.elecfans.com/tags/adc/" target="_blank"><u>ADC</u></a>/<a href="https://www.elecfans.com/tags/dac/" target="_blank"><u>DAC</u></a>、<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>、主机<a href="https://www.hqchip.com/app/1787" target="_blank"><u>接口</u></a>，Flash从32KB到60KB可选，优点是宽温、抗静电强，工业现场跑10年不炸的比比皆是，缺点就是Flash编程的流程异常繁琐，新手上手极其容易废片。</h2>
+<h2>二、Flash核心架构&amp;关键特性</h2>
+<table>
+<thead>
+<tr>
+<th>这款的Flash是传统的NOR型，分为<strong>8个小块（128B~1KB）+8个大块（2KB~12KB）</strong>，支持按块擦除，不用每次擦整片，这个设计对小参数存储非常友好。</th>
+<th>块类型</th>
+<th>地址范围</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>小块SB0~SB7</td>
+<td>H'0000~H'0FFF</td>
+<td>存储启动参数、校准值、小批量配置数据</td>
+</tr>
+<tr>
+<td>大块LB0~LB7</td>
+<td>H'1000~H'F77F</td>
+<td>存储主固件、大段程序</td>
+</tr>
+</tbody>
+</table>
+<p>✅ 核心参数（实测值）：</p>
+<ul>
+<li>单字节编程典型时间：50us</li>
+<li>整片擦除典型时间：1s</li>
+<li>擦写寿命：最少100次（工业级足够用，毕竟没人天天刷工控板固件）</li>
+<li>
+<h2>编程电压：12V±0.6V，对电压精度要求很高，差0.5V就可能烧写失败</h2>
+<h2>三、两种编程模式怎么选？</h2>
+<p>Flash编程分两种模式，小批量烧写用烧写器模式，现场升级用板载模式，别搞混。</p>
+<h3>1. 烧写器模式（Wri<a href="https://www.elecfans.com/tags/te/" target="_blank"><u>te</u></a>r Mode）</h3>
+<p>适合出厂批量烧写，用通用PROM编程器加专用转接座就行，直接选Hit<a href="https://www.hqchip.com/app/1703" target="_blank"><u>ac</u></a>hi HN28F101的配置即可，不用自己写 bootlo<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>ad</u></a>er。
+⚠️ <strong>踩坑预警</strong>：
+转接座的引脚对应一定要查手册！我第一次插反了烧废了3片样片，血的教训。另外烧写范围要设到H'F77F，超过的地址填0xFF，不然会报校验错误。</p>
+<h3>2. 板载编程模式（On-Board Prog<a href="https://www.elecfans.com/tags/ram/" target="_blank"><u>ram</u></a>ming）</h3>
+<p>适合现场固件升级，又分两种子模式：</p>
+<h4>（1）Boot模式</h4>
+<p>芯片内置了Boot程序，不用自己写引导，串口接<a href="https://bbs.elecfans.com/zhuti_1184_1.html" target="_blank"><u>上位机</u></a>就能烧写，适合第一次烧片或者主固件刷挂了救砖。
+✅ 操作步骤：</p>
+<ol>
+<li>模式引脚MD1接12V，MD0接对应电平选模式2/3，FVpp接12V，复位启动</li>
+<li>上位机连续发0x00，芯片会自动测波特率，<strong>只支持2400/4800/9600三个波特率</strong>，别头铁选115200，我之前浪费了一下午才看到这个限制</li>
+<li>芯片回发0x00表示波特率对齐成功，上位机再发0x55，Boot就会把用户程序导到RAM里执行
+✅ 实测提示：Boot模式下会自动擦除整片Flash，提前备份原固件！
+<h4>（2）用户编程模式</h4>
+<h2>适合正常运行时在线升级，提前把烧写逻辑写在主固件里，升级时给FVpp加12V就行，不用拆壳。
+⚠️ <strong>踩坑预警</strong>：
+烧写逻辑必须存在RAM或者外部<a href="https://www.elecfans.com/tags/rom/" target="_blank"><u>ROM</u></a>里！Flash编程的时候读不了自身的内容，把烧写逻辑放Flash里会直接跑飞。</h2>
+<h2>四、编程/擦除核心流程&amp;避坑点</h2>
+<p>这部分是核心，手册写的太绕，我整理成了可直接复用的流程，附踩坑提示。</p>
+<h3>1. 单字节编程流程</h3>
+<pre><code/></pre></li>
+<li>配置EBR1/EBR2<a href="https://www.elecfans.com/tags/寄存器/" target="_blank"><u>寄存器</u></a>，选中要编程的块</li>
+<li>往目标地址写要烧的数（相当于锁存地址和数据）</li>
+<li>置FLMCR寄存器的P位为1，进入编程模式</li>
+<li>软件延时10~20us（别超过1ms，会过烧）</li>
+<li>清P位，置PV位进入编程校验模式</li>
+<li>延时4us以上读目标地址，和写入数据对比</li>
+<li>校验成功就结束，失败就重复2~6步，最多重试6次
+<pre><code>⚠️ **必看注意**：
+编程前一定要开<a href="https://www.elecfans.com/tags/看门狗/" target="_blank"><u>看门狗</u></a>！如果程序跑飞P位一直置1，会直接把Flash烧穿。
+### 2. 块擦除流程</code></pre></li>
+<li>先往要擦除的块全写0x00（预写操作，不做的话很容易过擦除，存储单元<a href="https://www.elecfans.com/tags/阈值电压/" target="_blank"><u>阈值电压</u></a>飘负直接废片）</li>
+<li>配置EBR寄存器选中目标块</li>
+<li>置FLMCR的E位为1进入擦除模式，软件延时10ms</li>
+<li>清E位，置EV位进入擦除校验模式</li>
+<li>往目标地址写0xFF（dummy write），延时2us以上读数据，判断是不是全0xFF</li>
+<li>校验成功就结束，失败就重复3~5步，最多重试602次
+<pre><code>
+### 3. 必看避坑清单（我踩过的坑全在这）
+| 坑点 | 后果 | 解决方法 |
+| --- | --- | --- |
+| FVpp一直加12V | 程序跑飞时会意外改写Flash | 只有烧写的时候加12V，平时拉到Vcc |
+| 擦除前不预写0 | 过擦除，芯片直接报废 | 擦除前先全块写0 |
+| 编程/擦除时开中断 | 打断时序，烧写失败 | 操作前关所有中断，操作完再开 |
+| 用内部Flash存烧写逻辑 | 编程时读不了Flash，程序跑飞 | 烧写逻辑放RAM或外部ROM |
+| 电压超12.6V | 击穿存储单元 | 编程电源加过压保护，串个<a href="https://m.hqchip.com/app/1558" target="_blank"><u>肖特基</u></a><a href="https://m.hqchip.com/app/1554" target="_blank"><u>二极管</u></a> |
+---
+## 五、寄存器操作注意事项</code></pre></li>
+<li>FLMCR、EBR1、EBR2这三个寄存器<strong>只有FVpp加12V的时候才能访问</strong>，不加12V读出来全是0xFF，别以为寄存器坏了。</li>
+<li>每次只能置位P/E/PV/EV中的一个位，同时置多个会直接进异常状态。</li>
+<li>
+<h2>模式切换时要先清掉之前的模式位，再置新的模式位，不要直接赋值。</h2>
+<h2>最后唠两句</h2>
+<p>这个系列的MCU虽然老，但工业稳定性是真的没话说，我手上的板子在工厂跑了15年都没出过硬件问题，就是编程麻烦点。
+我整理了这个系列的寄存器头文件、编程示例代码、转接座引脚定义，有需要的评论区留邮箱就行，免费发。
+有没有同行也用过这个系列？欢迎评论区聊聊你们踩过什么奇怪的坑</p>
+</li>
+</ol>
+</li>
+</ul>
+</blockquote>]]></description></item><item>    <title><![CDATA[老片子也能打：瑞萨H8/36077硬件设计实装踩坑全指南]]></title>    <link>https://www.elecfans.com/d/8989359.html</link>    <guid>https://www.elecfans.com/d/8989359.html</guid>    <pubDate>2026-11-27 16:45:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989359" value="https://file1.elecfans.com/web2/M00/EB/03/wKgZomZcVoeAXAGfADNCh1hppSw968.pdf"/><h1>老片子也能打：<a href="https://www.elecfans.com/tags/瑞萨/" target="_blank"><u>瑞萨</u></a>H8/36077硬件设计实装踩坑全指南</h1>
 <h2>最近做一款电池供电的工业采集终端，要16位内核、带RTC、多路PWM、低功耗，翻选型表的时候挖到瑞萨这款H8/300H内核的老<a href="https://www.hqchip.com/app/1379" target="_blank"><u>MCU</u></a>，参数居然意外能打，就是官方手册全英文，不少坑藏得比较深，踩了一周的坑，把核心设计点整理出来，给同好避避坑。
 *注：本文基于REJ09B0216-0100版本手册，不同批次参数可能有差异，开发请以官方最新文档为准。</h2>
 <h2>一、核心基础参数先搞懂</h2>
@@ -3191,151 +3597,4 @@ deactivate</pre>
 <p style="text-indent:2em;">
 	在汽车业务全球化布局不断深化的同时，小鹏也在积极推进物理 AI 领域的国际交流与合作。本届广州车展，来自全球多个国家和地区的海外合作伙伴及媒体齐聚小鹏展台，共同探索、交流物理 AI 的前沿技术与应用。</p>
 <p style="text-indent:2em;">
-	随着智能汽车海外业务快速增长、人形机器人商业化进程加速，小鹏集团正不断拓展物理 AI 的应用场景与市场空间。未来，小鹏将持续以全栈自研技术驱动创新，推进物理AI产品的商业化落地与全球化布局，让中国科技创新成果惠及全球更多用户。</p>]]></description></item><item>    <title><![CDATA[中科曙光发布FlashNexus NAS 3.0原生多协议融合全闪存储系统]]></title>    <link>https://www.elecfans.com/d/8989571.html</link>    <guid>https://www.elecfans.com/d/8989571.html</guid>    <pubDate>2026-11-27 17:48:00</pubDate>    <description><![CDATA[<p style="text-indent:2em;">
-	11月25日，2026中国数据与存储峰会现场，中科曙光发布全球首个SAN+<a href="https://www.elecfans.com/tags/nas/" target="_blank"><u>NAS</u></a>+KV原生多协议融合全闪存储系统——FlashNexus NAS 3.0。该产品以一套存储同时承载数据库、文件共享与<a href="https://www.elecfans.com/tags/ai/" target="_blank"><u>AI</u></a>推理等多类负载，帮助企业减少重复建设、提高业务效率。</p>
-<p style="text-indent:2em;">
-	原生融合，资源更省</p>
-<p style="text-indent:2em;">
-	交易数据库、文件共享、AI推理......不同场景对存储的需求日益多元，分散建设容易造成资源闲置和管理负担。传统融合存储方案将不同存储设备进行拼接，无法实现资源贯通。</p>
-<p style="text-indent:2em;">
-	FlashNexus NAS 3.0通过统一存储引擎和高性能全闪资源池，可原生支持SAN、NAS、KV三种协议，存储容量可在不同业务之间按需调配，运维只需一套体系，块存储和文件存储还共享一套数据保护能力。</p>
-<p style="text-indent:2em;">
-	中科曙光集中式存储产品部总经理郭照斌表示，原生融合的核心价值，在于降低物理资源成本、简化使用与运维，让一套存储可以承担更多业务。</p>
-<p style="text-indent:2em;">
-	以存促算，应用更快</p>
-<p style="text-indent:2em;">
-	资源整合只是第一步，关键要让不同业务用得高效。</p>
-<p style="text-indent:2em;">
-	芯片设计是典型高负载场景：<a href="https://www.elecfans.com/v/tag/1053/" target="_blank"><u>EDA</u></a><a href="https://bbs.elecfans.com/zhuti_proteus_1.html" target="_blank"><u>仿真</u></a>中会产生海量小文件读写，数据等待会拖慢设计验证。中科曙光联合行业头部客户，依托超级隧道技术与高性能文件系统开展全栈优化，实测小文件的OPS（每秒操作数）达到136万次/秒。</p>
-<p style="text-indent:2em;">
-	在AI推理场景中，大模型对话时会把中间计算结果（KV）存起来，遇到相同上下文时直接调用，不必重新计算。FlashNexus NAS 3.0通过对这些结果的高效存储调用，省下宝贵的算力；同时配合GDS直通技术，模型加载和训练进度的保存也更快。</p>
-<p style="text-indent:2em;">
-	此外，中科曙光凭借计算、存储、网络全栈能力，可将scaleX40超节点、FlashNexus全闪存储与scaleFabric<a href="https://www.elecfans.com/v/tag/1392/" target="_blank"><u>交换机</u></a>组成一体化解决方案。实测AI响应等待时间（T<a href="https://www.hqchip.com/app/1522" target="_blank"><u>TF</u></a>T）降低85%，Token输出速度提升5倍，内存需求减少60%，本地盘也不再需要，AI提速与降本一步到位。</p>
-<p style="text-indent:2em;">
-	一体防护，业务更稳</p>
-<p style="text-indent:2em;">
-	高端全闪存存储往往承载企业的核心数据，跑得快之外，稳得住更是底线要求。</p>
-<p style="text-indent:2em;">
-	可靠性上，FlashNexus NAS 3.0支持SAN+NAS免网关AA一体化双活：两个数据<a href="https://www.hqchip.com/tags" target="_blank"><u>中心</u></a>同时服务，任何一处出现故障，业务自动切换到另一处，可实现数据零丢失，业务恢复时间接近于零。配合远程复制，企业还可构建“两地三中心”容灾体系，为关键业务提供多层保护。</p>
-<p style="text-indent:2em;">
-	安全性上，面对勒索攻击、数据损毁风险，FlashNexus NAS 3.0构建五层防护：从开机时的安全启动、登录时的身份<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>，到运行中的数据加密、防病毒、防勒索和防篡改，再到出事后的安全快照、秒级回滚和回收站，事前预防、事中拦截、事后恢复环环相扣。</p>
-<p style="text-indent:2em;">
-	在本次峰会上，中科曙光集中式全闪存储FlashNexus 9000获“2026年度全闪存存储产品金奖”，ParaCache KV Cache卸载方案获“2026年度AI存储优秀案例”。</p>
-<p style="text-indent:2em;">
-	随着AI应用持续深入，存储正从单一业务承载加速迈向多元数据服务。FlashNexus NAS 3.0以国产平台和整机自研为基础，为企业迈向AI时代打好“多元”数据底座。</p>]]></description></item><item>    <title><![CDATA[老项目救星！瑞萨SH7708（原日立SuperH）硬件设计踩坑指南]]></title>    <link>https://www.elecfans.com/d/8989151.html</link>    <guid>https://www.elecfans.com/d/8989151.html</guid>    <pubDate>2026-11-27 16:00:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989151" value="https://file.elecfans.com/web2/M00/27/88/pYYBAGHCixSAaJ9yACtU0rrm7e4249.pdf"/><h1>老项目救星！<a href="https://www.elecfans.com/tags/瑞萨/" target="_blank"><u>瑞萨</u></a>SH7708（原日立SuperH）硬件设计踩坑指南</h1>
-<h2>最近帮客户做老工业设备的国产化替代评估，翻出来压箱底的SH7708 datasheet。这颗2003年前后的32位<a href="https://bbs.elecfans.com/zhuti_riscvmcu_1.html" target="_blank"><u>RISC</u></a>主控，当年可是<a href="https://m.elecfans.com/v/tag/204/" target="_blank"><u>工业控制</u></a>、<a href="https://bbs.elecfans.com/group_1121" target="_blank"><u>嵌入式</u></a>终端的「明星款」，日立和三菱<a href="https://m.hqchip.com/gongsi.html" target="_blank"><u>半导体</u></a>合并成瑞萨之后，所有技术支持都转去瑞萨了，很多老<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>找资料、问FAE容易跑错门，今天整理下硬件设计最核心的要点，给还在维护老项目、或者玩复古嵌入式的兄弟避避坑。</h2>
-<h2>先唠两句背景</h2>
-<p>SH7708是日立SuperH SH-3内核的代表作，60MHz主频，带MMU、8KB Cache，片上外设从总线控制器到RTC、串口、<a href="https://www.elecfans.com/tags/定时器/" target="_blank"><u>定时器</u></a>全齐，当年主打「高性能+低功耗+高集成度」，省了一大堆外接逻辑芯片，BOM成本直接打下来，现在很多运行了10年以上的工业设备里还能看到它的身影。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8989151" target="_blank">HD6417708SF60V.pdf</a></p>
-<blockquote>
-</blockquote>]]></description></item><item>    <title><![CDATA[告别静态仿真盲区：2026高性价比国产PCB仿真软件选型参考]]></title>    <link>https://www.elecfans.com/d/8989152.html</link>    <guid>https://www.elecfans.com/d/8989152.html</guid>    <pubDate>2026-11-27 16:00:00</pubDate>    <description><![CDATA[<p>在高速高频、高功率密度的现代电子设计场景下，传统静态<a href="https://bbs.elecfans.com/zhuti_proteus_1.html" target="_blank"><u>仿真</u></a>方式的局限性逐步凸显。静态IR压降分析仅能提供基础压降参考，无法捕捉负载突变带来的动态电压跌落，也不能体现<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>温升引发的<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>变化。这类静态分析存在的盲区，会让部分设计隐患直到打样阶段才被发现。因此，支持动态电热<a href="https://www.elecfans.com/tags/耦合/" target="_blank"><u>耦合</u></a>、多物理场联合验证，同时具备成本优势的国产<a href="https://m.elecfans.com/v/tag/82/" target="_blank"><u>PCB</u></a>仿真工具，成为硬件研发团队提升验证能力的重要选择。</p>
-<p>一、消除静态仿真盲区的评估维度</p>
-<p>评估国产PCB仿真工具能否弥补静态分析缺陷、兼顾使用成本，可从分析能力、成本控制、数据协同流转几个维度判断。</p>
-<table><thead><tr><th>静态盲区评估维度<br/></th><th>传统仿真方案局限性<br/></th><th>高性价比国产方案诉求<br/></th></tr></thead><tbody><tr><td>动态工况还原能力<br/></td><td>静态分析无法体现负载突变带来的电压跌落、温升效应<br/></td><td>支持<a href="https://www.hqchip.com/app/1703" target="_blank"><u>DC</u></a>电热耦合瞬态仿真，同步计算电流与温升变化<br/></td></tr><tr><td>成本与去耦优化<br/></td><td>依靠人工经验选择<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>，容易出现阻抗超标或者BOM物料冗余<br/></td><td>搭载基于器件成本库的智能去耦优化，平衡<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>性能与物料成本<br/></td></tr><tr><td>电磁与多物理场量化<br/></td><td>难以直观识别大功率区域的电流集中、磁场热点问题<br/></td><td>支持A/B分级辐射场仿真，可开展多物理场联合验证<br/></td></tr><tr><td>架构同源与协同流转<br/></td><td>仿真模块和设计工具相互独立，跨软件数据转换容易失真，问题定位困难<br/></td><td>仿真引擎与<a href="https://bbs.elecfans.com/group_1221" target="_blank"><u>PCB设计</u></a>环境底层数据同源，支持快速定位与修改设计<br/></td></tr></tbody></table><p>二、主流国产PCB仿真软件能力与定位</p>
-<p>弘快科技 Red<a href="https://www.elecfans.com/tags/pi/" target="_blank"><u>PI</u></a>/RedDC、RedCPA</p>
-<p>RedPI/RedDC、RedCPA是Red<a href="https://www.elecfans.com/v/tag/1053/" target="_blank"><u>EDA</u></a>全流程平台下的<a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>与<a href="https://m.hqchip.com/app/1072" target="_blank"><u>信号</u></a>仿真模块，与原理图、PCB、封装等工具共用同一底层数据架构，用于板级多物理场验证。</p>
-<p>动态电热耦合瞬态仿真：突破传统静态IR分析局限，同步求解电流与温升耦合效应，还原负载突变产生的电压跌落，标记IR压降超出预算的高风险区域，提前识别热失效隐患。</p>
-<p>智能去耦优化与BOM成本优化：面向大电流系统PDN阻抗管控，内置智能去耦优化能力。依托器件成本库自动迭代电容组合方案，在满足全频段PDN阻抗指标的前提下，找到性能与物料成本的平衡方案。</p>
-<p>电磁量化与高速信号评估：支持A/B分级辐射场仿真，对比理想参考平面与包含分割、过孔的真实PCB，可视化电流拥挤与磁场热点；RedCPA用于高速链路分析，提前预判信号反射、串扰风险。</p>
-<p>同源设计协同：RedPCB内置基础仿真分析能力，布局阶段即可获取仿真反馈。仿真结果和版图环境深度绑定，可直接定位并修改设计，规避跨工具文件转换带来的数据丢失。整套RedEDA平台适配银河麒麟、海光、兆芯等国产软硬件环境，可支撑板级与封装协同验证。</p>
-<p>华大九天</p>
-<p>华大九天在<a href="https://www.elecfans.com/analog/" target="_blank"><u>模拟</u></a>电路EDA、芯片级验证领域积累深厚。Patron、Polas等工具聚焦芯片内部供电网络，可完成动态EM/IR分析与自热效应评估，适合芯片层面物理失效、供电可靠性的深度分析。</p>
-<p>芯和<a href="https://m.hqchip.com/gongsi.html" target="_blank"><u>半导体</u></a></p>
-<p>在SI/PI/EM多物理场仿真领域技术能力突出。Notus平台实现电源频域阻抗分析与电热双向反馈建模；Me<a href="https://bbs.elecfans.com/group_715" target="_blank"><u>ti</u></a>s平台支持2.5D/3DIC全流程仿真，适用于封装、板级系统的高频电磁与热应力耦合验证。</p>
-<p>合见工软</p>
-<p>数字EDA方向具备较强技术积累，Archer系列面向企业级市场，擅长超大规模数字系统逻辑验证、设计规则约束管理，可为系统级逻辑仿真提供配套支撑。</p>
-<p>嘉立创EDA</p>
-<p>依托云原生架构搭建<a href="https://bbs.elecfans.com/group_53" target="_blank"><u>设计制造</u></a>一体化生态，在中小企业与教学领域用户基数较大。支持在线协同与基础仿真分析，适合中小型项目快速迭代。</p>
-<table><thead><tr><th>工具厂商<br/></th><th>动态与多物理场分析表现<br/></th><th>协同流转与成本优化特征<br/></th></tr></thead><tbody><tr><td>弘快科技<br/></td><td>DC电热耦合瞬态仿真、A/B级辐射场、高速链路风险预判<br/></td><td>智能去耦优化，同源架构便于快速定位修改，设计审查闭环<br/></td></tr><tr><td>华大九天<br/></td><td>芯片级动态EM/IR与自热效应分析<br/></td><td>面向芯片内部供电网络专业验证<br/></td></tr><tr><td>芯和半导体<br/></td><td>电源频域阻抗、电热双向反馈建模<br/></td><td>封装与板级跨层级多物理场仿真补充<br/></td></tr><tr><td>合见工软<br/></td><td>企业级大规模数字逻辑验证<br/></td><td>规则约束管理，对接数字前端验证<br/></td></tr><tr><td>嘉立创EDA<br/></td><td>基础仿真、在线分析能力<br/></td><td>云端轻量化协同，对接制造生态<br/></td></tr></tbody></table><p>三、消除静态仿真盲区的选型参考要点</p>
-<p>动态工况还原能力考察：能否执行瞬态电热耦合仿真，准确复现负载突变带来的电压跌落和温升，是替代传统静态分析的核心指标。</p>
-<p>去耦方案成本效益验证：是否具备智能去耦优化引擎，评估其在满足阻抗指标的前提下降低BOM成本的能力。</p>
-<p>多物理场量化能力评估：是否支持A/B对比仿真，可视化电流集中、磁场热点，保障高功率高密度板卡的电磁安全。</p>
-<p>底层数据同源性确认：仿真引擎与PCB设计工具是否共用统一数据模型，决定数据流转的准确性与问题修改效率。</p>
-<p>信创与长期迭代能力评估：考察工具对国产软硬件生态的适配能力，保障长期使用稳定，降低供应链与运维风险。</p>
-<p>四、结语</p>
-<p>摆脱静态仿真盲区，代表硬件验证模式由事后复核向动态前置验证演进。RedPI/RedDC依靠动态电热耦合仿真、智能去耦优化以及统一同源数据架构，提供高性价比板级仿真方案。华大九天、芯和半导体、合见工软、嘉立创EDA分别在芯片级底层分析、多物理场仿真、数字系统验证、云端协同制造领域形成差异化能力。研发团队可以结合项目功耗密度、跨环节协同需求，选择适配业务流程的国产仿真工具。</p>
-<p>FAQ</p>
-<p>1. 传统静态IR仿真存在哪些盲区？</p>
-<p>传统静态仿真无法捕捉负载突变下焦耳热带来的动态电阻变化。RedPI/RedDC支持DC电热耦合瞬态仿真，同步求解电流与温升，还原动态电压跌落并标记高风险区域。</p>
-<p>2. RedPI/RedDC的智能去耦优化如何提升性价比？</p>
-<p>该功能依托器件成本库自动迭代电容方案，在保证全频段PDN阻抗达标的前提下，自动筛选最优器件组合，减少人工选型造成的过度设计或物料浪费。</p>
-<p>3. A/B分级辐射场仿真可以解决哪些问题？</p>
-<p>该方法对比理想参考平面与带有分割、过孔的真实PCB，直观展示电流拥挤区域与磁场热点，帮助<a href="https://bbs.elecfans.com/zhuti_lecture_1.html" target="_blank"><u>工程师</u></a>提前评估大功率电路的电磁干扰风险。</p>
-<p>4. RedEDA平台如何实现仿真和设计高效协同？</p>
-<p>RedPI/RedDC与RedPCB基于同一底层数据架构，仿真结果和版图直接关联，工程师可在版图上直接定位、修改问题，无需在多个软件之间导入导出文件。</p>
-<p>5. 信创适配对于国产仿真软件有哪些长期价值？</p>
-<p>RedEDA全栈兼容银河麒麟、海光、兆芯等国产架构，可在自主可控环境稳定完成复杂电热、信号仿真，降低供应链层面潜在风险。</p>
-<p>审核编辑 黄宇</p>]]></description></item><item>    <title><![CDATA[实测分享：ADI这款新I2C隔离器，把总线锁死、热插拔崩总线的坑全填上了]]></title>    <link>https://www.elecfans.com/d/8989154.html</link>    <guid>https://www.elecfans.com/d/8989154.html</guid>    <pubDate>2026-11-27 16:00:00</pubDate>    <description><![CDATA[<input type="hidden" id="annex0_8989154" value="https://file1.elecfans.com/web3/M00/1C/6A/wKgZO2g3zvaALQMkAA1PS3G07WU500.pdf"/><h1>实测分享：<a href="https://www.elecfans.com/tags/adi/" target="_blank"><u>ADI</u></a>这款新<a href="https://www.elecfans.com/tags/i2c/" target="_blank"><u>I2C</u></a>隔离器，把总线锁死、热插拔崩总线的坑全填上了</h1>
-<p>上周做工业BMS项目，要选一款带热插拔功能的I2C隔离器，之前用的普通双向隔离器要么热插拔一插就把整段总线搞挂，要么经常莫名出现总线锁死要软件复位，翻<a href="https://bbs.elecfans.com/zhuti_1472_1.html" target="_blank"><u>AD</u></a>I官网刚好看到5月刚更的ADuM1255，打样测了一周，刚好解决了我之前踩的几个坑，今天给大家捋捋这个芯片的实用点和要注意的避坑项。</p><p>文件下载：<a href="javascript:;" data-annex="annex0_8989154" target="_blank">ADuM1255.pdf</a></p>
-<hr/>
-<h2>核心特性：完全冲着工业场景痛点做的</h2>
-<p>这款定位很明确：适合<strong><a href="https://www.hqchip.com/app/1716" target="_blank"><u>控制器</u></a>全在隔离主侧、从侧不需要<a href="https://www.elecfans.com/tags/时钟/" target="_blank"><u>时钟</u></a>拉伸</strong>的I2C场景，没有冗余功能，参数刚好卡到工业需求的痛点上：</p>
-<h3>1. 硬件级防总线锁死，省了几百行复位逻辑</h3>
-<p>之前用普通双向I2C隔离器最头疼的就是莫名其妙锁总线：主侧发低，从侧回低，两边互相识别到低电平直接锁死，只能加超时复位逻辑。
-ADuM1255直接从硬件上解决了这个问题：</p>
-<ul>
-<li>主侧（Side1）的输出低电平被钳位在典型0.64V，最大0.69V</li>
-<li>主侧的输入低阈值比输出低电平至少低50mV，等于主侧自己输出的低电平，不会被自己的输入识别为有效低，从根上避免了双向传输的锁死问题。
-从侧是常规开漏输出，VOL最大0.4V，兼容所有标准I2C器件的低电平阈值。
-<h3>2. 真无扰动热插拔，插模块再也不崩总线</h3>
-<p>做过<a href="https://m.hqchip.com/app/1720" target="_blank"><u>PoE</u></a>、<a href="https://www.hqchip.com/app/1712" target="_blank"><u>电池管理</u></a>背板的都懂：热插拔I2C模块的时候，要么寄生<a href="https://www.elecfans.com/tags/电容/" target="_blank"><u>电容</u></a>拉低总线出毛刺，要么上电时机不对直接把总线拉死。
-ADuM1255的从侧（Side2）专门做了热插拔逻辑：</p></li>
-<li>上电低于UVLO阈值时，总线引脚完全高阻，不会拉载正在工作的总线</li>
-<li>上电过程中先把<a href="https://www.hqchip.com/app/1522" target="_blank"><u>SD</u></a>A2/SCL2预充到1/3 VDD2，减小热插拔时的充电<a href="https://www.elecfans.com/tags/电流/" target="_blank"><u>电流</u></a>毛刺</li>
-<li>完全上电后不会立刻接通两边总线，必须等到从侧总线检测到I2C STOP条件，或者总线空闲超过75μs才会接通，完全不会打断正在进行的总线通讯。
-<h3>3. 隔离+电平转换二合一，BOM省了一半</h3>
-<p>两边供电都是独立的2.25V~5.5V，不需要额外加电平转换芯片：主侧接3.3V主控，从侧接5V<a href="https://m.elecfans.com/v/tag/117/" target="_blank"><u>传感器</u></a>，或者反过来都可以，直接实现跨电平域的隔离通讯。
-速率支持到2MHz，覆盖高速I2C的需求，从侧灌电流最大支持50mA，上拉<a href="https://m.hqchip.com/app/485" target="_blank"><u>电阻</u></a>可以选更小的阻值，边沿更陡，跑高速也不会出现上升沿斜率不够的问题。</p>
-<h3>4. 隔离参数拉满，宽温工业场景随便造</h3>
-<table>
-<thead>
-<tr>
-<th>两种封装可选，安规参数给的很足，直接覆盖大部分工业场景需求：</th>
-<th>封装类型</th>
-<th>爬电/<a href="https://m.elecfans.com/v/tag/2364/" target="_blank"><u>电气</u></a>间隙</th>
-<th>连续工作隔离电压</th>
-<th>耐压</th>
-<th>工作温度</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>8脚窄体SOIC</td>
-<td>4mm</td>
-<td>445<a href="https://www.elecfans.com/v/tag/3668/" target="_blank"><u>Vr</u></a>ms</td>
-<td>3000Vrms/1min</td>
-<td>-40℃~+125℃</td>
-</tr>
-<tr>
-<td>8脚宽体SOIC</td>
-<td>8mm</td>
-<td>848Vrms</td>
-<td>5000Vrms/1min</td>
-<td>-40℃~+125℃</td>
-</tr>
-</tbody>
-</table>
-<p>共模瞬态抗扰度（CM<a href="https://www.elecfans.com/tags/ti/" target="_blank"><u>TI</u></a>）做到了100kV/μs，工业强干扰场景也不会出通讯错误，现在安规<a href="https://bbs.elecfans.com/group_776" target="_blank"><u>认证</u></a>（UL1577、VDE、IEC61010等）都在走，过了之后直接过产品安规不用额外做绝缘验证。</p></li>
-</ul>
-<hr/>
-<h2>实测踩坑提醒：这几个点别踩</h2>
-<p>测了一周踩了两个小坑，给大家提前避下：</p>
-<ol>
-<li><strong>主侧SDA/SCL不能多芯片并联</strong>：因为主侧用了特殊的低电平钳位缓冲，多个ADuM1255的主侧引脚并联会互相干扰，但是从侧没有这个限制，可以随便挂多个从设备或者并联多个隔离器的从侧引脚。</li>
-<li><strong><a href="https://www.hqchip.com/app.html" target="_blank"><u>电源</u></a>去耦一定要按要求加</strong>：VDD1和VDD2都要就近放1nF+100nF的低ESR陶瓷电容，我一开始只放了100nF，打群脉冲的时候偶尔会出通讯错，加上1nF之后就完全没问题了。</li>
-<li><strong>Layout隔离带下面不要走铜</strong>：芯片下方不要有任何连接主侧和从侧的走线、铜皮，不然直接破坏隔离性能，白加隔离器了。
-另外这款不需要特殊的上电顺序，哪边先上电都可以，低于UVLO的时候输出全高阻，不会出现上电毛刺拉低总线的问题，这点很省心。</li>
-</ol>
-<hr/>
-<h2>适合用在哪？几个典型场景参考</h2>
-<p>我觉得这款基本是为这几个场景量身定做的：</p>
-<ul>
-<li>电池管理系统（BMS）：隔离主控和电芯采集前端的I2C通讯，支持热插拔换电池模块</li>
-<li>PoE设备：隔离供电端和受电端的I2C控制<a href="https://www.hqchip.com/app/1072" target="_blank"><u>信号</u></a></li>
-<li><a href="https://bbs.elecfans.com/zhuti_dianji_1.html" target="_blank"><u>电机控制</u></a>：隔离主控和功率侧的传感器I2C通讯，抗强电磁干扰</li>
-<li>工业背板：支持热插拔的I2C设备扩展，不会因为插模块搞挂整个背板总线</li>
-</ul>
-<hr/>
-<h2>最后唠两句</h2>
-<p>如果你需要的是单向时钟的I2C隔离，不需要从侧时钟拉伸，那这款真的很合适：功能刚好，没有冗余，参数够顶，BOM成本也比用“通用双向隔离+电平转换+热插拔保护”的方案低不少，引脚也兼容大部分同类型的I2C隔离器，替换起来也方便。
-对了，你们做I2C隔离的时候有没有遇到过什么奇葩坑？评论区聊聊大家一起避避~</p>]]></description></item><item>    <title><![CDATA[在线COD缓慢偏移的排查方法]]></title>    <link>https://www.elecfans.com/d/8989157.html</link>    <guid>https://www.elecfans.com/d/8989157.html</guid>    <pubDate>2026-11-27 16:01:00</pubDate>    <description><![CDATA[<div class="vditor-preview__action"/><div class="vditor-reset"><p>在线COD读数连续缓慢变化时，先保留这段原始记录，核对同一时期的取样工况与维护动作。窗口状态、进样中的气泡、基线和应用校准都值得检查，检查结果要能回到同一批水样与参比记录上。</p><p>我把WQM3A-Pro V1.2规格书、<a href="https://www.elecfans.com/v/tag/4854/" target="_blank"><u>光学</u></a>在线仪表的原厂操作手册和COD参比方法放在一起核对，整理了下面这条排查顺序。[1][2][3] 它是便于现场逐项验证的工程建议。具体清洁介质、校准用水和操作条件，仍按各自型号说明执行。</p><p><img src="https://file1.elecfans.com/web3/M00/7C/96/wKgzfmsJNQaANKq2AAFb_3_360E688.png" alt="同一取样点的在线测量和实验室参比两条路径，分别记录时间与处理方式"/></p><p><em>图1｜参比配对示意，分清在线检测与实验室样本各自经过的处理。图中没有实测结果。</em></p><p>先导出原始值。变化前后那一段记录里，时间、单位、采样点和当时设置都要能找到。取样泵启停、工艺切换、清洗、校准及参数修改，都在旁边标记。显示端如果做了平均或滤波，同时保留处理参数。</p><p>找个能复现的工况。清洁前能取到一组对应样本，就先留这一组；处理完窗口，再在可比条件下观察。每次只改一个主要因素，复核结果才容易对应到这次动作。</p><p>把几项设置一起改掉，即使读数回到了期望附近，也很难回答哪一步起了作用。过程要能复查。</p><p><strong>窗口和进样一起核对</strong></p><p>光学窗口有没有附着物，清洁机构是否正常动作，取样通道有没有积污，先按实物检查。运行画面显示过“已清洁”，还要核对实际窗口状态和清洁后的测量表现。</p><p>E+H的Viomax CAS51D原厂手册要求校准前清洁，并提醒有些影响紫外测量的沉积肉眼未必容易看见。[2] 这一说明很适合提醒现场人员把清洁与校准分开记录。它的具体清洁配方属于该型号，使用其他探头时应回到对应说明书。</p><p>WQM3A-Pro的V1.2规格书列有自动物理清洁功能；维护条款同时要求按规定处理探头，明确禁止用酒精清洗。[1] 对这个型号，检查清洁机构、按本机方法清洁、冲洗，再观察稳定性，才是有依据的动作。</p><p>清洗前后都记一条窗口状态和原始值。若清洁后结果变化明显，保留这次对应关系，继续观察；不要把这次现象直接扩展成今后的固定修正系数。</p><p>检查测量区域是否稳定充满水，取样中是否夹气，流路有没有间歇中断。查看时让设备处在实际运行工况中，泵阀动作发生的时刻也一起记录。</p><p>CAS51D手册在调试要求里明确提出，测量缝应充满介质并排除气泡；它的排障表也将气泡、窗口沉积和校准列为偏高或偏低时的检查项。[2] 这些是检查入口，最终原因还要通过现场验证确定。</p><p>处理时按探头安装要求排气、恢复稳定进样，保留动作前后的原始序列。不要把其他型号手册里的气洗压力或流量直接写进本机维护单。</p><p><strong>基线条件写到记录里</strong></p><p>以WQM3A-Pro这版文件为例，基线校准使用合格纯净水，校准水与环境温度应一致，文件给出的条件是25℃±2℃。[1] 准备什么水、在什么环境完成、何时执行和是否成功，分别记清。</p><p>基线完成后复核。取样安排沿用原来的条件。基线操作改变了哪一项设置，结果能否重复，参比记录是否仍有偏差，都留在同一张单里。</p><table><thead><tr><th>检查位置</th><th>留下的记录</th><th>下一步怎样验证</th></tr></thead><tbody><tr><td>窗口与清洁机构</td><td>附着状态、清洁动作和时间</td><td>清洁后按可比条件复测</td></tr><tr><td>进样与气泡</td><td>是否充满、夹气和中断情况</td><td>排气或恢复进样后观察原始序列</td></tr><tr><td>基线</td><td>用水、温度、执行时间与结果</td><td>回到原取样工况复核</td></tr><tr><td>应用校准</td><td>当前系数、修改时间和对应样本</td><td>用独立配对样本检查结果</td></tr></tbody></table><p><strong>参比要能对上同一份水样</strong></p><p>在线值和实验室结果要对应到同一取样位置、相近时刻与一致的样品处理。至少记录实验室项目名、方法号、是否过滤、采样时间和分析时间。工况变化较大时，按实际变化范围安排多组配对，不用一个偶然时点代表全部运行状态。[2]</p><p>实验室报告写的是哪个项目，先读完整。HJ 828测定重铬酸盐法化学需氧量，方法的测定范围包含水中溶解性物质和悬浮物。[3] 因此，样本是否过滤会改变比较条件，交接样本时要把这一项说明白。</p><p>保存与送样按检测机构确认的对应方法安排。现场记录里留一份样本编号，就能把那一时刻的在线读数、维护状态和实验室结果接起来。</p><p>为了看清差别，可以先算绝对差值。用一组教学数据演算。在线值假设为18 mg/L，对应参比值为20 mg/L。差值为负2 mg/L，相对差值为负10%。演算只说明这组数字相差多少，不能据此决定改哪个校准参数。</p><p><code>绝对差值 = 在线值 − 对应参比值</code></p><p><code>相对差值 = 绝对差值 ÷ 对应参比值 × 100%</code></p><p>参比值接近零时，优先结合方法检出与定量能力评估绝对差值，相对百分数容易失去解释价值。工程的合格门槛和复核安排，应在项目要求与方法能力范围内事先确定。</p><p><img src="https://file1.elecfans.com/web3/M00/7C/96/wKgzfmsJNTSAHoZbAAJQUrQXPBg638.png" alt="清洁、排气、基线与独立参比复核的递进关系"/></p><p><em>图2｜本文整理的排查过程。每次保留一个主要变更，验证后再进入下一步。</em></p><p>窗口状态与进样条件已经检查，基线操作有记录，参比样本也配对完成，再评估是否需要应用校准。修改时写下原设置、新设置和支持这次修改的样本，随后用另一组独立样本复核。</p><p>下次维护单可以增加几栏，样本编号、窗口状态、取样工况、本次唯一变更、对应参比方法和复核结果。有人接手这台仪表时，沿着这些记录就能继续查下去。</p><p><strong>参考资料</strong></p><p>[1] 比特原子《WQM3A-Pro水质检测器规格书》V1.2，2026年1月8日，第2、15页。</p><p>[2] E+H Viomax CAS51D操作手册，BA00459C/07/EN/17.24-00，2024年8月7日，第29、36至38页。具体清洗条件仅用于该型号。</p><p>[3] 生态环境部HJ 828重铬酸盐法原文，2017版，测定范围及样品要求。</p></div>
-<p>审核编辑 黄宇</p>]]></description></item>  </channel></rss>
+	随着智能汽车海外业务快速增长、人形机器人商业化进程加速，小鹏集团正不断拓展物理 AI 的应用场景与市场空间。未来，小鹏将持续以全栈自研技术驱动创新，推进物理AI产品的商业化落地与全球化布局，让中国科技创新成果惠及全球更多用户。</p>]]></description></item>  </channel></rss>
